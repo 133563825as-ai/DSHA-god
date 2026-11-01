@@ -62,6 +62,34 @@ public class ContainerDshEngineTest {
   }
 
   @Test
+  public void stateDirectoryIsGuestRootUnderTheBoundRootfs() {
+    java.io.File[] rootfs = {new java.io.File("/data/x/linux/ubuntu")};
+    ContainerDshEngine engine =
+        new ContainerDshEngine((c, e) -> null, () -> "proot", () -> rootfs[0]);
+    assertEquals(new java.io.File("/data/x/linux/ubuntu/root"), engine.stateDirectory());
+    // 与停止链此前的写法逐字节相同。
+    assertEquals(
+        new java.io.File(
+            rootfs[0],
+            com.deepseekharness.app.util.WebProcSel.pidFileRel(
+                com.deepseekharness.app.util.WebProcSel.STOP_SENTINEL)),
+        com.deepseekharness.app.util.EngineStateFiles.stopSentinel(engine.stateDirectory()));
+    rootfs[0] = new java.io.File("/data/y/linux/ubuntu");
+    assertEquals(new java.io.File("/data/y/linux/ubuntu/root"), engine.stateDirectory());
+  }
+
+  @Test
+  public void stateDirectoryWithoutABoundRootfsFailsLoudly() {
+    ContainerDshEngine engine = new ContainerDshEngine((c, e) -> null, () -> "proot");
+    try {
+      engine.stateDirectory();
+      fail("expected IllegalStateException");
+    } catch (IllegalStateException expected) {
+      assertEquals("ROOTFS_NOT_BOUND", expected.getMessage());
+    }
+  }
+
+  @Test
   public void containerDeclaresEveryCapabilityAsSupported() {
     var capabilities = new ContainerDshEngine((c, e) -> null, () -> "proot").capabilities();
     for (var capability : com.deepseekharness.app.util.EngineCapabilities.Capability.values())

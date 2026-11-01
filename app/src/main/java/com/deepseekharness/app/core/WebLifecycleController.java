@@ -9,7 +9,6 @@ import com.deepseekharness.app.runtime.ProotBootstrap;
 import com.deepseekharness.app.runtime.WebProcessManager;
 import com.deepseekharness.app.util.DshAuthUrl;
 import com.deepseekharness.app.util.WebLifecycle;
-import com.deepseekharness.app.util.WebProcSel;
 
 import java.io.File;
 import java.io.IOException;
@@ -1823,7 +1822,9 @@ final class WebLifecycleController {
   }
 
   private File stopSentinel() {
-    return new File(proot.getRootfsDir(), WebProcSel.pidFileRel(WebProcSel.STOP_SENTINEL));
+    return com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
+        com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(
+            proot.getRootfsDir()));
   }
 
   private boolean hasStopSentinel() {

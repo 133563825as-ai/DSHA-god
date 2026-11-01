@@ -401,15 +401,18 @@ public class WebProcessManager {
   }
 
   private File root() {
-    return records == null ? new File(proot.getRootfsDir(), "root") : records;
+    return records == null
+        ? com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(
+            proot.getRootfsDir())
+        : records;
   }
 
   private File pidFile() {
-    return new File(root(), ".dsha-web.pid");
+    return com.deepseekharness.app.util.EngineStateFiles.pid(root());
   }
 
   private File identityFile() {
-    return new File(root(), ".dsha-web.identity");
+    return com.deepseekharness.app.util.EngineStateFiles.identity(root());
   }
 
   /**
@@ -456,7 +459,7 @@ public class WebProcessManager {
 
   private void sentinel() throws IOException {
     ensureRootWritable();
-    File file = new File(root(), ".dsha-stopped");
+    File file = com.deepseekharness.app.util.EngineStateFiles.stopSentinel(root());
     if (Compat.isSymbolicLink(file) || !file.exists() && !file.createNewFile())
       throw new WebStopException(Code.SENTINEL_UNWRITABLE);
   }

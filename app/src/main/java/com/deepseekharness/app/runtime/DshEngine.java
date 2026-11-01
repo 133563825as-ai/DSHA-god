@@ -26,6 +26,12 @@ public interface DshEngine {
    */
   com.deepseekharness.app.util.EngineCapabilities capabilities();
 
+  /**
+   * 宿主上的状态目录：启动命令写入的停止标记、pid 与出生身份文件都在这里，文件名见 {@link
+   * com.deepseekharness.app.util.EngineStateFiles}。宿主据此读取停止证据，不再自行拼接 rootfs 路径。
+   */
+  java.io.File stateDirectory();
+
   /** 启动 Web 主进程；返回的进程由调用方读取输出并负责回收。 */
   Process launch(String command, Map<String, String> environment) throws IOException;
 }

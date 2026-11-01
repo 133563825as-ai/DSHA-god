@@ -20,16 +20,33 @@ public final class ContainerDshEngine implements DshEngine {
 
   private final RootfsExec exec;
   private final Supplier<String> runtimeName;
+  private final Supplier<java.io.File> rootfs;
 
   ContainerDshEngine(RootfsExec exec, Supplier<String> runtimeName) {
+    this(
+        exec,
+        runtimeName,
+        () -> {
+          throw new IllegalStateException("ROOTFS_NOT_BOUND");
+        });
+  }
+
+  ContainerDshEngine(RootfsExec exec, Supplier<String> runtimeName, Supplier<java.io.File> rootfs) {
     this.exec = Objects.requireNonNull(exec);
     this.runtimeName = Objects.requireNonNull(runtimeName);
+    this.rootfs = Objects.requireNonNull(rootfs);
   }
 
   /** 包住本次启动所用的 bootstrap（普通或兼容重试实例）。 */
   public static ContainerDshEngine of(ProotBootstrap boot) {
     Objects.requireNonNull(boot);
-    return new ContainerDshEngine(boot::execRootfs, () -> boot.runtime().id());
+    return new ContainerDshEngine(boot::execRootfs, () -> boot.runtime().id(), boot::getRootfsDir);
+  }
+
+  /** 容器运行环境的状态目录：guest {@code /root} 在宿主上的位置。 */
+  @Override
+  public java.io.File stateDirectory() {
+    return com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(rootfs.get());
   }
 
   @Override
