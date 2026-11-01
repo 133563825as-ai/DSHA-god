@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "dshVersion": "0.2.1-rc.5",
+  "module": "@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
+  "patches": [
+    {
+      "before": "disabled: !running,",
+      "after": "disabled: false,"
+    },
+    {
+      "before": "title: running ? void 0 : t(\"queue.steer.unavailable\"),",
+      "after": "title: void 0,"
+    },
+    {
+      "before": "\t\t\t\t\t\t\t\t\t\t\t\t\t\"aria-label\": t(\"queue.steer\"),\n\t\t\t\t\t\t\t\t\t\t\t\t\ttitle: void 0,\n\t\t\t\t\t\t\t\t\t\t\t\t\tdisabled: busy !== null || !running,",
+      "after": "\t\t\t\t\t\t\t\t\t\t\t\t\t\"aria-label\": t(\"queue.steer\"),\n\t\t\t\t\t\t\t\t\t\t\t\t\ttitle: void 0,\n\t\t\t\t\t\t\t\t\t\t\t\t\tdisabled: busy !== null,"
+    }
+  ],
+  "sourceSha256": "cfbd9fd95b0509f7c93a22a62a67ebc10481c8eda611704ea50c2e195b9a5a69",
+  "packageIntegrity": "sha512-9vlIdui/1HLr8ni/834KejulzBicjqRVxSoQwP7WuBWLLvzskL2dXrF7g6S+8vTfqeblPiUWDxFVbcw774F/eA=="
+}

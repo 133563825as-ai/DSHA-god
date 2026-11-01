@@ -1,0 +1,24 @@
+{
+  "dshVersion": "0.2.1-rc.5",
+  "module": "@deepseek-ai/dsh-client-ui-subagent/lib/client.js",
+  "patches": [
+    {
+      "before": "onClick: openTitle === void 0 ? () => {",
+      "after": "\"data-dsha-lineage-trigger\": true,\n                        onClick: openTitle === void 0 ? () => {"
+    },
+    {
+      "before": "const scheduleHoverOpen = () => {",
+      "after": "const scheduleHoverOpen = () => {\n                if (window.matchMedia(\"(pointer: coarse)\").matches) return;"
+    },
+    {
+      "before": "const scheduleHoverClose = () => {",
+      "after": "const scheduleHoverClose = () => {\n                if (window.matchMedia(\"(pointer: coarse)\").matches) return;"
+    },
+    {
+      "before": "className: SubagentHeaderLineage_module_css_default.menu,",
+      "after": "className: SubagentHeaderLineage_module_css_default.menu + \" dsha-lineage-menu\","
+    }
+  ],
+  "sourceSha256": "18dab257ed94d91d66ce0e5d90836fa9ed49349e04cee04a3e30dc7f834ccb25",
+  "packageIntegrity": "sha512-YT8NcDLbW/zRD76ix6yv6FvNoDKjXoTAYbpRiZnkYytUirDrvl8YvFZe2NKKBVJPaSJ1WV0zpccBfbt5a2ws7A=="
+}

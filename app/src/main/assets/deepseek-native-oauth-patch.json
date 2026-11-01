@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "dshVersion": "0.2.1-rc.5",
+  "module": "@deepseek-ai/dsh-client-ui-settings-account/lib/client.js",
+  "sourceSha256": "69a3c6046acf855948e39e30802613b444307c1f32724baa99864a1a6b2ef025",
+  "packageIntegrity": "sha512-AR2EV2wdmf2oNku22WqUws/qbj0/aTls4TaMqUPvr/DJfA0RVcVjj+NZRZA8thwaNt23C5mAc82U9M6LkB5eaQ==",
+  "purpose": "Keep the native authenticated DSH page alive while the host opens the exact DeepSeek authorization endpoint; preserve the official ordinary-browser popup and all state/PKCE/account protocol behavior.",
+  "patches": [
+    {
+      "before": "\t\t\tbegin() {\n\t\t\t\tthis.dispose();\n\t\t\t\tthis.popup = window.open(\"about:blank\", \"_blank\");\n\t\t\t\tif (this.popup) this.popup.opener = null;\n\t\t\t}",
+      "after": "\t\t\tbegin() {\n\t\t\t\tthis.dispose();\n\t\t\t\t// DSHA_NATIVE_OAUTH_NAVIGATION_V1: the native host consumes only the fixed\n\t\t\t\t// Platform authorize navigation, leaving this authenticated page alive.\n\t\t\t\t// No blank window is created: embedded engines cannot retain the Web\n\t\t\t\t// popup that the plain browser path preopens during the original click.\n\t\t\t\tif (globalThis.__DSHA_NATIVE_PLUGINS__ === true || globalThis.__DSHA_NATIVE_OAUTH__ === true) {\n\t\t\t\t\tconst popup = {\n\t\t\t\t\t\tclosed: false,\n\t\t\t\t\t\tclose() { this.closed = true; },\n\t\t\t\t\t\tlocation: { replace(url) { if (!popup.closed) window.location.assign(url); } }\n\t\t\t\t\t};\n\t\t\t\t\tthis.popup = popup;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tthis.popup = window.open(\"about:blank\", \"_blank\");\n\t\t\t\tif (this.popup) this.popup.opener = null;\n\t\t\t}"
+    }
+  ]
+}
