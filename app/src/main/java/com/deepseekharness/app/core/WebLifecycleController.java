@@ -810,6 +810,13 @@ final class WebLifecycleController {
         config.isConfirmShell(), config.getUiLanguage(), profile, listenPort, generation);
   }
 
+  /** Android 原生运行环境尚未实现时的拒绝原因；明确告知，不静默改用容器。 */
+  private static String nativeEngineUnavailable() {
+    return com.deepseekharness.app.util.UiText.choose(
+        "所选的 Android 原生运行环境尚未提供，请在运行环境设置中改回容器后再启动。",
+        "The selected Android native runtime is not available yet. Switch back to the container runtime, then start again.");
+  }
+
   /**
    * 后台启动 dsh：先清残留进程（避免端口冲突），确保运行时与 rootfs 就绪后拉起 dsh web，
    * 独立线程捕获 BrowserAuth 鉴权链接。
@@ -945,6 +952,10 @@ final class WebLifecycleController {
     // 尚未尝试的新受管候选必须先走维护事务；否则看门狗会用兼容但过期的
     // 运行时重新拉起 Web，令本 APK 的运行补丁和系统插件尚未落地。
     // 已经尝试失败的候选仍可使用通过健康确认的兼容前代。
+    if (!config.dshEngine().isContainer()) {
+      if (onStatus != null) onStatus.accept(nativeEngineUnavailable());
+      return StartAdmission.REJECTED;
+    }
     if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeStart(owner)) {
       if (onStatus != null)
         onStatus.accept(
@@ -1080,11 +1091,19 @@ final class WebLifecycleController {
     WebRun run = webRuns.get(generation);
     if (run == null) return;
     ProotBootstrap boot = compatible ? new ProotBootstrap(ctx, true) : proot;
+    // 唯一的执行接缝：命令与环境照旧组装，只把"在哪里执行"交给运行环境。
+    com.deepseekharness.app.runtime.DshEngine engine =
+        com.deepseekharness.app.runtime.ContainerDshEngine.of(boot);
     boolean draining = false;
     try (com.deepseekharness.app.runtime.RuntimeHostPorts.Scope invocation =
         owner.runtimeHostPorts().open()) {
       if (!lifecycle.isCurrent(generation)
           || com.deepseekharness.app.core.MaintenanceCoordinator.isExclusive()) return;
+      // 入队后用户可能改了运行环境；排队期间的变更同样不得静默改用容器。
+      if (!config.dshEngine().isContainer()) {
+        reportStatus(generation, onStatus, nativeEngineUnavailable());
+        return;
+      }
       if (com.deepseekharness.app.core.MaintenanceCoordinator.pending(owner)) {
         reportStatus(
             generation, onStatus, com.deepseekharness.app.util.UiText.text("存在未完成的环境维护，请先恢复中断维护"));
@@ -1145,7 +1164,7 @@ final class WebLifecycleController {
         launchEnvironment.put("DSHA_WEB_GENERATION", Long.toString(generation));
       }
       Process p =
-          boot.execRootfs(
+          engine.launch(
               runCoreCommand(startupProfile, ports.listen, generation), launchEnvironment);
       run.launcher = p;
       setWebStage(generation, com.deepseekharness.app.util.UiText.text("等待鉴权链接"));
