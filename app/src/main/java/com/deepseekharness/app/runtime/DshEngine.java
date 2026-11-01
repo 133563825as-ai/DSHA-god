@@ -20,6 +20,12 @@ public interface DshEngine {
   /** 本次实际使用的具体实现名，例如 {@code proot} / {@code proroot}，用于"本次实际运行方式"。 */
   String runtimeName();
 
+  /**
+   * 该运行环境的能力声明（支持 / 不支持 / 未知）。只描述已有证据的事实；没有实测的能力必须为未知，
+   * 不得为了让功能可用而预填为支持。
+   */
+  com.deepseekharness.app.util.EngineCapabilities capabilities();
+
   /** 启动 Web 主进程；返回的进程由调用方读取输出并负责回收。 */
   Process launch(String command, Map<String, String> environment) throws IOException;
 }

@@ -43,6 +43,11 @@ public final class ContainerDshEngine implements DshEngine {
   }
 
   @Override
+  public com.deepseekharness.app.util.EngineCapabilities capabilities() {
+    return com.deepseekharness.app.util.EngineCapabilities.container();
+  }
+
+  @Override
   public Process launch(String command, Map<String, String> environment) throws IOException {
     return exec.exec(command, environment);
   }

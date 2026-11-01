@@ -60,4 +60,14 @@ public class ContainerDshEngineTest {
   public void idIsTheStoredContainerChoice() {
     assertEquals("ubuntu", new ContainerDshEngine((c, e) -> null, () -> "proot").id());
   }
+
+  @Test
+  public void containerDeclaresEveryCapabilityAsSupported() {
+    var capabilities = new ContainerDshEngine((c, e) -> null, () -> "proot").capabilities();
+    for (var capability : com.deepseekharness.app.util.EngineCapabilities.Capability.values())
+      assertEquals(
+          capability.id,
+          com.deepseekharness.app.util.EngineCapabilities.Support.SUPPORTED,
+          capabilities.support(capability));
+  }
 }
