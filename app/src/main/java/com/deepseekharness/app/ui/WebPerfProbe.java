@@ -39,7 +39,7 @@ import java.util.Locale;
  * 仅测试包：Web 工作台内置性能采样。原生 FrameMetrics 逐帧统计 + 网页侧 rAF / LoAF / event timing，合并写成 JSON 存私有目录并导出到
  * Download/DSHA。
  *
- * <p>正式包（TEST_SIGNATURE 为空）{@link #install} 返回 null：不注册监听、不注入脚本、不显示入口。网页结果只经 evaluateJavascript
+ * <p>正式包（TEST_SIGNATURE 为空）与稳定版（TEST_BUILD 为 sN）{@link #install} 返回 null：不注册监听、不注入脚本、不显示入口。网页结果只经 evaluateJavascript
  * 取回，不新增 JavascriptInterface（页面里会运行第三方插件）。
  */
 final class WebPerfProbe {
@@ -73,7 +73,10 @@ final class WebPerfProbe {
   private final Runnable tick = this::tick;
 
   static boolean enabled() {
-    return BuildConfig.TEST_SIGNATURE != null && !BuildConfig.TEST_SIGNATURE.isEmpty();
+    // 只在测试包：稳定版（版号 sN）也带署名，但日常使用不显示采样入口。
+    return BuildConfig.TEST_SIGNATURE != null
+        && !BuildConfig.TEST_SIGNATURE.isEmpty()
+        && !BuildConfig.TEST_BUILD.startsWith("s");
   }
 
   /** 正式包返回 null；测试包在内容根布局上加一个可上下拖动的小按钮。 */
