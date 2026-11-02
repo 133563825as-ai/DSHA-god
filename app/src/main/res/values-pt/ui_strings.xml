@@ -140,7 +140,7 @@
     <string name="ui2_repair_parts_sub" formatted="false">"Inspecionar componentes ausentes e preservar os funcionais"</string>
     <string name="ui2_reproduction" formatted="false">"Notas de reprodução"</string>
     <string name="ui2_resolve" formatted="false">"Resolver e instalar"</string>
-    <string name="ui2_restart" formatted="false">"↻  Reiniciar"</string>
+    <string name="ui2_restart" formatted="false">"Reiniciar"</string>
     <string name="ui2_rollback" formatted="false">"Voltar versão anterior"</string>
     <string name="ui2_rollback_sub" formatted="false">"Mudar após teste isolado"</string>
     <string name="ui2_runtime_compat" formatted="false">"Compatibilidade"</string>
@@ -151,8 +151,8 @@
     <string name="ui2_shortcuts" formatted="false">"Acesso rápido"</string>
     <string name="ui2_six_steps" formatted="false">"6 passos de instalação"</string>
     <string name="ui2_skip" formatted="false">"Ignorar apresentação"</string>
-    <string name="ui2_start" formatted="false">"▶  Iniciar DSHA"</string>
-    <string name="ui2_stop" formatted="false">"□  Parar"</string>
+    <string name="ui2_start" formatted="false">"Iniciar DSHA"</string>
+    <string name="ui2_stop" formatted="false">"Parar"</string>
     <string name="ui2_stopped" formatted="false">"DSH não está rodando"</string>
     <string name="ui2_storage_files" formatted="false">"Armazenamento e arquivos"</string>
     <string name="ui2_storage_files_sub" formatted="false">"Utilização do armazenamento, limpeza de cache e compartilhamento de arquivos"</string>
@@ -272,6 +272,13 @@
     <string name="ui_m0217" formatted="false">"Verificar conexão"</string>
     <string name="ui_m0218" formatted="false">"＋ Novo"</string>
     <string name="ui_m9024" formatted="false">"Alterar"</string>
+    <string name="upd_browser_sub" formatted="false">"Todas as versões e APKs"</string>
+    <string name="upd_copy_version" formatted="false">"Copiar versão"</string>
+    <string name="upd_full_notes" formatted="false">"Notas completas"</string>
+    <string name="upd_pane_empty" formatted="false">"Quando uma candidata for encontrada, notas, tamanho e instalação aparecem aqui."</string>
+    <string name="upd_recheck" formatted="false">"Verificar novamente"</string>
+    <string name="upd_tab_candidate" formatted="false">"Candidata"</string>
+    <string name="upd_tab_current" formatted="false">"Esta versão"</string>
     <string name="welcome_eyebrow0" formatted="false">"DEEPSEEK HARNESS · ANDROID"</string>
     <string name="welcome_eyebrow1" formatted="false">"01 / FEITO PARA O SEU RITMO"</string>
     <string name="welcome_eyebrow2" formatted="false">"02 / OS SEUS DADOS, A SUA ESCOLHA"</string>

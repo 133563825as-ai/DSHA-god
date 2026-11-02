@@ -1,5 +1,113 @@
 # 更新记录
 
+## 0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5 / build269（实验性：下载记录页重写（分段筛选、分组列表、详情页））
+
+- **实验性 UI 更新，待统一视觉验收。** 下载记录页（`FileTransfersActivity`）按 `docs/design/downloads-20261102` 原型重写界面渲染，传输引擎语义不变。原页四个等权按钮易误触、同名记录无法区分、标题不可见。
+- 列表：标题与实时摘要、四段等宽筛选、需要处理 / 正在传输 / 按日期分组，每行一个主操作加更多菜单，新增「移除已结束记录」。详情：手机与平板竖屏整页推入，≥840dp 左列表右详情；状态卡带下载 / 校验 / 保存三步进度，危险操作集中在管理区，取消已有进度需确认。纯逻辑抽到 `util/TransferListModel`（+单测）；新增 105 条十语文案。
+- 验证范围：分支内定向单测 16 项与界面语言门禁；合入 build268 时 i18n 按条目三方合并、字节钉重算，发布会话复跑 `ui.*` 与 `TransferListModelTest` 共 341 项及源码门禁。未经真机渲染，需统一视觉验收（清单见 `docs/design/downloads-20261102/implementation.md`）。版本码提升为 269（基于 build268）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build269 更新说明](docs/releases/build269-changes.zh.md)，验证记录见 [build269 记录](docs/releases/v0.2.1-rc.3-build269-downloads-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0900-dsh0.2.1-rc.5 / build268（实验性：设备能力授权页压缩）
+
+- **实验性 UI 更新，待统一视觉验收。** 设备能力授权页（`ui/DeviceGrantsFragment`）按 v3 预览压缩：页面大标题交给顶栏，新增不随内容滚动的概览头部（全局 / Root / Shizuku·Stellar / 屏幕四个胶囊，点按跳到对应分组），状态与风险色映射抽到 `util/GrantSummary`（+单测）。
+- Root、Shizuku、ADB 合为一张通道卡，长说明收进分组标签 ⓘ；Root 拦截档位与屏幕确认方式改为三段选择，放宽档仍进入原有红色确认（三项勾选 + 10 秒），确认前分段保持已保存值，Root 未启用时不保存；风险确认按钮顺序与点空白不关闭保持不变。内容宽 ≥640dp（含平板设置分栏）时屏幕操作与敏感能力移到右栏。新增 24 条文案十语登记。
+- 同版合入不占号的设计稿：`docs/design/retained-data-20261102/` 保留副本与旧环境页重设计多方案原型（实验性，未改原生）。
+- 验证范围：分支内定向单测 35/35 与格式 / i18n / hygiene 门禁；合入 build267 后发布会话复跑 `ui.*` 与 `GrantSummaryTest` 共 341 项及源码门禁。未跑 Lint、LayoutAudit，未经真机渲染，需统一视觉验收（日夜、短屏、1.3 倍字体、中英文、平板竖横屏）。版本码提升为 268（基于 build267）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build268 更新说明](docs/releases/build268-changes.zh.md)，验证记录见 [build268 记录](docs/releases/v0.2.1-rc.3-build268-device-grants-compact-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0830-dsh0.2.1-rc.5 / build267（实验性：切到移动数据后容器无外网的争取性修复）
+
+- **实验性更新。** 根因：容器 `/etc/resolv.conf` 只在拉起进程时写入当时网络的设备 DNS（常为 WiFi 私网 DNS），切网后不更新，新网络下该地址不可达，解析全部超时。
+- `device/NetworkStateMonitor`：全 App 唯一默认网络回调，ADB 重连改为订阅它，过滤切网时旧网络迟到的 onLost。`runtime/ResolverRefresher`：设备 DNS 变为新的非空列表后按原规则重写 DSHA 托管段；用户 nameserver 与软链接不动，断网瞬间不写，维护独占期间推迟；`resolv.conf` 不再计入受管资产戳。
+- `dns-compat.cjs`：EAI_AGAIN / EAI_FAIL 时经 `/app/net/resolve` 让 Android 系统解析器解析一次，只解析不重放 HTTP，旧 App 返回 [NO_CMD] 时保持原错误，不注入公共 DNS。`/app/net` 只读诊断宿主网络与容器 resolv.conf 来源及是否过期；两个端点均受 X-Token 门控（见安全模型）。
+- 验证范围：分支内定向单测 27 项通过；合入 build266 后发布会话复跑网络 / RuntimeTools / 桥路由单测 36 项、`test-dns-compat.mjs` 13/14（原生 LD_PRELOAD 夹具项在合入前同样失败，属 proot 环境限制）与源码门禁。未做切网真机验证，不保证所有机型、ROM、运营商、VPN 或私有 DNS 组合下可靠。版本码提升为 267（基于 build266）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build267 更新说明](docs/releases/build267-changes.zh.md)，验证记录见 [build267 记录](docs/releases/v0.2.1-rc.3-build267-mobile-data-network-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0800-dsh0.2.1-rc.5 / build266（悬浮助手重构：可拖动胶囊与对话卡片，展开收起不再取消对话）
+
+- 悬浮助手（`assistant/**`、`control/OwnedScreenOverlay`）重构为可拖动胶囊加对话卡片：展开 / 收起 / 切换会话不再取消对话；状态行为拖动把手，限制在屏幕内并记住位置（`OverlayPlacementTest`）；加 ✕、防误触与停止二次确认（`OverlayTouchGuardTest`）；✕ 隐藏后转通知回复。
+- 窗内直接输入：用户输入期间 AI 的手机动作原地等待（`util/ComposeGate`，读屏 dump/tree/screenshot/senseState 不受影响），发送后以 USER_MESSAGE_ARRIVED 插进当前轮次接着做，不自动重放动作。
+- 手机操作确认增加「本轮允许此应用」，敏感应用每 5 次再确认（`TurnScreenGrantsTest`）；带当前手机任务身份的 `/app/launch` 改走悬浮助手确认窗；启动入口偶发为空时按 MAIN/LAUNCHER 解析同包导出入口，NOT_FOUND 附带是否已安装。
+- 验证范围：分支内全量单测 3157 项仅 8 项本机环境基线失败；真机核对展开不取消对话、新卡片日夜、本轮授权、启动确认绑定与设置页启动。合入 build265 时 `HttpShellService` 与 build262 新增的 senseState 读屏操作冲突，两边保留；重算运行时描述符，发布会话复跑助手 / 控制 / 桥 / 识屏等单测与源码门禁。窗内输入键盘与 steer 衔接、通知回复、上岛回复未真机核对。版本码提升为 266（基于 build265）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build266 更新说明](docs/releases/build266-changes.zh.md)，验证记录见 [build266 记录](docs/releases/v0.2.1-rc.3-build266-assistant-overlay-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0730-dsh0.2.1-rc.5 / build265（维护页底栏图标跟随文字居中）
+
+- 运行环境维护页（`ExtractActivity`）底部「维护记录 / 复制给支持 / 应急 DSH」三个按钮，build255 起用 compound drawable 挂图标，图标贴在按钮最左边、文字在中间。`ui/ExtractFooter` 改为图标紧贴文字居中，竖排分支保持图标在上（`ExtractFooterIconTest`）。
+- 随本版合入两项不占号的改动：`docs/design/web-process-isolation-20261102/` DSH Web 独立进程设计稿（看板 T15，D1–D4 未决，暂不实现）；识屏真机探针不再自行 task-begin / task-end、保留完整启动回执首行（仅测试工具，`tools/screen-eval/device_probe.py`）。
+- 验证范围：用户在测试包上真机确认底栏图标居中；合入 build264 后发布会话复跑维护页相关单测 45 项与源码门禁。版本码提升为 265（基于 build264）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build265 更新说明](docs/releases/build265-changes.zh.md)，验证记录见 [build265 记录](docs/releases/v0.2.1-rc.3-build265-extract-footer-icons-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0700-dsh0.2.1-rc.5 / build264（版本更新页压缩：主卡合并、进度按钮原位切换、平板横屏两栏）
+
+- 版本、通道、状态与主操作合并为一张主卡，去掉重复大标题与介绍，长版本名折叠可展开复制。主按钮 `ui/UpdateProgressButton` 本身就是进度条，检查 / 下载 / 核验 / 安装原位切换，宽高位置不变；页面不放取消（下载通知栏保留）。显示规则抽到 `util/UpdateActionPolicy` 并配单测。
+- 平板横屏（≥840dp，`layout-w840dp/activity_update.xml`）左栏主卡与管理、右栏候选 / 本版本更新记录；平板竖屏单栏居中约 640dp。
+- 检查更新进行中允许切换更新通道：切换时断开当前请求并作废其结果，收尾后按新通道立即重查，候选写入与作废标记同锁复核，旧通道结果不会落入新通道；下载、校验与安装交接仍锁定，显式取消 / 暂停优先（`core/UpdateEngine` + 测试）。
+- 验证范围：用户在测试包上真机确认检查中切换通道（日夜）与进度按钮动画，并核对平板竖屏；短屏、1.3 倍字体与平板横屏两栏未单独取证。合入 build263 后 i18n 按条目三方合并、字节钉重算，发布会话复跑 `ui.*` 与更新相关单测 403 项及源码门禁。版本码提升为 264（基于 build263）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build264 更新说明](docs/releases/build264-changes.zh.md)，验证记录见 [build264 记录](docs/releases/v0.2.1-rc.3-build264-update-compact-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0630-dsh0.2.1-rc.5 / build263（关闭终端标签不再卡死，DSH 不会被连带结束）
+
+- `PtySession.finishAndWait` 持有会话监视器最长数秒等待 proroot 会话退出；主线程关闭 / 切换时调用的 `attachListener`、`inputProblem` 排在同一把锁后，FocusEvent 超时触发 ANR，用户选择「关闭应用」后 App 进程连同子进程 DSH Web 一起结束。真机进程树记录显示 PTY 会话 2 秒内已正常退出，DSH 是随 ANR 结束的 App 进程被带走。
+- 监听与输入问题状态改用独立锁，监听回调移到锁外执行（`PtySessionLockContractTest`）。`PtySession` 属受管启动器输入，运行时描述符随之更新。
+- 验证范围：用户在 Android 16 平板合并测试包上真机确认关闭唯一 PTY 标签不再 ANR、DSH 不掉线；合入 build262 后发布会话复跑终端 / PtySession 单测 209 项与源码门禁，按固定格式化器补空行并重算描述符。版本码提升为 263（基于 build262）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build263 更新说明](docs/releases/build263-changes.zh.md)，验证记录见 [build263 记录](docs/releases/v0.2.1-rc.3-build263-pty-close-isolation-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0600-dsh0.2.1-rc.5 / build262（新增只读紧凑识屏预览 /app/sense/state）
+
+- 新增 `/app/sense/state`（及 `/app/ui/sense/state`）只读全量紧凑屏幕状态，复用手机任务、授权、窗口代次与 owner 围栏；`k***` 只是本次预览标识，不是动作凭据，动作仍走原 treeId/nodeId 租约。节点 action list 每次只读一次并转位图，租约复核同时比对 action-set；原 dump/tree 输出不变。
+- P0a：新增 `tools/screen-eval` 固定种子合成样本评估，compact 编码逐字节镜像 `ScreenSenseCodec`，与 Java `ScreenSenseBudgetTest` 共用 SHA-256 golden；去掉逐行占位符后 60/120/200 元素为 963/1869/3090 字符，60 元素仍未达 ≤900 目标。回复增加 source、quality（ok/partial/empty）、partial、readMs、ageMs，format 升为 v4-preview-2；`/app/help` 识屏说明改为中英双语。
+- 测试包专用真机核对探针只记录计数与拒绝码；原生设置页 tree 与 sense 31/31 一致，负控 STALE_NODE 通过。
+- 验证范围：分支内定向单测 30/30 与真机原生页只读核对通过；合入 build261 后重算运行时描述符，发布会话复跑识屏 / 桥路由单测 377 项、`test-screen-eval.py` 与源码门禁。版本码提升为 262（基于 build261）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- build261（990bd326）的 Source checks 与正式发布均因 `tools/java-format-files.json` 漏登记 T12 新增的 `TerminalReadiness` / `ReadinessCache` / `ReadinessCacheTest` 失败（FORMAT_MANIFEST_INCOMPLETE），未生成 Release、不补发；a86282da 补登记，261 的改动随本版发布。
+- 十语种更新说明见 [build262 更新说明](docs/releases/build262-changes.zh.md)，验证记录见 [build262 记录](docs/releases/v0.2.1-rc.3-build262-screen-sense-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0530-dsh0.2.1-rc.5 / build261（终端粘贴长文本不再无响应）
+
+- `PtyTerminalFragment.inputAllowed()` 每个码点、`attachSelected()` 每次切换都在主线程全量计算运行时描述符（BackupJson 序列化 + 哈希），粘贴长文本时累计超过 5 秒触发 ANR，build253 起正式包同样受影响。
+- 新增纯逻辑 `util/ReadinessCache` 与 `ui/TerminalReadiness`：终端输入与切换只读缓存的就绪结论；维护进行中一律全量检查，维护任务代次 / 状态、就绪依赖文件 mtime/size 变化或超过 10 秒即重算。安装、维护与启动门禁仍走全量检查，门禁本身不放宽。
+- 验证范围：用户在 Android 16 平板测试包上真机确认粘贴长文本不再无响应；合入 build260 后发布会话复跑 `ReadinessCacheTest`、`TerminalInputContractTest` 等终端单测 213 项与源码门禁，并按固定格式化器补齐空行。版本码提升为 261（基于 build260）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build261 更新说明](docs/releases/build261-changes.zh.md)，验证记录见 [build261 记录](docs/releases/v0.2.1-rc.3-build261-pty-input-ready-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0500-dsh0.2.1-rc.5 / build260（运行配置页压缩为两张卡片与单行保存条）
+
+- 运行配置页原来五组卡片、整宽下拉与常驻提示占高过多，手机一屏只见 4 项。合并为「运行与网络」「显示与启动」两张卡片，行高 48dp；兼容选项默认折叠并标记已改；DNS 改用分段选择，网页内核改为副文案；局域网关闭时隐藏 HTTP 提示。
+- 底部保存条显示未保存项数并可撤销（`util/ConfigDraft` + 单测）；窗格宽 ≥720dp 两列，>1080dp 居中留白。保存流程、端口校验与环境任务门禁不变。build258 新增的「从桌面图标直接进入 Web」开关放在「显示与启动」卡片首行，仍即时保存、不计入未保存项。
+- 新增 25 条文案及译文（与 build256 诊断页重复的两条源文改为复用），hygiene 字节钉按合并结果重算。
+- 验证范围：分支内定向单测通过；合入 build259 后发布会话复跑 `ui.*` 与 `ConfigDraftTest`、源码门禁。未在真机安装，未跑 LayoutAuditInstrumentation。版本码提升为 260（基于 build259）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build260 更新说明](docs/releases/build260-changes.zh.md)，验证记录见 [build260 记录](docs/releases/v0.2.1-rc.3-build260-config-compact-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0430-dsh0.2.1-rc.5 / build259（启动页启动 / 停止 / 重启按钮改用矢量图标）
+
+- 启动页按钮原先把 ▶ ↻ □ 写进文案，字体回退不一致且读屏会念出符号。改为 MaterialButton 矢量图标：启动用实心三角，已运行时主操作「进入工作台」用右箭头，停止用实心圆角方块，重启复用插件页回环图标；文案去掉符号，十语种译文与哈希钉同步。
+- 宽窗口下任一按钮文字折行时单向切换为窄屏排列（主操作独占一行，停止 / 重启分在下方），避免平板竖屏带插图时「重启」被挤成竖排（`ui/LaunchFragment`）。
+- 验证范围：分支内 `ui.*` 单测 319 项通过，用户真机核对平板横屏未运行 / 已运行、日夜与竖屏上下排列；1.3 倍字体与手机短屏未单独真机核对。合入 build258 后发布会话复跑 `ui.*` 单测与源码门禁。版本码提升为 259（基于 build258）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build259 更新说明](docs/releases/build259-changes.zh.md)，验证记录见 [build259 记录](docs/releases/v0.2.1-rc.3-build259-launch-icons-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0400-dsh0.2.1-rc.5 / build258（开机加载页、桌面图标直进 Web、内置插件 dsh-launch-target）
+
+- 新增桌面图标启动目标：原生「设置 → 运行配置」与新内置系统插件 `dsh-launch-target`（Web 插件详情页）可选「主界面 / Web 界面」，默认主界面。值只保存在原生 App（3090 桥 `/app/entry-target`，仅接受 `main` / `web`），不进入备份；插件路由经 DSH `connection` 鉴权与同源检查，浏览器不接触桥 token。
+- 选择 Web 时，桌面图标先显示开机加载页（`BootScreen` / `BootSpinnerView` / `util/BootPalette`），入口门禁放行且鉴权就绪后进入 Web；等待鉴权不设强制时限，60 秒后只补提示。维护、启动恢复、原实例待确认、待处理的插件链接，以及通知 / 任务卡 / 旋转恢复都仍进入主界面（`util/EntryTarget`、`ui/DirectWebLaunch`）。
+- 签名名单写在 `dsh-runtime.bin` 补丁内，运行时归档按 npm 锁重建（SHA-256 2316d6d9…）；独立应急锁同步到同一字节以恢复包内共用，应急 runtimeId 随之变化，已装应急舱会按新身份重建。固定输入切到 `fixed-inputs-20261101`。
+- 验证范围：分支内定向单测与源码门禁通过，合入 build257 后重算运行时描述符并复跑定向单测；应急 DSH 启动 / 停止与本版正式包均未在真机验收。版本码提升为 258（基于 build257）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build258 更新说明](docs/releases/build258-changes.zh.md)，验证记录见 [build258 记录](docs/releases/v0.2.1-rc.3-build258-direct-web-launch-20261102.md)。
+
+## 0.2.1-rc.3-20261102.0200-dsh0.2.1-rc.5 / build257（proroot 兼容层修正 fcntl 错误码，跨进程文件锁恢复正常）
+
+- proroot v1.2.8 的 `libproroot-runtime.so` 导出的 `fcntl` 把 `proroot_raw_syscall6` 已返回的 -1 再取反写入 errno，所有失败都变成 EPERM：锁被占用（EAGAIN/EACCES）、EBADF、EINVAL 都丢失。JDK `libnio` 走这个旧符号，另一进程持锁时 `FileChannel.tryLock` 抛 Operation not permitted，Gradle 等跨进程锁失效。
+- 先于 vendor 预加载的 `libdsha-proroot-compat.so` 现导出 `fcntl`：`F_DUPFD` / `F_DUPFD_CLOEXEC` 仍经 `RTLD_NEXT` 交给 vendor（保留 drm/seat/netlink dup 跟踪），其余命令直接发内核系统调用并按 glibc 语义设置 errno。NDK 26.3.11579264 锁定构建，旧源码可逐字节复现旧产物；新增 `tools/test-proroot-fcntl.py`，用假 vendor 复现 EPERM 并核对代理在前的结果。proot 引擎不经过该库，不受影响；vendor 的 `mmap` / `mmap64` 有同类写法，本版未改。
+- 验证范围：测试包（`.test`）在一台 Android 16 平板上安装；选 proroot 后，新开终端会话的 bash 映射中有 `libproroot-runtime.so` 与 `libdsha-proroot-compat.so`，跨进程 `F_SETLK` 探针返回 0（锁冲突得到 EAGAIN/EACCES，而非 EPERM）；proroot 与默认 proot 下 dsh Web 均能启动并完成一轮对话。主机侧 `test-proroot-fcntl.py` 与源码卫生检查通过。正式包未在真机安装；版本码提升为 257（基于 build256）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build257 更新说明](docs/releases/build257-changes.zh.md)，验证记录见 [build257 记录](docs/releases/v0.2.1-rc.3-build257-proroot-fcntl-20261102.md)。
+
+## 0.2.1-rc.3-20261101.2330-dsh0.2.1-rc.5 / build256（数据与备份二级页重构：页内恢复向导、存储分布、保留副本筛选）
+
+- 恢复改为页内四步向导（选择文件 → 范围与选项 → 预检核验 → 确认恢复），原来的连续弹窗并入页内；因原有作业须先定范围才能预检，顺序为先选范围再核验。旧加密备份原密码、是否恢复 API Key、项目恢复位置放在第二步，密码不跨旋转保存、用完即清。确认按钮按一次即锁定；旋转后流程可续，重启后停在预检的作业重新显示确认步骤。底层仍是原预检、确认与取消作业，确认文案与错误提示不变。
+- 自定义导出改为五种范围单选并带说明，勾选包含 API Key 时提示导出文件不加密，选了「所选项目文件」但未选目录时不开始导出；救援与维护工具按数据救援、导出选项、保留数据、恢复与维护分组，各操作仍走原确认弹窗。一键备份健康状态抽到 `util/BackupHealth` 并配单测。
+- 存储与文件页加总占用和按类别分布条（`util/StorageUsage`，6 项单测），颜色取自带夜间版本的主题色；保留副本与旧环境页加全部 / 备份副本 / 旧环境 / 插件 / 其他筛选，筛选只影响显示、已勾选记录保留（`util/RetainedFilter`，4 项单测）；储存指南改为可展开问答，原文不变，读屏播报展开状态；自动备份页副本列表加小标题。
+- 验证范围：`assembleStandardDebug` 构建通过；全量单测 3057 项中 2 项失败，均为本机环境（Robolectric 不支持 aarch64、adb-wheels 夹具摘要不符）；31 条新文案十语种补齐，i18n、资源与格式检查通过，译文未经母语者核对。未在真机安装验证。版本码提升为 256（基于 build255）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- build255 未单独发布：`UpdateVersionPageTest` 断言「独立描边小按钮」，随包更新说明写的是「各自带描边的小按钮」，Source checks 与正式发布均失败（3087 项中 1 项）。修正提交 `fix(test)` 改断言以符合已写原文；255 的改动随本版提供，是否补发 255 由维护者另定。
+- 十语种更新说明见 [build256 更新说明](docs/releases/build256-changes.zh.md)，验证记录见 [build256 记录](docs/releases/v0.2.1-rc.3-build256-data-backup-20261101.md)。
+
 ## 0.2.1-rc.3-20261101.2300-dsh0.2.1-rc.5 / build255（运行环境维护页底部操作区：三个独立描边小按钮，主按钮禁用态可辨）
 
 - 运行环境维护页（`ExtractActivity`）底部操作区重排：去掉分隔线，「应急 DSH」「维护记录」等三个次要操作改为各自带描边、浅底和 12dp 圆角的小按钮（彼此 8dp 间距、点按高度 44dp），大字体或窄屏时图标换到文字上方；主按钮禁用态可辨，受限入口与文字链接重新排列。

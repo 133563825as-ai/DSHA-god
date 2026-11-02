@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.3-20261101.2300-dsh0.2.1-rc.5` / build255 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版重排运行环境维护页底部操作区：三个次要操作改为独立描边小按钮，失败与就绪检查未通过时分别强调对应入口，主按钮禁用态更易分辨。本机相关单测与静态门禁通过；未在真机安装验证，界面测试与 Lint 交由 CI。改动说明见 [build255 更新说明](releases/build255-changes.zh.md)，验证记录见 [build255 记录](releases/v0.2.1-rc.3-build255-maintenance-footer-20261101.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5` / build269 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为实验性 UI 更新：下载记录页重写为分段筛选、分组列表与详情二级页（平板双栏），传输引擎不变。本机单测与源码门禁通过；未经真机渲染，待统一视觉验收。改动说明见 [build269 更新说明](releases/build269-changes.zh.md)，验证记录见 [build269 记录](releases/v0.2.1-rc.3-build269-downloads-20261102.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
@@ -25,6 +25,7 @@
 | [Mod 身份与签名](mod-identity-and-signing.md) | DSH-A-Su 包名、证书、verifyPublishCertificate 与覆盖升级边界 |
 | [文案长度政策](i18n-length-policy.md) | 十种语言的短标签与长句处理边界 |
 | [首次引导重构设计](design/onboarding-20261031/README.md) | 4 步引导、部署胶囊、受限主界面、授权卡片、自适应布局与落地差异 |
+| [DSH Web 独立进程设计（待确认）](design/web-process-isolation-20261102/README.md) | `:web` 进程划分、IWebHost 接口、维护屏障跨进程协议、故障场景与分阶段计划；未实现 |
 
 ## 用户操作与开发入口
 

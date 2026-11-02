@@ -41,6 +41,8 @@ su的metadata发现、管理器授权和UID 0执行是不同事实；DSHA未在A
 
 原生 API Key 使用 Keystore 密文；暂时不可读不等于未配置，不能自动清密文或换解密密钥。桥使用 X-Token 请求头；兼容 shim 仅迁移已知本机 fetch 调用，不开放 CORS 或宣称兼容任意 HTTP 库。外部文件访问和默认备份排除机器令牌；用户选择的项目可能主动包含 .env 等内容，不静默删掉。
 
+`/app/net/resolve` 同样受 X-Token 门控，只把域名解析为数字地址：不接受 IP 字面量、localhost 或单标签名，不建立连接、不记录主机名，并发与时限有上限。guest 本就能经同一默认网络发出 DNS 查询，此端点不新增出网能力，但会让查询走 Android 私有 DNS／VPN 路径；`/app/net` 只读，不输出本机 IP、SSID 或运营商名。
+
 更新地址按 HTTPS、重定向和 APK 身份检查。Android 23 与已有用户 HTTP/LAN 功能仍需明文兼容配置，不能称应用拥有全局禁止明文的网络防火墙。日志对已知秘密和常见凭据格式脱敏；任意第三方输出不保证识别所有秘密。
 
 ## 备份与恢复
@@ -57,4 +59,4 @@ su的metadata发现、管理器授权和UID 0执行是不同事实；DSHA未在A
 
 ## 交付与验证限度
 
-正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）。构建不缺省发布口令，不替换为其它证书。build255 的 CI 只证明该 commit 在托管 runner 上的编译、门禁、单测、签名与发布流程；软件测试、APK/ELF/签名核验和手机覆盖安装是不同证据。本轮只有本机相关单测与静态门禁（见 [build255 记录](releases/v0.2.1-rc.3-build255-maintenance-footer-20261101.md)），测试包与正式包均未做设备安装或覆盖升级验证，不能继承旧报告的通过范围。
+正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）。构建不缺省发布口令，不替换为其它证书。build269 的 CI 只证明该 commit 在托管 runner 上的编译、门禁、单测、签名与发布流程；软件测试、APK/ELF/签名核验和手机覆盖安装是不同证据。本轮只有本机相关单测与静态门禁（见 [build269 记录](releases/v0.2.1-rc.3-build269-downloads-20261102.md)），测试包与正式包均未做设备安装或覆盖升级验证，不能继承旧报告的通过范围。

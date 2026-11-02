@@ -21,8 +21,11 @@ public final class BridgeRoutes {
     READ_FILE(false),
     HEALTH(false),
     UI(false),
+    SENSE(false),
     VSCREEN(false),
     DEVICE(false),
+    NET(false),
+    NET_RESOLVE(false),
     APPS(false),
     LAUNCH(false),
     CLIP(false),
@@ -39,6 +42,7 @@ public final class BridgeRoutes {
     SENSOR(false),
     TORCH(false),
     EXPORT(false),
+    ENTRY_TARGET(false),
     CONFIRM(true),
     EXEC(true),
     UNKNOWN(false);
@@ -75,6 +79,8 @@ public final class BridgeRoutes {
     add(routes, "/app/readfile", Route.READ_FILE);
     add(routes, "/health", Route.HEALTH);
     add(routes, "/app/device", Route.DEVICE);
+    add(routes, "/app/net", Route.NET);
+    add(routes, "/app/net/resolve", Route.NET_RESOLVE);
     add(routes, "/app/apps", Route.APPS);
     add(routes, "/app/launch", Route.LAUNCH);
     add(routes, "/app/clip", Route.CLIP);
@@ -91,6 +97,7 @@ public final class BridgeRoutes {
     add(routes, "/app/sensor", Route.SENSOR);
     add(routes, "/app/torch", Route.TORCH);
     add(routes, "/app/export", Route.EXPORT);
+    add(routes, "/app/entry-target", Route.ENTRY_TARGET);
     add(routes, "/confirm", Route.CONFIRM);
     add(routes, "/exec", Route.EXEC);
     return Collections.unmodifiableMap(routes);
@@ -105,6 +112,7 @@ public final class BridgeRoutes {
     Route exact = EXACT.get(path);
     if (exact != null) return exact;
     if (path.startsWith("/app/ui/")) return Route.UI;
+    if (path.equals("/app/sense/state")) return Route.SENSE;
     if (path.startsWith("/app/vscreen/")) return Route.VSCREEN;
     return Route.UNKNOWN;
   }

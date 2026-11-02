@@ -1,7 +1,7 @@
 # AGENTS.md — English contributor and agent guide
 
 
-> **Status**: `0.2.1-rc.3-20261101.2300-dsh0.2.1-rc.5` / build255 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
+> **Status**: `0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5` / build269 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
 > Main branch `main`; Android 11+ (API 30) / arm64; proot by default, proroot optional; bundled DSH 0.2.1-rc.5.
 > The island feature is folded into the regular package; the old low/GeckoView line and the separate island package are removed; signing uses the Mod-owned certificate (see BUILD.en.md).
 
@@ -108,7 +108,7 @@ Read the [security model](docs/en/security-model.md) first. Essential boundaries
 
 ### Versions and builds
 
-- **Current identity comes from `app/build.gradle`, `ci/release-identity.json` and [CHANGELOG.md](CHANGELOG.md).** build255 / DSHA revision `0.2.1-rc.3` (bundled DSH 0.2.1-rc.5) / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard. Earlier code/build numbers, the old `dsh.android.client` package and the historical E7E3 signature are records only, not current build or signing inputs.
+- **Current identity comes from `app/build.gradle`, `ci/release-identity.json` and [CHANGELOG.md](CHANGELOG.md).** build269 / DSHA revision `0.2.1-rc.3` (bundled DSH 0.2.1-rc.5) / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard. Earlier code/build numbers, the old `dsh.android.client` package and the historical E7E3 signature are records only, not current build or signing inputs.
 - `standard`: minSdk 30 (Android 11+), system WebView, arm64-v8a. It is the only build line; the task is `assembleStandardRelease`. The `low`/GeckoView line and legacy proot/loader are deleted (`assembleLowRelease` no longer exists), so **Android 10 and below are no longer supported**. The test variant only changes the package via `-Pdsha.sunsetTest=true` (`io.github.sunsetrne.dsha.test`).
 - Offline rootfs (`assets/offline-rootfs.bin`) is **not committed**; preparation scripts generate it. `offline-rootfs.layout=split-runtime-v1` marks separate Ubuntu and `dsh-runtime.bin` packages; builds check both digests.
 - `tools/dsh-runtime/package-lock.json` locks new dsh dependencies. `tools/prepare-runtime-descriptor.py` generates independent managed-contract descriptors; the APK version is diagnostic context only. Update managed trees within the same base while keeping personal data in place. **UI-only APK updates do not replace the environment; ordinary dsh updates do not increment the Ubuntu base.**
@@ -190,11 +190,24 @@ Read the [security model](docs/en/security-model.md) first. Essential boundaries
 Several sessions often change this repository on the same machine at once. Merging, releasing and cleanup follow each worktree's session declaration; never guess from idle time that a session has finished.
 
 - **One session, one worktree**: start each task with `git worktree add -b <type>/<name> .agents/worktrees/<type>/<name> origin/main`, based on the current `origin/main` (not on a side branch that has not reached main). Do not change code in the main checkout `/root/DSH-A-mod`; use it read-only. `/root/dsha-build` is the `local-ci` sync mirror, not a workspace.
-- **Declare on creation**: write `.ACTIVE-SESSION` at the worktree root. It is listed in the shared `.git/info/exclude`, so `git add -A` never commits it; do not declare through tracked files such as a design README. Keep the Chinese field keys from [AGENTS.md](AGENTS.md) so every session can read them: `状态` status, `分支` branch and base commit, `会话` full session id, `开始` start (UTC), `更新` last update (UTC), `内容` one-line task, `当前阶段` current stage, `占用文件` files owned, `合并` `不可合并` (not mergeable) or `可合并（已提交 <commit>，…）` (mergeable).
-- **Update every turn**: refresh `更新`, `当前阶段` and `合并` before each reply to the user. Waiting for user confirmation or device checks still counts as active.
+- **Declare on creation**: write `.ACTIVE-SESSION` at the worktree root. It is listed in the shared `.git/info/exclude`, so `git add -A` never commits it; do not declare through tracked files such as a design README. Keep the Chinese field keys from [AGENTS.md](AGENTS.md) so every session can read them: `状态` status, `分支` branch and base commit, `会话` full session id, `开始` start (UTC), `更新` last update (UTC), `内容` one-line task, `当前阶段` current stage, `占用文件` files owned, `合并` `不可合并` (not mergeable) or `可合并（已提交 <commit>，…）` (mergeable), `后台任务` background jobs with log and output paths (or `无`).
+- **Update every turn**: refresh `更新`, `当前阶段`, `合并` and `后台任务` before each reply to the user. Waiting for user confirmation or device checks still counts as active.
 - **Hand back when done**: when the task is finished (or abandoned), rename the file to `.SESSION-DONE`, set the status to ended, and state in `合并` whether it may be merged and at which commit; for abandoned work write "abandoned, do not merge".
-- **Merge / release sessions**: merge only worktrees whose `.SESSION-DONE` is marked mergeable. Leave any worktree with `.ACTIVE-SESSION`, or with no declaration, untouched and ask the user. After merging, append one line `已合入 buildNNN（<commit>）` to that `.SESSION-DONE` without changing other fields.
-- **List all declarations**: `for f in .agents/worktrees/*/.*SESSION* .agents/worktrees/*/*/.*SESSION* .ACTIVE-SESSION; do [ -f "$f" ] && { echo "== $f"; sed -n '1,9p' "$f"; }; done`
+- **Merge / release sessions**: merge only worktrees whose `.SESSION-DONE` is marked mergeable. Leave any worktree with `.ACTIVE-SESSION`, or with no declaration, untouched and ask the user. After merging, append one line `已合入 buildNNN（<commit>）` to that `.SESSION-DONE` without changing other fields — **only after the push succeeded and `git merge-base --is-ancestor <commit> origin/main` is true**; while queued, write `待推送 buildNNN（<commit>）`.
+- **List all declarations**: `for f in .agents/worktrees/*/.*SESSION* .agents/worktrees/*/*/.*SESSION* .ACTIVE-SESSION; do [ -f "$f" ] && { echo "== $f"; sed -n '1,10p' "$f"; }; done`
+
+### Shared on-device environment (DSH and every session live in one app process)
+
+- **Run Gradle only through `dsha-gradle`**: the `fcntl` exported by proroot v1.2.8 `libproroot-runtime.so` rewrites every failure to EPERM (lock contention should be EAGAIN). JDK `libnio` uses that symbol, so `FileChannel.tryLock` throws `IOException: Operation not permitted` while another JVM holds the lock and Gradle fails. The source fix lives in `tools/proroot-compat/stack-sysconf.c` (the compat proxy exports a correct `fcntl`) and takes effect once an APK containing it is installed. Inside a worktree use `dsha-gradle <tasks…>`, `dsha-gradle --status` and `dsha-gradle --stop`. It probes `fcntl` at start: unfixed means one global mutex with `--no-daemon`; fixed means up to 3 memory-admitted parallel slots sharing a warm daemon, queueing when memory is short. Gradle JVMs get `oom_score_adj` 900 so the kernel kills builds before dsh. Logs live in `/root/.cache/dsha-gradle-logs/`. Do not run `./gradlew` directly, do not create more `/root/.gradle-<task>` copies (about 1 GB each, plus another 2–3 GB JVM each), and never kill another session's Gradle.
+- **Memory is stability**: concurrent Gradle / Robolectric runs starve the dsh web process and interrupt every session at once. Run one build at a time; run the full unit suite only before merging.
+- **No release-package installs on this device**: installing `io.github.sunsetrne.dsha` stops the whole app (PACKAGE UPDATED) and with it DSH and every session. Sessions must not install or downgrade it; the `io.github.sunsetrne.dsha.test` package is fine. Before the user installs a release package, active sessions update their declarations.
+- **Keep local overrides outside the tree**: disable Conscrypt only through `-I /opt/dsha-x86/local-ci.init.gradle`; do not write temporary files such as `app/src/test/resources/robolectric.properties` into a worktree.
+- **Register long jobs**: background / `nohup` jobs log to a file listed under `后台任务`, with the exit code recorded when done. A DSH restart kills them.
+
+### Interruption and takeover
+
+- After a DSH crash or exhausted balance, leave the worktree and declaration as they are. A taking-over session sets `会话` to its own id and notes `接手 <old id>（reason）`; one owner per worktree at a time.
+- First step after takeover is read-only: `git status`, the tail of each registered job log and its outputs, leftover temporary files. Commands with UNKNOWN outcome (build, push, release dispatch) are checked, **never replayed automatically**; check `origin/main` and existing tags before any push or dispatch.
 
 ## Coding conventions
 

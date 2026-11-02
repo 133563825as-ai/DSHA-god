@@ -426,6 +426,31 @@
       "asset": "builtin-plugins/dsh-web-mobile/lib/file-transfer.js",
       "target": "root/dsha-web-mobile/lib/file-transfer.js",
       "executable": false
+    },
+    {
+      "asset": "builtin-plugins/dsh-launch-target/package.json",
+      "target": "root/dsha-launch-target/package.json",
+      "executable": false
+    },
+    {
+      "asset": "builtin-plugins/dsh-launch-target/cordis.patch.yml",
+      "target": "root/dsha-launch-target/cordis.patch.yml",
+      "executable": false
+    },
+    {
+      "asset": "builtin-plugins/dsh-launch-target/lib/index.js",
+      "target": "root/dsha-launch-target/lib/index.js",
+      "executable": false
+    },
+    {
+      "asset": "builtin-plugins/dsh-launch-target/lib/bridge-port.cjs",
+      "target": "root/dsha-launch-target/lib/bridge-port.cjs",
+      "executable": false
+    },
+    {
+      "asset": "builtin-plugins/dsh-launch-target/lib/client.js",
+      "target": "root/dsha-launch-target/lib/client.js",
+      "executable": false
     }
   ],
   "assetFiles": [
@@ -536,9 +561,13 @@
     "app/src/main/java/com/deepseekharness/app/plugins"
   ],
   "launcherSources": [
+    "util/ComposeGate.java",
     "util/IsolatedCommand.java",
+    "util/OverlayPlacement.java",
+    "util/OverlayTouchGuard.java",
     "util/PluginDownloadSource.java",
     "backup/RuntimeTrialRecords.java",
+    "util/TurnScreenGrants.java",
     "util/WebProcSel.java",
     "util/WebPidIdentity.java",
     "util/WebStartProtection.java",
@@ -693,6 +722,10 @@
     "util/ScreenObservationLedger.java",
     "util/ScreenPixelFingerprint.java",
     "util/ScreenRequestExecutor.java",
+    "util/ScreenSenseCodec.java",
+    "util/ScreenSenseMetadata.java",
+    "util/ScreenSenseState.java",
+    "util/ScreenSenseStateStore.java",
     "util/ScreenSerialExecutor.java",
     "util/ScreenWindowRegion.java",
     "util/VirtualScreenCoreIdentity.java",

@@ -2497,8 +2497,8 @@
   },
   {
     "id": "x1970328",
-    "zh": "▶  进入工作台",
-    "en": "▶  Open workspace",
+    "zh": "进入工作台",
+    "en": "Open workspace",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -7316,8 +7316,8 @@
   },
   {
     "id": "x1970977",
-    "zh": "DSHA 3090 桥端点清单（BRIDGE_PROTOCOL=%s）\n凭据由宿主写入 /root/.dsh/.bridge_headers；使用 curl -H @/root/.dsh/.bridge_headers，不把 token 写进 URL 或命令参数。\n带中文/空格的参数一律用 -G --data-urlencode，别手写 URL 编码。\n\n== 屏幕操作（无障碍服务，不需要 ADB/Shizuku）==\n坐标触控仅限物理display 0：先 /app/ui/screenshot，返回 coordinatesAvailable:true 且含 observationId 才可用；dump/tree不签发像素凭据。ID限最新截图、30秒、一次手势；画面/窗口/遮挡/代次变化即拒绝。\n文字/节点动作返回 SCREEN_ACTION_SUBMITTED、actionAccepted:true、effectVerified:false 只代表Android接受动作，不证明WebView DOM已变；须重新观察，后续坐标操作须显式取新截图，禁止隐式回退或重放UNKNOWN。\n读屏  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → 每行语义节点附bounds；boundsHaveArea:false没有可触摸面积，不能取中心点触控\n点按  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=设置\" -H @/root/.dsh/.bridge_headers\n      → 优先按文字点：控件位置随滚动/动画变，文字不变。坐标触控须先截图取得 observationId（dump不签发），再用 ?observationId=截图返回的ID&x=&y=\n语义滚动 先 /app/ui/tree 或 dump 取 treeId、nodeId 和 supportedActions；/app/ui/node?treeId=返回的树ID&nodeId=返回的节点ID&action=scroll_forward（或 scroll_backward）。只调用节点列出的动作，一次请求后取新树；无障碍接受不代表实际已滚动，不自动改用滑动或重放未知结果。\n输入  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=内容\" -H @/root/.dsh/.bridge_headers\n      → 填到当前焦点框；没有焦点先 tap 一下输入框\n按键  /app/ui/key?name=back  （back/home/recents/notifications/quicksettings/lock）\n长按  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=long_press&ms=600\n双击  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=double_tap（同一Gesture/一次许可）\n当前只支持单指触控；多指/缩放不支持。\n滑动  /app/ui/swipe?observationId=截图返回的ID&x1=500&y1=1500&x2=500&y2=500&ms=300\n截屏  /app/ui/screenshot   → 存 PNG 到应用截图目录并返回路径（不回 base64）\n节奏：每次点按/输入后先 dump 再决定下一步，别凭记忆连点。\n\n== 独立虚拟屏（Android 11+） ==\n/app/vscreen/create?orientation=portrait  创建虚拟屏；也可选 landscape\n/app/vscreen/status  查询 coreInstance、generation、displayId 和状态\n$CORE 取自 create/status 返回的 coreInstance；$GEN 取自当前 see 或 tree 的 generation，$FRAME 取自该 see 的 frameSeq，$NODE 取自该 tree 的 nodeId。不要混用不同 Core 或不同观察的身份。\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  启动已安装应用；此端点不接受 generation\n/app/vscreen/see?coreInstance=$CORE  获取新画面及 generation、frameSeq\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key 需要 coreInstance、generation 和最新 see 的 frameSeq；坐标按显示尺寸换算。\n/app/vscreen/tree?coreInstance=$CORE  获取当前树及 nodeId、generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  语义节点动作；不要求 frameSeq，使用新树中的节点\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  读取当前输入框；edit/submit 还需 editorId，edit 需 text；均不要求 frameSeq\nanchor 使用原 see 的 coreInstance、generation、frameSeq、observationId 和全尺寸整数 x/y；anchored-click 使用同一组身份及 anchorId。\n/app/vscreen/close?coreInstance=$CORE  关闭对应 Core；无运行中或待清理的 Core 时可省略身份\n应用启动或动作后重新观察；UNKNOWN 不自动重放。\n\n== 设备与应用 ==\n/app/device                     机型/系统/电量/网络/屏幕/存储/内存\n/app/apps                       全部已装应用，分用户应用与系统应用；可加 q/limit/user=1 筛选显示\n/app/launch?pkg=com.tencent.mm  启动应用\n/app/clip                       读剪贴板（需 App 在前台，系统限制）\n/app/clip + text=…              写剪贴板\n/app/readfile?path=/…          读取容器路径或当前用户共享存储的目录或文本（最多 256 KiB）；受 Android 权限限制，凭据区及跨域符号链接不可读；format=image 返回 8 MiB 内静态 PNG/JPEG/WebP 数据，动图及 GIF 不支持；/proc/self/status 单独提供当前桥进程诊断\n设备文件写入请走下方受保护的设备 shell；普通 Download 文件可操作，DCIM/Pictures/Android/data/obb 只读。\n\n== 与用户交互 ==\n/app/ask?options=继续|取消 + q=…  弹窗阻塞等回答（最多三个选项）\n/app/notify?title=… + text=…      通知栏\n/app/toast + text=…               App 内提示\n/app/vibrate?ms=300               震动（长任务跑完叫醒用户）\n/app/share（text= 或 path=）      分享到其它应用\n/app/open?url=https://…           打开链接\n/app/export?path=/root/report.md  把产物交给用户 → 落 Download/DSHA；凭据区不可导出\n建议：需要用户拍板用 /app/ask 而不是干等；长任务结束用 notify 或 vibrate 叫人；\n产出报告用 /app/export，别只留在容器里。\n\n== 传感器与位置（默认关闭，需用户在配置页勾选）==\n/app/location（加 fresh=1 强制重新定位，可能等数秒）\n/app/sensors 列表 · /app/sensor?name=light 读值\n（light 环境光 lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation 姿态四元数 / steps 开机后步数）\n/app/torch?on=1 手电\n这三类返回 DISABLED（用户没开该能力）或 NO_PERMISSION（没授系统权限）时，\n照原话告诉用户去哪开，不要重试 —— 重试不会让开关自己变。\n\n== 元信息 ==\n/app/version                          桥协议版本 + App 版本（特性检测用）\n/app/help                             本清单\n\n== 插件状态 ==\n/app/plugins                          读回上次上报的加载状态\n/app/plugins?loaded=a,b&failed=c      上报（插件侧用）\n\n== 设备 shell（自动选择 root / Shizuku / ADB）==\n/root/dsh-bin/adb-shell \"命令\"        用 id 核验实际身份\n包装命令不存在时：python3 /root/.dsh/adb-shell.py \"命令\"\n短信只允许当前 Android 用户的 content query --uri content://sms，默认关闭；设置 → 设备能力授权可开启或撤销。\n短信预授权可能返回正文及验证码；不允许发送、修改或删除，Android 仍可拒绝访问。Shizuku 不执行此敏感查询。\n仅执行已识别的单条命令；允许读取各目录和明确路径的普通文件操作。禁止脚本、管道、重定向、未知命令。\n根目录及系统目录只读；禁止块设备/分区、SELinux、系统设置写入、挂载和刷机操作。\n结束进程前自动刷新全量用户/系统应用清单；普通用户应用直接结束，系统应用与关键进程拦截。\n按完整包名调用 am force-stop / killall / pkill -x；kill 正数 PID 会核对 UID 后按包名停止。\n策略拦截返回 [POLICY_BLOCKED]/126；root 和旧确认开关不能放行。不可用其它解释器或 UI 绕过。\n报连不上/未配对：先看上面的 App 层接口能不能办成；确实必须 shell 才请用户到\n设置 → 设备能力授权中连接可用通道，别反复试同一条命令。\n不要用 /root/dsh-bin/adb 或裸 adb —— 那是守卫包装脚本，会失败。\n\n== root（--su）==\n已启用并经 root 管理器授权的 su 可直接执行，无需 ADB 配对；其次使用 Shizuku，再使用 ADB。\n--su 仅在明确需要 root 时使用，须先在设备能力授权页允许；同一设备保护策略始终生效。\n[EXECUTION_UNKNOWN] 表示命令可能已执行，先核对实际状态，不能切换通道或自动重放。\n",
-    "en": "DSHA 3090 bridge endpoints (BRIDGE_PROTOCOL=%s)\nThe host writes credentials to /root/.dsh/.bridge_headers. Use curl -H @/root/.dsh/.bridge_headers; keep tokens out of URLs and command arguments.\nFor parameters containing Chinese text or spaces, use -G --data-urlencode instead of encoding the URL manually.\n\n== Screen control (accessibility service; no ADB/Shizuku required) ==\nCoordinate gestures are limited to physical display 0. First call /app/ui/screenshot; coordinatesAvailable:true and observationId are required. dump/tree do not issue pixel credentials.\nThe ID applies only to the latest screenshot, within 30 seconds, and one gesture. Changes to the screen, window, occlusion or generation cause rejection.\nText/node actions return SCREEN_ACTION_SUBMITTED, actionAccepted:true, effectVerified:false only to mean Android accepted the action; this does not prove a WebView DOM change. Observe again. Before later coordinate actions, explicitly take a new screenshot. Never fall back implicitly or replay UNKNOWN results.\nRead screen  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → Each semantic node includes bounds. boundsHaveArea:false means there is no touchable area; do not tap its center.\nTap  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=Settings\" -H @/root/.dsh/.bridge_headers\n      → Prefer tapping by text: positions change with scrolling and animation. For coordinate gestures, first obtain observationId from a screenshot (dump does not issue one), then use ?observationId=ID_FROM_SCREENSHOT&x=&y=\nSemantic scroll  First call /app/ui/tree or dump for treeId, nodeId and supportedActions; use /app/ui/node?treeId=TREE_ID&nodeId=NODE_ID&action=scroll_forward (or scroll_backward). Invoke only actions listed by the node, then fetch a new tree. Accessibility acceptance does not verify that scrolling occurred; do not switch to swiping or replay unknown results automatically.\nInput  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=content\" -H @/root/.dsh/.bridge_headers\n      → Types into the focused field. Tap an input field first if none is focused.\nKey  /app/ui/key?name=back  (back/home/recents/notifications/quicksettings/lock)\nLong press  /app/ui/tap?observationId=ID_FROM_SCREENSHOT&x=540&y=1200&gesture=long_press&ms=600\nDouble tap  /app/ui/tap?observationId=ID_FROM_SCREENSHOT&x=540&y=1200&gesture=double_tap (one Gesture / one permission)\nOnly single-finger gestures are supported; multi-touch and pinch are unavailable.\nSwipe  /app/ui/swipe?observationId=ID_FROM_SCREENSHOT&x1=500&y1=1500&x2=500&y2=500&ms=300\nScreenshot  /app/ui/screenshot   → save a PNG in the app's screenshot folder and return its path (not base64)\nAfter each tap or input, dump the screen again before deciding the next step. Do not tap repeatedly from memory.\n\n== Independent virtual display (Android 11+) ==\n/app/vscreen/create?orientation=portrait  Create a virtual display; landscape is also supported\n/app/vscreen/status  Read coreInstance, generation, displayId and status\n$CORE is the coreInstance returned by create/status; $GEN is the generation from the current see or tree, $FRAME is the frameSeq from that see, and $NODE is the nodeId from that tree. Do not mix identities from different Cores or observations.\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  Launch an installed application; this endpoint does not accept generation\n/app/vscreen/see?coreInstance=$CORE  Get a new image, generation and frameSeq\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key require coreInstance, generation and the latest see frameSeq; convert coordinates to display size.\n/app/vscreen/tree?coreInstance=$CORE  Get the current tree, nodeId and generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  Semantic node action; frameSeq is not required; use a fresh tree node\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  Read the current editor; edit/submit also require editorId, and edit requires text; none requires frameSeq\nanchor uses the original see coreInstance, generation, frameSeq, observationId and full-size integer x/y; anchored-click uses the same identity and anchorId.\n/app/vscreen/close?coreInstance=$CORE  Close the corresponding Core; identity may be omitted only when no Core is running or pending cleanup\nObserve again after an app launch or action; never replay UNKNOWN automatically.\n\n== Device & apps ==\n/app/device                     Model / Android / battery / network / display / storage / memory\n/app/apps                       Installed apps, separated into user and system apps; filter with q/limit/user=1\n/app/launch?pkg=com.tencent.mm  Launch app\n/app/clip                       Read clipboard (app must be in foreground; Android restriction)\n/app/clip + text=…              Write clipboard\n/app/readfile?path=/…          Read a directory or text under container paths or the current user's shared storage (up to 256 KiB); subject to Android permissions, credential directories and cross-domain symlinks cannot be read; format=image returns static PNG/JPEG/WebP data up to 8 MiB, animated images and GIF are not supported; /proc/self/status separately provides current bridge process diagnostics\nUse the protected device shell below for device file writes. Ordinary Download files are writable; DCIM/Pictures/Android/data/obb remain read-only.\n\n== User interaction ==\n/app/ask?options=Continue|Cancel + q=…  Ask in a blocking dialog (up to three options)\n/app/notify?title=… + text=…      Notification\n/app/toast + text=…               In-app toast\n/app/vibrate?ms=300               Vibrate (notify the user after a long task)\n/app/share (text= or path=)      Share to another app\n/app/open?url=https://…           Open URL\n/app/export?path=/root/report.md  Export an artifact to Download/DSHA; credential directories cannot be exported\nUse /app/ask when a decision is needed, and notify or vibrate when a long task finishes.\nUse /app/export to deliver reports; do not leave them only in the container.\n\n== Sensors & location (off by default; enable in Configuration) ==\n/app/location (fresh=1 forces a new fix; may take a few seconds)\n/app/sensors lists sensors · /app/sensor?name=light reads a value\n(light: ambient lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation quaternion / steps since boot)\n/app/torch?on=1 Flashlight\nWhen these APIs return DISABLED (feature off) or NO_PERMISSION (system permission missing),\nTell the user exactly where to enable it. Do not retry; retrying cannot turn the setting on.\n\n== Metadata ==\n/app/version                          Bridge protocol + app version (feature detection)\n/app/help                             This endpoint list\n\n== Plugin status ==\n/app/plugins                          Read last reported loading status\n/app/plugins?loaded=a,b&failed=c      Report status (for plugins)\n\n== Device shell (selects root / Shizuku / ADB automatically) ==\n/root/dsh-bin/adb-shell \"command\"        Use id to verify the actual identity\nIf the wrapper is missing: python3 /root/.dsh/adb-shell.py \"command\"\nSMS queries only allow content query --uri content://sms for the current Android user. Off by default; enable or revoke in Device permissions.\nPreauthorized SMS queries may return message bodies and verification codes. Sending, editing and deleting are blocked; Android may still deny access. Shizuku does not run this sensitive query.\nOnly recognized single commands are allowed, including directory reads and ordinary file operations on explicit paths. Scripts, pipes, redirects and unknown commands are blocked.\nRoot and system directories are read-only. Block devices/partitions, SELinux changes, system setting writes, mounts and firmware flashing are blocked.\nRefresh the complete user/system app list before stopping processes. Ordinary user apps may be stopped; system apps and essential processes are protected.\nUse the full package name with am force-stop / killall / pkill -x. A positive PID with kill is checked against its UID before stopping by package name.\nPolicy blocks return [POLICY_BLOCKED]/126. Root and legacy confirmation switches cannot override them. Do not use another interpreter or the UI to bypass a block.\nIf a connection or pairing error occurs, first check whether the app-level APIs above can perform the task. Only if a shell is essential, ask the user to open\nSettings → Device permissions to connect an available channel. Do not keep retrying the same command.\nDo not use /root/dsh-bin/adb or bare adb; those are guarded wrappers and will fail.\n\n== root（--su）==\nWhen su is enabled and authorized by the root manager, commands run directly without ADB pairing. Otherwise, Shizuku is used before ADB.\nUse --su only when root is explicitly required and enabled in Device permissions. The same device protection policy always applies.\n[EXECUTION_UNKNOWN] means the command may have executed. Verify the actual state before proceeding; do not switch connections or replay automatically.\n",
+    "zh": "DSHA 3090 桥端点清单（BRIDGE_PROTOCOL=%s）\n凭据由宿主写入 /root/.dsh/.bridge_headers；使用 curl -H @/root/.dsh/.bridge_headers，不把 token 写进 URL 或命令参数。\n带中文/空格的参数一律用 -G --data-urlencode，别手写 URL 编码。\n\n== 屏幕操作（无障碍服务，不需要 ADB/Shizuku）==\n坐标触控仅限物理display 0：先 /app/ui/screenshot，返回 coordinatesAvailable:true 且含 observationId 才可用；dump/tree不签发像素凭据。ID限最新截图、30秒、一次手势；画面/窗口/遮挡/代次变化即拒绝。\n文字/节点动作返回 SCREEN_ACTION_SUBMITTED、actionAccepted:true、effectVerified:false 只代表Android接受动作，不证明WebView DOM已变；须重新观察，后续坐标操作须显式取新截图，禁止隐式回退或重放UNKNOWN。\n读屏  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → 每行语义节点附bounds；boundsHaveArea:false没有可触摸面积，不能取中心点触控\n点按  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=设置\" -H @/root/.dsh/.bridge_headers\n      → 优先按文字点：控件位置随滚动/动画变，文字不变。坐标触控须先截图取得 observationId（dump不签发），再用 ?observationId=截图返回的ID&x=&y=\n语义滚动 先 /app/ui/tree 或 dump 取 treeId、nodeId 和 supportedActions；/app/ui/node?treeId=返回的树ID&nodeId=返回的节点ID&action=scroll_forward（或 scroll_backward）。只调用节点列出的动作，一次请求后取新树；无障碍接受不代表实际已滚动，不自动改用滑动或重放未知结果。\n输入  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=内容\" -H @/root/.dsh/.bridge_headers\n      → 填到当前焦点框；没有焦点先 tap 一下输入框\n按键  /app/ui/key?name=back  （back/home/recents/notifications/quicksettings/lock）\n长按  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=long_press&ms=600\n双击  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=double_tap（同一Gesture/一次许可）\n当前只支持单指触控；多指/缩放不支持。\n滑动  /app/ui/swipe?observationId=截图返回的ID&x1=500&y1=1500&x2=500&y2=500&ms=300\n截屏  /app/ui/screenshot   → 存 PNG 到应用截图目录并返回路径（不回 base64）\n节奏：每次点按/输入后先 dump 再决定下一步，别凭记忆连点。\n\n== 独立虚拟屏（Android 11+） ==\n/app/vscreen/create?orientation=portrait  创建虚拟屏；也可选 landscape\n/app/vscreen/status  查询 coreInstance、generation、displayId 和状态\n$CORE 取自 create/status 返回的 coreInstance；$GEN 取自当前 see 或 tree 的 generation，$FRAME 取自该 see 的 frameSeq，$NODE 取自该 tree 的 nodeId。不要混用不同 Core 或不同观察的身份。\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  启动已安装应用；此端点不接受 generation\n/app/vscreen/see?coreInstance=$CORE  获取新画面及 generation、frameSeq\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key 需要 coreInstance、generation 和最新 see 的 frameSeq；坐标按显示尺寸换算。\n/app/vscreen/tree?coreInstance=$CORE  获取当前树及 nodeId、generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  语义节点动作；不要求 frameSeq，使用新树中的节点\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  读取当前输入框；edit/submit 还需 editorId，edit 需 text；均不要求 frameSeq\nanchor 使用原 see 的 coreInstance、generation、frameSeq、observationId 和全尺寸整数 x/y；anchored-click 使用同一组身份及 anchorId。\n/app/vscreen/close?coreInstance=$CORE  关闭对应 Core；无运行中或待清理的 Core 时可省略身份\n应用启动或动作后重新观察；UNKNOWN 不自动重放。\n\n== 设备与应用 ==\n/app/device                     机型/系统/电量/网络/屏幕/存储/内存\n/app/apps                       全部已装应用，分用户应用与系统应用；可加 q/limit/user=1 筛选显示\n/app/launch?pkg=com.tencent.mm  启动应用\n/app/clip                       读剪贴板（需 App 在前台，系统限制）\n/app/clip + text=…              写剪贴板\n/app/readfile?path=/…          读取容器路径或当前用户共享存储的目录或文本（最多 256 KiB）；受 Android 权限限制，凭据区及跨域符号链接不可读；format=image 返回 8 MiB 内静态 PNG/JPEG/WebP 数据，动图及 GIF 不支持；/proc/self/status 单独提供当前桥进程诊断\n设备文件写入请走下方受保护的设备 shell；普通 Download 文件可操作，DCIM/Pictures/Android/data/obb 只读。\n\n== 与用户交互 ==\n/app/ask?options=继续|取消 + q=…  弹窗阻塞等回答（最多三个选项）\n/app/notify?title=… + text=…      通知栏\n/app/toast + text=…               App 内提示\n/app/vibrate?ms=300               震动（长任务跑完叫醒用户）\n/app/share（text= 或 path=）      分享到其它应用\n/app/open?url=https://…           打开链接\n/app/export?path=/root/report.md  把产物交给用户 → 落 Download/DSHA；凭据区不可导出\n建议：需要用户拍板用 /app/ask 而不是干等；长任务结束用 notify 或 vibrate 叫人；\n产出报告用 /app/export，别只留在容器里。\n\n== 传感器与位置（默认关闭，需用户在配置页勾选）==\n/app/location（加 fresh=1 强制重新定位，可能等数秒）\n/app/sensors 列表 · /app/sensor?name=light 读值\n（light 环境光 lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation 姿态四元数 / steps 开机后步数）\n/app/torch?on=1 手电\n这三类返回 DISABLED（用户没开该能力）或 NO_PERMISSION（没授系统权限）时，\n照原话告诉用户去哪开，不要重试 —— 重试不会让开关自己变。\n\n== 元信息 ==\n/app/version                          桥协议版本 + App 版本（特性检测用）\n/app/help                             本清单\n/app/entry-target                     读取桌面图标启动后进入的页面；加 set=main 或 set=web 修改（仅影响下次从桌面图标启动）\n\n== 插件状态 ==\n/app/plugins                          读回上次上报的加载状态\n/app/plugins?loaded=a,b&failed=c      上报（插件侧用）\n\n== 设备 shell（自动选择 root / Shizuku / ADB）==\n/root/dsh-bin/adb-shell \"命令\"        用 id 核验实际身份\n包装命令不存在时：python3 /root/.dsh/adb-shell.py \"命令\"\n短信只允许当前 Android 用户的 content query --uri content://sms，默认关闭；设置 → 设备能力授权可开启或撤销。\n短信预授权可能返回正文及验证码；不允许发送、修改或删除，Android 仍可拒绝访问。Shizuku 不执行此敏感查询。\n仅执行已识别的单条命令；允许读取各目录和明确路径的普通文件操作。禁止脚本、管道、重定向、未知命令。\n根目录及系统目录只读；禁止块设备/分区、SELinux、系统设置写入、挂载和刷机操作。\n结束进程前自动刷新全量用户/系统应用清单；普通用户应用直接结束，系统应用与关键进程拦截。\n按完整包名调用 am force-stop / killall / pkill -x；kill 正数 PID 会核对 UID 后按包名停止。\n策略拦截返回 [POLICY_BLOCKED]/126；root 和旧确认开关不能放行。不可用其它解释器或 UI 绕过。\n报连不上/未配对：先看上面的 App 层接口能不能办成；确实必须 shell 才请用户到\n设置 → 设备能力授权中连接可用通道，别反复试同一条命令。\n不要用 /root/dsh-bin/adb 或裸 adb —— 那是守卫包装脚本，会失败。\n\n== root（--su）==\n已启用并经 root 管理器授权的 su 可直接执行，无需 ADB 配对；其次使用 Shizuku，再使用 ADB。\n--su 仅在明确需要 root 时使用，须先在设备能力授权页允许；同一设备保护策略始终生效。\n[EXECUTION_UNKNOWN] 表示命令可能已执行，先核对实际状态，不能切换通道或自动重放。\n",
+    "en": "DSHA 3090 bridge endpoints (BRIDGE_PROTOCOL=%s)\nThe host writes credentials to /root/.dsh/.bridge_headers. Use curl -H @/root/.dsh/.bridge_headers; keep tokens out of URLs and command arguments.\nFor parameters containing Chinese text or spaces, use -G --data-urlencode instead of encoding the URL manually.\n\n== Screen control (accessibility service; no ADB/Shizuku required) ==\nCoordinate gestures are limited to physical display 0. First call /app/ui/screenshot; coordinatesAvailable:true and observationId are required. dump/tree do not issue pixel credentials.\nThe ID applies only to the latest screenshot, within 30 seconds, and one gesture. Changes to the screen, window, occlusion or generation cause rejection.\nText/node actions return SCREEN_ACTION_SUBMITTED, actionAccepted:true, effectVerified:false only to mean Android accepted the action; this does not prove a WebView DOM change. Observe again. Before later coordinate actions, explicitly take a new screenshot. Never fall back implicitly or replay UNKNOWN results.\nRead screen  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → Each semantic node includes bounds. boundsHaveArea:false means there is no touchable area; do not tap its center.\nTap  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=Settings\" -H @/root/.dsh/.bridge_headers\n      → Prefer tapping by text: positions change with scrolling and animation. For coordinate gestures, first obtain observationId from a screenshot (dump does not issue one), then use ?observationId=ID_FROM_SCREENSHOT&x=&y=\nSemantic scroll  First call /app/ui/tree or dump for treeId, nodeId and supportedActions; use /app/ui/node?treeId=TREE_ID&nodeId=NODE_ID&action=scroll_forward (or scroll_backward). Invoke only actions listed by the node, then fetch a new tree. Accessibility acceptance does not verify that scrolling occurred; do not switch to swiping or replay unknown results automatically.\nInput  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=content\" -H @/root/.dsh/.bridge_headers\n      → Types into the focused field. Tap an input field first if none is focused.\nKey  /app/ui/key?name=back  (back/home/recents/notifications/quicksettings/lock)\nLong press  /app/ui/tap?observationId=ID_FROM_SCREENSHOT&x=540&y=1200&gesture=long_press&ms=600\nDouble tap  /app/ui/tap?observationId=ID_FROM_SCREENSHOT&x=540&y=1200&gesture=double_tap (one Gesture / one permission)\nOnly single-finger gestures are supported; multi-touch and pinch are unavailable.\nSwipe  /app/ui/swipe?observationId=ID_FROM_SCREENSHOT&x1=500&y1=1500&x2=500&y2=500&ms=300\nScreenshot  /app/ui/screenshot   → save a PNG in the app's screenshot folder and return its path (not base64)\nAfter each tap or input, dump the screen again before deciding the next step. Do not tap repeatedly from memory.\n\n== Independent virtual display (Android 11+) ==\n/app/vscreen/create?orientation=portrait  Create a virtual display; landscape is also supported\n/app/vscreen/status  Read coreInstance, generation, displayId and status\n$CORE is the coreInstance returned by create/status; $GEN is the generation from the current see or tree, $FRAME is the frameSeq from that see, and $NODE is the nodeId from that tree. Do not mix identities from different Cores or observations.\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  Launch an installed application; this endpoint does not accept generation\n/app/vscreen/see?coreInstance=$CORE  Get a new image, generation and frameSeq\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key require coreInstance, generation and the latest see frameSeq; convert coordinates to display size.\n/app/vscreen/tree?coreInstance=$CORE  Get the current tree, nodeId and generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  Semantic node action; frameSeq is not required; use a fresh tree node\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  Read the current editor; edit/submit also require editorId, and edit requires text; none requires frameSeq\nanchor uses the original see coreInstance, generation, frameSeq, observationId and full-size integer x/y; anchored-click uses the same identity and anchorId.\n/app/vscreen/close?coreInstance=$CORE  Close the corresponding Core; identity may be omitted only when no Core is running or pending cleanup\nObserve again after an app launch or action; never replay UNKNOWN automatically.\n\n== Device & apps ==\n/app/device                     Model / Android / battery / network / display / storage / memory\n/app/apps                       Installed apps, separated into user and system apps; filter with q/limit/user=1\n/app/launch?pkg=com.tencent.mm  Launch app\n/app/clip                       Read clipboard (app must be in foreground; Android restriction)\n/app/clip + text=…              Write clipboard\n/app/readfile?path=/…          Read a directory or text under container paths or the current user's shared storage (up to 256 KiB); subject to Android permissions, credential directories and cross-domain symlinks cannot be read; format=image returns static PNG/JPEG/WebP data up to 8 MiB, animated images and GIF are not supported; /proc/self/status separately provides current bridge process diagnostics\nUse the protected device shell below for device file writes. Ordinary Download files are writable; DCIM/Pictures/Android/data/obb remain read-only.\n\n== User interaction ==\n/app/ask?options=Continue|Cancel + q=…  Ask in a blocking dialog (up to three options)\n/app/notify?title=… + text=…      Notification\n/app/toast + text=…               In-app toast\n/app/vibrate?ms=300               Vibrate (notify the user after a long task)\n/app/share (text= or path=)      Share to another app\n/app/open?url=https://…           Open URL\n/app/export?path=/root/report.md  Export an artifact to Download/DSHA; credential directories cannot be exported\nUse /app/ask when a decision is needed, and notify or vibrate when a long task finishes.\nUse /app/export to deliver reports; do not leave them only in the container.\n\n== Sensors & location (off by default; enable in Configuration) ==\n/app/location (fresh=1 forces a new fix; may take a few seconds)\n/app/sensors lists sensors · /app/sensor?name=light reads a value\n(light: ambient lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation quaternion / steps since boot)\n/app/torch?on=1 Flashlight\nWhen these APIs return DISABLED (feature off) or NO_PERMISSION (system permission missing),\nTell the user exactly where to enable it. Do not retry; retrying cannot turn the setting on.\n\n== Metadata ==\n/app/version                          Bridge protocol + app version (feature detection)\n/app/help                             This endpoint list\n/app/entry-target                     Read which page the app icon opens; add set=main or set=web to change it (affects only the next launch from the app icon)\n\n== Plugin status ==\n/app/plugins                          Read last reported loading status\n/app/plugins?loaded=a,b&failed=c      Report status (for plugins)\n\n== Device shell (selects root / Shizuku / ADB automatically) ==\n/root/dsh-bin/adb-shell \"command\"        Use id to verify the actual identity\nIf the wrapper is missing: python3 /root/.dsh/adb-shell.py \"command\"\nSMS queries only allow content query --uri content://sms for the current Android user. Off by default; enable or revoke in Device permissions.\nPreauthorized SMS queries may return message bodies and verification codes. Sending, editing and deleting are blocked; Android may still deny access. Shizuku does not run this sensitive query.\nOnly recognized single commands are allowed, including directory reads and ordinary file operations on explicit paths. Scripts, pipes, redirects and unknown commands are blocked.\nRoot and system directories are read-only. Block devices/partitions, SELinux changes, system setting writes, mounts and firmware flashing are blocked.\nRefresh the complete user/system app list before stopping processes. Ordinary user apps may be stopped; system apps and essential processes are protected.\nUse the full package name with am force-stop / killall / pkill -x. A positive PID with kill is checked against its UID before stopping by package name.\nPolicy blocks return [POLICY_BLOCKED]/126. Root and legacy confirmation switches cannot override them. Do not use another interpreter or the UI to bypass a block.\nIf a connection or pairing error occurs, first check whether the app-level APIs above can perform the task. Only if a shell is essential, ask the user to open\nSettings → Device permissions to connect an available channel. Do not keep retrying the same command.\nDo not use /root/dsh-bin/adb or bare adb; those are guarded wrappers and will fail.\n\n== root（--su）==\nWhen su is enabled and authorized by the root manager, commands run directly without ADB pairing. Otherwise, Shizuku is used before ADB.\nUse --su only when root is explicitly required and enabled in Device permissions. The same device protection policy always applies.\n[EXECUTION_UNKNOWN] means the command may have executed. Verify the actual state before proceeding; do not switch connections or replay automatically.\n",
     "files": [
       "app/src/main/java/com/deepseekharness/app/HttpShellService.java"
     ],
@@ -10962,7 +10962,9 @@
     "zh": "已展开",
     "en": "Expanded",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/DiagnosticResultList.java"
+      "app/src/main/java/com/deepseekharness/app/ui/DiagnosticResultList.java",
+      "app/src/main/java/com/deepseekharness/app/ui/StorageHelpActivity.java",
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
     ]
   },
   {
@@ -10970,7 +10972,9 @@
     "zh": "已收起",
     "en": "Collapsed",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/DiagnosticResultList.java"
+      "app/src/main/java/com/deepseekharness/app/ui/DiagnosticResultList.java",
+      "app/src/main/java/com/deepseekharness/app/ui/StorageHelpActivity.java",
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
     ]
   },
   {
@@ -11334,6 +11338,1890 @@
     "en": "Latest result",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/ColdSetupSpeedActivity.java"
+    ]
+  },
+  {
+    "id": "data248w01",
+    "zh": "最近手动备份",
+    "en": "Last manual backup",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w02",
+    "zh": "下载/DSHA",
+    "en": "Download/DSHA",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w03",
+    "zh": "备份选项",
+    "en": "Backup options",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w04",
+    "zh": "备份时机 · 本机保留最近 3 份已验证副本",
+    "en": "Schedule · keeps the latest 3 verified copies on this device",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w05",
+    "zh": "自定义导出",
+    "en": "Custom export",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w06",
+    "zh": "选择范围 · 项目目录 · 是否包含 API Key",
+    "en": "Choose scope · project folders · API key",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w07",
+    "zh": "手动备份、自动副本和维护结果",
+    "en": "Manual backups, automatic copies and maintenance",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w08",
+    "zh": "保留副本与旧环境",
+    "en": "Retained copies and old environments",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w09",
+    "zh": "旧环境、插件原件和隔离项，不自动删除",
+    "en": "Old environments, original and quarantined plugins; never deleted automatically",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w10",
+    "zh": "只读救援导出 · 恢复中断提交 · 回退运行时",
+    "en": "Read-only rescue export · interrupted commits · runtime rollback",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w11",
+    "zh": "保留原件，插件、对话和凭据不受影响",
+    "en": "Originals retained; plugins, conversations and credentials are kept",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w12",
+    "zh": "无需密码，保存为可在新设备恢复的 tar.gz。",
+    "en": "No password. Saves a tar.gz you can restore on a new device.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w13",
+    "zh": "会包含",
+    "en": "Included",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w14",
+    "zh": "对话与附件、运行配置、已安装插件、当前应用内工作区",
+    "en": "Conversations and attachments, settings, installed plugins, the current app workspace",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w15",
+    "zh": "不包含",
+    "en": "Not included",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w16",
+    "zh": "原生 API Key（可在「自定义导出」中勾选）；外置工作区，请另行备份",
+    "en": "Native API key (available in Custom export); external workspaces, back them up separately",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w17",
+    "zh": "备份时会安全停止 DSH 和运行任务，完成后不会自动重新启动。",
+    "en": "Backup safely stops DSH and running tasks; they are not restarted automatically.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w18",
+    "zh": "正在备份",
+    "en": "Backing up",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w19",
+    "zh": "数据任务进行中",
+    "en": "Data task in progress",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w20",
+    "zh": "请勿关闭应用。",
+    "en": "Keep the app open.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w21",
+    "zh": "有未完成的环境维护",
+    "en": "Environment maintenance is unfinished",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w22",
+    "zh": "原环境尚未确认，备份和恢复暂不可用。请先恢复中断维护。",
+    "en": "The original environment is unconfirmed, so backup and restore are unavailable. Resume the interrupted maintenance first.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w23",
+    "zh": "上次备份未完成",
+    "en": "The last backup did not finish",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w24",
+    "zh": "原数据和已有备份已保留。原因：%s",
+    "en": "Original data and existing backups were retained. Reason: %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w25",
+    "zh": "还没有导出过备份",
+    "en": "No backup exported yet",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w26",
+    "zh": "对话、配置和插件目前只存在应用内。建议先做一次一键备份。",
+    "en": "Conversations, settings and plugins exist only inside the app. Make a one-click backup first.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w27",
+    "zh": "已有 %s 天没有手动备份",
+    "en": "No manual backup for %s days",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w28",
+    "zh": "自动副本只保存在本机私有目录。换机或卸载前，请导出一份到手机存储。",
+    "en": "Automatic copies stay in private app storage. Export one to device storage before switching devices or uninstalling.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w29",
+    "zh": "数据已保护",
+    "en": "Your data is protected",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w30",
+    "zh": "最近 7 天内有手动导出的备份；自动副本另存于本机私有目录。",
+    "en": "A manual backup was exported within the last 7 days. Automatic copies are kept separately in private app storage.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w31",
+    "zh": "从未",
+    "en": "Never",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w32",
+    "zh": "已开启",
+    "en": "On",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w33",
+    "zh": "立即备份",
+    "en": "Back up now",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w34",
+    "zh": "每 %s 小时",
+    "en": "Every %s hours",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248w35",
+    "zh": "每天 %s",
+    "en": "Daily at %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
+    ]
+  },
+  {
+    "id": "data248s01",
+    "zh": "选择位置并导出",
+    "en": "Choose a location and export",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s02",
+    "zh": "请先选择项目目录",
+    "en": "Choose a project folder first",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s03",
+    "zh": "导出文件不加密，拿到文件的人都能读取其中的 API Key。",
+    "en": "The export is not encrypted; anyone with the file can read the API key.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s04",
+    "zh": "范围与选项",
+    "en": "Scope and options",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s05",
+    "zh": "预检核验",
+    "en": "Inspection",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s06",
+    "zh": "确认恢复",
+    "en": "Confirm restore",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s07",
+    "zh": "正在核验备份",
+    "en": "Inspecting the backup",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s08",
+    "zh": "选择备份文件",
+    "en": "Choose a backup file",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s09",
+    "zh": "备份来源",
+    "en": "Backup source",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s10",
+    "zh": "恢复范围",
+    "en": "Restore scope",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s11",
+    "zh": "重新选择",
+    "en": "Choose again",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s12",
+    "zh": "正在恢复数据",
+    "en": "Restoring data",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s13",
+    "zh": "恢复完成",
+    "en": "Restore finished",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s14",
+    "zh": "恢复未完成",
+    "en": "Restore did not finish",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s15",
+    "zh": "完成",
+    "en": "Done",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s16",
+    "zh": "所选文件",
+    "en": "Selected file",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s17",
+    "zh": "第 %s 步，共 %s 步：%s",
+    "en": "Step %s of %s: %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s18",
+    "zh": "%s · %s 项",
+    "en": "%s · %s entries",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s19",
+    "zh": "本机副本 %s",
+    "en": "Local copy %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s20",
+    "zh": "对话、附件、配置和用户插件，不含 Ubuntu",
+    "en": "Conversations, attachments, settings and user plugins, without Ubuntu",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s21",
+    "zh": "只导出会话记录和附件",
+    "en": "Only conversation records and attachments",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s22",
+    "zh": "profile 设置与工作目录配置",
+    "en": "Profile settings and workspace configuration",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s23",
+    "zh": "用户插件；系统插件按当前 APK 重建",
+    "en": "User plugins; system plugins are rebuilt from this APK",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s24",
+    "zh": "只导出下方选择的项目目录",
+    "en": "Only the project folders chosen below",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s25",
+    "zh": "全部",
+    "en": "All",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RetainedDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s26",
+    "zh": "旧环境",
+    "en": "Old environments",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RetainedDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s27",
+    "zh": "其他",
+    "en": "Other",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RetainedDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s28",
+    "zh": "本页没有这一类记录。",
+    "en": "No records of this type on this page.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RetainedDataActivity.java"
+    ]
+  },
+  {
+    "id": "data248s31",
+    "zh": "本机副本 · 保留最近 3 份",
+    "en": "Local copies · latest 3 kept",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "cfg249a01",
+    "zh": "自动",
+    "en": "Auto",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a02",
+    "zh": "系统设置",
+    "en": "System",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a03",
+    "zh": "撤销改动",
+    "en": "Undo",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a04",
+    "zh": "已改",
+    "en": "Changed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a05",
+    "zh": "网页内核 System WebView",
+    "en": "Browser engine: System WebView",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a06",
+    "zh": "外观与行为",
+    "en": "Appearance",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a07",
+    "zh": "项目主页",
+    "en": "Project page",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a08",
+    "zh": "已撤销未保存的改动",
+    "en": "Unsaved changes discarded",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a09",
+    "zh": "首选 %s，占用时自动换用",
+    "en": "Preferred %s; switches if in use",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a10",
+    "zh": "已设密码 · 用户名 dsha",
+    "en": "Password set · user dsha",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a11",
+    "zh": "未设密码 · 用户名 dsha",
+    "en": "No password · user dsha",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a12",
+    "zh": "改密码",
+    "en": "Change",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a13",
+    "zh": "设密码",
+    "en": "Set password",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a14",
+    "zh": "未设密码时监听不会启动。",
+    "en": "Without a password the listener won't start.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a15",
+    "zh": "静态加载器 %s · seccomp 加速 %s",
+    "en": "Static loader %s · seccomp acceleration %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a16",
+    "zh": "开",
+    "en": "On",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a19",
+    "zh": "保存后需授予悬浮窗权限",
+    "en": "Grant overlay permission after saving",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a20",
+    "zh": "端口无效，修正后才能保存",
+    "en": "Invalid port; fix it to save",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a21",
+    "zh": "%d 项未保存",
+    "en": "%d unsaved",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a22",
+    "zh": "端口与运行时需重启 Web",
+    "en": "Port and runtime apply after restarting Web",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a23",
+    "zh": "配置已是最新",
+    "en": "Settings are up to date",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a24",
+    "zh": "设备不支持",
+    "en": "Not supported",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a25",
+    "zh": "系统已允许",
+    "en": "Allowed by system",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a26",
+    "zh": "系统已关闭小窗",
+    "en": "Blocked by system",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "cfg249a27",
+    "zh": "%s %s",
+    "en": "%s %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
+    ]
+  },
+  {
+    "id": "upd252a01",
+    "zh": "候选版本",
+    "en": "Candidate",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a02",
+    "zh": "本版本",
+    "en": "This build",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a03",
+    "zh": "查看完整记录",
+    "en": "Full release notes",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a04",
+    "zh": "复制版本信息",
+    "en": "Copy version info",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a05",
+    "zh": "查看所有版本与安装包",
+    "en": "All releases and APKs",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a06",
+    "zh": "检查到候选版本后，更新记录、大小与安装方式会显示在这里。",
+    "en": "Release notes, size and install method appear here once a candidate is found.",
+    "files": [
+      "app/src/main/res/values/update_strings.xml"
+    ]
+  },
+  {
+    "id": "upd252a07",
+    "zh": "正在检查…",
+    "en": "Checking…",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateUi.java"
+    ]
+  },
+  {
+    "id": "upd252a08",
+    "zh": "正在核验签名…",
+    "en": "Verifying signature…",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateUi.java"
+    ]
+  },
+  {
+    "id": "upd252a09",
+    "zh": "即将打开系统安装器",
+    "en": "Opening system installer",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateUi.java"
+    ]
+  },
+  {
+    "id": "upd252a10",
+    "zh": "继续下载 · 已下载 %d%%",
+    "en": "Resume download · %d%% done",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateUi.java"
+    ]
+  },
+  {
+    "id": "upd252a11",
+    "zh": "下载更新 · %s",
+    "en": "Download update · %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateUi.java"
+    ]
+  },
+  {
+    "id": "upd252a12",
+    "zh": "已复制版本信息",
+    "en": "Version info copied",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+    ]
+  },
+  {
+    "id": "grt264a01",
+    "zh": "验证",
+    "en": "Verify",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a02",
+    "zh": "配对",
+    "en": "Pair",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a03",
+    "zh": "按应用",
+    "en": "By app",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a04",
+    "zh": "撤销预授权",
+    "en": "Revoke",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a05",
+    "zh": "授权",
+    "en": "Authorize",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a06",
+    "zh": "验证 Stellar 连接",
+    "en": "Verify Stellar connection",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a07",
+    "zh": "授权 Stellar",
+    "en": "Authorize Stellar",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a08",
+    "zh": "打开 Stellar",
+    "en": "Open Stellar",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a09",
+    "zh": "严格",
+    "en": "Strict",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a10",
+    "zh": "命令拦截档位仅对 root 通道生效；Shizuku/ADB 通用执行器仍按严格档。",
+    "en": "Command filtering levels apply only to the root channel; Shizuku/ADB general executors stay strict.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a11",
+    "zh": "已识别 Stellar（Shizuku 兼容管理器）。请在 Stellar 中启动服务并开启「Shizuku 兼容层」，再返回授权；手机重启后通常需要重新启动服务。",
+    "en": "Stellar (a Shizuku-compatible manager) is detected. Start its service and enable the Shizuku compatibility layer, then authorize here. Restart the service after reboot.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a12",
+    "zh": "页面说明",
+    "en": "About this page",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a13",
+    "zh": "全局",
+    "en": "Global",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a14",
+    "zh": "屏幕",
+    "en": "Screen",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a15",
+    "zh": "需处理",
+    "en": "Check",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a16",
+    "zh": "更新中",
+    "en": "Updating",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a17",
+    "zh": "未启用",
+    "en": "Off",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a18",
+    "zh": "未找到 su",
+    "en": "No su",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a19",
+    "zh": "已连接",
+    "en": "Connected",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a20",
+    "zh": "未授权",
+    "en": "Not authorized",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a21",
+    "zh": "连接失败",
+    "en": "Failed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a22",
+    "zh": "未设置",
+    "en": "Not set up",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a23",
+    "zh": "尚未配对：点「配对」，配对后还会验证连接。",
+    "en": "Not paired: tap Pair; the connection is verified after pairing.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
+    ]
+  },
+  {
+    "id": "grt264a24",
+    "zh": "全局权限说明",
+    "en": "About global permission",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FullPermissionControls.java"
+    ]
+  },
+  {
+    "id": "x2100001",
+    "zh": "更多选项",
+    "en": "More options",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100002",
+    "zh": "记录详情",
+    "en": "Record details",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100003",
+    "zh": "%d 条记录 · %d 个正在传输 · %d 个失败",
+    "en": "%d records · %d transferring · %d failed",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100004",
+    "zh": "%d 条记录 · %d 个正在传输",
+    "en": "%d records · %d transferring",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100005",
+    "zh": "%d 条记录 · %d 个失败",
+    "en": "%d records · %d failed",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100006",
+    "zh": "%d 条记录",
+    "en": "%d records",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100007",
+    "zh": "正在传输",
+    "en": "Transferring",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100008",
+    "zh": "移除记录不会删除已完成的文件。",
+    "en": "Removing a record keeps completed files.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100009",
+    "zh": "了解下载记录",
+    "en": "About download history",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100010",
+    "zh": "暂无下载记录",
+    "en": "No downloads yet",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100011",
+    "zh": "网页文件菜单中的下载会显示在这里。",
+    "en": "Downloads from the web file menu appear here.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100012",
+    "zh": "已结束",
+    "en": "Finished",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100013",
+    "zh": "%s，%d 条",
+    "en": "%s, %d",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100014",
+    "zh": "没有可查看的记录",
+    "en": "No records to show",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100015",
+    "zh": "选择一条记录查看详情",
+    "en": "Select a record to see details",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100016",
+    "zh": "更多操作",
+    "en": "More actions",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100017",
+    "zh": "已选中",
+    "en": "Selected",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100018",
+    "zh": "%s：%s",
+    "en": "%s: %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100019",
+    "zh": "已自动改名",
+    "en": "Renamed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100020",
+    "zh": "%s/秒",
+    "en": "%s/s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java",
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100021",
+    "zh": "已校验，请选择保存位置",
+    "en": "Verified · choose where to save",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100022",
+    "zh": "文件名",
+    "en": "File name",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100023",
+    "zh": "详细信息与位置",
+    "en": "Details and location",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100024",
+    "zh": "复制文件名",
+    "en": "Copy file name",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100025",
+    "zh": "移除已结束记录",
+    "en": "Remove finished records",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100026",
+    "zh": "取消这次下载？",
+    "en": "Cancel this download?",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100027",
+    "zh": "已下载的 %s 会被丢弃，之后需要从网页重新发起。",
+    "en": "The %s already downloaded will be discarded. Start again from the web app.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100028",
+    "zh": "取消下载",
+    "en": "Cancel download",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java",
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100029",
+    "zh": "继续保留",
+    "en": "Keep",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100030",
+    "zh": "只移除这条记录，%s 仍保留在 %s。",
+    "en": "Only the record is removed. %s stays in %s.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100031",
+    "zh": "只移除此条下载记录，不影响其他文件。",
+    "en": "Only this download record is removed. Other files are not affected.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100032",
+    "zh": "已移除记录，文件仍在 %s",
+    "en": "Record removed. The file is still in %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100033",
+    "zh": "已移除记录",
+    "en": "Record removed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100034",
+    "zh": "移除 %d 条已结束记录？",
+    "en": "Remove %d finished records?",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100035",
+    "zh": "包括已完成和已取消的记录。已完成文件仍保留在原保存位置；失败、暂停和进行中的记录不受影响。",
+    "en": "Includes completed and cancelled records. Completed files stay where they were saved. Failed, paused and active records are not affected.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100036",
+    "zh": "已移除 %d 条记录，文件均已保留",
+    "en": "Removed %d records. Files were kept.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100037",
+    "zh": "已移除 %d 条，%d 条正在收尾，请稍后再试",
+    "en": "Removed %d. %d are still finishing; try again shortly.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100038",
+    "zh": "移除记录只删除这里的条目，已完成的文件仍在原保存位置。",
+    "en": "Removing a record only deletes the entry here. Completed files stay where they were saved.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100039",
+    "zh": "保存位置已有同名文件时，会自动使用新名称，原文件不会被覆盖。",
+    "en": "If a file with the same name exists, a new name is used and the original is not overwritten.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100040",
+    "zh": "打开分享选择器不代表对方已收到，请在接收应用中确认。",
+    "en": "Opening the share picker does not confirm delivery. Check in the receiving app.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100041",
+    "zh": "失败或暂停的下载会保留已下载进度，可以重试或继续。",
+    "en": "Failed or paused downloads keep their progress, so you can retry or resume.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100042",
+    "zh": "关于下载记录",
+    "en": "About download history",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100043",
+    "zh": "此设备没有提供系统下载列表，请按详情中的保存位置在文件管理器中查找。",
+    "en": "This device has no system Downloads list. Use the saved location in the details to find the file.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/FileTransfersActivity.java"
+    ]
+  },
+  {
+    "id": "x2100044",
+    "zh": "待选择保存位置",
+    "en": "Choose a destination",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100045",
+    "zh": "今天",
+    "en": "Today",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100046",
+    "zh": "昨天",
+    "en": "Yesterday",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100047",
+    "zh": "剩余约 %d 秒",
+    "en": "About %d s left",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100048",
+    "zh": "剩余约 %d 分钟",
+    "en": "About %d min left",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100049",
+    "zh": "剩余约 %d 小时",
+    "en": "About %d h left",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100050",
+    "zh": "尚未选择，选好后才会写入",
+    "en": "Not chosen yet. Nothing is written until you choose.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100051",
+    "zh": "应用私有缓存，只用于这次分享",
+    "en": "Private app storage used only for this share",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100052",
+    "zh": "系统相册可见",
+    "en": "Visible in the system gallery",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100053",
+    "zh": "通过系统保存界面选择的位置",
+    "en": "Chosen in the system save screen",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100054",
+    "zh": "系统「下载」目录中的 DSHA 文件夹",
+    "en": "DSHA folder in the system Downloads directory",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100055",
+    "zh": "无法访问保存位置",
+    "en": "Cannot access the destination",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100056",
+    "zh": "完整性校验未通过",
+    "en": "Integrity check failed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100057",
+    "zh": "运行环境未就绪",
+    "en": "Runtime not ready",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100058",
+    "zh": "文件访问未获授权",
+    "en": "File access not authorized",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100059",
+    "zh": "源文件已不可用",
+    "en": "Source file unavailable",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100060",
+    "zh": "传输中断",
+    "en": "Transfer interrupted",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100061",
+    "zh": "下载长度校验失败",
+    "en": "Download size check failed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100062",
+    "zh": "文件超过 5 GB 上限",
+    "en": "File exceeds the 5 GB limit",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100063",
+    "zh": "下载记录已满",
+    "en": "Download history is full",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100064",
+    "zh": "不是有效图片",
+    "en": "Not a valid image",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100065",
+    "zh": "下载器正在收尾",
+    "en": "Downloader is finishing",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100066",
+    "zh": "无法完成保存",
+    "en": "Could not save the file",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100067",
+    "zh": "记录或文件已不可用",
+    "en": "Record or file unavailable",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100068",
+    "zh": "操作未完成，可以重试。",
+    "en": "The operation did not complete. You can retry.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100069",
+    "zh": "操作未完成：%s",
+    "en": "Operation did not complete: %s",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100070",
+    "zh": "取消保存",
+    "en": "Cancel save",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+    ]
+  },
+  {
+    "id": "x2100071",
+    "zh": "已保存并通过校验",
+    "en": "Saved and verified",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100072",
+    "zh": "已保存到 %s。保存位置已有同名文件，已自动改名。",
+    "en": "Saved to %s. A file with the same name existed, so it was renamed.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100073",
+    "zh": "已保存到 %s。",
+    "en": "Saved to %s.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100074",
+    "zh": "前一个任务完成后自动开始，共 %s。",
+    "en": "Starts automatically after the current task. Size: %s.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100075",
+    "zh": "正在校验完整性…",
+    "en": "Verifying integrity…",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100076",
+    "zh": "校验通过后才会写入保存位置。",
+    "en": "The file is written only after verification passes.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100077",
+    "zh": "正在保存…",
+    "en": "Saving…",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100078",
+    "zh": "正在写入 %s。",
+    "en": "Writing to %s.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100079",
+    "zh": "已通过校验，请选择保存位置",
+    "en": "Verified. Choose a destination",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100080",
+    "zh": "选好位置后才会写入。取消选择不会丢失这条记录，可以稍后再选。",
+    "en": "Nothing is written until you choose. Cancelling the picker keeps this record so you can choose later.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100081",
+    "zh": "已下载 %s，重试时从断点继续。",
+    "en": "%s downloaded. Retry resumes from there.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100082",
+    "zh": "需要再次下载请从网页重新发起。",
+    "en": "To download again, start a new download from the web app.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100083",
+    "zh": "下载文件",
+    "en": "Download",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100084",
+    "zh": "校验",
+    "en": "Verify",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100085",
+    "zh": "已暂停。已下载的进度会保留，继续后从断点续传。",
+    "en": "Paused. Downloaded progress is kept and resumes from where it stopped.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100086",
+    "zh": "%s：已完成",
+    "en": "%s: done",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100087",
+    "zh": "%s：进行中",
+    "en": "%s: in progress",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100088",
+    "zh": "%s：已暂停",
+    "en": "%s: paused",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100089",
+    "zh": "%s：失败",
+    "en": "%s: failed",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100090",
+    "zh": "%s：未开始",
+    "en": "%s: not started",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100091",
+    "zh": "等待选择",
+    "en": "Not chosen",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100092",
+    "zh": "复制路径",
+    "en": "Copy path",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100093",
+    "zh": "技术信息",
+    "en": "Technical details",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100094",
+    "zh": "文档 URI",
+    "en": "Document URI",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100095",
+    "zh": "系统不保证能按文档 URI 精确定位文件夹；相册和其他提供方保存的文件可能不在系统下载列表中。",
+    "en": "Android does not guarantee exact folder navigation from a document URI. Gallery files and files saved by other providers may not appear in the system Downloads list.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100096",
+    "zh": "文件信息",
+    "en": "File info",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100097",
+    "zh": "类型",
+    "en": "Type",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100098",
+    "zh": "大小",
+    "en": "Size",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100099",
+    "zh": "创建时间",
+    "en": "Created",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100100",
+    "zh": "原文件名",
+    "en": "Original name",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100101",
+    "zh": "同名文件已存在，已自动改名",
+    "en": "Renamed because the name was taken",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100102",
+    "zh": "丢弃已下载的 %s，之后需从网页重新发起。",
+    "en": "Discards %s downloaded. Start again from the web app.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100103",
+    "zh": "停止这次文件操作，之后需从网页重新发起。",
+    "en": "Stops this file operation. Start again from the web app.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100104",
+    "zh": "只删除这条记录，文件仍保留在 %s。",
+    "en": "Removes only this record. The file stays in %s.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
+    ]
+  },
+  {
+    "id": "x2100105",
+    "zh": "只删除这条记录，不影响其他文件。",
+    "en": "Removes only this record. Other files are not affected.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/TransferDetailView.java"
     ]
   }
 ]

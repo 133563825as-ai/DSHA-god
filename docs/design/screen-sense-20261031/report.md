@@ -1,6 +1,6 @@
 # 手机端识屏与操作层（ScreenSense）重构评估
 
-状态：**ScreenSense 可行性评估与重构方案；核心识屏协议仍未落地**。日期 2026-10-31，文档随 build220 发布（`0.2.1-rc.3` / 内置 DSH `0.2.1-rc.5`）。本版只包含识屏授权悬浮窗竞态修复，不把 OCR、紧凑协议或延迟预算宣称为已实现能力。
+状态：**ScreenSense 可行性评估与重构方案；原 build220 基线未落地核心协议**。日期 2026-10-31，文档随 build220 发布（`0.2.1-rc.3` / 内置 DSH `0.2.1-rc.5`）。当前任务分支已落地 P0 的任务隔离紧凑只读预览、codec/store、严格 `/app/sense/state` 路由和节点 action-set 微优化，以及 P0a 的固定合成样本评估（`tools/screen-eval/`）、真实 codec 字符回归闸和 source/quality/partial/readMs/ageMs 元数据；delta/act/wait、事件缓存、OCR、真实页面 instrumentation 与真机性能验收仍未实现。
 
 证据分级：**实测**＝离线脚本产出（合成样本 + DeepSeek V4 tokenizer，脚本见附录 A）；**源码事实**＝当前仓库代码；
 **目标/估计**＝需要真机仪器化校准的设计预算，本文不把它写成已测结果。本文不做真机读屏，不接触用户当前画面。
@@ -720,7 +720,7 @@ P0/P1 不依赖 OCR，也不依赖任何模型，先做；P2 是否值得做，�
 
 验收（全部满足才算“极致性能识别”落地）：
 
-- [ ] 60 元素全量 ≤600 token，120 元素 ≤1,100，200 元素 ≤1,800（离线 tokenizer 计数）；
+- [ ] 60 元素全量 ≤600 token，120 元素 ≤1,100，200 元素 ≤1,800（离线 tokenizer 计数；P0a 已有固定样本与字符闸，token 尚未在固定 tokenizer 上复核）；
 - [ ] 动作一次调用返回 `sid + delta + ver`，常规路径不再需要第二次 `state`；
 - [ ] `ver=changed/unchanged/unknown` 有事件/差分证据；UNKNOWN 不自动重放；
 - [ ] `TARGET_CHANGED`/`TARGET_MOVED`/`NODE_GONE`/`AMBIGUOUS_TARGET` 在目标变化时 100% 拒绝；
@@ -737,7 +737,7 @@ P0/P1 不依赖 OCR，也不依赖任何模型，先做；P2 是否值得做，�
 - token 比例是合成样本 + 离线 tokenizer 的**实测**；绝对 token 随页面节点数与文本长度变化。
 - OCR 引擎体积/延迟是**量级估计**，需构建后按 APK 增量与 instrumentation 核验。
 - 未验证各家 ROM 的事件投递、截图黑屏、后台限制差异。
-- 未实现任何代码；本文是评估与方案，不是验收回执。
+- 本文原始评估阶段未实现代码；当前任务分支已落地 P0 只读预览与相关纯逻辑骨架，但尚未完成本节全部验收项，因此不能称为“极致性能识别”最终验收回执。
 
 ## 附录 A：测量方法与复现
 
@@ -746,17 +746,40 @@ P0/P1 不依赖 OCR，也不依赖任何模型，先做；P2 是否值得做，�
 token 计数用 DeepSeek V4 tokenizer（`tokenizer.json`，BPE）离线复现；对给定字符串计数是确定值，
 样本代表性另有波动。
 
-复现命令（脚本在评估工作目录 `/tmp/screen-eval`；若要长期复用，应把 `sim.py / fmt.py / dstok.mjs / cost.py`
-收进 `tools/screen-eval/`，tokenizer 按固定哈希获取，模型文件不入库）：
+原始评估脚本只在临时目录 `/tmp/screen-eval`，下表是当时的结果，未随仓库保存，不能逐字复现。
+P0a 起改用仓库内的 `tools/screen-eval/screen_eval.py`：固定 LCG 种子生成 200 个合成元素
+（`app/src/test/resources/.../screen-sense-synthetic-200.tsv`），compact 编码逐字节镜像 `ScreenSenseCodec`，
+与 Java 单测 `ScreenSenseBudgetTest` 共用同一 SHA-256 golden；tokenizer 只在评估机按 `--tokenizer-sha256`
+固定摘要加载，模型文件不入库，未提供时 token 字段为 `null`。
 
 ```bash
-python3 sim.py            # 生成 cur_/cmp_/textonly_ 样本
-python3 fmt.py            # 生成 prop_/shotmeta
-node dstok.mjs cur_60.txt v4_60.txt sample_v4.txt sample_delta4.txt
-python3 cost.py           # 20 步任务 token/成本模型
+python3 tools/screen-eval/screen_eval.py --check      # 样本、golden、字符上限
+python3 tools/screen-eval/screen_eval.py --summary    # 字符/字节摘要；加 --tokenizer 与 --tokenizer-sha256 才计 token
+python3 tools/test-screen-eval.py                     # 自检（host test，fast 阶段）
 ```
 
-关键结果：
+P0a 实测（合成样本、字符数，未计 token）：当前 codec 去掉逐行占位符后，30/60/120/200 元素为
+516/963/1,869/3,090 字符（legacy 重建约为 16 倍）。120 元素满足 §10.2 的 ≤1,900 字符代理口径；
+**60 元素 963 字符未达 ≤900**，原因是本实现每个元素都带预览 id（附录 B 的纯文本行用位置编号）。
+CI 回归上限设为 60≤1,000 / 120≤1,900 / 200≤3,200，是防回退的闸，不是已满足原目标的证明。
+
+P0a 真机只读核对（2026-11-01 19:22Z，测试包 `io.github.sunsetrne.dsha.test` build256 + 本分支，
+`tools/screen-eval/device_probe.py --launch com.android.settings`，单台平板、单个原生页面，只记录计数）：
+
+| 项 | 旧 tree | sense/state | sense/state?geom=1 |
+|---|---:|---:|---:|
+| 元素 / 节点 | 31 | 31 | 31 |
+| 访问节点 | 135 | 68 | 68 |
+| 回复字符 | 10,277 | 1,162 | 1,731 |
+| 墙钟 ms（含桥往返） | 394 | 166 | 198 |
+| quality / partial | — | ok / false | ok / false |
+
+前后两次 tree 一致（`pageStable=true`），sense 标签与 tree 31/31 对上；把 `k000` 当 nodeId 交给 `/app/ui/node`
+返回 `STALE_NODE`（预览 id 不能当动作凭据）。另在 DSH Web 聊天页（WebView）上观察到：首次查询只返回外壳
+（访问 3 个节点），约 0.5 秒后才建出 247 个节点，sense 达到 200 上限返回 `quality=partial`；该页平均每元素约 80 字符，
+远高于合成样本，**合成字符预算不能外推到真机页面**。以上只是单页单次结果，不是 p50/p95 或覆盖率结论。
+
+原始评估结果（临时脚本，仅供对照）：
 
 | 文件 | 字符 | token |
 |---|---:|---:|
