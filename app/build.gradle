@@ -203,6 +203,8 @@ android {
         // Both browser test entry points load one test-only HTML fixture.
         debug.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
         androidTest.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
+        // 测试包的无障碍服务名加 Test（flavor 资源覆盖 main）；正式包不受影响。
+        if (sunsetTest) standard.res.srcDir(file("src/sunsetTestLabels/res"))
     }
 }
 
