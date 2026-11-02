@@ -69,11 +69,13 @@ function main(argv) {
   }
   const dir = stateDirectory();
   const token = readSmall(dir + '/.bridge_token', 129, /^[A-Za-z0-9_-]{1,128}$/);
-  let port = 3090;
+  let port;
   try {
     port = Number(readSmall(dir + '/.bridge_port', 5, /^[0-9]{1,5}$/));
   } catch {
-    // 端口文件缺失时按桥的历史默认端口；token 仍是真正的门槛。
+    // 与上游 build280 一致：不回退任何固定端口。3090–3099 可能属于同机另一个 DSHA 安装，
+    // 猜一个端口再带上本安装 token 发过去，等于把凭据交给别的应用。
+    fail('设备桥端口尚未发布（.bridge_port 不存在或无效），设备桥未就绪；请打开 DSHA 后再试');
   }
   if (!(port >= 1 && port <= 65535)) fail('端口无效');
   const query = params.toString();

@@ -2,7 +2,9 @@
 // [dsha-android] 原生运行环境（不经容器）的设备能力引导。手机任务规则与容器版逐字相同；
 // 去掉容器才有的 Ubuntu、curl、adb-shell 与 /root 路径，App 层接口改用随运行时提供的 DSHA_APP。
 function dshaNativePromptText(language) {
-  const port = bridgePort();
+  // 与容器版一致：端口未发布时不猜固定值，用非数字占位。
+  let port;
+  try { port = String(bridgePort()); } catch { port = '<未就绪>'; }
   return [
   '【设备操作能力 · DSHA】你正运行在用户 Android 手机上的 DSHA 应用里（Android 原生运行环境，不是 Ubuntu 容器），可以干预这台实体手机。',
   languageInstruction(language),

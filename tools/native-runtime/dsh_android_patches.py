@@ -224,14 +224,14 @@ LAUNCHER_PATCHES = [
     {
         'id': 'native-consent-state-dir',
         'path': POLICY + 'launcher/native-consent.cjs',
-        'original_sha256': 'fb16a8f81c9829d487b43498675667126b3e9095be26b853948320beb1f42347',
+        'original_sha256': '4ee1b0ecec2884ccdfa7c484d48f17f604b9ea1b7c24650b8b6ef30068040d03',
         'replace_exact': [(NATIVE_CONSENT_TOKEN_OLD, NATIVE_CONSENT_TOKEN_NEW), (NATIVE_CONSENT_PARENT_OLD, NATIVE_CONSENT_PARENT_NEW)],
         'marker': '[dsha-android]',
     },
     {
         'id': 'bridge-port-state-dir',
         'path': POLICY + 'launcher/bridge-port.cjs',
-        'original_sha256': '44c96786a68379ba17c049f35e78afc33955a79ab5189eaca0a0a3fd62b95caf',
+        'original_sha256': 'be413341075a0c23b34314c9a85ebcc032cc9d3dbd83a9298b3f631733869dd0',
         'replace_exact': [(BRIDGE_PORT_OLD, BRIDGE_PORT_NEW)],
         'marker': '[dsha-android]',
     },
@@ -253,7 +253,7 @@ PLUGIN_DIRS = {
     'dsh-device-shell-guide': 'dsha-device-shell-guide',
     'dsh-app-integration': 'dsha-app-integration',
 }
-BRIDGE_PORT_SHA = '44c96786a68379ba17c049f35e78afc33955a79ab5189eaca0a0a3fd62b95caf'
+BRIDGE_PORT_SHA = 'be413341075a0c23b34314c9a85ebcc032cc9d3dbd83a9298b3f631733869dd0'
 PLUGIN_PATCHES = [
     {
         'id': 'plugin-%s-bridge-port' % d,
@@ -298,7 +298,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-status-overlay-token',
         'path': 'dsha-status-overlay/lib/index.js',
-        'original_sha256': 'bd066cb5f46a31303817ca3e0f63f0922224f6fe00233b9438aef4baa655c751',
+        'original_sha256': 'f7de73c02273948b52bfd0d5de16852a675de029e04f88783607893efdafe351',
         'replace_exact': [("const TOKEN_PATH = '/root/.dsh/.bridge_token'", "const TOKEN_PATH = " + PLUGIN_TOKEN)],
         'append': HELPER,
         'marker': '[dsha-android]',
@@ -306,7 +306,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-launch-target-token',
         'path': 'dsha-launch-target/lib/index.js',
-        'original_sha256': '50e8834267630e86460eb1e295b5e711ca5646a742c4f1e29d2829b7700ef011',
+        'original_sha256': 'fc9145cbad5de78e50f8e13eae94557587b2fb9cb4219d1b6bcf2d5b6b706d81',
         'replace_exact': [("readFile('/root/.dsh/.bridge_token', 'utf8')", "readFile(" + PLUGIN_TOKEN + ", 'utf8')")],
         'append': HELPER,
         'marker': '[dsha-android]',
@@ -318,14 +318,14 @@ DEVICE_GUIDE_NATIVE = (_pathlib.Path(__file__).with_name('device-guide-native.js
 PLUGIN_PATCHES.append({
     'id': 'plugin-device-guide-native',
     'path': 'dsha-device-shell-guide/lib/index.js',
-    'original_sha256': '1562a0a183c84235c5e977db0930188dd29cfb8480af76f50622c758fff3810f',
+    'original_sha256': '8a1cf0a808ece42f46bb796977692f66584da0fc469b8a2284353db8ae7ec99e',
     'replace_exact': [
         ("fs.openSync('/root/.dsh/.bridge_token', ", "fs.openSync(" + PLUGIN_TOKEN + ", "),
-        ("export function promptText(language = fallbackLanguage()) {\n  const port = bridgePort();\n  return [\n  '【设备操作能力 · DSHA】你正运行在用户 Android 手机的容器里",
+        ("export function promptText(language = fallbackLanguage()) {\n  let known;\n",
          "export function promptText(language = fallbackLanguage()) {\n"
          "  // [dsha-android] 原生运行环境没有容器、curl、adb-shell：换成原生版引导。\n"
          "  if (process.platform === 'android') return dshaNativePromptText(language);\n"
-         "  const port = bridgePort();\n  return [\n  '【设备操作能力 · DSHA】你正运行在用户 Android 手机的容器里"),
+         "  let known;\n"),
     ],
     'append': HELPER + DEVICE_GUIDE_NATIVE,
     'marker': '[dsha-android]',
