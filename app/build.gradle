@@ -80,6 +80,11 @@ android {
         minSdk 30
         targetSdk 37
         buildConfigField 'String', 'BUNDLED_PNPM_VERSION', '"' + bundledTools.pnpm.version + '"'
+        // 测试版留痕：只在测试包里写署名与测试版号（-Pdsha.testBuild=N）；正式包两者为空，界面不显示。
+        def testBuild = (project.findProperty('dsha.testBuild') ?: '').toString()
+        if (!testBuild.isEmpty() && !(testBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.testBuild 只能是数字')
+        buildConfigField 'String', 'TEST_SIGNATURE', sunsetTest ? '"南街小一"' : '""'
+        buildConfigField 'String', 'TEST_BUILD', (sunsetTest && !testBuild.isEmpty()) ? '"t' + testBuild + '"' : '""'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
         // 显示名随发布身份（DSH-A-Su / DSHA）；测试变体加后缀，便于桌面上区分两个包。
         resValue 'string', 'app_name', sunsetTest ? releaseIdentity.appName + ' Test' : releaseIdentity.appName

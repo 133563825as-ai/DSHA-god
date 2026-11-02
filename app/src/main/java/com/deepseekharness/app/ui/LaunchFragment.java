@@ -107,6 +107,19 @@ public class LaunchFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_launch, container, false);
+    // 测试版留痕：主页最下方一行小字（正式包为空，不添加）。
+    String testMark = AboutDialog.testBuildMark();
+    if (!testMark.isEmpty()) {
+      TextView mark = new TextView(requireContext());
+      mark.setText(testMark);
+      mark.setTextSize(11);
+      mark.setTextColor(requireContext().getColor(R.color.shell_text_secondary));
+      mark.setGravity(android.view.Gravity.CENTER);
+      int pad = Math.round(12 * getResources().getDisplayMetrics().density);
+      mark.setPadding(0, pad, 0, 0);
+      ((ViewGroup) v.findViewById(R.id.launch_sections))
+          .addView(mark, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2));
+    }
 
     // v5 主页新增的语境、活动条与日志工具；原有 id 与业务 id 全部保留。
     activityTrack = v.findViewById(R.id.launch_activity);
