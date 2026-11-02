@@ -569,9 +569,14 @@ public class LaunchFragment extends Fragment {
       ((TextView) root.findViewById(R.id.launch_subtitle))
           .setText(
               ready
-                  ? (controller.isWebCompatibilityFallback()
-                          ? "proot"
-                          : controller.proot().runtime().id())
+                  // 按本次 Web 实际用的运行环境显示（启动前已记录），不按当前设置推断。
+                  ? (com.deepseekharness.app.runtime.NativeRuntime.lastWebWasNative(
+                              requireContext())
+                          ? com.deepseekharness.app.util.UiText.choose(
+                              "Android 原生", "Android native")
+                          : controller.isWebCompatibilityFallback()
+                              ? "proot"
+                              : controller.proot().runtime().id())
                       + " · dsh "
                       + com.deepseekharness.app.util.Constants.DSH_VERSION
                   // 恢复核对的结论是一整句说明，放在副标题；大标题只放短状态，窄屏不再撑成三行。
