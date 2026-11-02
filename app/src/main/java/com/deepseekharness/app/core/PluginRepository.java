@@ -1956,8 +1956,13 @@ public final class PluginRepository extends AndroidViewModel {
             new JSONObject(
                 new String(
                     fs.currentSnapshot(
-                        com.deepseekharness.app.plugins.PluginRuntimeProjection.snapshotPath(
-                            proot.getRootfsDir()),
+                        com.deepseekharness.app.runtime.NativeRuntime.lastWebWasNative(
+                                getApplication())
+                            ? com.deepseekharness.app.runtime.NativeRuntime.activityFile(
+                                    getApplication())
+                                .getCanonicalFile()
+                            : com.deepseekharness.app.plugins.PluginRuntimeProjection.snapshotPath(
+                                proot.getRootfsDir()),
                         256 * 1024),
                     java.nio.charset.StandardCharsets.UTF_8));
         rejection =

@@ -285,6 +285,10 @@ def main(argv=None):
             manifest_files['etc/tls/cert.pem'] = sha(cert)
             for package, text in sorted(licenses.items()):
                 zip_add(archive, 'licenses/%s.copyright' % package, text)
+            # App 层接口调用器（原生里没有 curl）。
+            tool = (ROOT / 'tools/native-runtime/dsha-app.cjs').read_bytes()
+            zip_add(archive, 'dsha-tools/dsha-app.cjs', tool)
+            manifest_files['dsha-tools/dsha-app.cjs'] = sha(tool)
             # 插件文件逐个列入核验清单：解压时任何一个字节不符都拒绝使用。
             for rel in plugin_files:
                 data = (plugins_root / rel).read_bytes()
@@ -304,6 +308,7 @@ def main(argv=None):
         'archive': {'name': 'native-runtime.zip', 'sha256': sha(archive_bytes), 'bytes': len(archive_bytes)},
         'executables': executables,
         'entry': 'node_modules/@deepseek-ai/dsh/lib/bin.js',
+        'appTool': 'dsha-tools/dsha-app.cjs',
         'libraryDirectory': 'lib',
         'certificate': 'etc/tls/cert.pem',
         'verifiedFiles': manifest_files,

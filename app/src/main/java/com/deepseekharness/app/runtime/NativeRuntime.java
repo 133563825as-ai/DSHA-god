@@ -220,7 +220,8 @@ public final class NativeRuntime {
         new File(install, "lib").getCanonicalPath(),
         new File(install, "etc/tls/cert.pem").getCanonicalPath(),
         ripgrep().getCanonicalPath(),
-        workspace.getCanonicalPath());
+        workspace.getCanonicalPath(),
+        new File(install, "dsha-tools/dsha-app.cjs").getCanonicalPath());
   }
 
   /** 让停止与扫描认得原生 Web（只登记路径，不解压、不启动）。 */
@@ -231,6 +232,18 @@ public final class NativeRuntime {
     } catch (IOException | RuntimeException ignored) {
       // 路径不可规范化时不登记；原生启动本身也会失败，不会产生认不出的进程。
     }
+  }
+
+  /** 原生 Web 的活动快照（app-integration 插件每 2 秒写一次）。 */
+  public static File activityFile(Context context) {
+    return new File(stateDirectory(context), ".dsha-web-activity.json");
+  }
+
+  /** 本次 Web 的活动快照：原生写在原生 HOME，容器写在 rootfs 的 /root。 */
+  public static File activityFile(Context context, File rootfs) {
+    return lastWebWasNative(context)
+        ? activityFile(context)
+        : new File(rootfs, "root/.dsha-web-activity.json");
   }
 
   // ------------------------------------------------------------ 本次 Web 用的运行环境

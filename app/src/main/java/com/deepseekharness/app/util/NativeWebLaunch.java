@@ -37,6 +37,9 @@ public final class NativeWebLaunch {
     public final String ripgrep;
     public final String workspace;
 
+    /** App 层接口调用器（容器里用 curl），由原生 node 执行。 */
+    public final String appTool;
+
     public Paths(
         String node,
         String entry,
@@ -48,6 +51,33 @@ public final class NativeWebLaunch {
         String certificate,
         String ripgrep,
         String workspace) {
+      this(
+          node,
+          entry,
+          home,
+          dshHome,
+          bridgeState,
+          tmp,
+          libraries,
+          certificate,
+          ripgrep,
+          workspace,
+          entry);
+    }
+
+    public Paths(
+        String node,
+        String entry,
+        String home,
+        String dshHome,
+        String bridgeState,
+        String tmp,
+        String libraries,
+        String certificate,
+        String ripgrep,
+        String workspace,
+        String appTool) {
+      this.appTool = absolute(appTool);
       this.node = absolute(node);
       this.entry = absolute(entry);
       this.home = absolute(home);
@@ -120,6 +150,10 @@ public final class NativeWebLaunch {
     env.put("DSHA_BRIDGE_STATE_DIR", paths.bridgeState);
     env.put("DSHA_RIPGREP_PATH", paths.ripgrep);
     env.put("DSHA_WORKSPACE_DOCUMENTS", paths.workspace);
+    // 设备能力引导里的写法："$DSHA_NODE" "$DSHA_APP" /app/<路径> 键=值
+    env.put("DSHA_NODE", paths.node);
+    env.put("DSHA_APP", paths.appTool);
+    env.put("DSHA_ACTIVITY_FILE", paths.home + "/.dsha-web-activity.json");
     env.put("DSH_PERMISSION_MODE", PermissionMode.DEFAULT);
     env.put("DSH_CONFIRM", confirmShell ? "1" : "0");
     env.put("BROWSER", "true");

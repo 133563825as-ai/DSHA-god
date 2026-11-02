@@ -250,6 +250,8 @@ PLUGIN_DIRS = {
     'dsh-tool-vscreen': 'dsha-tool-vscreen',
     'dsh-status-overlay': 'dsha-status-overlay',
     'dsh-launch-target': 'dsha-launch-target',
+    'dsh-device-shell-guide': 'dsha-device-shell-guide',
+    'dsh-app-integration': 'dsha-app-integration',
 }
 BRIDGE_PORT_SHA = '44c96786a68379ba17c049f35e78afc33955a79ab5189eaca0a0a3fd62b95caf'
 PLUGIN_PATCHES = [
@@ -260,7 +262,8 @@ PLUGIN_PATCHES = [
         'replace_exact': [(BRIDGE_PORT_OLD, BRIDGE_PORT_NEW)],
         'marker': '[dsha-android]',
     }
-    for d in ('dsha-computer-use-android', 'dsha-task-notifier', 'dsha-tool-vscreen', 'dsha-status-overlay', 'dsha-launch-target')
+    for d in ('dsha-computer-use-android', 'dsha-task-notifier', 'dsha-tool-vscreen', 'dsha-status-overlay', 'dsha-launch-target',
+              'dsha-device-shell-guide')
 ] + [
     {
         'id': 'plugin-computer-use-token',
@@ -309,3 +312,33 @@ PLUGIN_PATCHES = [
         'marker': '[dsha-android]',
     },
 ]
+
+import pathlib as _pathlib
+DEVICE_GUIDE_NATIVE = (_pathlib.Path(__file__).with_name('device-guide-native.js')).read_text(encoding='utf-8')
+PLUGIN_PATCHES.append({
+    'id': 'plugin-device-guide-native',
+    'path': 'dsha-device-shell-guide/lib/index.js',
+    'original_sha256': '1562a0a183c84235c5e977db0930188dd29cfb8480af76f50622c758fff3810f',
+    'replace_exact': [
+        ("fs.openSync('/root/.dsh/.bridge_token', ", "fs.openSync(" + PLUGIN_TOKEN + ", "),
+        ("export function promptText(language = fallbackLanguage()) {\n  const port = bridgePort();\n  return [\n  '【设备操作能力 · DSHA】你正运行在用户 Android 手机的容器里",
+         "export function promptText(language = fallbackLanguage()) {\n"
+         "  // [dsha-android] 原生运行环境没有容器、curl、adb-shell：换成原生版引导。\n"
+         "  if (process.platform === 'android') return dshaNativePromptText(language);\n"
+         "  const port = bridgePort();\n  return [\n  '【设备操作能力 · DSHA】你正运行在用户 Android 手机的容器里"),
+    ],
+    'append': HELPER + DEVICE_GUIDE_NATIVE,
+    'marker': '[dsha-android]',
+})
+
+PLUGIN_PATCHES.append({
+    'id': 'plugin-app-integration-activity',
+    'path': 'dsha-app-integration/index.js',
+    'original_sha256': 'a8b14d4d82d7623e7f8049e1ebb624a91ef8b044865afbca0cf6c586326ac161',
+    'replace_exact': [(
+        "    const file = '/root/.dsha-web-activity.json';\n",
+        "    // [dsha-android] 原生运行环境没有 /root：活动快照写到宿主给的位置（App 按本次运行环境读取）。\n"
+        "    const file = process.platform === 'android' && process.env.DSHA_ACTIVITY_FILE?.startsWith('/')\n"
+        "      ? process.env.DSHA_ACTIVITY_FILE : '/root/.dsha-web-activity.json';\n")],
+    'marker': '[dsha-android]',
+})

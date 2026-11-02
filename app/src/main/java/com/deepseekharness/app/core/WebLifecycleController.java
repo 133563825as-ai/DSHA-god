@@ -1111,6 +1111,7 @@ final class WebLifecycleController {
                     ? "proroot"
                     : "proot"));
         new File(proot.getRootfsDir(), "root/.dsha-web-activity.json").delete();
+        com.deepseekharness.app.runtime.NativeRuntime.activityFile(ctx).delete();
         final long queuedAt = System.nanoTime();
         io.execute(
             () -> {

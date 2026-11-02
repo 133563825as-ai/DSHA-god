@@ -29,7 +29,8 @@ public class NativeWebLaunchTest {
         files + "/native-runtime/abc/lib",
         files + "/native-runtime/abc/etc/tls/cert.pem",
         "/data/app/~~x/io.github.sunsetrne.dsha.test-y/lib/arm64/librg.so",
-        files + "/native-home/Documents");
+        files + "/native-home/Documents",
+        files + "/native-runtime/abc/dsha-tools/dsha-app.cjs");
   }
 
   private static String cmdline(List<String> argv) {
@@ -107,6 +108,9 @@ public class NativeWebLaunchTest {
     assertEquals("7", env.get("DSHA_WEB_GENERATION"));
     assertEquals("native", env.get("DSHA_DSH_ENGINE"));
     assertEquals(paths().certificate, env.get("SSL_CERT_FILE"));
+    assertEquals(NODE, env.get("DSHA_NODE"));
+    assertEquals(paths().appTool, env.get("DSHA_APP"));
+    assertEquals(paths().home + "/.dsha-web-activity.json", env.get("DSHA_ACTIVITY_FILE"));
     assertThrows(
         IllegalArgumentException.class,
         () -> NativeWebLaunch.environment(paths(), launch, true, "zh", "auto", 0));
