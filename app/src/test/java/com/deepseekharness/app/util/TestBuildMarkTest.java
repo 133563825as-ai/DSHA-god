@@ -19,4 +19,12 @@ public class TestBuildMarkTest {
         TestBuildMark.text("南街小一", "t1", false));
     assertEquals("测试版 · 修改与发行：南街小一", TestBuildMark.text("南街小一", "", true));
   }
+
+  @Test
+  public void stableBuildShowsStableLabel() {
+    assertEquals("稳定版 1 · 修改与发行：南街小一", TestBuildMark.text("南街小一", "s1", true));
+    assertEquals(
+        "Stable build 1 · Modified and distributed by 南街小一",
+        TestBuildMark.text("南街小一", "s1", false));
+  }
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""测试版留痕记录：为一个测试版生成带时间的摘要清单（只在本机计算，不联网、不上传）。
+"""测试版/稳定版留痕记录：为一个版本生成带时间的摘要清单（只在本机计算，不联网、不上传）。
 
 用法：
-  python3 tools/test-build-record.py --build 1 --apk <测试包.apk> --out <清单目录>
+  python3 tools/test-build-record.py --build 1 [--channel stable] --apk <安装包.apk> --out <清单目录>
 
 产出（都在 --out 下）：
-  t<N>-source.tar.gz        该提交的源码归档（git archive，内容由提交唯一决定）
-  t<N>-record.json          提交、标签、提交时间、记录时间、APK 与源码归档的 SHA-256、APK 内署名
+  t<N>|s<N>-source.tar.gz   该提交的源码归档（git archive，内容由提交唯一决定）
+  t<N>|s<N>-record.json          提交、标签、提交时间、记录时间、APK 与源码归档的 SHA-256、APK 内署名
 清单本身也算一次摘要（record 文件的 SHA-256 打印在终端），可另行抄存或交公证/时间戳服务。
 """
 import argparse
@@ -36,6 +36,7 @@ def git(*args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--build', required=True, type=int)
+    parser.add_argument('--channel', choices=['test', 'stable'], default='test')
     parser.add_argument('--apk', required=True, type=pathlib.Path)
     parser.add_argument('--out', required=True, type=pathlib.Path)
     args = parser.parse_args()
@@ -43,7 +44,7 @@ def main():
         sys.exit('参数无效')
     if git('status', '--porcelain', '--untracked-files=no'):
         sys.exit('工作树有未提交的改动：先提交，再生成记录（记录必须对应一个确定的提交）')
-    name = 't%d' % args.build
+    name = ('s%d' if args.channel == 'stable' else 't%d') % args.build
     commit = git('rev-parse', 'HEAD')
     args.out.mkdir(parents=True, exist_ok=True)
     source = args.out / (name + '-source.tar.gz')
@@ -52,7 +53,8 @@ def main():
     with zipfile.ZipFile(args.apk) as apk:
         dex = b''.join(apk.read(n) for n in apk.namelist() if n.startswith('classes') and n.endswith('.dex'))
     record = {
-        'testBuild': name,
+        'channel': args.channel,
+        'build': name,
         'signature': '南街小一',
         'signatureInApk': '南街小一'.encode('utf-8') in dex,
         'buildLabelInApk': name.encode('ascii') in dex,
@@ -68,7 +70,7 @@ def main():
     out.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(out, sha256(out))
     if not record['signatureInApk']:
-        sys.exit('APK 里没有找到署名：确认用 -Pdsha.sunsetTest=true 打的包')
+        sys.exit('APK 里没有找到署名：确认用 -Pdsha.sunsetTest=true 或 -Pdsha.stableBuild=N 打的包')
 
 
 if __name__ == '__main__':

@@ -61,6 +61,12 @@ if (releaseIdentity.schema != 1 || releaseIdentity.identity != releaseIdentityNa
         || !(releaseIdentity.appName instanceof String) || releaseIdentity.appName.trim().isEmpty())
     throw new GradleException("RELEASE_IDENTITY_INVALID: ${releaseIdentityFile}")
 ext.dshaReleaseIdentity = releaseIdentity
+// 稳定版（日常使用）：-Pdsha.stableBuild=N。独立包名 .stable，与正式包、测试包共存、数据隔离；
+// 只在用户决定升级时才换新版本，测试版怎么覆盖都不影响它。与测试变体互斥。
+def stableBuild = (project.findProperty('dsha.stableBuild') ?: '').toString()
+if (!stableBuild.isEmpty() && !(stableBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.stableBuild 只能是数字')
+def stableChannel = !stableBuild.isEmpty()
+if (stableChannel && sunsetTest) throw new GradleException('dsha.stableBuild 与 dsha.sunsetTest 不能同时使用')
 // 只有源码 CI 可显式允许缺少真实测试夹具；完整测试默认要求固定输入齐备。
 def sourceOnlyTests = providers.gradleProperty('dsha.sourceOnlyTests').orElse('false').get()
 if (!(sourceOnlyTests in ['true', 'false']))
@@ -83,11 +89,13 @@ android {
         // 测试版留痕：只在测试包里写署名与测试版号（-Pdsha.testBuild=N）；正式包两者为空，界面不显示。
         def testBuild = (project.findProperty('dsha.testBuild') ?: '').toString()
         if (!testBuild.isEmpty() && !(testBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.testBuild 只能是数字')
-        buildConfigField 'String', 'TEST_SIGNATURE', sunsetTest ? '"南街小一"' : '""'
-        buildConfigField 'String', 'TEST_BUILD', (sunsetTest && !testBuild.isEmpty()) ? '"t' + testBuild + '"' : '""'
+        buildConfigField 'String', 'TEST_SIGNATURE', (sunsetTest || stableChannel) ? '"南街小一"' : '""'
+        buildConfigField 'String', 'TEST_BUILD',
+                stableChannel ? '"s' + stableBuild + '"'
+                        : (sunsetTest && !testBuild.isEmpty()) ? '"t' + testBuild + '"' : '""'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
-        // 显示名随发布身份（DSH-A-Su / DSHA）；测试变体加后缀，便于桌面上区分两个包。
-        resValue 'string', 'app_name', sunsetTest ? releaseIdentity.appName + ' Test' : releaseIdentity.appName
+        // 显示名随发布身份（DSH-A-Su / DSHA）；测试/稳定变体加后缀，便于桌面上区分。
+        resValue 'string', 'app_name', sunsetTest ? releaseIdentity.appName + ' Test' : stableChannel ? releaseIdentity.appName + ' Stable' : releaseIdentity.appName
         versionCode 334
         // DSHA 修订号 + 固定的北京时间戳 + 内置 DSH 版本；同一交付重建不变。
         versionName "0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1"
@@ -108,6 +116,9 @@ android {
                 applicationIdSuffix releaseIdentity.testSuffix
                 // 测试包身份沿用历史 `-SunsetTest` 后缀：CI 与发布脚本按此核验，不能只写 `-test`。
                 versionNameSuffix '-SunsetTest'
+            } else if (stableChannel) {
+                applicationIdSuffix '.stable'
+                versionNameSuffix '-Stable' + stableBuild
             }
         }
     }
@@ -210,6 +221,7 @@ android {
         androidTest.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
         // 测试包的无障碍服务名加 Test（flavor 资源覆盖 main）；正式包不受影响。
         if (sunsetTest) standard.res.srcDir(file("src/sunsetTestLabels/res"))
+        if (stableChannel) standard.res.srcDir(file("src/stableLabels/res"))
     }
 }
 

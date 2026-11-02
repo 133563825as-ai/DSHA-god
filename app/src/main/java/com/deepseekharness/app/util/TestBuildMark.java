@@ -15,6 +15,13 @@ public final class TestBuildMark {
    */
   public static String text(String signature, String build, boolean chinese) {
     if (signature == null || signature.isEmpty()) return "";
+    // 稳定版的版号是 "sN"，显示为"稳定版 N"；测试版 "tN" 显示为"测试版 tN"。
+    if (build != null && build.matches("s[0-9]{1,4}")) {
+      String number = build.substring(1);
+      return chinese
+          ? "稳定版 " + number + " · 修改与发行：" + signature
+          : "Stable build " + number + " · Modified and distributed by " + signature;
+    }
     String label = build == null || build.isEmpty() ? "" : " " + build;
     return chinese
         ? "测试版" + label + " · 修改与发行：" + signature
