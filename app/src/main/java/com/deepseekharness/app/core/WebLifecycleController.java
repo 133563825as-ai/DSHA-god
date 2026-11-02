@@ -865,6 +865,24 @@ final class WebLifecycleController {
     runtime.ensureInstalled(null);
     runtime.registerForRecognition();
     if (!actions.unlockStartup()) return null;
+    // 内置插件登记进原生 web profile（替代容器的 register-builtin-plugins.py）；失败不阻止启动，只是没有插件。
+    try {
+      java.util.List<String> enabled =
+          com.deepseekharness.app.runtime.NativePlugins.register(
+              runtime.home().getCanonicalFile(), runtime.installDirectory(), runtime.plugins());
+      state.diagnostics.message(generation, "NATIVE_PLUGINS:" + String.join(",", enabled));
+    } catch (java.io.IOException failure) {
+      state.diagnostics.message(
+          generation,
+          "NATIVE_PLUGINS_FAILED:"
+              + com.deepseekharness.app.util.SensitiveData.redact(String.valueOf(failure)));
+      reportStatus(
+          generation,
+          onStatus,
+          com.deepseekharness.app.util.UiText.choose(
+              "内置插件登记失败，本次将不带插件启动",
+              "Built-in plugins could not be registered; starting without them"));
+    }
     var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
     File files =
         com.deepseekharness.app.util.ColdInstallPackages.privateFiles(

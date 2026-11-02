@@ -339,6 +339,8 @@ def prepareNativeRuntime = tasks.register("prepareNativeRuntime", Exec) {
     inputs.dir(file("src/main/assets/destructive-policy"))
     inputs.file(file("src/main/assets/ca-certificates.crt"))
     inputs.files(file("src/main/assets/native-consent.cjs"), file("src/main/assets/bridge-port.cjs"))
+    inputs.file(file("src/main/assets/managed-runtime-inputs.json"))
+    inputs.dir(file("src/main/assets/builtin-plugins"))
     outputs.dir(layout.buildDirectory.dir("generated/nativeRuntime"))
     commandLine(System.getenv("DSHA_PYTHON") ?: "python3", "-B",
             rootProject.file("tools/prepare-native-runtime.py").absolutePath,

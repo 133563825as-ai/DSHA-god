@@ -155,6 +155,19 @@ public final class NativeRuntime {
       deleteTree(temp);
       throw new IOException("NATIVE_RUNTIME_ARCHIVE_DIGEST");
     }
+    // 内置插件靠祖先目录查找 DSH 自带的依赖（cordis 等）；zip 不带软链接，这里补上（与容器同一做法）。
+    try {
+      for (String[] plugin : plugins()) {
+        File dir = new File(temp, plugin[1]);
+        if (!new File(dir, "package.json").isFile()) throw new IOException("NATIVE_PLUGIN_MISSING");
+        android.system.Os.symlink(
+            "../../node_modules/@deepseek-ai/dsh/node_modules",
+            new File(dir, "node_modules").getPath());
+      }
+    } catch (IOException | android.system.ErrnoException failure) {
+      deleteTree(temp);
+      throw new IOException("NATIVE_PLUGIN_LINK", failure);
+    }
     try (OutputStream mark = new FileOutputStream(new File(temp, COMPLETE))) {
       mark.write((archiveSha256 + "\n").getBytes(StandardCharsets.US_ASCII));
     }
@@ -163,6 +176,28 @@ public final class NativeRuntime {
       throw new IOException("NATIVE_RUNTIME_PUBLISH");
     }
     if (progress != null) progress.accept(count);
+  }
+
+  /** 本 APK 带的内置插件：{名字, 相对安装目录的目录}，按清单顺序。 */
+  public java.util.List<String[]> plugins() throws IOException {
+    try (InputStream in = context.getAssets().open(MANIFEST)) {
+      org.json.JSONArray rows =
+          new JSONObject(new String(readAll(in, 1 << 20), StandardCharsets.UTF_8))
+              .optJSONArray("plugins");
+      java.util.List<String[]> out = new java.util.ArrayList<>();
+      if (rows == null) return out;
+      for (int i = 0; i < rows.length(); i++) {
+        JSONObject row = rows.getJSONObject(i);
+        String name = row.getString("name"), dir = row.getString("directory");
+        if (!name.matches("dsh-[a-z0-9-]{1,64}")
+            || !dir.matches("dsha-plugins/dsha-[a-z0-9-]{1,64}"))
+          throw new IOException("NATIVE_PLUGIN_ENTRY");
+        out.add(new String[] {name, dir});
+      }
+      return out;
+    } catch (org.json.JSONException bad) {
+      throw new IOException("NATIVE_RUNTIME_MANIFEST", bad);
+    }
   }
 
   /** 启动所需的全部宿主路径（规范化，因为 /data/user/0 本身是指向 /data/data 的链接）。 */

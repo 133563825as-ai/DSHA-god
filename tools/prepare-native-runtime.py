@@ -116,6 +116,45 @@ def zip_add(archive, name, data):
     archive.writestr(info, data, compresslevel=6)
 
 
+def apply_patch(patch, data):
+    """替换锚点（每个恰好一次），可选在末尾追加；结果必须含 marker。"""
+    if 'replace_file' in patch:
+        new = patch['replace_file']
+    else:
+        new = data.decode('utf-8')
+        for old, replacement in patch['replace_exact']:
+            if new.count(old) != 1:
+                fail('PATCH_ANCHOR', patch['id'])
+            new = new.replace(old, replacement)
+    if 'append' in patch:
+        new = new.rstrip('\n') + '\n' + patch['append']
+    if patch.get('marker') and patch['marker'] not in new:
+        fail('PATCH_MARKER', patch['id'])
+    return new.encode('utf-8')
+
+
+def install_plugins(root):
+    """按 managed-runtime-inputs.json 把选定插件的受管文件复制到 root/<目录>/，返回相对路径列表。"""
+    installs = json.loads((ROOT / 'app/src/main/assets/managed-runtime-inputs.json').read_text(encoding='utf-8'))['installs']
+    files = []
+    for directory in sorted(set(dsh_android_patches.PLUGIN_DIRS.values())):
+        prefix = 'root/%s/' % directory
+        rows = [row for row in installs if row['target'].startswith(prefix)]
+        if not rows:
+            fail('PLUGIN_NOT_MANAGED', directory)
+        for row in rows:
+            rel = directory + '/' + row['target'][len(prefix):]
+            if '..' in rel.split('/'):
+                fail('PLUGIN_PATH', rel)
+            out = root / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / 'app/src/main/assets' / row['asset'], out)
+            files.append(rel)
+        if not (root / directory / 'package.json').is_file():
+            fail('PLUGIN_PACKAGE', directory)
+    return sorted(files)
+
+
 def fetch(entry, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_suffix(target.suffix + '.part')
@@ -217,17 +256,21 @@ def main(argv=None):
             data = target.read_bytes()
             if sha(data) != patch['original_sha256']:
                 fail('PATCH_ORIGINAL', patch['id'])
-            if 'replace_file' in patch:
-                new = patch['replace_file'].encode('utf-8')
-            else:
-                text = data.decode('utf-8')
-                for old, replacement in patch['replace_exact']:
-                    if text.count(old) != 1:
-                        fail('PATCH_ANCHOR', patch['id'])
-                    text = text.replace(old, replacement)
-                new = text.encode('utf-8')
+            new = apply_patch(patch, data)
             target.write_bytes(new)
             applied.append({'id': patch['id'], 'path': patch['path'], 'original': patch['original_sha256'], 'patched': sha(new)})
+
+        # 3b. 内置插件：按受管安装清单取同一批文件（容器部署的就是这些），打凭据路径补丁。
+        plugins_root = work / 'dsha-plugins'
+        plugin_files = install_plugins(plugins_root)
+        for patch in dsh_android_patches.PLUGIN_PATCHES:
+            target = plugins_root / patch['path']
+            data = target.read_bytes()
+            if sha(data) != patch['original_sha256']:
+                fail('PATCH_ORIGINAL', patch['id'])
+            new = apply_patch(patch, data)
+            target.write_bytes(new)
+            applied.append({'id': patch['id'], 'path': 'dsha-plugins/' + patch['path'], 'original': patch['original_sha256'], 'patched': sha(new)})
 
         # 4. 资产包：确定性 zip（排序、固定时间、0644），软链接（只有 .bin/ 快捷方式）跳过。
         manifest_files = {}
@@ -242,6 +285,11 @@ def main(argv=None):
             manifest_files['etc/tls/cert.pem'] = sha(cert)
             for package, text in sorted(licenses.items()):
                 zip_add(archive, 'licenses/%s.copyright' % package, text)
+            # 插件文件逐个列入核验清单：解压时任何一个字节不符都拒绝使用。
+            for rel in plugin_files:
+                data = (plugins_root / rel).read_bytes()
+                zip_add(archive, 'dsha-plugins/' + rel, data)
+                manifest_files['dsha-plugins/' + rel] = sha(data)
             skipped = 0
             for path in sorted(modules.rglob('*')):
                 if path.is_symlink():
@@ -260,6 +308,8 @@ def main(argv=None):
         'certificate': 'etc/tls/cert.pem',
         'verifiedFiles': manifest_files,
         'patches': applied,
+        'plugins': [{'name': name, 'directory': 'dsha-plugins/' + directory}
+                    for name, directory in sorted(dsh_android_patches.PLUGIN_DIRS.items())],
         'removedElf': removed,
         'skippedSymlinks': skipped,
         'sources': sources,

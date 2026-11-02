@@ -237,3 +237,75 @@ LAUNCHER_PATCHES = [
     },
 ]
 PATCHES += LAUNCHER_PATCHES
+
+
+# ---------------------------------------------------------------- 内置插件（原生树 dsha-plugins/<目录>/）
+# 只改凭据文件位置：android 上由 DSHA_BRIDGE_STATE_DIR 给出，其他平台仍是 /root/.dsh。
+# HELPER 追加在文件末尾（函数声明会提升，CJS 与 ESM 都可用）。
+PLUGIN_TOKEN = "dshaStateDirectory() + '/.bridge_token'"
+PLUGIN_DIRS = {
+    'dsh-web-mobile': 'dsha-web-mobile',
+    'dsh-computer-use-android': 'dsha-computer-use-android',
+    'dsh-task-notifier': 'dsha-task-notifier',
+    'dsh-tool-vscreen': 'dsha-tool-vscreen',
+    'dsh-status-overlay': 'dsha-status-overlay',
+    'dsh-launch-target': 'dsha-launch-target',
+}
+BRIDGE_PORT_SHA = '44c96786a68379ba17c049f35e78afc33955a79ab5189eaca0a0a3fd62b95caf'
+PLUGIN_PATCHES = [
+    {
+        'id': 'plugin-%s-bridge-port' % d,
+        'path': d + '/lib/bridge-port.cjs',
+        'original_sha256': BRIDGE_PORT_SHA,
+        'replace_exact': [(BRIDGE_PORT_OLD, BRIDGE_PORT_NEW)],
+        'marker': '[dsha-android]',
+    }
+    for d in ('dsha-computer-use-android', 'dsha-task-notifier', 'dsha-tool-vscreen', 'dsha-status-overlay', 'dsha-launch-target')
+] + [
+    {
+        'id': 'plugin-computer-use-token',
+        'path': 'dsha-computer-use-android/lib/server.cjs',
+        'original_sha256': '7bf3466b8397fcc4f25524dae2160906e465ab80b16a1da67d99caaf145e89c0',
+        'replace_exact': [("dependencies.fs.readFile('/root/.dsh/.bridge_token','utf8')",
+                           "dependencies.fs.readFile(" + PLUGIN_TOKEN + ",'utf8')")],
+        'append': HELPER,
+        'marker': '[dsha-android]',
+    },
+    {
+        'id': 'plugin-vscreen-token',
+        'path': 'dsha-tool-vscreen/lib/server.cjs',
+        'original_sha256': '0438b9e245c0617ee92689ba0e9896ac5b8ddcc406478d449db4b66c69acb3cf',
+        'replace_exact': [
+            ("const TOKEN_FILE='/root/.dsh/.bridge_token',", "const TOKEN_FILE=" + PLUGIN_TOKEN + ","),
+            (" for(const path of ['/root','/root/.dsh']){",
+             " // [dsha-android] 对凭据目录的每一级祖先做同样的非链接检查（容器里就是 /root、/root/.dsh）。\n"
+             " for(const path of TOKEN_FILE.split('/').slice(1,-1).map((_,i,all)=>'/'+all.slice(0,i+1).join('/'))){"),
+        ],
+        'append': HELPER,
+        'marker': '[dsha-android]',
+    },
+    {
+        'id': 'plugin-task-notifier-token',
+        'path': 'dsha-task-notifier/lib/index.js',
+        'original_sha256': 'b87ecc4daccd6f504fe35d2bb8ee0011c1e7e86cd475902083be5de27b0afc7d',
+        'replace_exact': [("readFile('/root/.dsh/.bridge_token', 'utf8')", "readFile(" + PLUGIN_TOKEN + ", 'utf8')")],
+        'append': HELPER,
+        'marker': '[dsha-android]',
+    },
+    {
+        'id': 'plugin-status-overlay-token',
+        'path': 'dsha-status-overlay/lib/index.js',
+        'original_sha256': 'bd066cb5f46a31303817ca3e0f63f0922224f6fe00233b9438aef4baa655c751',
+        'replace_exact': [("const TOKEN_PATH = '/root/.dsh/.bridge_token'", "const TOKEN_PATH = " + PLUGIN_TOKEN)],
+        'append': HELPER,
+        'marker': '[dsha-android]',
+    },
+    {
+        'id': 'plugin-launch-target-token',
+        'path': 'dsha-launch-target/lib/index.js',
+        'original_sha256': '50e8834267630e86460eb1e295b5e711ca5646a742c4f1e29d2829b7700ef011',
+        'replace_exact': [("readFile('/root/.dsh/.bridge_token', 'utf8')", "readFile(" + PLUGIN_TOKEN + ", 'utf8')")],
+        'append': HELPER,
+        'marker': '[dsha-android]',
+    },
+]
