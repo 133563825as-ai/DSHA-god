@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5` / build269 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为实验性 UI 更新：下载记录页重写为分段筛选、分组列表与详情二级页（平板双栏），传输引擎不变。本机单测与源码门禁通过；未经真机渲染，待统一视觉验收。改动说明见 [build269 更新说明](releases/build269-changes.zh.md)，验证记录见 [build269 记录](releases/v0.2.1-rc.3-build269-downloads-20261102.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5` / build281 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版尝试修复开启 ADB 时重新打开 DSHA 卡在「正在检查运行环境」（实验性）。本机定向单测、Lint 与源码门禁通过。改动说明见 [build281 更新说明](releases/build281-changes.zh.md)，验证记录见 [build281 记录](releases/v0.2.1-rc.3-build281-adb-reopen-env-check-20261103.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
@@ -22,6 +22,7 @@
 | [资料与来源依据](references-and-provenance.md) | 官方primary入口、工程上游关系、固定版本/摘要、许可与来源限制 |
 | [固定构建输入](fixed-build-inputs.md) | 公开仓库预发布资产、11 项输入、SHA-256 锁定与还原流程 |
 | [CI 构建与发布](ci-release.md) | 公开仓库 Actions 正式成品：触发参数、Secrets、门禁、签名核验与 Release 产物 |
+| [CI 节点图](ci-nodes.md) | Actions 可复用节点、入口工作流、交接与耗时依据 |
 | [Mod 身份与签名](mod-identity-and-signing.md) | DSH-A-Su 包名、证书、verifyPublishCertificate 与覆盖升级边界 |
 | [文案长度政策](i18n-length-policy.md) | 十种语言的短标签与长句处理边界 |
 | [首次引导重构设计](design/onboarding-20261031/README.md) | 4 步引导、部署胶囊、受限主界面、授权卡片、自适应布局与落地差异 |

@@ -35,18 +35,18 @@ language_source_pins = {
     "docs/releases/build197-changes.ar.md": "a96ff6d4f58886938ada1197aa758da75a19ef378c2347830128ca71eda00030",
     "docs/releases/build197-changes.la.md": "24a72be4658c4874920e25f430bbbfdd912ce7d6deb74b428dd9cd32daabcaaa",
     "docs/releases/build197-changes.pt.md": "9c84cad387a0496aa7a0affa9c8a2ee6617ff5d747236e1ebcce84723cbf8500",
-    "tools/i18n/translations-extra/ar.json": "ea849a28292498e4ae769b39b60d657bd6d10833607709ae72e3696f0be08058",
-    "tools/i18n/translations-extra/fr.json": "19e29ca1ae9b95e1ce7fd5f15de665c6453934b74f465eb51e346983025a6b61",
-    "tools/i18n/translations-extra/ja.json": "fdd388a2daa020c00a235761759f726f7959ab5cb200546a0c8c2ec500ef3eac",
-    "tools/i18n/translations-extra/ko.json": "1f35995f349c4fdaa0070bbb6d4b106988969935559cbf7d4d13323a06e3e84a",
-    "tools/i18n/translations-extra/pt.json": "bb3accb95bc99bd25298dc8feaaebaec1e79fc9e929fbaa565a81bfd80630ddf",
-    "tools/i18n/translations-extra/ru.json": "27d2265a432402570392b1c48d9661f39ad032c57268951d1264a9229f614fe3",
-    "tools/i18n/translations/ar.json": "0ea2523a5c1e5b89517e2c9da480f98b6bb8243614a422e08574c3a6b825691b",
-    "tools/i18n/translations/fr.json": "3c6e0c36fb3917bbf512b8d04bce2bb1e8ff4c2c4650b98d7e0d9eb7fe369f61",
-    "tools/i18n/translations/ja.json": "618451a570f3a36fdf9bdbd58c360a156ad30e5289f223ffde61cdd2627ba964",
-    "tools/i18n/translations/ko.json": "e29b7bb55c4195ffd6be6303348d30276cf1f2fa5769926a0487b6d94b76baf6",
-    "tools/i18n/translations/pt.json": "a0a3e56a363240114774ebfcbebc67979f385800d2fb2de906e06bca9cf82a6b",
-    "tools/i18n/translations/ru.json": "cab46effcda52c29d46d4e64c4a0653ec35a9440bac7db3e97755f5f7e8bb67c",
+    "tools/i18n/translations-extra/ar.json": "9a903647ae763235c978039f22b04b66dc551b060f1b454703503ba02fd9bb97",
+    "tools/i18n/translations-extra/fr.json": "73e8ed08451871739b1bffca5e529f8eaed7d5f0d4de60397b894200fcd7d466",
+    "tools/i18n/translations-extra/ja.json": "10b994c1aece60d4d433408ddca7ab4ffcb91bf007a264d4d2b58928812ba866",
+    "tools/i18n/translations-extra/ko.json": "6f0687eae1c25d8e7ed3e07500171656d66b8b9f469741f6947a400202ada384",
+    "tools/i18n/translations-extra/pt.json": "760e5d5ec1d51474c5f7d7c4bc058bbe67f87a812b368b2552329cade01e1d18",
+    "tools/i18n/translations-extra/ru.json": "860fa0df70018052172f4a5cc25ec82a42b08135e1e4f920aa454b61835a7f21",
+    "tools/i18n/translations/ar.json": "ab4779855d2e1917843544a511745309d6ea54a98734852530dbcdacfcf93fbe",
+    "tools/i18n/translations/fr.json": "6da3b9cea589700067b9cdbfe6b33865e9ac7b53f39d5c529456d09bdda31ae9",
+    "tools/i18n/translations/ja.json": "79d37c25c87eafdc63767ac0766b5af8d14763bbf74592461ca5e38e722c636e",
+    "tools/i18n/translations/ko.json": "4c19be15c69cb011ac8d0d370b5042aa62f0333c827cd8b8b2d4a2c14519f271",
+    "tools/i18n/translations/pt.json": "9d458193e70288fb09275df65673dae6203078c7883da73e51d94c3b93038afe",
+    "tools/i18n/translations/ru.json": "b530fed29661da197ce01b728e7287f1c53580f8ea3ba8f3de125f62f4dda797",
 }
 descriptor = json.loads((ROOT / "app/src/main/assets/runtime-descriptor.json").read_text(encoding="utf-8"))
 binary = {".so", ".bin", ".jar", ".aar", ".gz", ".tgz", ".zip", ".png", ".jpg", ".webp", ".pdf", ".keystore"}
@@ -57,8 +57,16 @@ for name in names:
     value = path.read_bytes()
     if b"\0" not in value and b"\r\n" in value:
         errors.append("CRLF: " + name)
-for path in (ROOT / ".github/workflows").glob("*.yml"):
+# 外部 action 必须钉到完整 commit；仓库内的 ./.github/actions 与 ./.github/workflows
+# 节点随同一 commit 审阅，本身也在此扫描。
+workflow_files = sorted((ROOT / ".github/workflows").glob("*.yml"))
+workflow_files += sorted((ROOT / ".github/actions").glob("*/action.yml"))
+for path in workflow_files:
     for selected in re.findall(r"uses:\s*([^\s#]+)", path.read_text(encoding="utf-8")):
+        if re.fullmatch(r"\./\.github/(?:actions/[\w-]+|workflows/_node-[\w-]+\.yml)", selected):
+            if not (ROOT / selected[2:]).exists():
+                errors.append("MISSING_LOCAL_ACTION: " + selected)
+            continue
         if not re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", selected):
             errors.append("UNPINNED_ACTION: " + str(path.relative_to(ROOT)))
 if "mavenLocal()" in (ROOT / "settings.gradle").read_text(encoding="utf-8"):

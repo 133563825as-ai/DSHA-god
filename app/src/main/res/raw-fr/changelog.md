@@ -1,6 +1,4 @@
-# DSHA 0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5 / build269
+# DSHA 0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5 / build281
 
-- Expérimental : page des téléchargements réécrite. Le haut affiche un résumé en direct et quatre filtres, et la liste est regroupée en à traiter, en cours et par date ; chaque ligne garde une action principale, le reste passe dans un menu pour éviter les erreurs, et les enregistrements terminés se suppriment en une fois.
-- Ouvrir un enregistrement affiche une page de détail avec la progression téléchargement, vérification et enregistrement ; sur tablette en paysage, la liste est à gauche et le détail à droite. Annuler un téléchargement déjà avancé demande confirmation. Le comportement du téléchargement et de la vérification ne change pas.
-- Il s'agit d'une mise à jour d'interface expérimentale sans revue visuelle unifiée sur appareil.
-- Portée de la vérification : tests unitaires et contrôles de source locaux uniquement ; pas de rendu sur appareil. versionCode porté à 269 (basé sur build268). La révision DSHA reste 0.2.1-rc.3 et le DSH intégré reste 0.2.1-rc.5.
+- Expérimental : avec ADB activé, rouvrir DSHA après déverrouillage fait d'abord céder la sonde ADB en arrière-plan, ce qui réduit les longues attentes sur « Vérification de l'environnement ». Correctif au mieux : le problème d'origine n'a pas pu être reproduit.
+- Portée de la vérification : tests unitaires ciblés, Lint et contrôles de source locaux uniquement ; non vérifié sur appareil. versionCode porté à 281 (basé sur build280). La révision DSHA reste 0.2.1-rc.3 et le DSH intégré reste 0.2.1-rc.5.

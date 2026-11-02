@@ -1,7 +1,7 @@
 # Documentation index and maintenance rules
 
 
-Current source: `0.2.1-rc.3-20261102.0930-dsh0.2.1-rc.5` / build269 / `io.github.sunsetrne.dsha` / DSH-A-Su (`main`). This is an experimental UI build: the downloads page is rewritten with segmented filters, grouped lists and a detail page (two columns on tablets), with the transfer engine unchanged. Local unit tests and source gates passed; not rendered on a device and awaiting a unified visual review. See the [build269 notes](../releases/build269-changes.en.md) and the [build269 record](../releases/v0.2.1-rc.3-build269-downloads-20261102.md). Build and publication scope follow this round's CI run and Release receipt.
+Current source: `0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5` / build281 / `io.github.sunsetrne.dsha` / DSH-A-Su (`main`). This build tries to fix DSHA getting stuck on "Checking environment" when reopened with ADB enabled (experimental). Local targeted unit tests, Lint and source gates passed. See the [build281 notes](../releases/build281-changes.en.md) and the [build281 record](../releases/v0.2.1-rc.3-build281-adb-reopen-env-check-20261103.md). Build and publication scope follow this round's CI run and Release receipt.
 
 Build and acceptance records for earlier versions stay in [releases/](releases/); each version's conclusions hold only for its own commit and point in time.
 
