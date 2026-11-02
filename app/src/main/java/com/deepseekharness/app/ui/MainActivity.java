@@ -329,6 +329,9 @@ public class MainActivity extends AppCompatActivity {
     directWebMainState = null;
   }
 
+  /** 主页右上角的运行环境切换；主界面就绪前为 null。 */
+  private TextView engineSwitch;
+
   private record PendingMain(Bundle saved, ConfigStore config, HarnessController controller) {}
 
   /**
@@ -475,6 +478,8 @@ public class MainActivity extends AppCompatActivity {
         appBar.indexOfChild(findViewById(R.id.btn_about)),
         new android.widget.LinearLayout.LayoutParams(downloadButtonSize, downloadButtonSize));
     installDeployCapsule(appBar, appBar.indexOfChild(downloads));
+    // 主页右上角：运行环境切换（暂定位置）。
+    engineSwitch = EngineSwitchButton.install(this, appBar, appBar.indexOfChild(downloads));
     android.view.View recovery = findViewById(R.id.environment_recovery_banner);
     recovery.setOnClickListener(
         v -> {
@@ -966,6 +971,8 @@ public class MainActivity extends AppCompatActivity {
         .setVisibility(nested ? android.view.View.VISIBLE : android.view.View.GONE);
     findViewById(R.id.app_logo)
         .setVisibility(nested ? android.view.View.GONE : android.view.View.VISIBLE);
+    EngineSwitchButton.updateVisibility(
+        engineSwitch, !nested && shown instanceof LaunchFragment, this);
     if (shown instanceof AboutFragment)
       title.setText(com.deepseekharness.app.util.UiText.choose("关于 DSHA", "About DSHA"));
     else if (shown instanceof OverlayFragment)

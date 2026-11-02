@@ -418,6 +418,7 @@
     "app/src/main/java/com/deepseekharness/app/ui/DragHandleView.java",
     "app/src/main/java/com/deepseekharness/app/ui/DshaDialogBuilder.java",
     "app/src/main/java/com/deepseekharness/app/ui/DshaSelectView.java",
+    "app/src/main/java/com/deepseekharness/app/ui/EngineSwitchButton.java",
     "app/src/main/java/com/deepseekharness/app/ui/EnvironmentRecoveryFragment.java",
     "app/src/main/java/com/deepseekharness/app/ui/EnvironmentUiStatus.java",
     "app/src/main/java/com/deepseekharness/app/ui/ExtraKeysDialog.java",

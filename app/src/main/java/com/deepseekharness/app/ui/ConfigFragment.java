@@ -50,10 +50,6 @@ public class ConfigFragment extends Fragment {
   private boolean renderingEntryTarget;
   private View root;
   private ConfigDraft savedDraft;
-
-  /** 运行方式选择了 Android 原生（未保存的草稿值）。 */
-  private boolean nativeEngineChoice;
-
   private static final java.util.concurrent.atomic.AtomicBoolean savingLanPassword =
       new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -153,18 +149,13 @@ public class ConfigFragment extends Fragment {
             UiText.choose("运行方式", "Runtime"),
             new String[] {
               UiText.choose("proot（默认，稳定）", "proot (default, stable)"),
-              UiText.choose("proroot（可选，实验）", "proroot (optional, experimental)"),
-              UiText.choose("Android 原生（实验）", "Android native (experimental)")
+              UiText.choose("proroot（可选，实验）", "proroot (optional, experimental)")
             },
-            runtimeIndex(c.dshEngine().isContainer(), c.isProroot()),
+            c.isProroot() ? 1 : 0,
             index -> {
-              // 原生不经容器；proroot 子选项保持原值，切回容器时恢复。
-              if (index != 2) proroot.setChecked(index == 1);
-              nativeEngineChoice = index == 2;
+              proroot.setChecked(index == 1);
               renderRuntimeDescription();
-              renderDraft();
             });
-    nativeEngineChoice = !c.dshEngine().isContainer();
     // 行内值显示：去掉下拉框底与内边距，整行点按打开同一个底部选择面板。
     runtime.setBackground(null);
     runtime.setPadding(0, 0, 0, 0);
@@ -259,7 +250,6 @@ public class ConfigFragment extends Fragment {
                   c.setDesktopMode(desktop.isChecked());
                   if (false) c.setGeckoCore(gecko.isChecked());
                   c.setProroot(proroot.isChecked());
-                  c.setDshEngine(nativeEngineChoice);
                   c.setProrootStaticLoader(staticLoader.isChecked());
                   c.setProotSeccompDisabled(noSeccomp.isChecked());
                   c.setDnsMode(
@@ -389,11 +379,6 @@ public class ConfigFragment extends Fragment {
     redescribe(R.id.config_automatic_port_text, R.id.config_automatic_port);
   }
 
-  /** 运行方式三选一：0 proot、1 proroot（都在容器里）、2 Android 原生。 */
-  private static int runtimeIndex(boolean container, boolean proroot) {
-    return !container ? 2 : proroot ? 1 : 0;
-  }
-
   private void renderRuntimeDescription() {
     if (root == null) return;
     DshaSelectView runtime = root.findViewById(R.id.config_runtime_choice);
@@ -500,8 +485,7 @@ public class ConfigFragment extends Fragment {
         c.isProotSeccompDisabled(),
         c.isDesktopMode(),
         c.isCheckUpdate(),
-        pref(requireContext(), "overlay_stream", false),
-        !c.dshEngine().isContainer());
+        pref(requireContext(), "overlay_stream", false));
   }
 
   @Nullable
@@ -520,8 +504,7 @@ public class ConfigFragment extends Fragment {
         checked(R.id.config_no_seccomp),
         checked(R.id.config_desktop_mode),
         checked(R.id.config_check_update),
-        checked(R.id.config_overlay_stream),
-        nativeEngineChoice);
+        checked(R.id.config_overlay_stream));
   }
 
   private boolean checked(int id) {
@@ -572,8 +555,7 @@ public class ConfigFragment extends Fragment {
   private void restoreDraft(@Nullable ConfigDraft d) {
     if (root == null || d == null) return;
     DshaSelectView runtime = root.findViewById(R.id.config_runtime_choice);
-    runtime.setSelection(runtimeIndex(!d.nativeEngine, d.proroot));
-    nativeEngineChoice = d.nativeEngine;
+    runtime.setSelection(d.proroot ? 1 : 0);
     ((CompoundButton) root.findViewById(R.id.config_proroot)).setChecked(d.proroot);
     ((CompoundButton) root.findViewById(R.id.config_automatic_port)).setChecked(d.automaticPort);
     EditText port = root.findViewById(R.id.config_port);
