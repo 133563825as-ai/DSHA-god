@@ -255,6 +255,8 @@ public class DshaApp extends Application
     registerActivityLifecycleCallbacks(
         new com.deepseekharness.app.ui.ThemeController.PaletteHook());
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.ModernAndroidUi());
+    // 全应用高刷：各页面回到前台时按设备允许的最高刷新率申请（Web 工作台自管）。
+    com.deepseekharness.app.ui.WebFrameRate.register(this);
     registerActivityLifecycleCallbacks(new ForegroundActivity());
     registerActivityLifecycleCallbacks(new PluginLifecycle());
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -34,4 +34,16 @@ public class FrameRatePolicyTest {
         FrameRatePolicy.select(false, Float.NaN, new float[] {Float.NaN, -1f, 60f, 119.88f}),
         0.01f);
   }
+
+  @Test
+  public void modeForPicksMatchingDisplayMode() {
+    int[] ids = {1, 2, 3};
+    float[] rates = {60f, 90f, 120f};
+    org.junit.Assert.assertEquals(3, FrameRatePolicy.modeFor(120f, ids, rates));
+    org.junit.Assert.assertEquals(2, FrameRatePolicy.modeFor(90.2f, ids, rates));
+    // 不选高刷（0）或没有接近的模式时不指定。
+    org.junit.Assert.assertEquals(0, FrameRatePolicy.modeFor(0f, ids, rates));
+    org.junit.Assert.assertEquals(0, FrameRatePolicy.modeFor(144f, ids, rates));
+    org.junit.Assert.assertEquals(0, FrameRatePolicy.modeFor(120f, ids, new float[] {60f}));
+  }
 }
