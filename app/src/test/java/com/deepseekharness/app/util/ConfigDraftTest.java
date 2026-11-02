@@ -62,4 +62,18 @@ public final class ConfigDraftTest {
     assertEquals("", d.port);
     assertEquals("auto", d.dnsMode);
   }
+
+  @Test
+  public void nativeEngineIsOneChangeAndHidesContainerSubchoice() {
+    ConfigDraft saved =
+        new ConfigDraft(false, true, "3080", "auto", false, true, false, false, true, false, false);
+    ConfigDraft nativeChosen =
+        new ConfigDraft(true, true, "3080", "auto", false, true, false, false, true, false, true);
+    // 切到原生算 1 项；原生下 proroot 子选项变化不再计入。
+    org.junit.Assert.assertEquals(1, nativeChosen.changesFrom(saved));
+    org.junit.Assert.assertNotEquals(saved, nativeChosen);
+    org.junit.Assert.assertEquals(
+        saved,
+        new ConfigDraft(false, true, "3080", "auto", false, true, false, false, true, false));
+  }
 }

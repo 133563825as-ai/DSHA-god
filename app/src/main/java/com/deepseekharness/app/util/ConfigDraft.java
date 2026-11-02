@@ -20,6 +20,9 @@ public final class ConfigDraft {
   public final boolean checkUpdate;
   public final boolean overlay;
 
+  /** 运行环境选了 Android 原生（而不是容器）。 */
+  public final boolean nativeEngine;
+
   public ConfigDraft(
       boolean proroot,
       boolean automaticPort,
@@ -31,6 +34,33 @@ public final class ConfigDraft {
       boolean desktop,
       boolean checkUpdate,
       boolean overlay) {
+    this(
+        proroot,
+        automaticPort,
+        port,
+        dnsMode,
+        lan,
+        staticLoader,
+        seccompDisabled,
+        desktop,
+        checkUpdate,
+        overlay,
+        false);
+  }
+
+  public ConfigDraft(
+      boolean proroot,
+      boolean automaticPort,
+      String port,
+      String dnsMode,
+      boolean lan,
+      boolean staticLoader,
+      boolean seccompDisabled,
+      boolean desktop,
+      boolean checkUpdate,
+      boolean overlay,
+      boolean nativeEngine) {
+    this.nativeEngine = nativeEngine;
     this.proroot = proroot;
     this.automaticPort = automaticPort;
     this.port = port == null ? "" : port.trim();
@@ -47,7 +77,9 @@ public final class ConfigDraft {
   public int changesFrom(ConfigDraft saved) {
     if (saved == null) return 0;
     int n = 0;
-    if (proroot != saved.proroot) n++;
+    if (nativeEngine != saved.nativeEngine) n++;
+    // 选了原生时，容器内的 proot / proroot 子选项不生效，不计为改动。
+    if (!nativeEngine && proroot != saved.proroot) n++;
     if (automaticPort != saved.automaticPort) n++;
     if (!automaticPort && !port.equals(saved.port)) n++;
     if (!dnsMode.equals(saved.dnsMode)) n++;
@@ -69,7 +101,8 @@ public final class ConfigDraft {
   public boolean equals(Object other) {
     if (!(other instanceof ConfigDraft)) return false;
     ConfigDraft d = (ConfigDraft) other;
-    return proroot == d.proroot
+    return nativeEngine == d.nativeEngine
+        && proroot == d.proroot
         && automaticPort == d.automaticPort
         && port.equals(d.port)
         && dnsMode.equals(d.dnsMode)
@@ -84,6 +117,7 @@ public final class ConfigDraft {
   @Override
   public int hashCode() {
     return Objects.hash(
+        nativeEngine,
         proroot,
         automaticPort,
         port,
