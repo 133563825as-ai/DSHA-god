@@ -51,6 +51,7 @@ public class FrameStatsTest {
     assertEquals(8.333, s.budgetMs, 0.001);
     assertEquals(120.0, s.budgetHz, 0.1);
     assertArrayEquals(new int[] {120}, s.framesPerSecond);
+    assertArrayEquals(new int[] {31, 30, 30, 29}, s.framesPer250ms);
     assertEquals(2.0, s.stageMs[4][0], 0);
     assertEquals(1.0, s.stageMs[8][2], 0);
     assertEquals(120, s.totalMsPerFrame.length);

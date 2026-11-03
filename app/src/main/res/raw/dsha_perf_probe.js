@@ -8,6 +8,8 @@
   var TOP_SOURCES = 30;
   var TOP_FUNCTIONS = 5;
   var WORST_FRAMES = 10;
+  var MUTATION_BUCKET_MS = 100;
+  var MAX_MUTATION_BUCKETS = 600;
 
   function round(value, digits) {
     var scale = Math.pow(10, digits == null ? 2 : digits);
@@ -268,8 +270,26 @@
       state = {
         running: true, budget: budget, startedAt: perf.now(), raf: [], lastRaf: null,
         loaf: [], longtask: [], events: [], observers: [], errors: [], support: support,
-        domNodesAtStart: countNodes()
+        domNodesAtStart: countNodes(), mutationStartPerfNow: perf.now(), mutationTimeOrigin: perf.timeOrigin,
+        mutationCounts: [], mutationTotal: 0, mutationObserver: null
       };
+      if (env.MutationObserver && env.document && env.document.documentElement) {
+        try {
+          state.mutationObserver = new env.MutationObserver(function (records) {
+            if (!state || !state.running) return;
+            var now = perf.now();
+            var bucket = Math.max(0, Math.floor((now - state.mutationStartPerfNow) / MUTATION_BUCKET_MS));
+            if (bucket >= MAX_MUTATION_BUCKETS) return;
+            while (state.mutationCounts.length <= bucket) state.mutationCounts.push(0);
+            state.mutationCounts[bucket] += records.length;
+            state.mutationTotal += records.length;
+          });
+          state.mutationObserver.observe(env.document.documentElement, { subtree: true, childList: true, characterData: true });
+        } catch (e) {
+          state.errors.push('mutation: ' + (e && e.message));
+          state.mutationObserver = null;
+        }
+      }
       if (support.longAnimationFrame) state.observers.push(observe('long-animation-frame', {}, state.loaf));
       else if (support.longtask) state.observers.push(observe('longtask', {}, state.longtask));
       if (support.event) state.observers.push(observe('event', { durationThreshold: 16 }, state.events));
@@ -298,6 +318,21 @@
       }
       state.running = false;
       if (state.rafHandle != null && env.cancelAnimationFrame) env.cancelAnimationFrame(state.rafHandle);
+      if (state.mutationObserver) {
+        try {
+          var pendingMutations = state.mutationObserver.takeRecords ? state.mutationObserver.takeRecords() : [];
+          if (pendingMutations.length) {
+            var mutationNow = perf.now();
+            var mutationBucket = Math.max(0, Math.floor((mutationNow - state.mutationStartPerfNow) / MUTATION_BUCKET_MS));
+            if (mutationBucket < MAX_MUTATION_BUCKETS) {
+              while (state.mutationCounts.length <= mutationBucket) state.mutationCounts.push(0);
+              state.mutationCounts[mutationBucket] += pendingMutations.length;
+              state.mutationTotal += pendingMutations.length;
+            }
+          }
+          state.mutationObserver.disconnect();
+        } catch (e) {}
+      }
       for (var i = 0; i < state.observers.length; i++) {
         var observer = state.observers[i];
         if (!observer) continue;
@@ -311,6 +346,11 @@
       result.durationMs = round(perf.now() - state.startedAt, 1);
       result.support = state.support;
       result.domNodes = { start: state.domNodesAtStart, end: countNodes() };
+      result.mutations = {
+        bucketMs: MUTATION_BUCKET_MS, startPerfNow: round(state.mutationStartPerfNow, 1),
+        timeOrigin: state.mutationTimeOrigin || null, counts: state.mutationCounts.slice(0, MAX_MUTATION_BUCKETS),
+        total: state.mutationTotal
+      };
       result.raf = rafSummary(state.raf, state.budget);
       if (state.support.longAnimationFrame) result.longAnimationFrames = summarizeLoaf(state.loaf);
       else if (state.support.longtask) result.longTasks = summarizeLongtasks(state.longtask);

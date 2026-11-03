@@ -23,6 +23,7 @@ import android.widget.Toast;
 import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.util.FrameStats;
 import com.deepseekharness.app.util.PerfProbeNames;
+import com.deepseekharness.app.util.ThreadCpuStats;
 import com.deepseekharness.app.util.UiText;
 
 import org.json.JSONArray;
@@ -48,7 +49,7 @@ final class WebPerfProbe {
     WebView readyPage();
   }
 
-  private static final long WINDOW_MS = 20_000L;
+  private static final long WINDOW_MS = 30_000L;
   private static final long WEB_RESULT_TIMEOUT_MS = 3_000L;
   private static final int FRAME_CAPACITY = 8192;
   private static final String STOP_SCRIPT =
@@ -61,6 +62,8 @@ final class WebPerfProbe {
   private HandlerThread metricsThread;
   private Window.OnFrameMetricsAvailableListener listener;
   private FrameStats stats;
+  private ThreadCpuSampler cpuSampler;
+  private ThreadCpuStats.Summary cpuSummary;
   private WebView sampledPage;
   private boolean recording;
   private boolean saving;
@@ -132,6 +135,10 @@ final class WebPerfProbe {
     removeListener();
     long endNanos = System.nanoTime();
     long endWall = System.currentTimeMillis();
+    if (cpuSampler != null) {
+      cpuSummary = cpuSampler.stopAndSummarize();
+      cpuSampler = null;
+    }
     JSONObject displayAtEnd = displayInfo();
     long fallback = FrameStats.budgetForRefreshRate(currentRefreshRate());
     FrameStats.Summary summary = stats.summarize(startNanos, endNanos, fallback);
@@ -172,6 +179,10 @@ final class WebPerfProbe {
       recording = false;
       removeListener();
     }
+    if (cpuSampler != null) {
+      cpuSummary = cpuSampler.stopAndSummarize();
+      cpuSampler = null;
+    }
     if (button.getParent() instanceof ViewGroup)
       ((ViewGroup) button.getParent()).removeView(button);
   }
@@ -211,8 +222,10 @@ final class WebPerfProbe {
     sampledPage = page;
     displayAtStart = displayInfo();
     startNanos = System.nanoTime();
-    watchDisplay();
     startWallMillis = System.currentTimeMillis();
+    cpuSummary = null;
+    cpuSampler = new ThreadCpuSampler(android.os.Process.myUid());
+    watchDisplay();
     deadlineMillis = android.os.SystemClock.uptimeMillis() + WINDOW_MS;
     final long fallbackBudget = budget;
     final FrameStats target = stats;
@@ -249,8 +262,8 @@ final class WebPerfProbe {
     Toast.makeText(
             activity,
             UiText.choose(
-                "性能采样开始：20 秒后自动停止，再点一次可提前停止",
-                "Performance sampling started. It stops after 20 s, or tap again to stop."),
+                "性能采样开始：30 秒后自动停止，再点一次可提前停止",
+                "Performance sampling started. It stops after 30 s, or tap again to stop."),
             Toast.LENGTH_SHORT)
         .show();
   }
@@ -367,9 +380,11 @@ final class WebPerfProbe {
     JSONObject report = new JSONObject();
     Boolean mobile = null;
     try {
-      report.put("schema", "dsha-perf-probe/1");
+      report.put("schema", "dsha-perf-probe/2");
       report.put("startedAt", iso(startWallMillis));
       report.put("endedAt", iso(endWall));
+      report.put("startedAtEpochMs", startWallMillis);
+      report.put("endedAtEpochMs", endWall);
       report.put("stopReason", reason);
       report.put("navigatedDuringSample", navigated);
       report.put("build", buildInfo());
@@ -381,6 +396,7 @@ final class WebPerfProbe {
               .put("end", displayAtEnd)
               .put("changes", displayChanges));
       report.put("native", nativeJson(summary));
+      report.put("threads", threadsJson(cpuSummary));
       JSONObject web = parseWeb(webValue, webError);
       report.put("web", web);
       JSONObject mobileInfo = web.optJSONObject("mobile");
@@ -538,6 +554,9 @@ final class WebPerfProbe {
     JSONArray perSecond = new JSONArray();
     for (int value : s.framesPerSecond) perSecond.put(value);
     result.put("framesPerSecond", perSecond);
+    JSONArray per250ms = new JSONArray();
+    for (int value : s.framesPer250ms) per250ms.put(value);
+    result.put("framesPer250ms", per250ms);
     JSONObject stages = new JSONObject();
     for (int i = 0; i < FrameStats.STAGES.length; i++) {
       double[] row = s.stageMs[i];
@@ -559,6 +578,75 @@ final class WebPerfProbe {
     JSONArray gaps = new JSONArray();
     for (double value : s.gapMsPerFrame) gaps.put(value);
     result.put("gapMsPerFrame", gaps);
+    return result;
+  }
+
+  private JSONObject threadsJson(ThreadCpuStats.Summary summary) throws JSONException {
+    JSONObject result = new JSONObject();
+    if (summary == null) return result.put("error", "unavailable");
+    result.put(
+        "meta",
+        new JSONObject()
+            .put("intervalMs", summary.intervalMs)
+            .put("clkTck", summary.clkTck)
+            .put("samples", summary.samples)
+            .put("unreadableProcesses", summary.unreadableProcesses)
+            .put("unreadableThreads", summary.unreadableThreads)
+            .put("samplerSelfCpuMs", summary.samplerSelfCpuMs)
+            .put("cpuCount", summary.cpuCount)
+            .put("note", summary.note));
+    JSONArray top = new JSONArray();
+    for (ThreadCpuStats.ThreadTotal item : summary.top) {
+      top.put(
+          new JSONObject()
+              .put("pid", item.key.pid)
+              .put("process", item.key.process)
+              .put("tid", item.key.tid)
+              .put("name", item.key.name)
+              .put("cpuMs", item.cpuMs)
+              .put("cpuPctOfOneCore", item.cpuPctOfOneCore)
+              .put("peakPctOfOneCore", item.peakPctOfOneCore));
+    }
+    result.put("top", top);
+    JSONArray byName = new JSONArray();
+    for (ThreadCpuStats.NamedTotal item : summary.byName) {
+      byName.put(
+          new JSONObject()
+              .put("process", item.process)
+              .put("name", item.name)
+              .put("cpuMs", item.cpuMs)
+              .put("cpuPctOfOneCore", item.cpuPctOfOneCore)
+              .put("peakPctOfOneCore", item.peakPctOfOneCore));
+    }
+    result.put("byName", byName);
+    JSONArray processes = new JSONArray();
+    for (ThreadCpuStats.ProcessTotal item : summary.processes) {
+      processes.put(
+          new JSONObject()
+              .put("pid", item.pid)
+              .put("process", item.process)
+              .put("cpuMs", item.cpuMs)
+              .put("threads", item.threads));
+    }
+    result.put("processes", processes);
+    JSONArray timeline = new JSONArray();
+    for (ThreadCpuStats.TimelinePoint point : summary.timeline) {
+      JSONArray pointTop = new JSONArray();
+      for (ThreadCpuStats.TimelineThread item : point.top) {
+        pointTop.put(
+            new JSONObject()
+                .put("name", item.name)
+                .put("process", item.process)
+                .put("pct", item.pct));
+      }
+      timeline.put(
+          new JSONObject()
+              .put("t", point.t)
+              .put("wall", point.wall)
+              .put("totalPctOfOneCore", point.totalPctOfOneCore)
+              .put("top", pointTop));
+    }
+    result.put("timeline", timeline);
     return result;
   }
 

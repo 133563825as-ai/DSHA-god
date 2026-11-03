@@ -75,6 +75,12 @@ function fakeEnv({ loafSupported }) {
     takeRecords() { const r = this.records; this.records = []; return r; }
     disconnect() { this.disconnected = true; }
   }
+  class FakeMutationObserver {
+    constructor(cb) { this.cb = cb; this.records = []; observers.push(this); }
+    observe(target, opts) { this.target = target; this.opts = opts; }
+    takeRecords() { const r = this.records; this.records = []; return r; }
+    disconnect() { this.disconnected = true; }
+  }
   FakeObserver.supportedEntryTypes = loafSupported ? ['event', 'long-animation-frame', 'longtask'] : ['event', 'longtask'];
   const document = {
     visibilityState: 'visible',
@@ -85,8 +91,9 @@ function fakeEnv({ loafSupported }) {
   };
   return {
     env: {
-      performance: { now: () => now, getEntriesByType: () => [] },
+      performance: { now: () => now, timeOrigin: 1700000000000, getEntriesByType: () => [] },
       PerformanceObserver: FakeObserver,
+      MutationObserver: FakeMutationObserver,
       requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
       cancelAnimationFrame: () => {},
       navigator: { userAgent: 'X Chrome/142.0.1.2 Mobile' },
@@ -116,6 +123,10 @@ function fakeEnv({ loafSupported }) {
   loafObserver.cb({ getEntries: () => [{ startTime: 1, duration: 70, blockingDuration: 20, scripts: [] }] });
   // 停止时 takeRecords 的剩余条目也要计入。
   eventObserver.records.push({ name: 'input', startTime: 1, processingStart: 5, processingEnd: 9, duration: 32 });
+  const mutations = fake.observers.find((o) => o.target);
+  assert.ok(mutations);
+  mutations.cb([{ type: 'childList' }, { type: 'characterData' }]);
+  mutations.records.push({ type: 'childList' });
   const out = JSON.parse(p.stop());
   assert.equal(p.isRunning(), false);
   assert.equal(out.chromeVersion, '142.0.1.2');
@@ -126,6 +137,12 @@ function fakeEnv({ loafSupported }) {
   assert.equal(out.longAnimationFrames.count, 1);
   assert.equal(out.events.count, 1);
   assert.equal(out.domNodes.end, 1234);
+  assert.deepEqual(out.mutations.counts, [0, 3]);
+  assert.equal(out.mutations.bucketMs, 100);
+  assert.equal(out.mutations.startPerfNow, 0);
+  assert.equal(out.mutations.timeOrigin, 1700000000000);
+  assert.equal(out.mutations.total, 3);
+  assert.ok(mutations.disconnected);
   assert.ok(loafObserver.disconnected && eventObserver.disconnected);
 }
 

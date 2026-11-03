@@ -109,6 +109,9 @@ public final class FrameStats {
 
     public int[] framesPerSecond = new int[0];
 
+    /** 每 250 毫秒桶中的帧数，按 intended vsync 相对采样开始归桶。 */
+    public int[] framesPer250ms = new int[0];
+
     /** 每阶段 {mean, p95, max}（毫秒）；该阶段全部不可用时为 null。 */
     public double[][] stageMs = new double[STAGES.length][];
 
@@ -149,6 +152,8 @@ public final class FrameStats {
     s.windowSeconds = round(window / 1e9, 3);
     int seconds = (int) Math.max(1, (window + 999_999_999L) / 1_000_000_000L);
     s.framesPerSecond = new int[seconds];
+    int quarterSeconds = (int) Math.max(1, (window + 249_999_999L) / 250_000_000L);
+    s.framesPer250ms = new int[quarterSeconds];
     if (count == 0) return s;
 
     long[] sorted = Arrays.copyOf(total, count);
@@ -188,6 +193,8 @@ public final class FrameStats {
       long offset = vsync[i] - windowStartNanos;
       int slot = (int) Math.min(seconds - 1, Math.max(0, offset / 1_000_000_000L));
       s.framesPerSecond[slot]++;
+      int quarterSlot = (int) Math.min(quarterSeconds - 1, Math.max(0, offset / 250_000_000L));
+      s.framesPer250ms[quarterSlot]++;
     }
     for (int value : s.framesPerSecond) if (value > 0) active++;
     s.fpsOverWindow = window > 0 ? round(count * 1e9 / window, 2) : 0;
