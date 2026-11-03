@@ -57,7 +57,10 @@
   // 把脚本 URL 归到来源：DSH 本体、某个插件、合并请求（??a,b）里包含的插件，或页面外来源。
   function classifySource(url) {
     if (!url) return { key: '(inline/unknown)', mobile: false };
-    var path = String(url);
+    var original = String(url);
+    var injected = /^dsha-injected\/([^/?#]+)$/.exec(original);
+    if (injected) return { key: 'app:' + injected[1], mobile: false, appInjected: true };
+    var path = original;
     try { var parsed = new URL(path, root.location && root.location.href); path = parsed.pathname + (parsed.search || ''); } catch (e) {}
     var combo = path.indexOf('??');
     if (combo >= 0) {
@@ -113,7 +116,7 @@
 
   function summarizeLoaf(entries) {
     var durations = [], blocking = [], sources = {}, worst = [];
-    var scriptMs = 0, styleLayoutMs = 0, renderMs = 0, mobileMs = 0, dshMs = 0, otherMs = 0;
+    var scriptMs = 0, styleLayoutMs = 0, renderMs = 0, mobileMs = 0, dshMs = 0, appInjectedMs = 0, otherMs = 0;
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i];
       durations.push(e.duration || 0);
@@ -129,6 +132,7 @@
         addSource(sources, s.sourceURL, s.sourceFunctionName, s.invoker, d, s.forcedStyleAndLayoutDuration);
         var c = classifySource(s.sourceURL);
         if (c.mobile) mobileMs += d;
+        else if (c.appInjected) appInjectedMs += d;
         else if (c.key.indexOf('dsh:') === 0) dshMs += d;
         else otherMs += d;
       }
@@ -141,7 +145,7 @@
       blocking: distribution(blocking),
       totals: {
         scriptMs: round(scriptMs, 1), styleAndLayoutMs: round(styleLayoutMs, 1), renderMs: round(renderMs, 1),
-        mobilePluginScriptMs: round(mobileMs, 1), dshScriptMs: round(dshMs, 1), otherScriptMs: round(otherMs, 1)
+        mobilePluginScriptMs: round(mobileMs, 1), dshScriptMs: round(dshMs, 1), appInjectedScriptMs: round(appInjectedMs, 1), otherScriptMs: round(otherMs, 1)
       },
       bySource: finishSources(sources),
       worst: worst.slice(0, WORST_FRAMES).map(function (e) {
@@ -271,8 +275,38 @@
         running: true, budget: budget, startedAt: perf.now(), raf: [], lastRaf: null,
         loaf: [], longtask: [], events: [], observers: [], errors: [], support: support,
         domNodesAtStart: countNodes(), mutationStartPerfNow: perf.now(), mutationTimeOrigin: perf.timeOrigin,
-        mutationCounts: [], mutationTotal: 0, mutationObserver: null
+        mutationCounts: [], mutationTotal: 0, mutationObserver: null,
+        resizeWindow: 0, resizeVisualViewport: 0, innerHeightChanges: [], resizeBucketCounts: []
       };
+      state.lastInnerHeight = env.innerHeight || 0;
+      state.onWindowResize = function () {
+        if (!state || !state.running) return;
+        state.resizeWindow++;
+        var h = env.innerHeight || 0;
+        if (h !== state.lastInnerHeight) {
+          state.lastInnerHeight = h;
+          if (state.innerHeightChanges.length < 200)
+            state.innerHeightChanges.push({ t: round(perf.now() - state.startedAt, 1), h: h });
+        }
+        var bucket = Math.max(0, Math.floor((perf.now() - state.startedAt) / 1000));
+        while (state.resizeBucketCounts.length <= bucket) state.resizeBucketCounts.push({ t: bucket, window: 0, visualViewport: 0 });
+        state.resizeBucketCounts[bucket].window++;
+      };
+      state.onVisualViewportResize = function () {
+        if (!state || !state.running) return;
+        state.resizeVisualViewport++;
+        var bucket = Math.max(0, Math.floor((perf.now() - state.startedAt) / 1000));
+        while (state.resizeBucketCounts.length <= bucket) state.resizeBucketCounts.push({ t: bucket, window: 0, visualViewport: 0 });
+        state.resizeBucketCounts[bucket].visualViewport++;
+      };
+      if (env.addEventListener) {
+        try { env.addEventListener('resize', state.onWindowResize, { passive: true }); }
+        catch (e) { env.addEventListener('resize', state.onWindowResize); }
+      }
+      if (env.visualViewport && env.visualViewport.addEventListener) {
+        try { env.visualViewport.addEventListener('resize', state.onVisualViewportResize, { passive: true }); }
+        catch (e) { env.visualViewport.addEventListener('resize', state.onVisualViewportResize); }
+      }
       if (env.MutationObserver && env.document && env.document.documentElement) {
         try {
           state.mutationObserver = new env.MutationObserver(function (records) {
@@ -317,6 +351,9 @@
         return JSON.stringify(result);
       }
       state.running = false;
+      if (env.removeEventListener && state.onWindowResize) env.removeEventListener('resize', state.onWindowResize);
+      if (env.visualViewport && env.visualViewport.removeEventListener && state.onVisualViewportResize)
+        env.visualViewport.removeEventListener('resize', state.onVisualViewportResize);
       if (state.rafHandle != null && env.cancelAnimationFrame) env.cancelAnimationFrame(state.rafHandle);
       if (state.mutationObserver) {
         try {
@@ -350,6 +387,11 @@
         bucketMs: MUTATION_BUCKET_MS, startPerfNow: round(state.mutationStartPerfNow, 1),
         timeOrigin: state.mutationTimeOrigin || null, counts: state.mutationCounts.slice(0, MAX_MUTATION_BUCKETS),
         total: state.mutationTotal
+      };
+      result.resize = {
+        window: state.resizeWindow, visualViewport: state.resizeVisualViewport,
+        innerHeightChanges: state.innerHeightChanges,
+        bucketsPer1s: state.resizeBucketCounts
       };
       result.raf = rafSummary(state.raf, state.budget);
       if (state.support.longAnimationFrame) result.longAnimationFrames = summarizeLoaf(state.loaf);

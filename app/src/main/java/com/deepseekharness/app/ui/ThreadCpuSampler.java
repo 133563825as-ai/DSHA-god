@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Reads same-UID process and thread CPU counters from procfs for the test-package probe only. */
 final class ThreadCpuSampler {
-  private static final long INTERVAL_MS = 500L;
+  private static final long INTERVAL_MS = 2000L;
   private static final long STOP_WAIT_MS = 300L;
   private final int appUid;
   private final long startNanos;

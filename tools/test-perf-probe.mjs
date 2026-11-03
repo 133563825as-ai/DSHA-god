@@ -28,6 +28,7 @@ assert.equal(combo.mobile, true);
 assert.equal(combo.combo, true);
 assert.equal(combo.key, 'combo:dsh-web-mobile,dsh-status-overlay');
 assert.equal(probe.classifySource('/assets/index-abc.js').key, 'dsh:/assets/index-abc.js');
+assert.deepEqual(probe.classifySource('dsha-injected/ime.js'), { key: 'app:ime.js', mobile: false, appInjected: true });
 assert.equal(probe.classifySource('').key, '(inline/unknown)');
 
 // LoAF 按来源聚合。
@@ -44,6 +45,9 @@ const loaf = probe.summarizeLoaf([
 assert.equal(loaf.count, 2);
 assert.equal(loaf.totals.mobilePluginScriptMs, 60);
 assert.equal(loaf.totals.dshScriptMs, 15);
+const appLoaf = probe.summarizeLoaf([{ scripts: [{ sourceURL: 'dsha-injected/page.js', duration: 12 }] }]);
+assert.equal(appLoaf.totals.appInjectedScriptMs, 12);
+assert.equal(appLoaf.bySource[0].source, 'app:page.js');
 assert.equal(loaf.totals.renderMs, 20);
 assert.equal(loaf.totals.styleAndLayoutMs, 10);
 assert.equal(loaf.bySource[0].source, 'plugin:dsh-web-mobile');
@@ -92,6 +96,12 @@ function fakeEnv({ loafSupported }) {
   return {
     env: {
       performance: { now: () => now, timeOrigin: 1700000000000, getEntriesByType: () => [] },
+      addEventListener(type, cb, opts) { this.listeners = this.listeners || {}; this.listeners[type] = { cb, opts }; },
+      removeEventListener(type, cb) { if (this.listeners && this.listeners[type]?.cb === cb) delete this.listeners[type]; },
+      visualViewport: {
+        addEventListener(type, cb, opts) { this.listener = { type, cb, opts }; },
+        removeEventListener(type, cb) { if (this.listener?.cb === cb) this.listener = null; }
+      },
       PerformanceObserver: FakeObserver,
       MutationObserver: FakeMutationObserver,
       requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
@@ -115,6 +125,12 @@ function fakeEnv({ loafSupported }) {
   assert.equal(p.start(1000 / 120), 'started');
   assert.equal(p.start(1000 / 120), 'already-running');
   for (let i = 0; i < 10; i++) fake.tick(i === 5 ? 30 : 8.33);
+  const resize = fake.env.listeners.resize;
+  assert.ok(resize && resize.opts.passive);
+  resize.cb();
+  fake.env.innerHeight = 800;
+  resize.cb();
+  fake.env.visualViewport.listener.cb();
   const loafObserver = fake.observers.find((o) => o.type === 'long-animation-frame');
   const eventObserver = fake.observers.find((o) => o.type === 'event');
   assert.ok(loafObserver && eventObserver);
@@ -132,6 +148,10 @@ function fakeEnv({ loafSupported }) {
   assert.equal(out.chromeVersion, '142.0.1.2');
   assert.equal(out.mobile.loaded, true);
   assert.deepEqual(out.mobile.evidence, ['module:plugin:dsh-web-mobile']);
+  assert.equal(out.resize.window, 2);
+  assert.equal(out.resize.visualViewport, 1);
+  assert.deepEqual(out.resize.innerHeightChanges, [{ t: 105, h: 800 }]);
+  assert.deepEqual(out.resize.bucketsPer1s, [{ t: 0, window: 2, visualViewport: 1 }]);
   assert.equal(out.raf.count, 9);
   assert.equal(out.raf.longIntervals, 1);
   assert.equal(out.longAnimationFrames.count, 1);

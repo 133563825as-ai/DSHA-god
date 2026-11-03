@@ -512,6 +512,7 @@
     "app/src/main/java/com/deepseekharness/app/ui/WebFileActions.java",
     "app/src/main/java/com/deepseekharness/app/ui/WebFrameRate.java",
     "app/src/main/java/com/deepseekharness/app/ui/WebFullscreenUi.java",
+    "app/src/main/java/com/deepseekharness/app/ui/ThreadCpuSampler.java",
     "app/src/main/java/com/deepseekharness/app/ui/WebPageScripts.java",
     "app/src/main/java/com/deepseekharness/app/ui/WebPerfProbe.java",
     "app/src/main/java/com/deepseekharness/app/ui/WebPreviewActivity.java",

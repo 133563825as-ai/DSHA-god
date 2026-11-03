@@ -1,7 +1,9 @@
 package com.deepseekharness.app.ui;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Environment;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -52,6 +54,8 @@ final class WebPerfProbe {
   private static final long WINDOW_MS = 30_000L;
   private static final long WEB_RESULT_TIMEOUT_MS = 3_000L;
   private static final int FRAME_CAPACITY = 8192;
+  private static final String PREFS = "dsha_test_perf_probe";
+  private static final String PREF_HIGH_RATE = "requested_frame_rate_high";
   private static final String STOP_SCRIPT =
       "(function(){var p=window.__dshaPerfProbe;return p?p.stop():null;})()";
 
@@ -73,6 +77,11 @@ final class WebPerfProbe {
   private long startWallMillis;
   private long deadlineMillis;
   private JSONObject displayAtStart;
+  private boolean requestHighFrameRate;
+  private boolean highFrameRateApplied;
+  private boolean experimentFrameRateApplied;
+  private float previousRequestedFrameRate;
+  private float experimentPreviousRequestedFrameRate;
   private final Runnable tick = this::tick;
 
   static boolean enabled() {
@@ -112,6 +121,11 @@ final class WebPerfProbe {
         new FrameLayout.LayoutParams(size, size, Gravity.END | Gravity.CENTER_VERTICAL);
     params.setMarginEnd(dp(2));
     button.setOnClickListener(v -> toggle());
+    button.setOnLongClickListener(
+        v -> {
+          showExperimentDialog();
+          return true;
+        });
     button.setOnTouchListener(new DragListener());
     showIdle();
     ViewGroup content = activity.findViewById(android.R.id.content);
@@ -132,6 +146,7 @@ final class WebPerfProbe {
     if (!recording) return;
     recording = false;
     main.removeCallbacks(tick);
+    restoreRequestedFrameRate();
     removeListener();
     long endNanos = System.nanoTime();
     long endWall = System.currentTimeMillis();
@@ -177,6 +192,7 @@ final class WebPerfProbe {
     main.removeCallbacks(tick);
     if (recording) {
       recording = false;
+      restoreRequestedFrameRate();
       removeListener();
     }
     if (cpuSampler != null) {
@@ -185,6 +201,25 @@ final class WebPerfProbe {
     }
     if (button.getParent() instanceof ViewGroup)
       ((ViewGroup) button.getParent()).removeView(button);
+  }
+
+  private void showExperimentDialog() {
+    if (saving || recording) return;
+    SharedPreferences prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
+    boolean[] checked = {prefs.getBoolean(PREF_HIGH_RATE, false)};
+    new DshaDialogBuilder(activity)
+        .setTitle(UiText.choose("性能采样实验", "Performance sampling experiment"))
+        .setMultiChoiceItems(
+            new String[] {
+              UiText.choose("采样时请求高帧率（实验）", "Request high frame rate while sampling (experimental)")
+            },
+            checked,
+            (dialog, which, value) -> checked[which] = value)
+        .setPositiveButton(
+            UiText.choose("确定", "OK"),
+            (dialog, which) -> prefs.edit().putBoolean(PREF_HIGH_RATE, checked[0]).apply())
+        .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+        .show();
   }
 
   private void toggle() {
@@ -197,6 +232,14 @@ final class WebPerfProbe {
   }
 
   private void start() {
+    requestHighFrameRate =
+        activity
+            .getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+            .getBoolean(PREF_HIGH_RATE, false);
+    highFrameRateApplied = false;
+    experimentFrameRateApplied = false;
+    previousRequestedFrameRate = 0f;
+    experimentPreviousRequestedFrameRate = 0f;
     WebView page = host.readyPage();
     if (page == null) {
       Toast.makeText(
@@ -220,6 +263,7 @@ final class WebPerfProbe {
     stats = new FrameStats(FRAME_CAPACITY);
     navigated = false;
     sampledPage = page;
+    applyRequestedFrameRate(page);
     displayAtStart = displayInfo();
     startNanos = System.nanoTime();
     startWallMillis = System.currentTimeMillis();
@@ -266,6 +310,29 @@ final class WebPerfProbe {
                 "Performance sampling started. It stops after 30 s, or tap again to stop."),
             Toast.LENGTH_SHORT)
         .show();
+  }
+
+  private void applyRequestedFrameRate(WebView page) {
+    if (!requestHighFrameRate || Build.VERSION.SDK_INT < 35) return;
+    try {
+      previousRequestedFrameRate = page.getRequestedFrameRate();
+      experimentPreviousRequestedFrameRate = previousRequestedFrameRate;
+      page.setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_HIGH);
+      highFrameRateApplied = true;
+      experimentFrameRateApplied = true;
+    } catch (RuntimeException unavailable) {
+      highFrameRateApplied = false;
+    }
+  }
+
+  private void restoreRequestedFrameRate() {
+    WebView page = sampledPage;
+    if (!highFrameRateApplied || page == null || Build.VERSION.SDK_INT < 35) return;
+    try {
+      page.setRequestedFrameRate(previousRequestedFrameRate);
+    } catch (RuntimeException ignored) {
+    }
+    highFrameRateApplied = false;
   }
 
   private static long[] stages(FrameMetrics metrics) {
@@ -397,6 +464,12 @@ final class WebPerfProbe {
               .put("changes", displayChanges));
       report.put("native", nativeJson(summary));
       report.put("threads", threadsJson(cpuSummary));
+      report.put(
+          "experiment",
+          new JSONObject()
+              .put("requestedFrameRateHigh", requestHighFrameRate)
+              .put("applied", experimentFrameRateApplied)
+              .put("previous", experimentPreviousRequestedFrameRate));
       JSONObject web = parseWeb(webValue, webError);
       report.put("web", web);
       JSONObject mobileInfo = web.optJSONObject("mobile");
@@ -419,6 +492,7 @@ final class WebPerfProbe {
                   out.write(bytes);
                   out.getFD().sync();
                 }
+                String exportFailureText = null;
                 try {
                   var exported =
                       com.deepseekharness.app.data.DownloadsExport.write(app, file, name);
@@ -430,11 +504,64 @@ final class WebPerfProbe {
                               "Performance sample saved: Download/DSHA/%s"),
                           exported.displayName);
                 } catch (Exception exportFailure) {
-                  shown =
-                      String.format(
-                          Locale.ROOT,
-                          UiText.choose("导出失败，已存私有目录：%s", "Export failed; kept privately: %s"),
-                          file.getAbsolutePath());
+                  exportFailureText = exceptionText(exportFailure);
+                  try {
+                    report.put(
+                        "export",
+                        new JSONObject()
+                            .put("success", false)
+                            .put("mediaStoreError", exportFailureText));
+                    try (FileOutputStream out = new FileOutputStream(file)) {
+                      out.write(report.toString().getBytes(StandardCharsets.UTF_8));
+                      out.getFD().sync();
+                    }
+                  } catch (Exception ignored) {
+                  }
+                  try {
+                    File downloads =
+                        Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_DOWNLOADS);
+                    File fallbackDir = new File(downloads, "DSHA");
+                    if (!fallbackDir.isDirectory() && !fallbackDir.mkdirs())
+                      throw new java.io.IOException("mkdir Download/DSHA");
+                    File fallback = new File(fallbackDir, name);
+                    try (FileOutputStream out = new FileOutputStream(fallback)) {
+                      out.write(report.toString().getBytes(StandardCharsets.UTF_8));
+                      out.getFD().sync();
+                    }
+                    shown =
+                        String.format(
+                            Locale.ROOT,
+                            UiText.choose(
+                                "MediaStore 导出失败（%s）；已直接保存：Download/DSHA/%s",
+                                "MediaStore export failed (%s); saved directly: Download/DSHA/%s"),
+                            exportFailureText,
+                            fallback.getName());
+                  } catch (Exception fallbackFailure) {
+                    String failureText = exceptionText(fallbackFailure);
+                    try {
+                      report.put(
+                          "export",
+                          new JSONObject()
+                              .put("success", false)
+                              .put("mediaStoreError", exportFailureText)
+                              .put("fallbackError", failureText));
+                      try (FileOutputStream out = new FileOutputStream(file)) {
+                        out.write(report.toString().getBytes(StandardCharsets.UTF_8));
+                        out.getFD().sync();
+                      }
+                    } catch (Exception ignored) {
+                    }
+                    shown =
+                        String.format(
+                            Locale.ROOT,
+                            UiText.choose(
+                                "两种导出均失败（%s；%s），报告留在私有目录：%s",
+                                "Both exports failed (%s; %s); report kept privately: %s"),
+                            exportFailureText,
+                            failureText,
+                            file.getAbsolutePath());
+                  }
                 }
               } catch (Exception failure) {
                 shown =
@@ -453,6 +580,13 @@ final class WebPerfProbe {
             },
             "dsha-perf-save")
         .start();
+  }
+
+  private static String exceptionText(Exception failure) {
+    String message = failure.getMessage();
+    if (message == null) message = "";
+    if (message.length() > 120) message = message.substring(0, 120);
+    return failure.getClass().getSimpleName() + (message.isEmpty() ? "" : ": " + message);
   }
 
   private static JSONObject parseWeb(String value, String error) throws JSONException {
