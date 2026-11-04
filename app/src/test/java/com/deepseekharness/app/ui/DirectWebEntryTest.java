@@ -46,7 +46,23 @@ public final class DirectWebEntryTest {
     static HarnessController value;
     static String authUrl = "";
     static int startRequests;
+    static boolean starting;
     static final List<Runnable> checks = new ArrayList<>();
+    static final java.util.Set<Runnable> readyListeners = new java.util.LinkedHashSet<>();
+
+    @Implementation
+    protected void addReadyWebPageListener(Runnable listener) {
+      readyListeners.add(listener);
+    }
+
+    @Implementation
+    protected void removeReadyWebPageListener(Runnable listener) {
+      readyListeners.remove(listener);
+    }
+
+    static void notifyReady() {
+      for (Runnable listener : List.copyOf(readyListeners)) listener.run();
+    }
 
     @Implementation
     protected static HarnessController get(Context context) {
@@ -75,7 +91,7 @@ public final class DirectWebEntryTest {
 
     @Implementation
     protected boolean isStarting() {
-      return false;
+      return starting;
     }
 
     @Implementation
@@ -120,7 +136,9 @@ public final class DirectWebEntryTest {
     Controller.value = org.robolectric.shadow.api.Shadow.newInstanceOf(HarnessController.class);
     Controller.authUrl = "";
     Controller.startRequests = 0;
+    Controller.starting = false;
     Controller.checks.clear();
+    Controller.readyListeners.clear();
     ConfigStore config = new ConfigStore(app);
     config.setWelcomed(true);
     config.setCheckUpdate(false);
@@ -204,6 +222,90 @@ public final class DirectWebEntryTest {
     }
   }
 
+  /** 进程被系统回收后的保存态：同进程令牌不再匹配。 */
+  private static Bundle crossProcessState() {
+    var first = Robolectric.buildActivity(MainActivity.class, launcher()).create().start().resume();
+    Bundle saved = new Bundle();
+    first.pause().saveInstanceState(saved).stop().destroy();
+    saved.remove(com.deepseekharness.app.util.MainRecreatePolicy.STATE_KEY);
+    return saved;
+  }
+
+  @Test
+  public void processRestoreReturnsToWebOnlyWhenTheUserLeftFromWeb() throws Exception {
+    ConfigStore config = new ConfigStore(RuntimeEnvironment.getApplication());
+    config.setEntryTarget(EntryTarget.WEB);
+    Bundle saved = crossProcessState();
+    config.setLastForegroundWeb(true);
+    // 最近任务恢复不带桌面图标意图：只按离开前的位置决定。
+    var fromWeb =
+        Robolectric.buildActivity(
+                MainActivity.class,
+                new Intent(RuntimeEnvironment.getApplication(), MainActivity.class))
+            .create(saved)
+            .start()
+            .resume();
+    try {
+      assertTrue("离开前停在 Web：恢复后回到 Web", field(fromWeb.get(), "directWebArmed"));
+    } finally {
+      fromWeb.pause().stop().destroy();
+    }
+    config.setLastForegroundWeb(false);
+    var fromMain =
+        Robolectric.buildActivity(MainActivity.class, launcher()).create(saved).start().resume();
+    try {
+      assertFalse("离开前停在主界面：恢复主界面", field(fromMain.get(), "directWebArmed"));
+    } finally {
+      fromMain.pause().stop().destroy();
+    }
+  }
+
+  @Test
+  public void notificationAppEntryArmsDirectWebOnlyWhenWebIsPreferred() throws Exception {
+    Intent entry =
+        new Intent(RuntimeEnvironment.getApplication(), MainActivity.class)
+            .putExtra(AppEntryRouterActivity.EXTRA_APP_ENTRY, true)
+            .putExtra("open_launch", true);
+    var main = Robolectric.buildActivity(MainActivity.class, entry).create().start().resume();
+    try {
+      assertFalse(field(main.get(), "directWebArmed"));
+    } finally {
+      main.pause().stop().destroy();
+    }
+    new ConfigStore(RuntimeEnvironment.getApplication()).setEntryTarget(EntryTarget.WEB);
+    var web =
+        Robolectric.buildActivity(MainActivity.class, new Intent(entry)).create().start().resume();
+    try {
+      assertTrue(field(web.get(), "directWebArmed"));
+    } finally {
+      web.pause().stop().destroy();
+    }
+  }
+
+  @Test
+  public void openingWebFromTheMainScreenCoversMainOnlyWhenWebIsPreferred() throws Exception {
+    var host = Robolectric.buildActivity(MainActivity.class, launcher()).create().start().resume();
+    try {
+      MainActivity main = host.get();
+      var ready = MainActivity.class.getDeclaredField("mainReady");
+      ready.setAccessible(true);
+      ready.setBoolean(main, true);
+      // 主界面已显示：入口加载页已收起（showMain 的效果，不运行真实启动页）。
+      var dismiss = MainActivity.class.getDeclaredMethod("dismissEntryOverlay");
+      dismiss.setAccessible(true);
+      dismiss.invoke(main);
+      main.startActivity(
+          WebPreviewActivity.intent(main, "http://127.0.0.1:1/?token=fixture", null));
+      assertNull("偏好为主界面：行为不变", object(main, "webCover"));
+      new ConfigStore(main).setEntryTarget(EntryTarget.WEB);
+      main.startActivity(
+          WebPreviewActivity.intent(main, "http://127.0.0.1:1/?token=fixture", null));
+      assertNotNull("偏好为 Web：打开前先盖遮罩", object(main, "webCover"));
+    } finally {
+      host.pause().stop().destroy();
+    }
+  }
+
   @Test
   public void readyAuthenticationOpensWebOnceAndMainCompletesBehindIt() throws Exception {
     new ConfigStore(RuntimeEnvironment.getApplication()).setEntryTarget(EntryTarget.WEB);
@@ -231,6 +333,15 @@ public final class DirectWebEntryTest {
       assertFalse(field(main, "directWebArmed"));
       assertNull(drainUntil(main, WebPreviewActivity.class));
       assertEquals("已就绪的实例不重复启动", 0, Controller.startRequests);
+      // 打开 Web 后加载页转为遮罩留在 Main 上：任务切换期间不露出主界面。
+      var cover = (BootScreen) object(main, "webCover");
+      assertNotNull("Web 打开后保留遮罩", cover);
+      assertTrue(cover.attached());
+      // 没有待返回的原网页时，Main 回到前台就是原生页面：收起遮罩。
+      new ConfigStore(main).setLastForegroundWeb(true); // Web 在前台时由浏览器宿主记下
+      host.pause().stop().restart().resume();
+      assertNull("回到原生主界面时收起遮罩", object(main, "webCover"));
+      assertFalse("原生页面回到前台后，回收恢复去主界面", new ConfigStore(main).isLastForegroundWeb());
     } finally {
       host.pause().stop().destroy();
     }
@@ -251,6 +362,102 @@ public final class DirectWebEntryTest {
       assertNull(drainUntil(main, WebPreviewActivity.class));
     } finally {
       host.pause().stop().destroy();
+    }
+  }
+
+  private static final class WaitingEntry implements AutoCloseable {
+    final org.robolectric.android.controller.ActivityController<
+            androidx.fragment.app.FragmentActivity>
+        host = Robolectric.buildActivity(androidx.fragment.app.FragmentActivity.class).setup();
+    final DirectWebLaunch launch;
+    int opened, abandoned;
+
+    WaitingEntry() {
+      Controller.starting = true;
+      launch =
+          new DirectWebLaunch(
+              host.get(),
+              new BootScreen(host.get(), com.deepseekharness.app.util.BootPalette.fromWeb(-1, -1)),
+              () -> abandoned++,
+              () -> opened++);
+      launch.begin();
+      org.robolectric.shadows.ShadowLooper.shadowMainLooper().idle();
+    }
+
+    Intent nextActivity() {
+      ShadowActivity shadow = org.robolectric.shadow.api.Shadow.extract(host.get());
+      return shadow.getNextStartedActivity();
+    }
+
+    @Override
+    public void close() {
+      launch.cancel();
+      host.pause().stop().destroy();
+    }
+  }
+
+  @Test
+  public void readyEventOpensDirectEntryWithoutWaitingForThe400MillisecondPoll() {
+    try (var entry = new WaitingEntry()) {
+      assertEquals(1, Controller.readyListeners.size());
+      assertNull(entry.nextActivity());
+      long before = android.os.SystemClock.uptimeMillis();
+      Controller.authUrl = "http://127.0.0.1:43210/?token=fixture";
+      Controller.notifyReady();
+      assertEquals(before, android.os.SystemClock.uptimeMillis());
+      assertEquals(1, entry.opened);
+      assertEquals(Controller.authUrl, entry.nextActivity().getStringExtra("url"));
+      assertTrue("Successful entry detaches its listener", Controller.readyListeners.isEmpty());
+      org.robolectric.shadows.ShadowLooper.shadowMainLooper()
+          .idleFor(java.time.Duration.ofSeconds(1));
+      assertEquals(1, entry.opened);
+      assertNull(entry.nextActivity());
+      assertEquals(0, Controller.startRequests);
+    }
+  }
+
+  @Test
+  public void pausedDirectEntryWaitsForForegroundAndKeepsThePollFallback() {
+    try (var entry = new WaitingEntry()) {
+      entry.host.pause();
+      Controller.authUrl = "http://127.0.0.1:43210/?token=fixture";
+      Controller.notifyReady();
+      assertEquals(0, entry.opened);
+      assertNull(entry.nextActivity());
+      entry.host.resume();
+      org.robolectric.shadows.ShadowLooper.shadowMainLooper()
+          .idleFor(java.time.Duration.ofMillis(400));
+      assertEquals(1, entry.opened);
+      assertNotNull(entry.nextActivity());
+    }
+  }
+
+  @Test
+  public void abandonedDirectEntryIgnoresAnAlreadyQueuedReadyEvent() {
+    try (var entry = new WaitingEntry()) {
+      Runnable stale = Controller.readyListeners.iterator().next();
+      entry.launch.abandon();
+      assertEquals(1, entry.abandoned);
+      assertTrue(Controller.readyListeners.isEmpty());
+      Controller.authUrl = "http://127.0.0.1:43210/?token=fixture";
+      stale.run();
+      org.robolectric.shadows.ShadowLooper.shadowMainLooper()
+          .idleFor(java.time.Duration.ofSeconds(1));
+      assertEquals(0, entry.opened);
+      assertNull(entry.nextActivity());
+      assertEquals(0, Controller.startRequests);
+    }
+  }
+
+  @Test
+  public void unreadyEventsDoNotStartOrAbandonAnExistingDirectEntry() {
+    try (var entry = new WaitingEntry()) {
+      for (int i = 0; i < 20; i++) Controller.notifyReady();
+      assertTrue(entry.launch.active());
+      assertEquals(0, entry.abandoned);
+      assertEquals(0, entry.opened);
+      assertNull(entry.nextActivity());
+      assertEquals(0, Controller.startRequests);
     }
   }
 }

@@ -1,5 +1,218 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5 / build312（实验性：文件接口大目录流式列出并可取消；通知进入 Web 就绪即进；启动页按钮改为重启 / 停止（修复挑自协作者 ym2025szz））
+
+- 实验性：文件接口（DocumentsProvider）大目录流式列出并可取消；通知点击进入 Web 改为就绪即进；启动页次要按钮顺序改为重启 / 停止（修复挑自协作者 ym2025szz efe03f81 快照）。
+- 文件接口（13e1fd49）：`queryChildDocuments` 改用 `DirectoryStream` 流式遍历，行先写入有界的 `DocumentRowsSnapshot`（缓存目录内 SQLite，限制并发打开数）再返回，避免大目录整体排序与内存峰值；FIFO 与拒读条目跳过不阻塞；同进程调用经 `DocumentStreams` 传递取消信号（外部 SAF 客户端仍受框架限制）；目录过多 / 暂存失败给出明确提示，并设置子目录通知 URI。
+- 启动页（1a235ab6）：通知点击进入 Web 由就绪事件立即触发，每秒刷新只作兜底，页面不可见时停止并注销监听，不再叠加刷新任务；次要按钮顺序由「停止 / 重启」改为「重启 / 停止」（用户确认的 UI 调整）。
+- 运行时描述符随源码重算（受管启动器输入）。
+- 验证范围：发布会话在 build312 上复跑 `*DshaDocumentsProvider*` / `*DocumentRowsSnapshot*` / `*DocumentStreams*` / `*DocumentPaths*` / `*LaunchAccessAddresses*` / `*LaunchWebEntry*` / `*MainEntryLayout*` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 312（基于 build311）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build312 更新说明](docs/releases/build312-changes.zh.md)，验证记录见 [build312 记录](docs/releases/v0.2.1-rc.5-build312-documents-listing-ready-enter-20261104.md)。
+
+## 0.2.1-rc.5-20261104.2130-dsh0.2.1-rc.5 / build311（实验性：Web 停止已证实退出后不再被旧 PID 翻回未知；环境忙时诊断改为只读宿主状态（修复挑自协作者 ym2025szz））
+
+- 实验性：Web 停止已证实退出后不再被旧 PID 翻回未知，读不到进程时阻断维护而非误判仍在运行；环境忙时诊断改为只读宿主状态采样（修复挑自协作者 ym2025szz efe03f81 快照）。
+- Web 停止证据（aa2f32f0）：`WebProcessSession.confirmStopped` 证实 guest 与启动器全部退出后，清除此前代次的旧 PID 证明，避免 PID 复用或权限变化把已完成的停止翻回 UNKNOWN；`WebProcessManager` 在环境变量不可读时只按保存的出生身份确认退出、绝不接管替换进程，扫描遇到拒读条目报 `OWNED_WEB_SCAN_UNCONFIRMED` 阻断维护；`WebSessionRecheck` 记录恢复原因与鉴权次数，新增 `LAUNCHER_UNKNOWN` 提示文案并写 `WEB_SESSION_RECHECK_STATE` 诊断。
+- 诊断（112dec64）：Web 会话未定、启动或停止中、运行任务忙、用户停止未确认或维护未完成时，普通诊断不再启动 guest 或直接失败，改为只读采样 `util/RuntimeStateDiagnostics`（固定字段、白名单取值，不能授权重启或清理记录）；诊断修复入口不变。快照中的备份操作诊断行依赖尚未挑入的 `BackupOperationDiagnostics`，本版未含。
+- 运行时描述符随 Web 生命周期源码重算（受管启动器输入）。
+- 验证范围：发布会话在 build311 上复跑 `*WebSessionExitEvidence*` / `*WebSessionRecheck*` / `*WebSessionRecovery*` / `*WebSessionRestoreText*` / `*WebSessionStorage*` / `*WebProcessSession*` / `*WebProcess*` / `*WebStop*` / `*RuntimeStateDiagnostics*` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 311（基于 build310）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build311 更新说明](docs/releases/build311-changes.zh.md)，验证记录见 [build311 记录](docs/releases/v0.2.1-rc.5-build311-web-stop-evidence-host-diagnostics-20261104.md)。
+
+## 0.2.1-rc.5-20261104.2030-dsh0.2.1-rc.5 / build310（实验性：后台进程退出无法确认时保留环境保护；配置快照备用目录只读；桥接 APK 安装源沿用读取入口的域边界（修复挑自协作者 ym2025szz））
+
+- 实验性：后台进程退出无法确认时保留环境保护并记录诊断；配置快照的备用目录只读；桥接 APK 安装源沿用读取入口的域边界（修复挑自协作者 ym2025szz efe03f81 快照）。
+- 环境保护（c76fa239）：新增 `util/RetainedProcessObserver`，`RuntimeTasks.waitForRetainedExit` 改用它轮询保留进程；`exitValue` 之外的探测失败报 UNKNOWN，保护继续保持、任务说明改为 `EXIT_PROBE_UNAVAILABLE`，并只记一次 `RUNTIME_EXIT_OBSERVATION` 诊断，不提前释放。`EnvironmentTaskGate` 同步。
+- 配置快照（54ee5c2f）：`ConfigurationSnapshots.writableCatalog` 只认主目录 `catalog.json`；备用 `catalog.json.previous` 仍可读来恢复，但不再作为写入或整理的依据。
+- 桥接安装（70c9d262）：`/app/install` 改用 `BridgePathPolicy.deniedReadRaw` / `resolveReadFile`，canonical 只解析一次并绑定到后续快照；新增 `BridgeApkInstall.sourceAllowed`，共享存储只认当前用户根，guest 链接不能跨到共享或宿主域。测试中的示例路径改为 Mod 包名。
+- 运行时描述符随 `RuntimeTasks` 与 `HttpShellService` 源码重算（受管启动器输入）。
+- 验证范围：发布会话在 build310 上复跑 `*RetainedProcessObserver*` / `*EnvironmentRetainedExit*` / `*EnvironmentTaskGate*` / `*ConfigurationSnapshots*` / `*BridgeApkInstall*` / `*BridgePathPolicy*` / `*RuntimeTasks*` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 310（基于 build309）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build310 更新说明](docs/releases/build310-changes.zh.md)，验证记录见 [build310 记录](docs/releases/v0.2.1-rc.5-build310-retained-exit-install-source-20261104.md)。
+
+## 0.2.1-rc.5-20261104.1930-dsh0.2.1-rc.5 / build309（实验性：发布身份可切换（默认 Mod 身份，上游身份流程仅在协作者私有仓库运行）；外接设备确认时固定目标设备、只读调试命令校验参数；备份读取非阻塞打开并修正 arm64 目录标志，失败时记录阶段（部分修复挑自协作者 ym2025szz））
+
+- 实验性：发布身份改为可切换（默认 Mod 身份，另有仅在协作者私有仓库运行的上游身份流程）；外接设备确认时固定目标设备、只读调试命令校验参数；备份读取改为非阻塞打开并修正 arm64 目录标志，失败时记录阶段（部分修复挑自协作者 ym2025szz）。
+- 发布身份（c12bf11f，SunsetRNE，为协作者 ym2025szz 的上游发布准备）：新增 `ci/release-identity.mod.json` 与 `ci/release-identity.upstream.json`，`app/build.gradle` 加 `-Pdsha.identity=mod|upstream`（默认 mod，未知值配置失败、不回退），包名、显示名、测试后缀、默认 key alias 与 `verifyPublishCertificate` 核对的证书都从身份文件读取，versionCode / versionName 两种身份共用；新增只读 `printReleaseIdentity`。`ci/release-identity.json` 保留为 Mod 兼容入口，`tools/release-identity.py --check` 强制一致并拒绝两套身份共享包名、证书、alias、测试后缀、tag 前缀或仓库。`release-production.yml` 显式传 mod；新增 `release-upstream.yml` 只在 `ym2025szz/DSHA-prerelase` 私有仓库 `codex/prerelease-190` 运行（tag `dsha-build…`），在本仓库 bind 即跳过。本仓库正式包仍为 `io.github.sunsetrne.dsha` 与 Mod 证书，不保存、不引用 E7E3 密钥。
+- 外接设备（挑自 ym2025szz efe03f81，9956ac80）：每个外接桥请求在确认框出现前捕获目标序列号、产品、指纹与绑定 / 桥 / Web 代次，换绑、忘记设备、重开外接、请求失效或保存失败后未派发的步骤以 `EXTERNAL_AUTHORITY_CHANGED_BEFORE_DISPATCH` 拒绝，RootShell 写给 root helper 前再核对一次；确认框显示固定后的目标。`wm` 只接受 size / density 查询，`logcat` 只接受 -d/-g/-s、-t N、已知缓冲区与格式及标签过滤；设备授权页外接开关保存失败时提示并回滚。
+- 备份（挑自 ym2025szz efe03f81，cd39ecc4 / d726ecb3）：`AndroidBackupFileSystem` 的 read / currentSnapshot 以 O_NONBLOCK 打开，stat 后被换成 FIFO 时不再等待写端，fstat 身份核验立即拒绝；list / syncDirectory 加 O_DIRECTORY，常量按 NDK aarch64 头文件取 040000（原 0x10000 在 arm64 上是 O_DIRECT）。新增 `BackupFailureDiagnostic`，按阶段写任务目录 failure.json（只含固定阶段、异常类型 / errno 与项目栈位置，不含消息和路径）；`BackupTemporaryFiles` 让临时文件清理失败作为 suppressed 挂到原始错误上，不再覆盖真实原因。
+- 运行时描述符随外接设备与备份源码重算（受管启动器输入）；双身份文档与 build308 当前身份表合并，保留共用版本行。
+- 验证范围：发布会话在 build309 上复跑 `*External*` / `*AndroidBackupFileSystemRead*` / `*BackupFailureDiagnostic*` / `*BackupTemporaryFiles*` / `*HostSnapshot*` / `*OneClickBackup*` / `*IslandText*` / `*DeviceShellPolicy*` / `*UpdateVersionPageTest`、`tools/test-release-identity.py`、`tools/test-ci-workflows.py`、`tools/test-backup-read-nonblock.py`、`printReleaseIdentity`（mod 与 upstream）、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 309（基于 build308）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build309 更新说明](docs/releases/build309-changes.zh.md)，验证记录见 [build309 记录](docs/releases/v0.2.1-rc.5-build309-dual-identity-external-backup-20261104.md)。
+
+## 0.2.1-rc.5-20261104.1830-dsh0.2.1-rc.5 / build308（实验性：上岛通知修复多选提交无反应与动作按钮超过系统上限（贡献者 Ralsei1337）；Root 读取守卫补上 grep -f/-nfFILE 模式文件路径校验（上游 #215）；诊断页早期失败时结果到达后正确启用复制（上游 #213）；启动目标插件面板窄屏竖排时去掉标签下大段空白，分段控件改为撑满整行（实验性，未真机））
+
+- 实验性：上岛通知修复多选提交无反应与动作按钮超过系统上限（贡献者 Ralsei1337）；Root 读取守卫补上 grep -f/-nfFILE 模式文件路径校验（上游 #215）；诊断页早期失败时结果到达后正确启用复制（上游 #213）；启动目标插件面板窄屏竖排时去掉标签下大段空白，分段控件改为撑满整行（实验性，未真机）。
+- 上岛（外部贡献 e4019f56，基于 build245，挑入 build307 之上无冲突）：多选「提交」补带任务标识，接收器能读到已选集合并回传；等待作答通知按系统 3 个动作槽位最多显示 2 个选项，其余由点按通知进入对话承接；运行中切换计时器立即重绘；新模型显式 colorized=false；释放已结束任务的多选集合；多选切换按选项序号区分。发布会话按当前 main 调整：36.0 旧模型 ROM 上 `canPostPromotedNotifications()` 为 false 时设置页仍显示「查不到」而不是「已关闭」；动作槽位规划抽为 `IslandText.quickSlots` 并补单测。
+- Root 读取守卫（上游 DSH-APP/DSHA#215，lzh2034855417-beep）：`grep -f FILE`、`-nfFILE` 等组合短选项中的模式文件此前被当作选项跳过，现与输入文件一并做短信库路径与规范路径核验，原生与 guest 两侧同改；运行时描述符随 `device-shell-policy.py` 重算。诊断页（上游 #213，按 build252 后的页面等效移植）：早期失败不经忙碌态时，结果卡片到达后重算反馈按钮。上游 #200 的压缩重入问题已在 build194 等效修复，未重复挑入。
+- 启动目标插件（`dsh-launch-target`，d80e2bd9，基于 build307）：容器宽度 ≤420px 竖排时标签的 180px flex 基准落到高度方向造成大段空白，改为按内容取高；分段控件显式撑满整行；宽屏横排不变。实验性，未真机。
+- 身份：DSHA 修订号由 0.2.1-rc.3 同步为 0.2.1-rc.5（versionName 前缀与 `ext.dshaApkNameVersion`，APK 下载名随之为 `dsha-0.2.1-rc.5.apk`）；修订号由 35d69fa8（build193）引入，覆盖升级按 versionCode 判定，恢复配方与数据兼容按内置 DSH 版本选择，不受影响。
+- 验证范围：发布会话在 build308 上复跑 `*IslandText*` / `*Island*` / `*DeviceShellPolicy*` / `*UpdateVersionPageTest`、`tools/test-device-shell-policy.py`、`tools/test-diagnostic-feedback.py`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 308（基于 build307）；DSHA 修订号由 0.2.1-rc.3 同步为 0.2.1-rc.5，与内置 DSH 0.2.1-rc.5 一致。
+- 十语种更新说明见 [build308 更新说明](docs/releases/build308-changes.zh.md)，验证记录见 [build308 记录](docs/releases/v0.2.1-rc.5-build308-island-grep-diagnostics-20261104.md)。
+
+## 0.2.1-rc.3-20261104.0130-dsh0.2.1-rc.5 / build307（实验性：设备能力授权页「设备执行通道」「屏幕操作」改为紧凑两行条目）
+
+- 实验性：设备能力授权页的「设备执行通道」与「屏幕操作」两个板块改为紧凑两行条目，减少纵向占用；授权逻辑与开关行为不变（分支 `ui/compact-device-sections`，90a0f4b4，基于 build304，挑入 build306 之上无冲突；用户已在真机竖屏与横屏确认）。
+- 验证范围：发布会话在 build307 上复跑 `*DeviceGrantsLayoutTest` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 307（基于 build306）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build307 更新说明](docs/releases/build307-changes.zh.md)，验证记录见 [build307 记录](docs/releases/v0.2.1-rc.3-build307-compact-device-sections-20261104.md)。
+
+## 0.2.1-rc.3-20261104.0100-dsh0.2.1-rc.5 / build306（实验性：手机竖屏底部导航只显示图标，胶囊压缩到 52dp）
+
+- 实验性：手机竖屏底部胶囊导航只显示图标，高度由 64dp 压缩到 52dp，页底让位随之收紧（90→78dp、74→62dp）；菜单标题保留，无障碍朗读与长按提示不变；横屏保留带文字胶囊，sw600dp 平板左栏不受影响（分支 `ui/compact-nav-portrait`，6db8c400，基于 build305；用户已在平板真机验收）。
+- 验证范围：发布会话在 build306 上复跑 `*ShellNavCompactPortraitTest` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 306（基于 build305）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build306 更新说明](docs/releases/build306-changes.zh.md)，验证记录见 [build306 记录](docs/releases/v0.2.1-rc.3-build306-compact-nav-portrait-20261104.md)。
+
+## 0.2.1-rc.3-20261104.0030-dsh0.2.1-rc.5 / build305（实验性：主 tab 切换按方向横移并淡入淡出）
+
+- 实验性：启动/插件/设置三个主 tab 互切时按底栏顺序横向滑入并淡入淡出，帮助感知页面方位；子页返回、门禁页恢复、重复点选仍用原页面动效，系统关闭动画时一并关闭（分支 `ui/tab-switch-motion`，4f657a02，基于 build303；测试包经用户真机确认观感）。
+- 验证范围：发布会话在 build305 上复跑 `*UpdateVersionPageTest` / `*MainActivity*` / `*UiMotion*`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 305（基于 build304）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build305 更新说明](docs/releases/build305-changes.zh.md)，验证记录见 [build305 记录](docs/releases/v0.2.1-rc.3-build305-tab-switch-motion-20261104.md)。
+
+## 0.2.1-rc.3-20261103.2330-dsh0.2.1-rc.5 / build304（实验性：ADB/root 通道进程治理与备份凭据排除；设备命令与虚拟屏共用通道顺序；Web 页不再成第二个窗口；glob 跳过嵌套工作树）
+
+- 实验性：T38 对 root 通道增加并发上限 3、超时与 App 退出自动回收，避免 helper 进程堆积；ADB 探活不再被 Root/Shizuku 通道冒充；覆盖安装后旧 helper 退出并自动记录 root-busy、package-replaced 快照（分支 `fix/adb-channel-pileup`，37812c45、a137fb74，基于 build303；`.test` 真机已核对）。
+- 安全修复：T42 §7a 让备份与导出排除 `.dsh/adbkeys`，恢复 build303 及以前的旧归档时不落地其中的配对密钥；本机环境重建保留当前设备配对（分支 `fix/backup-exclude-adbkeys`，74632bdb，基于 build303）。
+- 实验性：T41 设备命令与虚拟屏共用一份原生选通道顺序（Root → Shizuku → ADB；Android 17 上 ADB 已验证连接时先于 Shizuku），设备命令先按严格判据、再按已授权判据各选一次，执行失败不换通道重放；ADB 路径新增局域网授权前提（分支 `fix/channel-order-align`，6066f5f3，基于 build303）。
+- 修复：T46 Web 页并入 Main 同一任务，桌面/自由窗口模式下不再出现两个窗口；已有存活宿主时转交请求而不另建（分支 `fix/single-window-task`，d642b1f9，基于 build303；用户真机确认不再复现，画中画展开未单独验收）。
+- 实验性：T45 新增签名内置临时修复插件 `dsh-fs-search-scope`，DSH 的 glob 默认跳过 `.agents/worktrees` 与已登记的链接工作树，避免多工作树仓库检索膨胀；停用插件即恢复上游原样。为签名名单重建 `dsh-runtime.bin`，固定构建输入切到 `fixed-inputs-20261103c`（分支 `feat/fs-search-override`，b3f77cdd、bd0f5895、7dfc3aac，基于 build303；未真机）。
+- 文档：补充 T42 ADB 通道原生化设计稿的 Q1–Q9 决定与 E1–E4 只读取证结论，并加入文档总索引；原生 ADB 客户端实现仍未开始。
+- 验证范围：发布会话在 build304 上复跑 `*RootHelper*` / `*DeviceChannel*` / `AdbResultTest` / `ScreenCapabilityGateTest` / `*BrowserTask*` / `*BuiltinPlugin*` / `DataRootPolicyTest` / `NativeEnvironmentRebuildTest` / `tools/test-backup-engine.py` / `tools/test-fs-search-scope.mjs`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 304（基于 build303）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build304 更新说明](docs/releases/build304-changes.zh.md)，验证记录见 [build304 记录](docs/releases/v0.2.1-rc.3-build304-channels-window-search-20261103.md)。
+
+## 0.2.1-rc.3-20261103.2130-dsh0.2.1-rc.5 / build303（实验性：弹层按窗口宽、高与内容自适应；收录 ADB 通道原生化设计稿，补充识屏守卫与设备命令确认设计稿）
+
+- 实验性：`CardSheet` / `CardPage` / `DshaDialogBuilder` 弹层按窗口宽、高与内容档自适应，几何计算抽到纯逻辑 `util/SheetGeometry`（分支 `feat/sheet-geometry` 8a207c13，基于 build296；**未上真机**）。
+- 文档：T42 ADB 通道原生化设计稿（`docs/design/adb-native-20261103/`，c68cbb5a、b8295fc5、02335afa）；T39 识屏守卫设计稿补权限审计与 Q8 定案（424c933f、4d0127aa）；T40 设备命令确认设计稿补 T42 依赖、T43 拆分与 §4.5 强确认（6da09a79）。均未实现。
+- 验证范围：发布会话在 build303 上复跑 `*SheetGeometryTest` / `*CardSheetGeometryTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 303（基于 build302）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build303 更新说明](docs/releases/build303-changes.zh.md)，验证记录见 [build303 记录](docs/releases/v0.2.1-rc.3-build303-sheet-geometry-20261103.md)。
+
+## 0.2.1-rc.3-20261103.2100-dsh0.2.1-rc.5 / build302（实验性：切网后回收失效的外网连接，模型请求不再卡满 300 秒；收录识屏守卫与设备命令确认设计稿）
+
+- 实验性：网络切换（Wi-Fi / 移动数据）或切后台后，按网络代次回收失效的外网连接，模型请求不再卡满 300 秒；宿主发布网络代次 `NetworkEpochPublisher`，容器内 `net-epoch.cjs` 预加载后丢弃旧代次连接（分支 `fix/stream-stall-network` 0607535a、b457c17e，T37，基于 build299；**未上真机切网验证**，排查见 `docs/network-switch-connection-recycle.md` 与日志 `[dsha-net]`）。
+- 文档：收录 T39 识屏单一守卫设计稿（`docs/design/screen-guard-20261103/`，1012cd6c、4a8e9f27）与 T40 原生设备命令确认设计稿（`docs/design/device-exec-confirm-20261103/`，e6bada84），均已由用户确认，尚未实现。
+- 验证范围：发布会话在 build302 上复跑 `*NetworkEpochPolicyTest` / `*RuntimeTools*` / `*ManagedRuntimeLayout*` / `RuntimeToolsRegistryAndroidTest` / `UpdateVersionPageTest` / `UiStateTextTest`、`tools/test-net-epoch.mjs`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 302（基于 build301）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build302 更新说明](docs/releases/build302-changes.zh.md)，验证记录见 [build302 记录](docs/releases/v0.2.1-rc.3-build302-network-recycle-20261103.md)。
+
+## 0.2.1-rc.3-20261103.2030-dsh0.2.1-rc.5 / build301（虚拟屏观察失败细分并给出下一步，修复助手旋转后代次失步；设备/屏幕提示词去重）
+
+- 虚拟屏助手侧观察失败细分为空屏、首帧等待、画面停滞并给出下一步；待清理 Core 下 see/tree 不再互相指向重看；助手旋转虚拟屏不再判成「目标已变」导致管理器与 Core 代次失步，旋转回复写明显示已重建、原应用需重新 launch（分支 `fix/vscreen-error-detail` 4a17f5c2..b2f033f7，T35，基于 build299；真机四种情况已由原会话核对）。
+- 设备 / 屏幕常驻提示词去重为中文单份，写明虚拟屏不需 android_control begin、无障碍关闭时像素路径仍可用，97 条约束由测试逐条锁定（分支 `docs/screen-prompt-consolidation` 2378a0e3，T36；真机三项已由原会话核对）。
+- 验证范围：发布会话在 build301 上复跑 `com.deepseekharness.app.vscreen.*` / `*VirtualScreenObservationHintTest` / `*HttpShellService*` / `*DshaAccessibility*` / `RuntimeToolsRegistryAndroidTest` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 301（基于 build300）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build301 更新说明](docs/releases/build301-changes.zh.md)，验证记录见 [build301 记录](docs/releases/v0.2.1-rc.3-build301-vscreen-hints-prompts-20261103.md)。
+
+## 0.2.1-rc.3-20261103.2000-dsh0.2.1-rc.5 / build300（新增临时修复插件 dsh-fs-read-hint：未读即改被拒时提示已读的同名路径）
+
+- 新增签名内置临时修复插件 `dsh-fs-read-hint`：助手未读即改被 `fs-observation-policy` 拒绝时，在报错里追加本会话已读过的同名路径，帮助改用正确路径；`dsh-runtime.bin` 按签名名单重建（只有 `dsh-plugin-manager/lib/index.js` 一个成员变化），应急锁同步到同一字节保持去重，固定构建输入切到 `fixed-inputs-20261103b`；发布会话补登记 `tools/test-fs-read-hint.mjs` 到 host-tests 清单（分支 `fix/fs-read-hint-rebuild` 71be0f94..d5f96f58，基于 build299；未上真机）。
+- 验证范围：发布会话在 build300 上复跑 `RuntimeToolsRegistryAndroidTest` / `*PluginManager*` / `*BuiltinPlugin*` / `*RecoveryRuntime*` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 300（基于 build299）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build300 更新说明](docs/releases/build300-changes.zh.md)，验证记录见 [build300 记录](docs/releases/v0.2.1-rc.3-build300-fs-read-hint-20261103.md)。
+
+## 0.2.1-rc.3-20261103.1630-dsh0.2.1-rc.5 / build299（虚拟屏 MCP 插件声明版本协商，启动时少起一次 server.cjs）
+
+- 虚拟屏 MCP 插件声明 `versionNegotiation: legacy`，`dsh-mcp-client` 运行时补丁增加可选版本协商（默认仍为 auto），启动时 `server.cjs` 从 2 次降为 1 次；`dsh-runtime.bin` 按补丁重建（只有 `mcp-client/index.js` 一个成员变化），应急锁同步到同一字节保持去重，固定构建输入切到 `fixed-inputs-20261103`（分支 `fix/vscreen-mcp-negotiation` 8d2c76b3..70fd2ac4，T31，基于 build297；未上真机）。
+- 验证范围：发布会话在 build299 上复跑 `RuntimeToolsRegistryAndroidTest` / `com.deepseekharness.app.vscreen.*` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 299（基于 build298）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build299 更新说明](docs/releases/build299-changes.zh.md)，验证记录见 [build299 记录](docs/releases/v0.2.1-rc.3-build299-vscreen-mcp-negotiation-20261103.md)。
+
+## 0.2.1-rc.3-20261103.1600-dsh0.2.1-rc.5 / build298（文档：proot 开销调查、UI 模板基准与协作约定）
+
+- 仅文档，应用行为不变：新增 proot 本体开销调查（`docs/design/proot-overhead-20261103`，T34：随包 libproot.so 核实为 termux/proot v5.1.107.91，首选 readlink 入口直答方案，实施另行决定）；新增 UI 模板基准（`docs/design/ui-template-baseline-20261103`，四档位整套导出、适配度审计与弹层自适应提案）；AGENTS 增加 DSH 文件工具先 read 再 edit 的约定（分支 `research/proot-overhead` 34981e28、`design/ui-template-baseline` 67724f5e、`docs/agents-fs-read-rule` 3a62dd40）。
+- 验证范围：发布会话在 build298 上复跑 `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 298（基于 build297）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build298 更新说明](docs/releases/build298-changes.zh.md)，验证记录见 [build298 记录](docs/releases/v0.2.1-rc.3-build298-docs-20261103.md)。
+
+## 0.2.1-rc.3-20261103.1530-dsh0.2.1-rc.5 / build297（实验性：启动日志与诊断写明 proot 是否带 seccomp 过滤）
+
+- **实验性。** 启动日志「本次实际运行方式」改为 proot（seccomp 过滤）/ proot（兼容模式：无 seccomp）/ proroot，seccomp 状态由 `ContainerRuntime.Proot.seccompDisabled()` 读取，与 applyEnv 同一配置快照；诊断报告「所选运行方式」增加 `runtimeDetail=proroot|proot-seccomp|proot-no-seccomp`；新增 `util/RuntimeModeLabel` 及单测，不改运行方式选择逻辑（分支 `feat/proot-mode-log` 00a59814、f1b93538，T33，基于 build296；未上真机）。
+- 验证范围：发布会话在 build297 上复跑 `RuntimeModeLabelTest` / `ContainerRuntimeEnvironmentTest` / `DiagnosticReportTest` / `StartupDiagnosticsTest` / `WebLifecycle*` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 297（基于 build296）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build297 更新说明](docs/releases/build297-changes.zh.md)，验证记录见 [build297 记录](docs/releases/v0.2.1-rc.3-build297-proot-mode-log-20261103.md)。
+
+## 0.2.1-rc.3-20261103.1500-dsh0.2.1-rc.5 / build296（实验性：识屏模式收束，助手侧与操作者面板分开）
+
+- **实验性。** 识屏模式收束：实体识屏与虚拟识屏互斥，桥与 MCP 按识屏模式放行（模式不符返回 `SCREEN_MODE_*`），能力撤销时同步降级；授权页新增识屏模式行。识屏模式只约束助手：虚拟识屏页的创建、旋转、输入、关闭只看设备能力与生命周期，不读也不改识屏模式，页内显示助手能否使用本屏并给出授权页入口；ADR0003 决定六相应改写（分支 `feat/screen-mode-gate-b` 4dee3c7f、9fa148f7、5860efb2，T29，原基于 build294；用户已用测试包真机核对：虚拟识屏下 Shizuku 虚拟屏 READY，启动应用后 see 与 tree 正常）。
+- 验证范围：发布会话在 build296 上复跑 `com.deepseekharness.app.vscreen.*` / `ScreenMode*` / `ScreenCapabilityGate*` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 296（基于 build295）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build296 更新说明](docs/releases/build296-changes.zh.md)，验证记录见 [build296 记录](docs/releases/v0.2.1-rc.3-build296-screen-mode-gate-20261103.md)。
+
+## 0.2.1-rc.3-20261103.1430-dsh0.2.1-rc.5 / build295（覆盖安装后 Web 启动不再卡在确认旧启动器退出）
+
+- 修复覆盖安装后 Web 启动卡在「已知 Web 启动器未能确认退出」（`retire-prior-launchers`），只能杀进程才恢复：停止证据读取失败不再整进程锁存，之后重读成功即按原记录判定；记录里的启动器 PID 已被其它 UID 复用时，判定原进程已退出（只用于退出证明，不据此发送任何信号）（分支 `fix/retire-prior-launchers` 9707bbcb，T32，477a5781 发现；未真机复现）。
+- 验证范围：发布会话在 build295 上复跑 `RecoveredWebStopBarrierTest` / `WebSessionKernelEvidenceTest` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 295（基于 build294）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build295 更新说明](docs/releases/build295-changes.zh.md)，验证记录见 [build295 记录](docs/releases/v0.2.1-rc.3-build295-retire-prior-launchers-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0830-dsh0.2.1-rc.5 / build294（实验性：虚拟识屏页按状态重做）
+
+- **实验性。** 虚拟识屏页按状态重做：未开启 / 创建中 / 运行中 / 待清理四态各有独立布局，横屏改为左右布局、操作贴底；旋转后自动重新打开原应用；接回系统悬浮预览；启动结果未知时引导查看虚拟屏启动记录，不再重复文案；首帧等待不报错，节点面板不留空白（分支 `ui/vscreen-page` cd9f414b..2f1c0c7d 共 6 个提交，原基于 build287，用户已真机核对；逻辑层遗留问题记录在 T28 交接，不在本版）。
+- 验证范围：发布会话在 build294 上复跑 `com.deepseekharness.app.vscreen.*` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 294（基于 build293）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build294 更新说明](docs/releases/build294-changes.zh.md)，验证记录见 [build294 记录](docs/releases/v0.2.1-rc.3-build294-vscreen-page-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0800-dsh0.2.1-rc.5 / build293（启动日志框滑动归属一次性锁定）
+
+- 启动日志框与外层页面的嵌套滑动改为越过 touchSlop 后按累计位移一次性锁定归属：旧实现逐帧按单帧位移判断，贴边时一帧抖动就放开外层，外层随即抢走手势，概览日志难以滑动（新增 `util/NestedScrollArbiter` 与单测；分支 `fix/launch-log-nested-scroll` 37725ccb，原基于 build284，用户已真机确认手感）。
+- 验证范围：发布会话在 build293 上复跑 `NestedScrollArbiterTest` / `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 293（基于 build292）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build293 更新说明](docs/releases/build293-changes.zh.md)，验证记录见 [build293 记录](docs/releases/v0.2.1-rc.3-build293-launch-log-nested-scroll-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0730-dsh0.2.1-rc.5 / build292（上岛页「支持的设备」避开悬浮胶囊）
+
+- 上岛页「支持的设备」不再被手机悬浮胶囊遮挡：页底余量改用 `shell_page_bottom`（手机 90dp、平板 30dp）；入口从页底孤立按钮移入「当前状态」卡末行；说明弹窗改用 CardSheet，手机贴底并抬到胶囊上方，宽屏居中限宽。文案未改（分支 `ui/island-devices-inset` 7965b7ac，原基于 build282，用户已在测试包真机确认平板横屏页面与弹窗）。
+- 验证范围：发布会话在 build292 上复跑 `UpdateVersionPageTest` / `UiStateTextTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 292（基于 build291）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build292 更新说明](docs/releases/build292-changes.zh.md)，验证记录见 [build292 记录](docs/releases/v0.2.1-rc.3-build292-island-devices-inset-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0700-dsh0.2.1-rc.5 / build291（一键备份位置证明改在停写之后记录）
+
+- 修复一键备份每次以 `DATA_LOCATION_CHANGED` 失败（一加 12 报告）：位置证明原先在停 Web 前记录，停 Web 会删除或原子重写 `.dsh` 顶层机器状态文件（`.bridge_port` / `.bridge_status`），导致同一链路必然失败。现在手动、自动与救援三条路径都在停写之后再定位；整项排除的机器状态不做位置核对，用户数据在定位后被替换仍失败关闭（分支 `fix/backup-location-proof`，原会话 session-42f01268 未提交，主会话按用户要求提交；新增 `NativeDataLocationsProofTest`）。
+- 宿主回归修正两处过期断言：`test-plugin-management-patch-chain.py` 的前序模块与 V1 模块摘要按内置 DSH 0.2.1-rc.5 重算（配方夹具摘要不变）；`test-dsh-builtins.mjs` 实体屏工具数由 10 改为 11（新增 `android_read_image`）。两项均不在发布门禁内，本机复跑通过。
+- 验证范围：发布会话在 build291 上复跑 `com.deepseekharness.app.backup.*` / `UpdateVersionPageTest`、宿主回归 `test-plugin-management-patch-chain.py` / `test-dsh-builtins.mjs`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 291（基于 build290）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build291 更新说明](docs/releases/build291-changes.zh.md)，验证记录见 [build291 记录](docs/releases/v0.2.1-rc.3-build291-backup-location-proof-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0630-dsh0.2.1-rc.5 / build290（实验性：网络健康检测一期）
+
+- **实验性。** 网络健康检测一期（只检测不修复）：诊断页新增网络健康面板，检测系统拦截本 App 网络、Web 在跑但前台服务缺失、容器 DNS 过期、有网络但出不去、进程曾被冻结五类问题，只记录并提示，不重启 Web、不改系统设置、不重放请求（分支 `design/network-health-20261102`，原会话未提交，主会话按用户要求提交为 4cd38fde；原基于 build274，无冲突）。
+- 验证范围：发布会话在 build290 上复跑 `NetworkHealthPolicyTest` / `UiStateTextTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 290（基于 build289）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build290 更新说明](docs/releases/build290-changes.zh.md)，验证记录见 [build290 记录](docs/releases/v0.2.1-rc.3-build290-network-health-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0600-dsh0.2.1-rc.5 / build289（阶段分段进度条动画）
+
+- 维护页与部署进度的阶段分段条加动画：完成段从左向右填充、当前段流光、结束时颜色淡变；系统关闭动画时画静态终态（分支 `ui/maintenance-progress-motion` 613e7b96，原基于 build274，用户已在测试包真机核对节奏与亮度）。与 build276 的当前段流光（`DeployRunSegment`）同改 `OnboardingKit.segmentBar`，按用户选择合并：画法用 `StageSegmentBar`，“正在执行”判定沿用 build276 的 `OnboardingKit.running`，并承接窗口不可见时停止重绘与 RTL 镜像；删除 `DeployRunSegment`。
+- 验证范围：发布会话在 build289 上复跑 `DeployCapsuleTest` / `StageSegmentMotionTest` / `OnboardingActivityTest` / `OnboardingMotionPlanTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 289（基于 build288）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build289 更新说明](docs/releases/build289-changes.zh.md)，验证记录见 [build289 记录](docs/releases/v0.2.1-rc.3-build289-stage-segment-motion-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0530-dsh0.2.1-rc.5 / build288（实验性：Web 设置导航新增「启动目标」面板）
+
+- **实验性。** Web 设置导航新增独立的「启动目标」面板（settings.section），插件只负责传递设置；禁用 `dsh-launch-target` 插件不再改变启动目标（分支 `fix/launch-target-settings` 99716b5b，原基于 build277）。运行配置页说明文字与 build287 同改：合并为「桌面图标或常驻通知…系统回收后回到 Web…设置 → 启动目标」；运行时描述符重算。
+- 验证范围：发布会话在 build288 上复跑 宿主 `test-launch-target-client.mjs`、`UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 288（基于 build287）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build288 更新说明](docs/releases/build288-changes.zh.md)，验证记录见 [build288 记录](docs/releases/v0.2.1-rc.3-build288-launch-target-settings-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0500-dsh0.2.1-rc.5 / build287（实验性：直进 Web 修复闪屏并补齐入口）
+
+- **实验性。** 直进 Web 不再闪出主界面：Web 打开后加载页转为主界面上的静态遮罩；并补齐通知、最近任务与系统回收后恢复入口——通知经透明中转页回到存活的原网页或直接打开已就绪的 Web，偏好为主界面时行为不变（分支 `fix/direct-web-entries` ae4e9a15 + a9e34d60，原基于 build278；`BootScreen` 与 build283 在同一处各新增方法，两边保留；运行时描述符重算）。
+- 验证范围：发布会话在 build287 上复跑 `DirectWebEntryTest` / `EntryTargetTest` / `WebPageBootOverlayTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 287（基于 build286）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build287 更新说明](docs/releases/build287-changes.zh.md)，验证记录见 [build287 记录](docs/releases/v0.2.1-rc.3-build287-direct-web-entries-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0430-dsh0.2.1-rc.5 / build286（实验性：桥新增 /app/install）
+
+- **实验性。** 设备桥新增 `/app/install`：容器推送单个 APK，DSHA 在前台或有后台启动豁免时直接拉起系统安装器，否则发通知由用户点按打开；未允许「安装未知应用」时引导到设置页（分支 `feat/bridge-apk-install` 1d574da4，原基于 build274）。合入时把三处 `UiText.choose` 参数拼接改为整句选择与 `%s` 模板（4fd3b598），否则 `check-ui-i18n` 契约失败；文字不变。
+- 验证范围：发布会话在 build286 上复跑 `BridgeApkInstallTest` / `BridgeRoutesTest` / `NotificationIdsTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 286（基于 build285）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build286 更新说明](docs/releases/build286-changes.zh.md)，验证记录见 [build286 记录](docs/releases/v0.2.1-rc.3-build286-bridge-apk-install-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0400-dsh0.2.1-rc.5 / build285（实验性：ⓘ 说明弹窗按窗口形态适配）
+
+- **实验性 UI 渲染更新，待统一视觉验收。** ⓘ 说明弹窗按窗口形态适配：平板贴 ⓘ 显示气泡，手机横屏用紧凑弹窗，竖屏用底部说明面板（T23，分支 `design/info-dialog-20261102` 5eb7074d + 831e27a2，基于 build272，无冲突）。
+- 验证范围：发布会话在 build285 上复跑 `InfoSurfacePolicyTest` / `TerminalInputContractTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 285（基于 build284）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build285 更新说明](docs/releases/build285-changes.zh.md)，验证记录见 [build285 记录](docs/releases/v0.2.1-rc.3-build285-info-dialog-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0330-dsh0.2.1-rc.5 / build284（实验性：对话页错误面板重绘）
+
+- **实验性 UI 渲染更新，待统一视觉验收。** 对话页错误面板重绘：崩溃结论与逐层状态，服务结束后面板停留并定期复核，重启就绪即接回（分支 `design/web-crash-20261102` 809a99ba，原基于 build272）。与 build283 同改 `WebPreviewActivity.showError`：保留本版面板并在其前收起 build283 的原生加载页；i18n 条目级三方合并、语言字节钉重算。
+- 验证范围：发布会话在 build284 上复跑 `WebCrashReportTest` / `WebCrashPanelTest` / `WebPageBootOverlayTest` / `WebBackgroundPageLifecycleTest` / `UiStateTextTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 284（基于 build283）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build284 更新说明](docs/releases/build284-changes.zh.md)，验证记录见 [build284 记录](docs/releases/v0.2.1-rc.3-build284-web-crash-panel-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0300-dsh0.2.1-rc.5 / build283（实验性：进入对话先显示原生加载页）
+
+- **实验性尽力修复。** 从容器进入对话时先显示原生加载页，WebView 首帧不再白底：首帧底色取最近一次已核验的网页背景色，对话页首次加载盖与网页启动画面同款的原生加载页，8 秒后与诊断入口一起出现「返回启动页」（分支 `fix/web-entry-blank` 39583ae0，原基于 build274，无冲突；用户未复现原问题）。
+- 验证范围：发布会话在 build283 上复跑 `WebPageBootOverlayTest` / `WebBackgroundPageLifecycleTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 283（基于 build282）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build283 更新说明](docs/releases/build283-changes.zh.md)，验证记录见 [build283 记录](docs/releases/v0.2.1-rc.3-build283-web-entry-blank-20261103.md)。
+
+## 0.2.1-rc.3-20261103.0230-dsh0.2.1-rc.5 / build282（实验性：插件后台检测只在插件页可见时进行）
+
+- **实验性。** 插件自动查询只在插件页可见时周期进行；对话页在前台时不再每约 2 分钟进容器跑一次 `plugin-manager.py refresh`（分支 `fix/plugin-auto-query-scope` ecdec5b9，原基于 build272，无冲突；运行时描述符重算）。
+- 验证范围：发布会话在 build282 上复跑 `PluginManagementEngineTest` / `UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 282（基于 build281）；DSHA 修订号保持 0.2.1-rc.3，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build282 更新说明](docs/releases/build282-changes.zh.md)，验证记录见 [build282 记录](docs/releases/v0.2.1-rc.3-build282-plugin-auto-query-scope-20261103.md)。
+
 ## 0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5 / build281（实验性：ADB 开启时重新打开不再卡在环境检查）
 
 - **实验性尽力修复。** 开启 ADB 时，解锁后重新打开 DSHA 不再与 ADB 后台探活争抢环境，减少长时间停在「正在检查运行环境」（T25，分支 `fix/adb-reopen-env-check` 18af5dc9，原基于 build272；未能复现原问题）。与 build278 的 `MainActivity` 字段在同一处新增，两边保留；运行时描述符重算。

@@ -1,7 +1,7 @@
 # Documentation index and maintenance rules
 
 
-Current source: `0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5` / build281 / `io.github.sunsetrne.dsha` / DSH-A-Su (`main`). This build tries to fix DSHA getting stuck on "Checking environment" when reopened with ADB enabled (experimental). Local targeted unit tests, Lint and source gates passed. See the [build281 notes](../releases/build281-changes.en.md) and the [build281 record](../releases/v0.2.1-rc.3-build281-adb-reopen-env-check-20261103.md). Build and publication scope follow this round's CI run and Release receipt.
+Current source: `0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5` / build312 / `io.github.sunsetrne.dsha` / DSH-A-Su (`main`). This build picks two fixes from collaborator ym2025szz: the documents provider streams large folder listings and supports cancellation (experimental); opening Web from the notification enters as soon as it is ready; the launch page's secondary buttons now read Restart / Stop. Local targeted tests and source gates passed; not yet checked on a device. See the [build312 notes](../releases/build312-changes.en.md) and the [build312 record](../releases/v0.2.1-rc.5-build312-documents-listing-ready-enter-20261104.md). Build and publication scope follow this round's CI run and Release receipt.
 
 Build and acceptance records for earlier versions stay in [releases/](releases/); each version's conclusions hold only for its own commit and point in time.
 
@@ -36,6 +36,8 @@ Build and acceptance records for earlier versions stay in [releases/](releases/)
 | Device channels, 3090 protocol, LAN, files, system documents | [Device channels](device-channels.md), [bridge and files](bridge-and-files.md), [LAN](lan.md), [Web files](web-file-sharing.md) |
 | One-click/manual/automatic backup, restore, snapshots, independent recovery | [Backup and restore](backup-and-restore.md), [configuration snapshots](config-snapshots.md), [independent recovery](emergency-recovery.md), [v5 format](backup-format-v5.md) |
 | Plugin installation, system/user separation, protocol, permissions, restart | [Plugin operations](plugins.md), [plugin runtime and permissions](plugin-runtime-and-permissions.md) |
+| Temporary built-in fix: read hint for "file has not been read" (upstream #11977) | [dsh-fs-read-hint](fs-read-hint-plugin.md) |
+| Temporary built-in fix: glob skips nested git worktrees (T45) | [dsh-fs-search-scope](fs-search-scope-plugin.md) |
 | PTY/simple terminals, WebView/Gecko, desktop UA, PiP | [Terminals](terminal.md), [browser engines](browser-engines.md), [picture-in-picture](picture-in-picture.md) |
 | Language latching, overlays, approval, task notifications | [Language](i18n.md), [overlays and notifications](overlay-and-notifications.md) |
 | Source, pinned inputs, signing, release, and test evidence | [Build and release](build-and-release.md), [domain boundaries](agents/domain.md), [issue workflow](agents/issue-tracker.md), [triage vocabulary](agents/triage-labels.md) |

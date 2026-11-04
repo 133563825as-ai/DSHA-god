@@ -1,8 +1,13 @@
 # CI 构建与发布（公开仓库正式成品）
 
-更新：2026-11-02 / build281（节点化）。工作流：[`.github/workflows/release-production.yml`](../.github/workflows/release-production.yml)。
+更新：2026-11-02 / build312（节点化）。工作流：[`.github/workflows/release-production.yml`](../.github/workflows/release-production.yml)。
 目标仓库：`SunsetRNE/DSHA-Sunset-mod`（`main` 分支）。本文说明如何用 GitHub Actions 产出并发布
 **正式签名成品**（`io.github.sunsetrne.dsha`），以及需要哪些仓库 Secrets、产物如何核验。
+
+上游身份（`dsh.android.client` / 历史 E7E3）另走 [`.github/workflows/release-upstream.yml`](../.github/workflows/release-upstream.yml)：
+节点与门禁相同，构建传 `-Pdsha.identity=upstream`，只在 `ym2025szz/DSHA-prerelase` 私有仓库的
+`codex/prerelease-190` 分支运行，tag 为 `dsha-build<版本码>-YYYYMMDD-HHMMSS`，签名 Secrets 只在该仓库。
+两个工作流在对方仓库直接跳过；身份对照见 [Mod 身份与签名](mod-identity-and-signing.md)。
 
 ## 1. 边界
 
@@ -17,7 +22,7 @@
 
 | 参数 | 要求 | 示例 |
 |---|---|---|
-| `release_tag` | 新 tag，格式 `dsha-a-su-build<版本码>-YYYYMMDD-HHMMSS` | `dsha-a-su-build281-20261101-203000` |
+| `release_tag` | 新 tag，格式 `dsha-a-su-build<版本码>-YYYYMMDD-HHMMSS` | `dsha-a-su-build312-20261101-203000` |
 | `expected_sha` | `main` 上待发布的完整 40 位 commit | `0123abcd…` |
 
 `release_tag` 对应的日历时间必须合法；tag 已存在时工作流在任何构建前失败，不会覆盖已有发布。
@@ -26,7 +31,7 @@
 gh workflow run release-production.yml \
   --repo SunsetRNE/DSHA-Sunset-mod \
   --ref main \
-  -f release_tag=dsha-a-su-build281-20261101-203000 \
+  -f release_tag=dsha-a-su-build312-20261101-203000 \
   -f expected_sha=<40位commit>
 ```
 

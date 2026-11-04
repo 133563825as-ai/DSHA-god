@@ -96,6 +96,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
         items -> {
           resultList.show(items);
           renderHero();
+          // 复制以检查结果为准：早期失败不经 busy=true，结果到达时也要重算反馈按钮。
+          renderActions();
         });
     repository.phase.observe(this, phase -> renderHero());
     repository.busy.observe(
@@ -116,6 +118,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     findViewById(R.id.diagnostic_back).setOnClickListener(v -> finish());
     findViewById(R.id.diagnostic_refresh).setOnClickListener(v -> repository.generate());
     findViewById(R.id.diagnostic_repair).setOnClickListener(v -> repository.repairNetworkTools());
+    findViewById(R.id.diagnostic_network).setOnClickListener(v -> NetworkHealthSheet.show(this));
     findViewById(R.id.diagnostic_plugins)
         .setOnClickListener(
             v -> startActivity(MainActivity.navigationIntent(this).putExtra("open_plugins", true)));

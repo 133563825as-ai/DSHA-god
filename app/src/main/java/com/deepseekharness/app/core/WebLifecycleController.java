@@ -492,6 +492,17 @@ final class WebLifecycleController {
               }
             });
     if (!applyRecheckedWebSession(state, run, record, outcome)) return;
+    DiagnosticLog.record(
+        ctx,
+        "WEB_SESSION_RECHECK_STATE",
+        "generation="
+            + run.generation
+            + " state="
+            + outcome.result().name()
+            + " reason="
+            + outcome.reason()
+            + " authChecks="
+            + outcome.attempts());
     finishAuthorityRevocation(
         state,
         run,
@@ -557,6 +568,8 @@ final class WebLifecycleController {
         run.recoveredLive = true;
         run.confirmedWebExit = false;
         state.restoreUnknown = false;
+        state.restoreReason = outcome.reason();
+        state.restoreAttempts = outcome.attempts();
         return true;
       }
       boolean changed =
@@ -564,6 +577,8 @@ final class WebLifecycleController {
               || !state.restoreUnknown
               || run.confirmedWebExit != (outcome.result() == WebSessionRecheck.Result.EXITED);
       applyRecoveredWebProof(state, run, false);
+      state.restoreReason = outcome.reason();
+      state.restoreAttempts = outcome.attempts();
       run.confirmedWebExit = outcome.result() == WebSessionRecheck.Result.EXITED;
       if (changed) run.authorityRevocationPending = true;
       return changed;
@@ -1091,9 +1106,13 @@ final class WebLifecycleController {
       if (startupProfile == null) return;
       // 准备流水线已分别确认旧guest与启动器全部退出；只有真实退休才可替换旧实例记录。
       storedSession.clear();
-      String runtimeName = boot.runtime().id();
+      com.deepseekharness.app.runtime.ContainerRuntime selectedRuntime = boot.runtime();
+      String runtimeName = selectedRuntime.id();
+      // seccomp 状态与随后 execRootfs 读取同一 invocation 配置快照，展示的就是实际启动参数。
       state.diagnostics.message(
-          generation, com.deepseekharness.app.util.UiText.format("本次实际运行方式：%s", runtimeName));
+          generation,
+          com.deepseekharness.app.util.UiText.format(
+              "本次实际运行方式：%s", ProotBootstrap.runtimeLabel(selectedRuntime)));
       run.compatible = compatible;
       int preferred = config.getRequestedWebPort();
       com.deepseekharness.app.util.WebPortPolicy.Choice ports =

@@ -1,7 +1,7 @@
 # AGENTS.md — English contributor and agent guide
 
 
-> **Status**: `0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5` / build281 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
+> **Status**: `0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5` / build312 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
 > Main branch `main`; Android 11+ (API 30) / arm64; proot by default, proroot optional; bundled DSH 0.2.1-rc.5.
 > The island feature is folded into the regular package; the old low/GeckoView line and the separate island package are removed; signing uses the Mod-owned certificate (see BUILD.en.md).
 
@@ -108,7 +108,7 @@ Read the [security model](docs/en/security-model.md) first. Essential boundaries
 
 ### Versions and builds
 
-- **Current identity comes from `app/build.gradle`, `ci/release-identity.json` and [CHANGELOG.md](CHANGELOG.md).** build281 / DSHA revision `0.2.1-rc.3` (bundled DSH 0.2.1-rc.5) / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard. Earlier code/build numbers, the old `dsh.android.client` package and the historical E7E3 signature are records only, not current build or signing inputs.
+- **Current identity comes from `app/build.gradle`, `ci/release-identity.json` and [CHANGELOG.md](CHANGELOG.md).** build312 / DSHA revision `0.2.1-rc.5` (bundled DSH 0.2.1-rc.5) / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard. Earlier code/build numbers, the old `dsh.android.client` package and the historical E7E3 signature are records only, not current build or signing inputs.
 - `standard`: minSdk 30 (Android 11+), system WebView, arm64-v8a. It is the only build line; the task is `assembleStandardRelease`. The `low`/GeckoView line and legacy proot/loader are deleted (`assembleLowRelease` no longer exists), so **Android 10 and below are no longer supported**. The test variant only changes the package via `-Pdsha.sunsetTest=true` (`io.github.sunsetrne.dsha.test`).
 - Offline rootfs (`assets/offline-rootfs.bin`) is **not committed**; preparation scripts generate it. `offline-rootfs.layout=split-runtime-v1` marks separate Ubuntu and `dsh-runtime.bin` packages; builds check both digests.
 - `tools/dsh-runtime/package-lock.json` locks new dsh dependencies. `tools/prepare-runtime-descriptor.py` generates independent managed-contract descriptors; the APK version is diagnostic context only. Update managed trees within the same base while keeping personal data in place. **UI-only APK updates do not replace the environment; ordinary dsh updates do not increment the Ubuntu base.**
@@ -190,6 +190,7 @@ Read the [security model](docs/en/security-model.md) first. Essential boundaries
 Several sessions often change this repository on the same machine at once. Merging, releasing and cleanup follow each worktree's session declaration; never guess from idle time that a session has finished.
 
 - **One session, one worktree**: start each task with `git worktree add -b <type>/<name> .agents/worktrees/<type>/<name> origin/main`, based on the current `origin/main` (not on a side branch that has not reached main). Do not change code in the main checkout `/root/DSH-A-mod`; use it read-only. `/root/dsha-build` is the `local-ci` sync mirror, not a workspace.
+- **`read` the worktree path before changing a file**: DSH's `fs-observation-policy` only accepts the same absolute path read by the `read` tool in the same session; otherwise `edit` or an overwriting `write` fails with `file has not been read`. Inside a worktree, read and edit `.agents/worktrees/<type>/<name>/...`; reading the same-named file in the main checkout does not count, and neither do shell reads (`cat` / `sed` / `grep`). Re-read after a new session, subagent, takeover or resume. Authorization only checks the version, so a small `read` window with `offset`/`limit` is enough. Re-`read` a file after a shell write before using `edit`.
 - **Declare on creation**: write `.ACTIVE-SESSION` at the worktree root. It is listed in the shared `.git/info/exclude`, so `git add -A` never commits it; do not declare through tracked files such as a design README. Keep the Chinese field keys from [AGENTS.md](AGENTS.md) so every session can read them: `状态` status, `分支` branch and base commit, `会话` full session id, `开始` start (UTC), `更新` last update (UTC), `内容` one-line task, `当前阶段` current stage, `占用文件` files owned, `合并` `不可合并` (not mergeable) or `可合并（已提交 <commit>，…）` (mergeable), `后台任务` background jobs with log and output paths (or `无`).
 - **Update every turn**: refresh `更新`, `当前阶段`, `合并` and `后台任务` before each reply to the user. Waiting for user confirmation or device checks still counts as active.
 - **Hand back when done**: when the task is finished (or abandoned), rename the file to `.SESSION-DONE`, set the status to ended, and state in `合并` whether it may be merged and at which commit; for abandoned work write "abandoned, do not merge".

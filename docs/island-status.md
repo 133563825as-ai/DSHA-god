@@ -33,6 +33,10 @@
 因此实现按「平台是否存在 `setRequestPromotedOngoing`」分成两支，不能只写一支；
 权限查询（`canPostPromotedNotifications`）与模型判定必须分开 —— 用户关掉实时活动时
 权限查询返回 false，不能据此把 36.1 误判成旧模型。
+API 引入版本：`canPostPromotedNotifications()` 自 **API 36** 起就有；`setRequestPromotedOngoing`
+与 `POST_PROMOTED_NOTIFICATIONS` 自 **API 36.1** 起才有。
+查询只反映新模型（请求位）的许可：36.0 旧模型 ROM 按 colorized 提升，查询返回 false 时设置页仍显示
+「查不到」（`STATE_UNKNOWN`），不显示成「已关闭」；判定见 `util/IslandPage.supportState`。
 平台侧的 `setRequestPromotedOngoing` 是 36.1 才有的方法，在 36.0 上调用会抛
 `NoSuchMethodError`，所以这里统一走 **extra**（官方文档明确允许用它替代 setter）。
 
@@ -135,6 +139,11 @@ web 事件里带 port/path/token/callId/questions
   多问题或超过 3 个选项时回到会话里回答。
 - 多选状态只保存在本机通知进程内，按任务 action 隔离；问题结束/切换任务时自动丢弃。
 - 锁屏公开版本仍只显示阶段，不含问题文本与选项。
+
+通知动作受系统 3 个槽位限制：单选最多显示 2 个选项 +「自己写」；多选最多显示 2 个选项 +「提交」，
+未选择时显示「自己写」。选项超过 2 个或需要自由文本时，点按通知正文进入会话回答，
+展开态会提示「更多选项请点按通知进入对话回答」。槽位规划由 `util/IslandText.quickSlots` 统一给出并有单测；
+多选只有 1 个选项且已选时，第三个槽位仍放「自己写」；没有可点选项时为「自己写」+「打开回答」。
 
 ## 8. 独立版包名（历史）
 

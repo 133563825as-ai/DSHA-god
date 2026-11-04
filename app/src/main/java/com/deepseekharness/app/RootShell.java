@@ -6,6 +6,7 @@ import com.deepseekharness.app.util.BoundedProcessRunner;
 import com.deepseekharness.app.util.Compat;
 import com.deepseekharness.app.util.Constants;
 import com.deepseekharness.app.util.DeviceShellPolicy;
+import com.deepseekharness.app.util.ProcessTermination;
 import com.deepseekharness.app.util.RootShellCandidates;
 import com.deepseekharness.app.util.SensitiveData;
 import com.deepseekharness.app.util.ShellQuote;
@@ -168,10 +169,13 @@ public final class RootShell {
     if (executable() == null)
       return com.deepseekharness.app.device.DeviceTransportResult.notSent(
           "root", "ROOT_UNAVAILABLE", "[ROOT_UNAVAILABLE] ROOT_UNAVAILABLE\n[EXIT=124]");
+    String output = runPrivileged(ctx, command, -1, "virtual-screen-start");
+    // 槽位已满时 su 未启动，虚拟屏核心确定未拉起，按未发送报告。
+    if (isBusy(output))
+      return com.deepseekharness.app.device.DeviceTransportResult.notSent(
+          "root", "ROOT_BUSY", output);
     return com.deepseekharness.app.device.DeviceTransportResult.fromLegacy(
-        "root",
-        runPrivileged(ctx, command, -1, "virtual-screen-start"),
-        com.deepseekharness.app.device.DeviceTransportIdentity.unknown());
+        "root", output, com.deepseekharness.app.device.DeviceTransportIdentity.unknown());
   }
 
   /**
@@ -183,7 +187,7 @@ public final class RootShell {
       java.util.List<String> argv,
       java.util.Map<String, String> environment,
       long timeoutMs) {
-    return execExternal(ctx, argv, environment, timeoutMs, null);
+    return execExternal(ctx, argv, environment, timeoutMs, null, () -> false);
   }
 
   public static String execExternal(
@@ -191,7 +195,8 @@ public final class RootShell {
       java.util.List<String> argv,
       java.util.Map<String, String> environment,
       long timeoutMs,
-      String expectedRoot) {
+      String expectedRoot,
+      java.util.function.BooleanSupplier dispatchCurrent) {
     if (!enabled(ctx))
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
@@ -233,7 +238,7 @@ public final class RootShell {
               .put("expectedRoot", expectedRoot)
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
-      return runPrivilegedExternal(ctx, request, timeoutMs);
+      return runPrivilegedExternal(ctx, request, timeoutMs, dispatchCurrent);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
@@ -246,7 +251,8 @@ public final class RootShell {
       java.util.List<String> clientArgv,
       java.util.Map<String, String> environment,
       long timeoutMs,
-      String expectedRoot) {
+      String expectedRoot,
+      java.util.function.BooleanSupplier dispatchCurrent) {
     if (!enabled(ctx))
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
@@ -291,7 +297,7 @@ public final class RootShell {
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
       // server 就绪等待最多 15 秒，再加客户端期限与 su 启动余量。
-      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000);
+      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
@@ -311,7 +317,8 @@ public final class RootShell {
       String expectedRoot,
       String importRoot,
       String nonce,
-      boolean continueOnFailure) {
+      boolean continueOnFailure,
+      java.util.function.BooleanSupplier dispatchCurrent) {
     if (!enabled(ctx))
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
@@ -363,29 +370,40 @@ public final class RootShell {
               .put("continueOnFailure", continueOnFailure)
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
-      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000);
+      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
   }
 
   private static String runPrivilegedExternal(
-      Context ctx, org.json.JSONObject request, long timeoutMs) {
+      Context ctx,
+      org.json.JSONObject request,
+      long timeoutMs,
+      java.util.function.BooleanSupplier dispatchCurrent) {
+    if (!dispatchCurrent.getAsBoolean()) return externalAuthorityChanged();
     String su = executable();
     if (su == null) return "[ROOT_UNAVAILABLE] 未找到 su\n[EXIT=124]";
+    String label = request.optString("operation", "external");
+    com.deepseekharness.app.util.RootHelperSlots.Ticket<Process> ticket =
+        SLOTS.tryAcquire(label, now());
+    if (ticket == null) return busy(ctx, label);
     Process process = null;
+    boolean timedOut = false;
     try {
-      String entry =
-          "CLASSPATH="
-              + ShellQuote.arg(ctx.getApplicationInfo().sourceDir)
-              + " /system/bin/app_process /system/bin "
-              + RootShellMain.class.getName();
-      process = new ProcessBuilder(su, "-c", entry).redirectErrorStream(true).start();
+      bindOwner(request, timeoutMs);
+      byte[] payload = request.toString().getBytes(StandardCharsets.UTF_8);
+      process = startHelper(ctx, su, ticket);
       try (java.io.OutputStream input = process.getOutputStream()) {
-        input.write(request.toString().getBytes(StandardCharsets.UTF_8));
+        // A helper cannot execute an external command without its request. Claim immediately
+        // before handing over the immutable argv, after potentially slow su startup and checks.
+        if (!writeExternalRequest(
+            input, payload, () -> enabled(ctx) && dispatchCurrent.getAsBoolean()))
+          return externalAuthorityChanged();
       }
       BoundedProcessRunner.Result result =
-          BoundedProcessRunner.collect(process, timeoutMs, 768 * 1024, Compat::destroy);
+          BoundedProcessRunner.collect(process, timeoutMs, 768 * 1024, RootShell::destroyQuietly);
+      timedOut = result.timedOut;
       int marker = result.output.lastIndexOf(RootShellMain.RESULT);
       if (!result.timedOut && !result.truncated && marker >= 0) {
         String encoded = result.output.substring(marker + RootShellMain.RESULT.length()).trim();
@@ -398,21 +416,139 @@ public final class RootShell {
     } catch (Throwable error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     } finally {
-      if (process != null) {
-        try {
-          process.exitValue();
-        } catch (IllegalThreadStateException running) {
-          Compat.destroy(process);
-        }
-        try {
-          process.getOutputStream().close();
-        } catch (java.io.IOException ignored) {
-        }
-        try {
-          process.getInputStream().close();
-        } catch (java.io.IOException ignored) {
-        }
-      }
+      finish(ctx, ticket, process, label, timedOut);
+    }
+  }
+
+  private static String externalAuthorityChanged() {
+    return "[POLICY_BLOCKED] EXTERNAL_AUTHORITY_CHANGED_BEFORE_DISPATCH\n[EXIT=126]";
+  }
+
+  static boolean writeExternalRequest(
+      java.io.OutputStream input,
+      byte[] payload,
+      java.util.function.BooleanSupplier dispatchCurrent)
+      throws java.io.IOException {
+    if (!dispatchCurrent.getAsBoolean()) return false;
+    input.write(payload);
+    return true;
+  }
+
+  /**
+   * root helper 同时最多 3 个。T38 真机证据：App 的 uid 对 su 提权后的 uid 0 helper 发信号得到 EPERM，
+   * 超时后结束不了它；槽位按进程真正退出释放，满了就在启动 su 前拒绝，避免 root 进程越积越多。
+   */
+  private static final int ROOT_HELPER_CAPACITY = 3;
+
+  private static final com.deepseekharness.app.util.RootHelperSlots<Process> SLOTS =
+      new com.deepseekharness.app.util.RootHelperSlots<>(
+          ROOT_HELPER_CAPACITY, process -> !ProcessTermination.exited(process));
+
+  private static long now() {
+    return android.os.SystemClock.elapsedRealtime();
+  }
+
+  /** 诊断用：当前 root helper 槽位占用。 */
+  public static String slotSnapshot() {
+    return SLOTS.snapshot(now()).render();
+  }
+
+  /** 诊断用：最近一次 root 结果，不含命令内容。 */
+  public static String lastResultSummary() {
+    LastResult last = lastResult;
+    return last.status + (last.detail.isEmpty() ? "" : " " + last.detail);
+  }
+
+  /** 是否为「槽位已满、命令未发送」的结果；调用方可据此报告未发送。 */
+  public static boolean isBusy(String output) {
+    return output != null && output.startsWith(BUSY_MARKER);
+  }
+
+  private static final String BUSY_MARKER = "[ROOT_BUSY]";
+
+  private static String busy(Context ctx, String label) {
+    com.deepseekharness.app.util.RootHelperSlots.Snapshot slots = SLOTS.snapshot(now());
+    com.deepseekharness.app.device.DeviceChannelDiagnostics.record(ctx, "root-busy:" + label);
+    return BUSY_MARKER
+        + " root 通道已有 "
+        + (slots.active + slots.lingering)
+        + " 个进程未结束（其中 "
+        + slots.lingering
+        + " 个已超时仍在运行），本次命令未发送，可稍后重试；"
+        + "长时间不恢复请在 root 管理器中结束 DSHA 的 root 进程或重启 DSHA。\n[EXIT=124]";
+  }
+
+  /** 交给 helper 的自退依据：发起方进程身份与截止时长（见 RootHelperWatchdog）。 */
+  private static void bindOwner(org.json.JSONObject request, long waitMs)
+      throws org.json.JSONException {
+    int pid = android.os.Process.myPid();
+    long started = -1;
+    try {
+      com.deepseekharness.app.util.ProcStat stat =
+          com.deepseekharness.app.util.ProcStat.parse(
+              new String(
+                      Compat.readAllBytes(new File("/proc/self/stat")), StandardCharsets.US_ASCII)
+                  .trim(),
+              pid);
+      if (stat != null) started = stat.started;
+    } catch (Throwable ignored) {
+    }
+    request
+        .put("ownerPid", pid)
+        .put("ownerStarted", started)
+        .put(
+            "helperDeadlineMs",
+            Math.min(
+                waitMs + com.deepseekharness.app.util.RootHelperWatchdog.EXIT_MARGIN_MS,
+                com.deepseekharness.app.util.RootHelperWatchdog.MAX_DEADLINE_MS));
+  }
+
+  private static Process startHelper(
+      Context ctx, String su, com.deepseekharness.app.util.RootHelperSlots.Ticket<Process> ticket)
+      throws java.io.IOException {
+    String entry =
+        "CLASSPATH="
+            + ShellQuote.arg(ctx.getApplicationInfo().sourceDir)
+            + " /system/bin/app_process /system/bin "
+            + RootShellMain.class.getName();
+    Process process = new ProcessBuilder(su, "-c", entry).redirectErrorStream(true).start();
+    SLOTS.attach(ticket, process);
+    return process;
+  }
+
+  /** 结束失败（root 进程拒绝 App 的信号）不能覆盖已经得到的结果，也不能让调用线程抛出。 */
+  private static void destroyQuietly(Process process) {
+    try {
+      Compat.destroy(process);
+    } catch (RuntimeException denied) {
+      // 仍未退出的 helper 由槽位登记为滞留，并由 helper 自身的看门狗在截止后退出。
+    }
+  }
+
+  private static void finish(
+      Context ctx,
+      com.deepseekharness.app.util.RootHelperSlots.Ticket<Process> ticket,
+      Process process,
+      String label,
+      boolean timedOut) {
+    if (process != null) {
+      if (!ProcessTermination.exited(process)) destroyQuietly(process);
+      closeQuietly(process.getOutputStream());
+      closeQuietly(process.getInputStream());
+      closeQuietly(process.getErrorStream());
+    }
+    boolean lingering = SLOTS.release(ticket, now());
+    if (lingering)
+      com.deepseekharness.app.device.DeviceChannelDiagnostics.record(
+          ctx, "root-lingering:" + label);
+    else if (timedOut)
+      com.deepseekharness.app.device.DeviceChannelDiagnostics.record(ctx, "root-timeout:" + label);
+  }
+
+  private static void closeQuietly(java.io.Closeable stream) {
+    try {
+      stream.close();
+    } catch (java.io.IOException ignored) {
     }
   }
 
@@ -421,27 +557,29 @@ public final class RootShell {
     String su = executable();
     if (su == null)
       return com.deepseekharness.app.util.UiText.text("[ROOT_UNAVAILABLE] 未找到 su\n[EXIT=124]");
+    String label = operation.isEmpty() ? "exec" : operation;
+    com.deepseekharness.app.util.RootHelperSlots.Ticket<Process> ticket =
+        SLOTS.tryAcquire(label, now());
+    if (ticket == null) return busy(ctx, label);
     Process process = null;
+    boolean timedOut = false;
     try {
       // 命令通过标准输入传递；su 的 shell 参数只含固定入口与已安装 APK 路径。
-      String entry =
-          "CLASSPATH="
-              + ShellQuote.arg(ctx.getApplicationInfo().sourceDir)
-              + " /system/bin/app_process /system/bin "
-              + RootShellMain.class.getName();
-      process = new ProcessBuilder(su, "-c", entry).redirectErrorStream(true).start();
+      org.json.JSONObject request =
+          new org.json.JSONObject()
+              .put("command", command)
+              .put("smsUser", authorizedSmsUser)
+              .put("selfPackage", ctx.getPackageName())
+              .put("selfUid", ctx.getApplicationInfo().uid);
+      if (!operation.isEmpty()) request.put("operation", operation);
+      bindOwner(request, ROOT_WAIT_MS);
+      process = startHelper(ctx, su, ticket);
       try (java.io.OutputStream input = process.getOutputStream()) {
-        org.json.JSONObject request =
-            new org.json.JSONObject()
-                .put("command", command)
-                .put("smsUser", authorizedSmsUser)
-                .put("selfPackage", ctx.getPackageName())
-                .put("selfUid", ctx.getApplicationInfo().uid);
-        if (!operation.isEmpty()) request.put("operation", operation);
         input.write(request.toString().getBytes(StandardCharsets.UTF_8));
       }
       BoundedProcessRunner.Result result =
-          BoundedProcessRunner.collect(process, 65_000, 400_000, Compat::destroy);
+          BoundedProcessRunner.collect(process, ROOT_WAIT_MS, 400_000, RootShell::destroyQuietly);
+      timedOut = result.timedOut;
       int marker = result.output.lastIndexOf(RootShellMain.RESULT);
       if (!result.timedOut && !result.truncated && marker >= 0) {
         String encoded = result.output.substring(marker + RootShellMain.RESULT.length()).trim();
@@ -470,25 +608,10 @@ public final class RootShell {
       lastResult = new LastResult(Status.FAILED, su, SensitiveData.redact(String.valueOf(e)));
       return "[EXECUTION_UNKNOWN] " + lastResult.render(su) + "\n[EXIT=125]";
     } finally {
-      if (process != null) {
-        try {
-          process.exitValue();
-        } catch (IllegalThreadStateException running) {
-          Compat.destroy(process);
-        }
-        try {
-          process.getOutputStream().close();
-        } catch (java.io.IOException ignored) {
-        }
-        try {
-          process.getInputStream().close();
-        } catch (java.io.IOException ignored) {
-        }
-        try {
-          process.getErrorStream().close();
-        } catch (java.io.IOException ignored) {
-        }
-      }
+      finish(ctx, ticket, process, label, timedOut);
     }
   }
+
+  /** 普通 root 命令的 App 侧等待；helper 内部单条命令 30 秒，余量给 su 授权与 JVM 启动。 */
+  private static final long ROOT_WAIT_MS = 65_000L;
 }

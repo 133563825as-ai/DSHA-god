@@ -18,10 +18,41 @@ public final class IslandText {
 
   public static final int EN_LIMIT = 9;
 
+  /** 系统通知最多显示 3 个动作：选项最多 2 个，最后一个槽位留给提交/自己写。 */
+  public static final int QUICK_OPTION_LIMIT = 2;
+
   /** 完成态在岛上保留的时长：promoted 通知必须保持 ongoing，之后再主动取消。 */
   public static final long TERMINAL_GRACE_MS = 8_000;
 
   private IslandText() {}
+
+  /** 通知上实际显示的选项数：0..2；超出的选项由“点按通知进入对话”承接。 */
+  public static int quickOptionCount(int options) {
+    return Math.max(0, Math.min(QUICK_OPTION_LIMIT, options));
+  }
+
+  /** 系统通知可见的动作上限。 */
+  public static final int ACTION_LIMIT = 3;
+
+  /** 等待作答时通知动作的槽位规划：选项数、是否放提交 / 自己写 / 打开回答。 */
+  public record QuickSlots(int options, boolean submit, boolean custom, boolean openApp) {
+    /** 实际占用的动作数，恒不超过 {@link #ACTION_LIMIT}。 */
+    public int count() {
+      return options + (submit ? 1 : 0) + (custom ? 1 : 0) + (openApp ? 1 : 0);
+    }
+  }
+
+  /**
+   * 按系统 3 个动作槽位规划等待作答通知：最多 2 个选项；多选已选时放「提交」，余位才放「自己写」；
+   * 没有可点选项时补「打开回答」。超出的选项由点按通知进入对话承接。
+   */
+  public static QuickSlots quickSlots(int options, boolean multi, boolean anyChosen) {
+    int shown = quickOptionCount(options);
+    boolean submit = multi && anyChosen && shown > 0;
+    boolean custom = shown + (submit ? 1 : 0) < ACTION_LIMIT;
+    boolean openApp = shown == 0 && shown + (custom ? 1 : 0) < ACTION_LIMIT;
+    return new QuickSlots(shown, submit, custom, openApp);
+  }
 
   /** 裁剪胶囊短文本；null/空返回空串。按 code point 裁剪，不会切出半个代理对。 */
   public static String clip(String text, boolean chinese) {

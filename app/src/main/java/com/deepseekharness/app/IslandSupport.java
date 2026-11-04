@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import com.deepseekharness.app.util.IslandPage;
 
 /**
  * Android 16 Live Updates（实时活动 / promoted ongoing）的门控与通知增强。
@@ -85,7 +86,7 @@ public final class IslandSupport {
       NotificationManager manager = context.getSystemService(NotificationManager.class);
       return manager != null && manager.canPostPromotedNotifications();
     } catch (Throwable unavailable) {
-      // 36.0 没有该方法，或厂商裁剪了实现：无法查询，交给旧模型判据。
+      // canPostPromotedNotifications() 自 API 36 起存在；这里只兜厂商裁剪或系统异常。
       return false;
     }
   }
@@ -93,10 +94,10 @@ public final class IslandSupport {
   /** 供设置页展示的三态。 */
   public static int state(Context context) {
     if (!supported()) return STATE_UNSUPPORTED;
-    if (canPost(context)) return STATE_ALLOWED;
-    // 36.0 没有权限查询接口，只能确认系统支持，不能确认用户是否关闭。
-    if (!newPromotionModel()) return STATE_UNKNOWN;
-    return STATE_DENIED;
+    // canPostPromotedNotifications() 自 API 36 起就存在，但它只反映 AOSP 新模型（请求位）的许可；
+    // 36.0 旧模型 ROM（如 ColorOS 16）走 colorized 判据，查询返回 false 不等于用户关闭，
+    // DSHA 仍会尝试提升，所以那一支保持“查不到”，不能显示成“已关闭”。
+    return IslandPage.supportState(true, canPost(context), newPromotionModel());
   }
 
   /**
@@ -119,6 +120,8 @@ public final class IslandSupport {
       Bundle extras = new Bundle();
       if (modern) {
         extras.putBoolean(REQUEST_PROMOTED_ONGOING, promote);
+        // 36.1+ 新模型要求 colorized 必须为 false；显式写入，避免复用带旧标记的通知被拒。
+        extras.putBoolean(EXTRA_COLORIZED, false);
       } else {
         extras.putBoolean(EXTRA_COLORIZED, promote);
       }

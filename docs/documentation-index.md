@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.3-20261103.0200-dsh0.2.1-rc.5` / build281 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版尝试修复开启 ADB 时重新打开 DSHA 卡在「正在检查运行环境」（实验性）。本机定向单测、Lint 与源码门禁通过。改动说明见 [build281 更新说明](releases/build281-changes.zh.md)，验证记录见 [build281 记录](releases/v0.2.1-rc.3-build281-adb-reopen-env-check-20261103.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5` / build312 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版挑入协作者 ym2025szz 的两项修复：文件接口大目录流式列出并可取消（实验性）；通知进入 Web 就绪即进；启动页次要按钮改为重启 / 停止。本机定向单测与源码门禁通过，尚未真机核对。改动说明见 [build312 更新说明](releases/build312-changes.zh.md)，验证记录见 [build312 记录](releases/v0.2.1-rc.5-build312-documents-listing-ready-enter-20261104.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
@@ -16,6 +16,7 @@
 | [运行引擎与运行态](runtime-engines.md) | 当前proot/proroot、DSHA v1.1.6历史、vendor版本、loader/shim、退出监督与兼容边界 |
 | [端口与网络](ports-and-networking.md) | 自动/手动Web端口、备用本机记忆、3090桥/ADB/LAN分域、当前重试接入边界 |
 | [DNS配置](dns-configuration.md) | auto/ipv4/native的真实差异、Node窄lookup重试、glibc no-aaaa与用户选择 |
+| [切网后回收失效的外网连接（T37，实验性）](network-switch-connection-recycle.md) | 切网/切后台后模型请求卡满 300 秒的原因、网络代次与 net-epoch.cjs 回收规则、开关与范围；未真机验证 |
 | [虚拟屏架构](virtual-screen-architecture.md) | Core/Manager/工具路由、帧/节点/anchor证据、采集输入、关闭恢复与修改回归 |
 | [任务状态上岛](island-status.md) | 实时活动/胶囊两代判据、岛位选举、完成态、心跳收敛与验证范围 |
 | [ADR0001](adr/0001-build154-boundaries.md) / [ADR0002](adr/0002-current-threat-model.md) / [ADR0003](adr/0003-virtual-screen-lifecycle-and-input.md) | 架构取舍、权限与数据边界、虚拟屏生命周期及后果 |
@@ -27,6 +28,8 @@
 | [文案长度政策](i18n-length-policy.md) | 十种语言的短标签与长句处理边界 |
 | [首次引导重构设计](design/onboarding-20261031/README.md) | 4 步引导、部署胶囊、受限主界面、授权卡片、自适应布局与落地差异 |
 | [DSH Web 独立进程设计（待确认）](design/web-process-isolation-20261102/README.md) | `:web` 进程划分、IWebHost 接口、维护屏障跨进程协议、故障场景与分阶段计划；未实现 |
+| [proot 本体开销调查（T34）](design/proot-overhead-20261103/README.md) | 随包 libproot.so 对应 termux/proot v5.1.107.91、上游新修订无提速、停顿来源与 readlink 入口直答方案；未实现 |
+| [ADB 通道原生化设计（T42）](design/adb-native-20261103/README.md) | ADB 配对、私钥与客户端移到安卓壳，容器只经桥提交命令；含用户 Q1–Q9 决定与 E1–E4 取证，未实现 |
 
 ## 用户操作与开发入口
 
@@ -43,6 +46,8 @@
 | 设备通道、3090协议、LAN、文件与系统文档入口 | [设备通道](device-channels.md)、[桥与文件](bridge-and-files.md)、[LAN](lan.md)、[Web文件](web-file-sharing.md) |
 | 一键/手动/自动备份、恢复、快照与独立应急 | [备份与恢复](backup-and-restore.md)、[配置快照](config-snapshots.md)、[独立应急](emergency-recovery.md)、[v5格式](backup-format-v5.md) |
 | 插件安装、系统/用户分层、协议、权限与重启 | [插件操作](plugins.md)、[插件运行与权限](plugin-runtime-and-permissions.md) |
+| 临时内置修复：`file has not been read` 读取提示（上游 #11977）与撤除条件 | [dsh-fs-read-hint](fs-read-hint-plugin.md) |
+| 临时内置修复：glob 跳过嵌套 git 工作树（T45）与撤除条件 | [dsh-fs-search-scope](fs-search-scope-plugin.md) |
 | 内置移动 Web 适配、dsh-web-mobile 本地补丁与设置弹层修复；宽屏触屏会话行挤压跟踪 | [移动 Web 适配补丁](web-mobile-patches.md)、[平板会话行挤压（上游 #255）](web-mobile-tablet-rows-20261031.md) |
 | PTY/简易终端、WebView/Gecko、桌面UA、PiP | [终端](terminal.md)、[浏览器内核](browser-engines.md)、[画中画](picture-in-picture.md) |
 | 语言锁存、悬浮条、审批和任务通知 | [语言](i18n.md)、[悬浮与通知](overlay-and-notifications.md) |

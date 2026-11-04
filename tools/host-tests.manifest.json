@@ -2,6 +2,22 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-diagnostic-feedback.py",
+      "stage": "fast",
+      "reason": "Executes current diagnostic feedback observers on a JVM with LiveData/UI doubles; no Android device, clipboard or SAF execution",
+      "args": [
+        "--jdk",
+        "{jdk}"
+      ],
+      "timeoutSeconds": 120,
+      "requires": [
+        "python39",
+        "jdk17"
+      ],
+      "environment": {},
+      "cli": "--jdk <JDK home>; compiles production observer bodies to Java 17"
+    },
+    {
       "path": "tools/test-android-image-wire.mjs",
       "stage": "runtime",
       "requires": [
@@ -230,6 +246,16 @@
       "environment": {
         "NODE_OPTIONS": "--experimental-vm-modules"
       }
+    },
+    {
+      "path": "tools/test-launch-target-client.mjs",
+      "stage": "fast",
+      "reason": "启动目标网页端：设置导航独立面板与插件详情卡片共用组件和路由，文案说明禁用插件不改启动目标；不连接设备或桥",
+      "args": [],
+      "requires": [
+        "node24"
+      ],
+      "timeoutSeconds": 60
     },
     {
       "path": "tools/test-bridge-port.py",
@@ -902,6 +928,18 @@
       "environment": {
         "DSHA_RAW_RUNTIME": "{raw}"
       },
+      "cli": "no positional arguments; see explicit environment/requirements"
+    },
+    {
+      "path": "tools/test-net-epoch.mjs",
+      "stage": "fast",
+      "reason": "隔离宿主或纯源码/协议回归，无发布密钥、设备和真实用户数据",
+      "args": [],
+      "timeoutSeconds": 300,
+      "requires": [
+        "node24"
+      ],
+      "environment": {},
       "cli": "no positional arguments; see explicit environment/requirements"
     },
     {
@@ -2427,6 +2465,32 @@
       "cli": "No arguments; uses the verified current raw/managed test-runtime fixture and controlled official Auto review LLM response"
     },
     {
+      "path": "tools/test-fs-read-hint.mjs",
+      "stage": "runtime",
+      "reason": "dsh-fs-read-hint regression over the real rc.5 ToolRuntime and fs tools in a temporary app/build directory; no Android device operations",
+      "args": [],
+      "timeoutSeconds": 900,
+      "requires": [
+        "node24",
+        "raw"
+      ],
+      "environment": {},
+      "cli": "No arguments; uses the verified current raw test-runtime fixture"
+    },
+    {
+      "path": "tools/test-fs-search-scope.mjs",
+      "stage": "runtime",
+      "reason": "dsh-fs-search-scope regression over the real rc.5 managed ToolRuntime, local subprocess and fs-search glob against a temporary git repository with linked worktrees; no Android device operations",
+      "args": [],
+      "timeoutSeconds": 900,
+      "requires": [
+        "node24",
+        "managed"
+      ],
+      "environment": {},
+      "cli": "No arguments; uses the verified current managed test-runtime fixture and the host git binary"
+    },
+    {
       "path": "tools/test-signed-builtin-web-intent.mjs",
       "stage": "runtime",
       "reason": "Actual seven signed-wrapper Host OFF/ON and repeated native registration, manual/unknown/safe marker priority, profile isolation and serialized concurrent Native OFF; no device operations",
@@ -3121,6 +3185,31 @@
       "timeoutSeconds": 60,
       "environment": {},
       "reason": "Static Actions node graph: pinned external actions, read-only reusable nodes, release gates before signing, secrets only in the sign node, write permission only in publish"
+    },
+    {
+      "path": "tools/test-release-identity.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Dual release identity: default mod, explicit upstream, unknown -Pdsha.identity rejected without fallback; mod/upstream never share package or certificate; Gradle allowed names and identity fields match the resolver"
+    },
+    {
+      "path": "tools/test-backup-read-nonblock.py",
+      "stage": "linux",
+      "platform": [
+        "linux"
+      ],
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Exact Android filesystem final-open flag expressions exercised with real Linux FIFO replacement, old blocking negative control, regular reads, directory rejection and FD balance; no phone."
     }
   ]
 }
