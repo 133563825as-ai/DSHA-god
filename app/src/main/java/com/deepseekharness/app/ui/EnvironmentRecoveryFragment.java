@@ -17,6 +17,8 @@ public final class EnvironmentRecoveryFragment extends Fragment {
             com.deepseekharness.app.util.UiText.text("运行环境需要恢复"),
             com.deepseekharness.app.util.UiText.text(
                 "可以在设置中修改配置、查看数据维护记录和下载日志。环境恢复完成后，再使用插件和终端。个人数据与原环境继续保留。"));
+    // 页副标题只留首句（还能在设置里做什么）；恢复后才能用的组件与数据保留在 ⓘ 里。
+    InfoHint.attach(ui.subtitle, com.deepseekharness.app.util.UiText.text("运行环境需要恢复"));
     ui.button(
         ui.content,
         com.deepseekharness.app.util.UiText.choose("启动应急 DSH", "Start emergency DSH"),

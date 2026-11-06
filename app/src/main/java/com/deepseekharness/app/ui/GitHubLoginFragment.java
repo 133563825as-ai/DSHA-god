@@ -109,6 +109,8 @@ public final class GitHubLoginFragment extends Fragment {
             R.color.shell_text_muted);
     policy.setLineSpacing(ui.dp(2), 1);
     policy.setPadding(0, ui.dp(4), 0, ui.dp(8));
+    // 行内只留存储位置这一句；本页不读、不写日志、网页与插件仍可读等边界收进 ⓘ。
+    InfoHint.attach(policy, UiText.text("凭据"));
     ui.content.addView(policy);
 
     loginButton = ui.button(ui.footer, UiText.text("登录"), true, this::startLogin);

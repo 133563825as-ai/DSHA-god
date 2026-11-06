@@ -623,11 +623,18 @@ public class ConfigFragment extends Fragment {
     entryWeb = root.findViewById(R.id.config_entry_web);
     entryWeb.setText(
         com.deepseekharness.app.util.UiText.choose("从桌面图标直接进入 Web", "Open Web from the app icon"));
-    ((TextView) root.findViewById(R.id.config_entry_web_hint))
-        .setText(
-            com.deepseekharness.app.util.UiText.choose(
-                "开启后点击桌面图标或常驻通知先显示加载页，Web 就绪即进入；在 Web 里返回到底会回到桌面。应用被系统回收后，离开前停在 Web 就回到 Web。环境需要维护或启动失败时仍进入主界面。也可在 Web 的「设置 → 启动目标」中修改；禁用 dsh-launch-target 插件不会改变这里的选择。",
-                "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice."));
+    TextView entryHint = root.findViewById(R.id.config_entry_web_hint);
+    entryHint.setText(
+        com.deepseekharness.app.util.UiText.choose(
+            "开启后点击桌面图标或常驻通知先显示加载页，Web 就绪即进入；在 Web 里返回到底会回到桌面。应用被系统回收后，离开前停在 Web 就回到 Web。环境需要维护或启动失败时仍进入主界面。也可在 Web 的「设置 → 启动目标」中修改；禁用 dsh-launch-target 插件不会改变这里的选择。",
+            "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice."));
+    // 行内只留行为摘要；系统回收、维护例外与插件说明挂 ⓘ。
+    InfoHint.bind(
+        entryHint,
+        entryWeb.getText(),
+        com.deepseekharness.app.util.UiText.choose(
+            "开启后从图标直接进入 Web，返回回到桌面", "Open Web straight from the icon; Back returns to home"),
+        entryHint.getText());
     entryWeb.setOnCheckedChangeListener(
         (button, enabled) -> {
           if (renderingEntryTarget) return;

@@ -39,13 +39,16 @@ public final class RecoveryActivity extends AppCompatActivity {
     page = new CardPage(this, t("应急 DSH", "Emergency DSH"), "");
     setContentView(page.root);
     LinearLayout intro = page.card();
-    intro.addView(
+    TextView introText =
         page.text(
             t(
                 "正式环境维护失败时，可在这里启动独立的空白 DSH。它可以读取相关故障文件并向当前模型服务发送内容，提出修复方案；每次正式数据写入都需在此确认。",
                 "Start a separate, empty DSH when the regular environment fails. It can read affected files and send their contents to your model service to propose repairs. Confirm each write to regular data here."),
             14,
-            R.color.text_secondary));
+            R.color.text_secondary);
+    // 行内只留「何时用」；可读取故障文件、外发模型与逐次确认写入的边界收进 ⓘ。
+    InfoHint.attach(introText, t("应急 DSH", "Emergency DSH"));
+    intro.addView(introText);
     status = page.text("", 15, R.color.text);
     status.setTextIsSelectable(true);
     intro.addView(status);

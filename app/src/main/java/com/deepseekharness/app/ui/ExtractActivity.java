@@ -288,12 +288,13 @@ public class ExtractActivity extends AppCompatActivity {
 
   private void renderHeader(
       BackupTaskState.Snapshot s, DeployStages.View view, boolean busy, boolean pending) {
-    status.setText(
+    String statusText =
         busy
             ? com.deepseekharness.app.util.UiStateText.render(s.kind)
             : pending
                 ? UiText.text("上次维护未完成，请先恢复原环境")
-                : view.visible() ? view.label() : UiText.text("环境维护"));
+                : view.visible() ? view.label() : UiText.text("环境维护");
+    UiMotion.crossFadeText(status, statusText);
     OnboardingKit.Tone tone = OnboardingKit.tone(view.phase);
     pill.setVisibility(view.visible() ? View.VISIBLE : View.GONE);
     if (view.visible()) {
@@ -310,7 +311,15 @@ public class ExtractActivity extends AppCompatActivity {
                   : OnboardingKit.toneColor(tone)));
       pill.setPadding(kit.dp(9), kit.dp(3), kit.dp(9), kit.dp(3));
     }
-    lead.setText(
+    // 行内只留一句本次动作；完整说明走既有 InfoHint 弹层（不新增翻译键）。
+    DeployStages.Mode mode =
+        view.visible() && view.mode != DeployStages.Mode.GENERIC
+            ? view.mode
+            : DeployStages.Mode.GENERIC;
+    InfoHint.bind(
+        lead,
+        DeployStages.title(mode),
+        DeployTaskSheet.summary(mode),
         view.visible() && view.mode != DeployStages.Mode.GENERIC
             ? DeployTaskSheet.description(view.mode, false)
             : UiText.text("相同基础环境只更新 dsh 与内置插件，个人数据保持原位；基础环境变更时先保护数据再重建。验证失败可恢复原环境。"));

@@ -532,15 +532,16 @@ public class LaunchFragment extends Fragment {
                 + urlNote,
             urlNote.trim());
       }
-      runState.setText(
+      // 大标题只放短状态；未确认时的完整原因与下一步收进副标题的 ⓘ（见下方 subtitle）。
+      UiMotion.crossFadeText(
+          runState,
           enteringWeb
               ? com.deepseekharness.app.util.UiText.choose("正在打开 Web…", "Opening Web…")
               : restoring
                   ? com.deepseekharness.app.core.WebSessionRestoreText.progress(
                       restore.reason(), restore.attempts())
                   : unresolved
-                      ? com.deepseekharness.app.core.WebSessionRestoreText.unresolved(
-                          restore.reason())
+                      ? com.deepseekharness.app.core.WebSessionRestoreText.state(restore.reason())
                       : controller.isRestartBlocked()
                           ? com.deepseekharness.app.util.UiText.text("自动重启已暂停")
                           : stopping
@@ -566,18 +567,25 @@ public class LaunchFragment extends Fragment {
       boolean needsRecovery = environment.recovery;
       ((TextView) root.findViewById(R.id.launch_environment))
           .setText(environment.ready ? "READY" : "—");
-      ((TextView) root.findViewById(R.id.launch_subtitle))
-          .setText(
-              ready
-                  ? (controller.isWebCompatibilityFallback()
-                          ? "proot"
-                          : controller.proot().runtime().id())
-                      + " · dsh "
-                      + com.deepseekharness.app.util.Constants.DSH_VERSION
-                  // 恢复核对的结论是一整句说明，放在副标题；大标题只放短状态，窄屏不再撑成三行。
-                  : !restore.notice().isEmpty()
-                      ? restore.notice()
-                      : getString(R.string.ui2_launch_hint));
+      // 副标题默认只有一句；恢复核对的完整结论与下一步收进 ⓘ（复用 InfoHint 的弹层）。
+      TextView subtitle = root.findViewById(R.id.launch_subtitle);
+      if (ready) {
+        InfoHint.bind(
+            subtitle,
+            null,
+            (controller.isWebCompatibilityFallback() ? "proot" : controller.proot().runtime().id())
+                + " · dsh "
+                + com.deepseekharness.app.util.Constants.DSH_VERSION);
+      } else if (!restore.notice().isEmpty()) {
+        InfoHint.bind(subtitle, null, restore.notice());
+      } else if (unresolved) {
+        InfoHint.bind(
+            subtitle,
+            null,
+            com.deepseekharness.app.core.WebSessionRestoreText.unresolved(restore.reason()));
+      } else {
+        InfoHint.bind(subtitle, null, getString(R.string.ui2_launch_hint));
+      }
       // 语境小字 / 活动条 / 工作台状态只取真实状态；不根据等待时长推算阶段。
       renderStatusChrome(
           root,
@@ -600,18 +608,20 @@ public class LaunchFragment extends Fragment {
                       || !trace.issues.isEmpty()
                   ? View.VISIBLE
                   : View.GONE);
-      if (starting)
+      if (starting) {
+        // 状态条只放一行阶段与计时；固定说明不再堆在状态条里（启动日志就在同页实时滚动）。
+        String timing =
+            com.deepseekharness.app.util.UiText.format(
+                "%s · 本阶段 %s 秒 · 总计 %s 秒",
+                trace.stage, trace.stageElapsedMs / 1000, trace.elapsedMs / 1000);
         ((TextView) root.findViewById(R.id.launch_status))
             .setText(
-                com.deepseekharness.app.util.UiText.format(
-                    "%s · 本阶段 %s 秒 · 总计 %s 秒\n%s",
-                    trace.stage,
-                    trace.stageElapsedMs / 1000,
-                    trace.elapsedMs / 1000,
-                    trace.issues.isEmpty()
-                        ? com.deepseekharness.app.util.UiText.text("下方实时显示启动输出；等待不会自动终止。")
-                        : com.deepseekharness.app.util.UiText.text("检测到插件或配置异常，可查看恢复选项。")));
-      else if (!startStatusMessage.isEmpty() && !stopping && !enteringWeb)
+                trace.issues.isEmpty()
+                    ? timing
+                    : com.deepseekharness.app.util.UiText.format(
+                        "%s\n%s",
+                        timing, com.deepseekharness.app.util.UiText.text("检测到插件或配置异常，可查看恢复选项。")));
+      } else if (!startStatusMessage.isEmpty() && !stopping && !enteringWeb)
         ((TextView) root.findViewById(R.id.launch_status))
             .setText(com.deepseekharness.app.util.UiStateText.render(startStatusMessage));
       Button recovery = root.findViewById(R.id.launch_recovery);

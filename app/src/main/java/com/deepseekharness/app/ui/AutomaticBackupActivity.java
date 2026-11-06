@@ -42,8 +42,8 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
             value -> {
               if (state == null) return;
               if (value.busy)
-                state.setText(
-                    UiText.format("备份任务进行中：%s · %s 项", stage(value.stage), value.entries));
+                UiMotion.crossFadeText(
+                    state, UiText.format("备份任务进行中：%s · %s 项", stage(value.stage), value.entries));
               else refresh();
             });
   }
@@ -57,6 +57,8 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                 "默认开启。备份对话、附件、配置和插件；不重复备份 Ubuntu。个人项目请使用手动备份。",
                 "On by default. Saves conversations, attachments, settings and plugins, without copying Ubuntu. Use manual backup for personal projects."));
     UiNavigation.addHeader(this, page.root, t("自动备份", "Automatic backups"), this::finish);
+    // 页首只留「默认开启」这一句；备份范围、不重复 Ubuntu 与手动备份建议收进 ⓘ。
+    InfoHint.attach(page.subtitle, t("自动备份", "Automatic backups"));
     var prefs = AutomaticBackups.prefs(this);
     LinearLayout settings = page.card();
     var enabled = new com.google.android.material.materialswitch.MaterialSwitch(this);
@@ -147,13 +149,16 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
             dialog.show();
           });
     }
-    settings.addView(
+    TextView timingHint =
         page.text(
             t(
                 "到期时仍在运行则延后，不会停止对话或终端。时间由系统调度，可能略有延迟。保留最近 3 份已验证自动副本。关闭后取消后续任务，已有副本保留。",
                 "If DSH or a terminal is running, backup waits. Android scheduling may delay the selected time. Keeps the latest 3 verified automatic copies. Turning off cancels future jobs and preserves existing copies."),
             12,
-            R.color.text_secondary));
+            R.color.text_secondary);
+    // 行内只留「到期仍在运行则延后」；调度延迟与保留策略收进 ⓘ。
+    InfoHint.attach(timingHint, t("备份时机", "Backup timing"));
+    settings.addView(timingHint);
     TextView localHint =
         page.text(
             t(
@@ -162,6 +167,8 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
             11,
             R.color.text_muted);
     localHint.setPadding(0, page.dp(10), 0, 0);
+    // 行内只留卸载会清除；换机前导出无密码备份的做法收进 ⓘ。
+    InfoHint.attach(localHint, t("本机副本 · 保留最近 3 份", "Local copies · latest 3 kept"));
     settings.addView(localHint);
     state = page.text("", 12, R.color.text_secondary);
     page.content.addView(state);
@@ -194,7 +201,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
   private void refresh() {
     if (reading) return;
     reading = true;
-    state.setText(t("正在读取记录…", "Reading records…"));
+    UiMotion.crossFadeText(state, t("正在读取记录…", "Reading records…"));
     new Thread(
             () -> {
               try {
@@ -233,7 +240,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                                 + t(
                                     "数据已保存；部分插件依赖需在恢复预检中核对。",
                                     "Data saved; some plugin dependencies need review before restore.");
-                      state.setText(status);
+                      UiMotion.crossFadeText(state, status);
                       for (var copy : found.valid)
                         if (Boolean.TRUE.equals(copy.metadata.get("automatic"))) {
                           String title =
@@ -277,7 +284,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                 runOnUiThread(
                     () -> {
                       reading = false;
-                      state.setText(NativeBackupJobs.code(error));
+                      UiMotion.crossFadeText(state, NativeBackupJobs.code(error));
                     });
               }
             },

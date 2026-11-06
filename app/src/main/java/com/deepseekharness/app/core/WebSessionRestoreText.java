@@ -41,6 +41,24 @@ public final class WebSessionRestoreText {
     };
   }
 
+  /**
+   * 未确认状态的短标题（页面大标题用）：只描述当前结论，完整原因与可执行动作见
+   * {@link #unresolved(String)}，由页面收进 ⓘ 弹层。
+   */
+  public static String state(String reason) {
+    return switch (reason == null ? "" : reason) {
+      case "IDENTITY_UNKNOWN" -> UiText.choose("原实例身份待确认", "Previous instance unconfirmed");
+      case "AUTH_UNAVAILABLE" -> UiText.choose("原实例连接不可用", "Existing Web unreachable");
+      case "LAUNCHER_PENDING" -> UiText.choose("启动器仍在退出", "Launcher still exiting");
+      case "LAUNCHER_UNKNOWN" -> UiText.choose("启动器状态未知", "Launcher state unknown");
+      case "RETIRE_UNAVAILABLE" -> UiText.choose("旧实例记录未清理", "Old instance record not cleared");
+      case "INCOMPATIBLE" -> UiText.choose("原实例版本不兼容", "Instance version incompatible");
+      case "RECORD_UNAVAILABLE" -> UiText.choose("实例记录不可读", "Instance record unreadable");
+      case "INTERRUPTED" -> UiText.choose("恢复核对被中断", "Recovery check interrupted");
+      default -> UiText.choose("原实例待确认", "Previous instance unconfirmed");
+    };
+  }
+
   /** 仍需用户处理的未确认状态；不同原因给出不同入口，不再共用一句“待确认”。 */
   public static String unresolved(String reason) {
     return switch (reason == null ? "" : reason) {

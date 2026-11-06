@@ -44,13 +44,16 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
     page.button(second, t("检查连接", "Check connection"), false, this::refresh);
     LinearLayout help = page.card();
     help.addView(page.text(t("怎么使用", "How to use"), 16, R.color.text));
-    help.addView(
+    TextView helpText =
         page.text(
             t(
                 "在 DSH 对话中发送：\n「请打开系统设置，查看当前的显示设置。」\n\n首次操作按应用提示确认。你可以随时在系统无障碍设置中关闭服务。读屏与点按无需 Root、Shizuku 或 ADB；如果已完成 ADB 配对，后台保活会在部分系统掉线后请求重新绑定。截屏需要 Android 11+。",
                 "In a DSH conversation, ask:\n“Open system settings and inspect the display settings.”\n\nConfirm the app prompt when requested. You can disable the service in Accessibility settings at any time. Observation and taps do not require Root, Shizuku or ADB. If ADB pairing is enabled, the watchdog can request a rebind after some ROMs disconnect the service. Screenshots require Android 11+."),
             13,
-            R.color.text_secondary));
+            R.color.text_secondary);
+    // 行内只留示例入口那一句，其余说明（权限边界与掉线重绑）挂 ⓘ。
+    InfoHint.attach(helpText, t("怎么使用", "How to use"));
+    help.addView(helpText);
     page.entry(
         help,
         t("找不到开关或开关是灰色", "Missing or disabled switch"),

@@ -169,6 +169,22 @@ final class DeployTaskSheet {
     kit.add(content, buttons(view), 16);
   }
 
+  /** 维护页行内摘要：只描述本次动作，完整原因与影响仍用 {@link #description} 收进 ⓘ。 */
+  static String summary(DeployStages.Mode mode) {
+    switch (mode == null ? DeployStages.Mode.GENERIC : mode) {
+      case UPDATE:
+        return UiText.choose(
+            "只更新 dsh 与内置插件，个人数据保留", "Updates only dsh and built-in plugins; personal data stays");
+      case INSTALL:
+        return UiText.choose("部署内置 Ubuntu 与运行组件", "Deploys the bundled Ubuntu and runtime");
+      case REBUILD:
+        return UiText.choose(
+            "先保护个人数据，再重建内置环境", "Protects personal data, then rebuilds the environment");
+      default:
+        return UiText.choose("环境维护在后台进行", "Environment maintenance runs in the background");
+    }
+  }
+
   /** 说明：首次部署 / 运行时更新 / 重建三种，原文见设计稿 taskSheet 的 desc。 */
   static String description(DeployStages.Mode mode, boolean inOnboarding) {
     switch (mode == null ? DeployStages.Mode.GENERIC : mode) {

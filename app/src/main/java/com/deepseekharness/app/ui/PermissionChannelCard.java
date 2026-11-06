@@ -270,15 +270,16 @@ final class PermissionChannelCard {
     line.addView(toggle);
     panel.addView(line);
     panel.addView(statusBox(kit, RootShell.status(ctx), rootReady(ctx)), kit.topMargin(4));
-    kit.add(
-        panel,
+    // 行内只留第一句（root 可直接用 su、无需 ADB 配对），严格档与不回退说明挂 ⓘ。
+    TextView rootHint =
         kit.text(
             UiText.choose(
                 "手机已 root 时可直接使用 su，无需 ADB 配对。首次执行请在 root 管理器中授权 DSHA。开关打开且找到 su 后命令会先走 root，管理器拒绝时不会自动改用 Shizuku；引导中固定为严格档，放宽只在 设置 → 设备能力授权 中调整。",
                 "On a rooted phone su works without ADB pairing; approve DSHA in your root manager on first use. Once enabled and su is found, commands go through root first and do not fall back to Shizuku if the manager denies. Onboarding keeps the strict level; relax it only in Settings → Device access."),
             12,
-            R.color.shell_text_muted),
-        8);
+            R.color.shell_text_muted);
+    InfoHint.attach(rootHint, label.getText());
+    kit.add(panel, rootHint, 8);
     if (enabled) {
       Button verify =
           kit.small(

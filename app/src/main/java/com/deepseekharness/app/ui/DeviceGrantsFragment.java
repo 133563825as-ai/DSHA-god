@@ -282,6 +282,9 @@ public final class DeviceGrantsFragment extends Fragment {
                 SettingsPanes.open(
                     this, new com.deepseekharness.app.ui.SafAccessFragment(), "saf-access"));
     view.findViewById(R.id.config_battery_opt).setOnClickListener(button -> openBatteryOpt(ctx));
+    // 电池优化行：行内只留首句，完整说明（厂商限制与恢复顺序）挂 ⓘ。
+    InfoHint.attach(
+        (TextView) view.findViewById(R.id.config_battery_opt_hint), getString(R.string.ui_m0191));
     sms = view.findViewById(R.id.device_sms);
     smsStatus = view.findViewById(R.id.device_sms_status);
     sms.setOnCheckedChangeListener(

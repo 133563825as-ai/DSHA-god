@@ -61,11 +61,13 @@ public final class SafAccessFragment extends Fragment {
     Context ctx = requireContext();
     executor = Executors.newSingleThreadExecutor();
 
-    ((TextView) root.findViewById(R.id.saf_intro))
-        .setText(
-            UiText.choose(
-                "授权来自系统文档选择器：只有自己提供文档服务的应用（或被 MT 一类工具注入过的应用）会出现在里面，普通应用的私有目录不会出现——那是系统隔离，不是功能没生效。授权后，助手可以读写你选中的那个文件夹。",
-                "Grants come from the system document picker. Only apps that expose document services (or were patched by tools like MT) show up; other apps' private folders never do — that is system isolation, not a broken switch. Once granted, the assistant can read and write the folder you picked."));
+    TextView intro = root.findViewById(R.id.saf_intro);
+    // 结论（能读写选中的文件夹）在前，系统文档选择器的来历收进 ⓘ；同一段既有文案，不新增翻译键。
+    intro.setText(
+        UiText.choose(
+            "授权后，助手可以读写你选中的那个文件夹。授权来自系统文档选择器：只有自己提供文档服务的应用（或被 MT 一类工具注入过的应用）会出现在里面，普通应用的私有目录不会出现——那是系统隔离，不是功能没生效。",
+            "Once granted, the assistant can read and write the folder you picked. Grants come from the system document picker. Only apps that expose document services (or were patched by tools like MT) show up; other apps' private folders never do — that is system isolation, not a broken switch."));
+    InfoHint.attach(intro, UiText.choose("跨应用文件访问", "Cross-app files"));
 
     ((TextView) root.findViewById(R.id.saf_grants_label))
         .setText(UiText.choose("已授权目录", "Granted folders"));
