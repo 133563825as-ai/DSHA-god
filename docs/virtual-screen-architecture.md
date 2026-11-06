@@ -43,6 +43,7 @@ flowchart LR
 | 文件 | 阅读重点 |
 |---|---|
 | [VirtualScreenActivity][activity] | 原生创建、启动应用、预览、输入结果与显式节点面板 |
+| [VirtualScreenForeground][foreground] / [VirtualScreenStrip][strip] | 宿主页内的提示条与完整预览：档位、让位、收起持久化 |
 | [VirtualScreenManager][manager] | 应用级唯一编排器、身份快照、串行操作、退出收敛 |
 | [VirtualScreenCore][core] | 特权进程启动、回环服务器、显示与输入路由 |
 | [VirtualScreenLauncher][launcher] / [VirtualScreenChannels][channels] | 固定命令生成及可用通道选择 |
@@ -142,6 +143,28 @@ Native 缩图与 Agent 原图不能共享一个未经区分的坐标系。
 失败间隙会撤销输入身份；恢复时即使 sequence 相同也需重新交付，不能被去重吞掉。
 [PreviewView][preview-view] 可在同代 `STALE_FRAME` / `FRAME_NOT_READY` 时保留上一张图以减小闪烁。
 **保图不保输入权**：旧图可以继续可见，触摸必须禁用，直到有效帧重新采用。
+
+### 5.1 前台预览形态：提示条 / 完整预览 / 关闭
+
+[VirtualScreenForeground][foreground] 决定宿主页里显示什么；档位与收起意图由
+[VirtualScreenPreviewSettings][preview-settings] 持久化（键 `vscreen_preview_mode` /
+`vscreen_preview_collapsed`，见 [VirtualScreenPreviewPolicy][preview-policy]）：
+
+| 档位 | 行为 |
+|---|---|
+| 提示条（默认） | [VirtualScreenStrip][strip]：顶部 3dp 蓝色呼吸线 + 目标文字，视觉总高 27dp、点按热区 40dp；只显示，不向虚拟屏转发触摸；点按打开控制页，`×` 收起 |
+| 完整预览 | 旧的 172dp 页内小窗，可拖动标题、点画面打开控制页 |
+| 关闭 | 不显示任何预览 |
+
+提示条目标只来自 Manager 的只读 `targetStatus`（`packageVerified` 为真时的 `package`），
+拿不到时显示「虚拟屏操作中」，不按最近一次启动记录猜测。刷新是 4 秒一次的只读 status，
+不取帧、不登记观察、不签发帧或节点凭据；因此提示条不是输入许可，不改变 ADR0003 的观察与
+输入身份。虚拟屏停止/撤销、宿主页离开前台、当前页是虚拟识屏页、系统悬浮预览显示时条和
+小窗都移除；系统悬浮窗仍走原本的 opt-in 权限通道。
+
+收起跨虚拟屏代次与 App 重启保持（不再按 generation 记忆），只能从
+**设置 → 设备能力授权 → 虚拟屏预览** 三档中重新选择；选择档位即清除收起意图并重新显示。
+系统动画关闭或无障碍减少动态时，呼吸线停在静态不透明状态。
 
 ## 6. 原始坐标与注入
 
@@ -378,6 +401,10 @@ Standard 的 minSdk 为 30，但满足版本并不证明某个 ROM 的隐藏 API
 [pixels]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPixels.java
 [observed-pixels]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenObservedPixels.java
 [previews]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviews.java
+[foreground]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenForeground.java
+[strip]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenStrip.java
+[preview-settings]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewSettings.java
+[preview-policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPreviewPolicy.java
 [preview-view]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewView.java
 [preview-gate]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewInputGate.java
 [policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPolicy.java

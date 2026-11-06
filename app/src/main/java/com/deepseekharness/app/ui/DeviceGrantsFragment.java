@@ -27,6 +27,8 @@ import com.deepseekharness.app.util.Constants;
 import com.deepseekharness.app.util.DeviceShellPolicy;
 import com.deepseekharness.app.util.GrantSummary;
 import com.deepseekharness.app.util.UiText;
+import com.deepseekharness.app.util.VirtualScreenPreviewPolicy;
+import com.deepseekharness.app.vscreen.VirtualScreenPreviewSettings;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
 /** 设备通道、系统权限与能力预授权的唯一设置页；沿用历史偏好键。 */
@@ -138,6 +140,7 @@ public final class DeviceGrantsFragment extends Fragment {
                   startActivity(
                       new Intent(
                           ctx, com.deepseekharness.app.vscreen.VirtualScreenActivity.class)));
+      bindVirtualPreviewRow(ctx, view);
     }
 
     CompoundButton root = view.findViewById(R.id.config_root_shell);
@@ -439,6 +442,78 @@ public final class DeviceGrantsFragment extends Fragment {
    * 全部允许先经红色确认，确认前分段保持原值。选中「按应用」时下方出现「已配置 N 个应用 ›」。
    */
   private TextView screenModeStatus;
+
+  /**
+   * 虚拟屏预览三档：提示条（默认）/ 完整预览（旧页内小窗）/ 关闭。收起意图在这里被「选择即
+   * 重新显示」清除，所以收起后仍能从本页恢复；档位与收起都不按虚拟屏代次记忆。
+   */
+  private void bindVirtualPreviewRow(Context ctx, View page) {
+    TextView title = page.findViewById(R.id.screen_virtual_preview_title);
+    if (title == null) return;
+    title.setText(UiText.choose("虚拟屏预览", "Virtual screen preview"));
+    renderVirtualPreviewMode(ctx, page);
+    page.findViewById(R.id.screen_virtual_preview_row)
+        .setOnClickListener(v -> chooseVirtualPreviewMode(ctx));
+  }
+
+  private void renderVirtualPreviewMode(Context ctx, View page) {
+    if (page == null) return;
+    TextView sub = page.findViewById(R.id.screen_virtual_preview_sub);
+    if (sub == null) return;
+    VirtualScreenPreviewPolicy.Mode mode = VirtualScreenPreviewSettings.mode(ctx);
+    boolean collapsed =
+        mode != VirtualScreenPreviewPolicy.Mode.OFF && VirtualScreenPreviewSettings.collapsed(ctx);
+    String label = previewModeLabel(mode);
+    sub.setText(
+        collapsed ? String.format(UiText.choose("已收起 · %s", "Collapsed · %s"), label) : label);
+  }
+
+  private static String previewModeLabel(VirtualScreenPreviewPolicy.Mode mode) {
+    switch (mode) {
+      case FULL:
+        return UiText.choose("完整预览（页内小窗）", "Full preview (in-page window)");
+      case OFF:
+        return UiText.choose("关闭，不显示预览", "Off, no preview");
+      default:
+        return UiText.choose("提示条（顶部蓝色呼吸条）", "Strip (blue breathing bar at top)");
+    }
+  }
+
+  private void chooseVirtualPreviewMode(Context ctx) {
+    VirtualScreenPreviewPolicy.Mode[] modes = {
+      VirtualScreenPreviewPolicy.Mode.STRIP,
+      VirtualScreenPreviewPolicy.Mode.FULL,
+      VirtualScreenPreviewPolicy.Mode.OFF
+    };
+    CharSequence[] items = {
+      UiText.choose("提示条（推荐）", "Strip (recommended)"),
+      UiText.choose("完整预览（旧版行为）", "Full preview (old behavior)"),
+      UiText.choose("关闭", "Off")
+    };
+    VirtualScreenPreviewPolicy.Mode current = VirtualScreenPreviewSettings.mode(ctx);
+    int selected =
+        current == VirtualScreenPreviewPolicy.Mode.FULL
+            ? 1
+            : current == VirtualScreenPreviewPolicy.Mode.OFF ? 2 : 0;
+    new DshaDialogBuilder(ctx)
+        .setTitle(UiText.choose("虚拟屏预览", "Virtual screen preview"))
+        .setMessage(
+            UiText.choose(
+                "提示条只在顶部显示正在操作的应用；完整预览显示页内小窗；关闭后不再显示预览。收起后也在这里重新打开。",
+                "The strip only shows the app being operated at the top; full preview shows an in-page window; off hides previews. Reopen a collapsed preview here."))
+        .setSingleChoiceItems(
+            items,
+            selected,
+            (dialog, which) -> {
+              dialog.dismiss();
+              VirtualScreenPreviewSettings.setMode(ctx, modes[which]);
+              View page = getView();
+              if (page != null) renderVirtualPreviewMode(ctx, page);
+              com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx).foreground().refresh();
+            })
+        .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+        .show();
+  }
 
   /**
    * 识屏模式（关闭 / 实体 / 虚拟，互斥）：卡片顶部一行显示当前模式与缺项，点按选择。确认方式、暂停与撤销仍是全局设置。
@@ -1971,6 +2046,9 @@ public final class DeviceGrantsFragment extends Fragment {
     }
     refreshScreenMode();
     refreshClipboardMode();
+    if (page != null
+        && com.deepseekharness.app.vscreen.VirtualScreenManager.supported(requireContext()))
+      renderVirtualPreviewMode(requireContext(), page);
   }
 
   @Override
