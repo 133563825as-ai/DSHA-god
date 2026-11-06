@@ -393,6 +393,9 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       finish();
       return;
     }
+    // 新建预览任务（有的 ROM 会为网页宿主单独建任务）同样重放「隐藏后台」；已转发给存活宿主的
+    // 实例在上一分支直接结束，不重复处理。
+    BrowserTasks.applyRecentsPreference(this);
     closeOriginRestorePreview = BrowserOriginRestore.registerPreview(this);
     microphone = new BrowserMicrophone(this);
     retained = new androidx.lifecycle.ViewModelProvider(this).get(Retained.class);
@@ -1801,6 +1804,9 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
   protected void onResume() {
     super.onResume();
     browserResumed = true;
+    // 预览宿主回到前台时再重放一次：新任务可能晚于上次策略才进入系统任务列表
+    // （ColorOS 16 会把网页宿主作为独立卡片留下），这里补上 exclude 标记。
+    BrowserTasks.applyRecentsPreference(this);
     if (synchronizeWebSession()) return;
     continueInitialNavigation();
     if (!pictureInPictureActiveOrTransitioning() && webView != null)

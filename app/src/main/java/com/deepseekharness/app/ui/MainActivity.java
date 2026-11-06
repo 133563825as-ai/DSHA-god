@@ -133,6 +133,9 @@ public class MainActivity extends AppCompatActivity {
     ConfigStore config = new ConfigStore(this);
     // 首次设置完成前不恢复旧终端或插件页，也不初始化 Ubuntu。
     super.onCreate(config.isWelcomed() ? savedInstanceState : null);
+    // 「隐藏后台」每次启动都重放：进程重启、覆盖更新或任务被系统重建后，新任务默认可见，
+    // 不能只靠设置页开关。失败只记录不崩溃（BrowserTasks 内部降级并写诊断）。
+    BrowserTasks.applyRecentsPreference(this);
     getOnBackPressedDispatcher()
         .addCallback(
             this,

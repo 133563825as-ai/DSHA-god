@@ -576,4 +576,31 @@ public final class BrowserTasksTest {
     assertFalse(BrowserTasks.applyRecentsPreference(new ExplodingContext()));
     assertTrue(new ConfigStore(context).isHideFromRecents());
   }
+
+  @Test
+  public void replayingAfterANewPreviewTaskAppearsHidesItWhenEnabled() {
+    new ConfigStore(context).setHideFromRecents(true);
+    var currentMain = task(8, MainActivity.class, 1);
+    Shadow.<ShadowActivityManager>extract(manager).setAppTasks(List.of(currentMain));
+    assertTrue(BrowserTasks.applyRecentsPreference(context));
+    // 预览宿主后建：晚于上一次重放才进入系统任务列表（ColorOS 16 留下独立卡片的现场）。
+    var preview = task(9, WebPreviewActivity.class, 1);
+    Shadow.<ShadowActivityManager>extract(manager).setAppTasks(List.of(currentMain, preview));
+    assertTrue(BrowserTasks.applyRecentsPreference(context));
+    assertTrue(Shadow.<ShadowAppTask>extract(preview).isExcludedFromRecents());
+    assertTrue(Shadow.<ShadowAppTask>extract(currentMain).isExcludedFromRecents());
+  }
+
+  @Test
+  public void replayingOnResumeWithThePreferenceOffKeepsTheLiveMainCardVisible() throws Exception {
+    new ConfigStore(context).setHideFromRecents(false);
+    liveMainIn(8);
+    var currentMain = task(8, MainActivity.class, 1);
+    var preview = task(7, WebPreviewActivity.class, 1);
+    Shadow.<ShadowActivityManager>extract(manager).setAppTasks(List.of(currentMain, preview));
+    assertTrue(BrowserTasks.applyRecentsPreference(context));
+    assertFalse(Shadow.<ShadowAppTask>extract(currentMain).isExcludedFromRecents());
+    // 网页宿主按既有单主卡规则继续隐藏，关闭偏好不会把预览页放回最近任务。
+    assertTrue(Shadow.<ShadowAppTask>extract(preview).isExcludedFromRecents());
+  }
 }
