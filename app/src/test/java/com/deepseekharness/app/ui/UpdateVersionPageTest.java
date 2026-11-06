@@ -133,9 +133,12 @@ public final class UpdateVersionPageTest {
       assertCurrentNotesShown(activity, shown);
       for (String language : UiLanguagePreference.LANGUAGES)
         bundledNotes(inLanguage(activity, language));
-      assertTrue(shown.contains("5918af63"));
-      assertTrue(shown.contains("a54f9854"));
-      assertTrue(shown.contains("版本码提升为 332"));
+      assertTrue(shown.contains("跨应用文件访问"));
+      assertTrue(shown.contains("隐藏后台"));
+      assertTrue(shown.contains("版本码提升为 333"));
+      assertFalse(shown.contains("5918af63"));
+      assertFalse(shown.contains("a54f9854"));
+      assertFalse(shown.contains("版本码提升为 332"));
       assertFalse(shown.contains("GIT_PROROOT_SIGSEGV"));
       assertFalse(shown.contains("git_guard.py"));
       assertFalse(shown.contains("虚拟屏"));
@@ -322,9 +325,12 @@ public final class UpdateVersionPageTest {
           "English notes must resolve a localized body rather than the default Chinese resource",
           body(bundledNotes(inLanguage(controller.get(), "zh"))),
           englishBody);
-      assertTrue(shown.contains("5918af63"));
-      assertTrue(shown.contains("a54f9854"));
-      assertTrue(shown.contains("Raises versionCode to 332"));
+      assertTrue(shown.contains("Cross-app file access"));
+      assertTrue(shown.contains("Hide in background"));
+      assertTrue(shown.contains("Raises versionCode to 333"));
+      assertFalse(shown.contains("5918af63"));
+      assertFalse(shown.contains("a54f9854"));
+      assertFalse(shown.contains("Raises versionCode to 332"));
       assertFalse(shown.contains("GIT_PROROOT_SIGSEGV"));
       assertFalse(shown.contains("git_guard.py"));
       assertFalse(shown.contains("virtual screen"));

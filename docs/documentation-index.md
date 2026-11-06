@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261106.0700-dsh0.2.2-rc.1` / build332 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为 docs-only 发布准备：只更正 T58 归档文档的事实口径——首次连接提示补丁自 build324（`a54f9854`）起已并入并随包，build324–build332 都携带；归档 tag `archive/feat/first-connect-indicator-20261106`（`5918af63`）只是同一补丁的独立分支快照，不另行合并，也不表示补丁不在包内。无新功能、无行为变化；不改 fixed-inputs，不改 managed-runtime-inputs 与 runtime-descriptor（runtimeId 仍 35e3f499），不新增受管运行时/插件。宿主 contracts 整组、全树格式、host-tests manifest 与定向单测通过；真机结论按当次实际确认记录填写，未预写通过。改动说明见 [build332 更新说明](releases/build332-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.5-20261106.1830-dsh0.2.2-rc.1` / build333 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为发布准备：跨应用文件访问（SAF，PR #3）新增设置 → 设备能力授权 → 系统权限入口与 `/app/saf/*` 桥端点（持久读/写、两段式删除，协议版本保持 3）；设置 → 体验新增「隐藏后台」开关（默认关、本机偏好，只影响最近任务可见性、不承诺保活）；设备能力授权页状态胶囊自适应、概览条压平并统一 9 语种「已关闭」状态词。受管输入随 PR #3 重算 runtime-descriptor（runtimeId `04b24571`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时/插件。宿主 contracts 整组、全树格式、host-tests manifest、文档链接、changelog 与定向单测通过；两项新功能未真机验收（androidTest 有既有编译错误，最近任务行为与授权页像素级截断待真机）。改动说明见 [build333 更新说明](releases/build333-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
