@@ -265,6 +265,25 @@ public final class ThreadCpuStats {
     }
   }
 
+  /**
+   * Parses field 4 (ppid) of the same Linux stat line accepted by {@link #parseStatLine}. Added for
+   * the shell-level probe: it needs the process tree, and the comm field may contain spaces/')'.
+   */
+  public static long parseStatPpid(String line) {
+    if (line == null) throw new IllegalArgumentException("stat line");
+    int open = line.indexOf('(');
+    int close = line.lastIndexOf(')');
+    if (open < 0 || close <= open || close + 1 >= line.length())
+      throw new IllegalArgumentException("stat comm");
+    String[] fields = line.substring(close + 1).trim().split("\\s+");
+    if (fields.length <= 1) throw new IllegalArgumentException("stat fields");
+    try {
+      return Long.parseLong(fields[1]);
+    } catch (NumberFormatException invalid) {
+      throw new IllegalArgumentException("stat ppid", invalid);
+    }
+  }
+
   /** Adds one process/thread snapshot. A new or returning thread establishes a baseline only. */
   public synchronized void addSample(long t, long wall, Iterable<ThreadReading> current) {
     if (firstT < 0) firstT = t;

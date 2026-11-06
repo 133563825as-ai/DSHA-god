@@ -472,6 +472,10 @@ final class WebPerfProbe {
               .put("previous", experimentPreviousRequestedFrameRate));
       JSONObject web = parseWeb(webValue, webError);
       report.put("web", web);
+      // 壳级常驻探针（ADR-0002）：把最近 60 s 的壳/容器样本随本次报告一起导出。
+      report.put(
+          "shellProbe",
+          new JSONObject(com.deepseekharness.app.probe.ProbeController.get().exportJson()));
       JSONObject mobileInfo = web.optJSONObject("mobile");
       mobile = mobileInfo == null ? null : PerfProbeNames.parseLoaded(mobileInfo.opt("loaded"));
       report.put("mobilePlugin", PerfProbeNames.mobileState(mobile));

@@ -24,6 +24,13 @@ public class ThreadCpuStatsTest {
   }
 
   @Test
+  public void parsesPpidFromTheSameParenthesisSafeStatLine() {
+    assertEquals(
+        4242,
+        ThreadCpuStats.parseStatPpid("(a) b) S 4242 1 1 0 -1 0 0 0 0 0 0 0 0 0 0 20 0 1 0 0"));
+  }
+
+  @Test
   public void computesDeltasAndHandlesDisappearingAndNewThreads() {
     ThreadCpuStats stats = new ThreadCpuStats(100, 500, 8);
     ThreadCpuStats.ThreadReading a = reading(1, "app", 11, "main", 100);
