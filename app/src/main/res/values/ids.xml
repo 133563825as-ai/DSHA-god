@@ -11,4 +11,7 @@
     <!-- 下载记录页：重建列表后按语义标签恢复焦点。 -->
     <item name="transfer_focus_key" type="id" />
     <item name="plugin_detail_divider" type="id" />
+    <!-- 宿主页内的虚拟屏预览：顶部提示条与完整预览小窗（T96）。 -->
+    <item name="vscreen_preview_strip" type="id" />
+    <item name="vscreen_preview_panel" type="id" />
 </resources>

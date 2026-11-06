@@ -15,8 +15,11 @@ import com.deepseekharness.app.R;
  *
  * <p>页面、弹窗、抽屉与列表共用同一条 cubic-bezier(.22, 1, .36, 1) 曲线；系统关闭动画时
  * 一律退回静态状态，不用“看起来像动效”的假进度或无限动画掩盖真实状态。
+ *
+ * <p>跨包只读入口是 {@link #animationsEnabled(Context)}（虚拟屏提示条据此决定是否呼吸），
+ * 页面转场仍只给本包使用。
  */
-final class UiMotion {
+public final class UiMotion {
   private static final Interpolator STANDARD = new PathInterpolator(0.22f, 1f, 0.36f, 1f);
 
   private UiMotion() {}
@@ -54,7 +57,7 @@ final class UiMotion {
   }
 
   /** 系统动画总开关；读设置失败按开启处理，不因此阻断页面操作。 */
-  static boolean animationsEnabled(Context context) {
+  public static boolean animationsEnabled(Context context) {
     try {
       return Settings.Global.getFloat(
                   context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f)

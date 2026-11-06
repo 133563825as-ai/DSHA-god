@@ -36,6 +36,7 @@ flowchart LR
 | File | What to read |
 |---|---|
 | [VirtualScreenActivity][activity] | Native creation, application launch, preview, input results and explicit node panel |
+| [VirtualScreenForeground][foreground] / [VirtualScreenStrip][strip] | In-page strip and full preview: modes, yielding and persisted collapse |
 | [VirtualScreenManager][manager] | Single application-level orchestrator, identity snapshots, serialized operations and exit convergence |
 | [VirtualScreenCore][core] | Privileged-process startup, loopback server, display and input routing |
 | [VirtualScreenLauncher][launcher] / [VirtualScreenChannels][channels] | Fixed-command construction and available-channel selection |
@@ -101,6 +102,20 @@ There are two image paths, which must be tested separately when changed:
 `ObservedPixels` currently allows 30 seconds, at most two retained images and 24 MiB of raw bitmaps. Its budget is not JPEG length; a large original resolution can be rejected outright. Native thumbnails and Agent originals cannot share an undifferentiated coordinate system. `status` only reads state; **it does not issue proof that an image was observed**.
 
 [VirtualScreenPreviews][previews] coalesces requests from multiple native presentation owners, each with its decoded bitmap and main-thread callback. A subscription `Lease` delivers only frames from the current epoch and records the generation/sequence actually adopted. A failure gap revokes input identity. Recovery must redeliver even the same sequence, rather than losing it to deduplication. [PreviewView][preview-view] may retain the previous image on same-generation `STALE_FRAME` / `FRAME_NOT_READY` to reduce flicker. **Retaining an image does not retain input authority**: the old image may remain visible, but touch stays disabled until a valid frame is adopted again.
+
+### 5.1 In-page presentation: strip / full preview / off
+
+[VirtualScreenForeground][foreground] decides what appears inside a host page; the mode and collapse intent are persisted by [VirtualScreenPreviewSettings][preview-settings] (keys `vscreen_preview_mode` / `vscreen_preview_collapsed`, see [VirtualScreenPreviewPolicy][preview-policy]):
+
+| Mode | Behaviour |
+|---|---|
+| Strip (default) | [VirtualScreenStrip][strip]: a 3dp blue breathing line plus target text at the top, 27dp visual height and a 40dp tap target; display only, never forwards touch to the virtual screen; tapping opens the control page and `×` collapses it |
+| Full preview | The old 172dp in-page window; drag the title, tap the picture to open the control page |
+| Off | No preview at all |
+
+The strip target only comes from the Manager's read-only `targetStatus` (`package` when `packageVerified` is true). When it is unavailable the strip shows "Operating the virtual screen" and never guesses from the last launch record. Refreshing is a read-only status every four seconds: it takes no frames, registers no observation and issues no frame or node credential, so the strip is not input authority and does not change ADR0003 observation/input identity. The strip and window are removed when the virtual screen stops or is revoked, the host page leaves the foreground, the current page is the virtual-screen page itself, or the system floating preview shows; that floating window keeps its original opt-in permission path.
+
+Collapse survives virtual-screen generations and app restarts (no more per-generation memory) and can only be reopened through **Settings → Device capability authorization → Virtual screen preview**; choosing a mode clears the collapse intent and shows it again. When system animations are off or motion is reduced, the breathing line stays static and fully opaque.
 
 ## 6. Raw coordinates and injection
 
@@ -240,6 +255,10 @@ Test names in the table omit shared prefixes where applicable. They live in [vsc
 [pixels]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPixels.java
 [observed-pixels]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenObservedPixels.java
 [previews]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviews.java
+[foreground]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenForeground.java
+[strip]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenStrip.java
+[preview-settings]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewSettings.java
+[preview-policy]: ../../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPreviewPolicy.java
 [preview-view]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewView.java
 [preview-gate]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewInputGate.java
 [policy]: ../../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPolicy.java
