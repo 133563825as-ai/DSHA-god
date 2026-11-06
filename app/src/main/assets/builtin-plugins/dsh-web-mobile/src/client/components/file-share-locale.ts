@@ -7,7 +7,6 @@ export const FILE_SHARE_NS = 'dshWebMobileNavFileShare'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const fileShareZh = {
-  'share': '分享',
   'shareFile': '分享「{name}」',
   'downloadFile': '下载「{name}」',
   'sharing': '正在准备文件…',
@@ -24,7 +23,6 @@ export type FileShareKey = keyof typeof fileShareZh
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const fileShareEn: Record<FileShareKey, string> = {
-  'share': 'Share',
   'shareFile': 'Share "{name}"',
   'downloadFile': 'Download "{name}"',
   'sharing': 'Preparing file…',
@@ -46,7 +44,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 // DSHA_MOBILE_LOCALES_V1: generated from tools/mobile-locales.json; do not edit here.
 export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { zh: fileShareZh, en: fileShareEn, ...{
   "zh-Hant": {
-    "share": "分享",
     "shareFile": "分享「{name}」",
     "downloadFile": "下載「{name}」",
     "sharing": "正在準備檔案…",
@@ -58,7 +55,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "分享失敗：{message}"
   },
   "ru": {
-    "share": "Поделиться",
     "shareFile": "Поделиться файлом «{name}»",
     "downloadFile": "Скачать «{name}»",
     "sharing": "Подготовка файла…",
@@ -70,7 +66,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "Не удалось поделиться: {message}"
   },
   "ja": {
-    "share": "共有",
     "shareFile": "「{name}」を共有",
     "downloadFile": "「{name}」をダウンロード",
     "sharing": "ファイルを準備中…",
@@ -82,7 +77,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "共有に失敗しました：{message}"
   },
   "ko": {
-    "share": "공유",
     "shareFile": "‘{name}’ 공유",
     "downloadFile": "‘{name}’ 다운로드",
     "sharing": "파일 준비 중…",
@@ -94,7 +88,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "공유 실패: {message}"
   },
   "ar": {
-    "share": "مشاركة",
     "shareFile": "مشاركة «{name}»",
     "downloadFile": "تنزيل «{name}»",
     "sharing": "جارٍ تجهيز الملف…",
@@ -106,7 +99,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "فشلت المشاركة: {message}"
   },
   "pt": {
-    "share": "Compartilhar",
     "shareFile": "Compartilhar “{name}”",
     "downloadFile": "Baixar “{name}”",
     "sharing": "Preparando arquivo…",
@@ -118,7 +110,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "Falha ao compartilhar: {message}"
   },
   "la": {
-    "share": "Communica",
     "shareFile": "Communica «{name}»",
     "downloadFile": "Depone «{name}»",
     "sharing": "Fasciculus paratur…",
@@ -130,7 +121,6 @@ export const fileShareLocales: Record<string, Record<FileShareKey, string>> = { 
     "errorGeneric": "Communicatio defecit: {message}"
   },
   "fr": {
-    "share": "Partager",
     "shareFile": "Partager « {name} »",
     "downloadFile": "Télécharger « {name} »",
     "sharing": "Préparation du fichier…",

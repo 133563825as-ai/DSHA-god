@@ -18,11 +18,11 @@ PATCHED = {'lib/client.js', 'lib/compress.js', 'lib/delete-session.js', 'lib/ind
            'src/client/effects/file-share.ts', 'lib/types/client/i18n/locales.d.ts',
            'src/client/effects/drawer-session-log.ts', 'src/client/effects/drawer-quick-settings.ts',
            'lib/types/client/components/file-share-locale.d.ts',
-           'lib/types/client/effects/attachment-mention.d.ts',
-           # 上游已自带 lib/file-transfer.js；DSHA 仍从 tools/file-transfer/file-transfer.js
-           # 生成该模块（字节一致），因此只把无上游来源的 source map 列为本地追加成员。
-           'lib/file-transfer.js'}
-ADDITIONAL = {'lib/file-transfer.js.map'}
+           'lib/types/client/effects/attachment-mention.d.ts'}
+# 上游 3.3.1 删掉了 lib/file-transfer.js（b52b2cb「清 lib 残留」）；DSHA 的移动服务入口
+# tools/mobile-server/index.js 仍 import 该模块，改由 tools/file-transfer/file-transfer.js
+# 生成为仅本地追加成员，字节核验与 source map 规则不变。
+ADDITIONAL = {'lib/file-transfer.js', 'lib/file-transfer.js.map'}
 SHA1 = re.compile(r'[0-9a-f]{40}\Z')
 
 def validate_lock(lock, package):

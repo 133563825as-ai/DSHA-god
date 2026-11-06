@@ -1,15 +1,65 @@
 # 内置移动插件 dsh-web-mobile 的 DSHA 本地补丁
 
-> **当前状态（build327 起）**：该插件默认禁用，**覆盖更新后也会再次收敛为禁用**（只有当前安装内
-> 从原生插件页显式启用才生效），原因是大量代码不适配新页面与新逻辑、已造成 build324 白屏 /
-> 侧栏重复事故。原因、临时启用方法与恢复默认启用的硬门槛见[插件页的默认禁用一节](plugins.md)。
-> 本页记录的补丁仍然保留，启用插件后照常生效；在恢复默认启用前不要删除本页所述的修复。
+> **当前状态（build336 起）**：插件已同步到上游 3.3.1（适配宿主 0.2.2）并恢复默认启用；
+> 真机覆盖升级验收仍须在 build336 发布前补写，见[插件页](plugins.md)与
+> [build336 记录](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)。
+> 本页只记录当前仍在产物里的 DSHA 差异；上游已接管或对象已消失的旧补丁在对应小节标注为
+> 已摘除，不再重放。
 
 本文记录 [`tools/apply-mobile-client-patches.mjs`](../tools/apply-mobile-client-patches.mjs) 对固定上游
-`dsh-web-mobile` 3.2.2（[`bb0e5e151ca549fef506e829020a5d7138074711`](https://github.com/mexiaosqwq/dsh-web-mobile/commit/bb0e5e151ca549fef506e829020a5d7138074711)，
-2026-10-31 同步；上游已把 v3.2.2 标签重指到该提交）
+`dsh-web-mobile` 3.3.1（[`4e71eb67de7dac9d8b2572757c81e47aa32a32fb`](https://github.com/mexiaosqwq/dsh-web-mobile/commit/4e71eb67de7dac9d8b2572757c81e47aa32a32fb)，
+2026-11-06；上游把适配宿主 0.2.2 的 3.4.0 内容重编号为 3.3.1）
 的本地差异。上游产物不手改；改动写进补丁脚本，再生成
 [`app/src/main/assets/builtin-plugins/dsh-web-mobile/lib/client.js`](../app/src/main/assets/builtin-plugins/dsh-web-mobile/lib/client.js)。
+
+## 2026-11-06：同步上游 3.3.1（宿主 0.2.2）与补丁取舍
+
+### 上游事实（只读核对）
+
+- 固定提交 `4e71eb67…`（v3.3.1，2026-11-06）；上游 README 的 3.4.0 更新内容写明「适配宿主
+  0.2.2：修掉整页白屏、顶栏开关被裁、文件键消失、页签叠字、文件面板标签条被顶栏盖住」。
+- peer 声明 `@deepseek-ai/dsh-client-* >=0.2.2-rc.1 <0.3.0-0`、`@deepseek-ai/cordis ^4.0.1`，
+  与 `tools/dsh-runtime/package-lock.json`（0.2.2-rc.1 / cordis 4.1.0）逐条匹配；`react` 是
+  可选 peer（3.4.0/3.3.0 曾是必选 peer，而宿主运行时安装树没有 react，会被依赖门槛判 missing）。
+- 上游删除了 `lib/file-transfer.js`；DSHA 的 `tools/mobile-server/index.js` 仍 import 它，因此该模块
+  改列为「仅本地追加成员」，字节仍由 `tools/file-transfer/file-transfer.js` 核验。
+
+### 仍保留的 DSHA 差异
+
+- `DSHA_SESSION_INPUT_V4`：触摸 / 笔 / 鼠标的有效单击交给宿主打开会话，抽屉由
+  `dsha-session-open` 关闭；不把用户点击伪造成 `detail=0`。
+- 手机档保留快捷键弹层搜索行（0.2.2 的首次自动聚焦由上游守卫拦下，只删 CSS 不删宿主节点）。
+- `DSHA 可见区域边界`：只剩快捷键弹层按 `--dsha-mobile-viewport-top` / `--dsha-mobile-visible-vh`
+  收口；0.2.2 的手机设置弹层已交回宿主官方全屏，旧的通用弹层选择器（0.2.1 DOM）删除。
+- `DSHA_FONT_FAMILY_ROW_V1`、`DSHA_GEAR_FIT_V1`（下方两节）。
+- 安全区变量（`--dsha-safe-area-inset-*`）：跳过上游已包好的一处，不再产生嵌套 `var(...)`。
+- 多语言字典（zh-Hant/ru/ja/ko/ar/pt/la/fr）与 live-locale 订阅；按 3.3.1 键集删除
+  `nav.close` 与 `fileShare.share`。
+- 文件传输、服务端模块与源码级 locale 补丁（`tools/mobile-server/`、`tools/file-transfer/`）。
+
+### 已摘除的旧补丁
+
+- `DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`：上游 712999a（PR #257）已自带同一条名单，本地不再重放；
+  下方 2026-10-31 小节仅作历史记录。
+- `DSHA_BACKDROP_PRESS_V1`：3.3.1 的整页遮罩是 `div`，0.2.2 之后通用 `:active` inset 染色不会
+  落到它上面，补丁对象消失。
+- 0.2.1 DOM 的通用弹层可见区 CSS：手机档设置弹层已回到宿主官方全屏；保留旧选择器会误伤
+  宿主新弹层。
+- 旧的快捷键首次焦点守卫实现（`tools/mobile-shortcut-guard.js` / `mobile-focus-shadow.js`）不再
+  进入补丁链，上游 0.2.2 自带同义守卫；这两个文件当前无引用，清理另行处理。
+
+### 验证
+
+```bash
+python3 tools/prepare-mobile-plugin.py --upstream-dir <fixed-3.3.1-tree> --write
+node tools/test-mobile-client-patches.mjs
+node tools/test-mobile-update.mjs
+node tools/test-mobile-gear-contract.mjs
+node tools/test-mobile-locales.mjs
+python3 tools/generate-builtin-plugins.py --verify
+python3 tools/prepare-runtime-descriptor.py --write
+python3 tools/verify-runtime-descriptor-source.py
+```
 
 ## 2026-10-30：rc.5 设置弹层字体族行排版（`DSHA_FONT_FAMILY_ROW_V1`）
 
@@ -49,6 +99,14 @@
   server 补丁均保持唯一；`prepare-mobile-plugin.py --write` 重新生成产物并通过摘要核验。
 
 结论：上游暂无此修复，DSHA 需要本地 CSS 补丁。
+
+2026-11-06 复核（宿主升级到 0.2.2-rc.1、上游同步到 3.3.1 / `4e71eb67`）：
+
+- 本机安装树 `@deepseek-ai/dsh-client-ui-theme` 0.2.2-rc.1 仍是 `FontFamilyRow` +
+  `.row` / `.rowText` / `.field`，`Input` 仍把 `<input>` 包在 `span[class*="_wrap"]` 内，
+  `maxLength: 200`、`spellCheck: false`、`autoComplete: "off"` 未变，补丁选择器继续命中；
+- 固定上游 3.3.1 的 `lib/client.js` 仍无 `FontFamilyRow` / `rowText` / `maxlength=200` 选择器，
+  本补丁继续保留。
 
 ### 补丁位置与规则
 
@@ -114,7 +172,10 @@ node tools/apply-mobile-client-patches.mjs tools/mobile-plugin-upstream/lib/clie
 退出条件：上游给字体行提供手机档换行排版，或宿主不再把 `.field` 固定成 240px；
 届时删除 `font-family-row-wrap-rc5` 整块并重新生成产物。
 
-## 2026-10-31：宽屏触屏档会话行收起归档/置顶（`DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`）
+## 2026-10-31：宽屏触屏档会话行收起归档/置顶（`DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`，已摘除）
+
+> **已摘除（2026-11-06，同步 3.3.1）**：固定上游已包含 712999a（PR #257）的同一条规则，
+> DSHA 补丁脚本删除了整块；下面的现象、上游核验与验证记录只作为历史，不再对应当前产物。
 
 ### 现象与根因
 
@@ -179,7 +240,7 @@ build324 真机覆盖安装后主界面白屏、侧栏 footer 出现「重复叠
 （`viewport < 768`），`wide` 因此为真，宿主 `ConnectionIndicator` 本来真实渲染；T58
 （`first-connect-indicator-patch.json`）让首次连接不再渲染指示灯。
 
-上游 `dsh-web-mobile` 3.2.2 的 `drawer-quick-settings-chip-guard` 恰好用
+上游（3.2.2 起，3.3.1 仍保留）`dsh-web-mobile` 的 `drawer-quick-settings-chip-guard` 恰好用
 `:has(> button[data-phase], > [role="status"])` 判断「这一行里有没有指示灯」来决定是否
 让出 footer 齿轮（该行只有 260px，连接条中文约 136px、英文约 190px）。指示灯消失后
 判据永远得到「放得下」：插件的渲染因此**依赖宿主某个子节点存在**，宿主一改首次连接的

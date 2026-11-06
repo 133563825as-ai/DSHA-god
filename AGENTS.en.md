@@ -7,7 +7,7 @@
 
 DSHA's entry point for AI agents and new contributors — read [README](README.en.md) first, then this file, so you do not need to scan the whole repository.
 
-**Repository facts**: Java 17 / `:app` / arm64; mobile UI 3.2.2; proot by default with optional proroot; pinned offline inputs are restored by `tools/ci-assets.py`. Build, signing and gates are documented in [BUILD.md](BUILD.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+**Repository facts**: Java 17 / `:app` / arm64; mobile UI 3.3.1; proot by default with optional proroot; pinned offline inputs are restored by `tools/ci-assets.py`. Build, signing and gates are documented in [BUILD.md](BUILD.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Maintenance entry points: [documentation index](docs/en/index.md), [project handbook](docs/en/project-architecture-handbook.md), [permissions](docs/en/device-permissions-architecture.md), [runtime/data/plugins](docs/en/runtime-data-plugin-architecture.md), [runtime engines](docs/en/runtime-engines.md), [ports](docs/en/ports-and-networking.md), [virtual display](docs/en/virtual-screen-architecture.md), [ADR0003](docs/en/adr/0003-virtual-screen-lifecycle-and-input.md), [provenance](docs/en/references-and-provenance.md).
 
@@ -152,7 +152,7 @@ Read the [security model](docs/en/security-model.md) first. Essential boundaries
 - **Microphone:** declare both `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS`. `BrowserMicrophone` requests permission only on Web request, not ordinary startup. Allow pure audio only from the current local page; reject camera/screen audio. An old callback cannot approve a new page.
 - **Device-acceptance experience:** `uiautomator dump` suppresses other accessibility services. Screenshot grants bind DSH generation and expire on stop/disconnect/revocation. Store screenshots in app-private Pictures/DSHA, without all-files access. PiP can cover lower controls; automation must check actual visible region/orientation. Screenshots/UI reads must not put sensitive values in public evidence.
 - Register `rikka.shizuku.ShizukuProvider`. Standard uses 13.1.5, Low 12.2.0; do not conceal minSdk 24 with overrideLibrary. Validate manager UID, Binder descriptor, one-shot request, and timeout in callbacks.
-- Built-in `dsh-web-mobile` is 3.2.2 at upstream main `bb0e5e151ca549fef506e829020a5d7138074711` (upstream retargeted the v3.2.2 tag to this commit on 2026-10-30). `tools/apply-mobile-client-patches.mjs` manages local changes. Do not restore withdrawn upstream viewport changes or reapply rc1 navigation patches now owned upstream.
+- Built-in `dsh-web-mobile` is 3.3.1 (host 0.2.2 adaptation) at upstream main `4e71eb67de7dac9d8b2572757c81e47aa32a32fb` (2026-11-06; the 3.4.0 content was renumbered to 3.3.1). `tools/apply-mobile-client-patches.mjs` manages local changes. Do not restore withdrawn upstream viewport changes or reapply the wide-touch row rules, first-focus guard and backdrop tint now owned upstream; it is default-enabled again from build336 (device over-the-top acceptance pending).
 
 ---
 

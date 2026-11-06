@@ -47,14 +47,20 @@ export function applyMobileClientPatches(bytes) {
       throw new Error('补丁模块范围缺失或不唯一: ' + startAnchor);
     source = source.slice(0, start) + after + source.slice(end);
   };
-  // 3.2.2 沿用已吸收的可见视口变量、写入去重与销毁清理；上游 main 未恢复
-  // 后续按帧合并试验。保留原 viewport-meta 与 interactive-widget=resizes-content。
-  // 按实际鼠标/touch/pen事件分流；不能把用户点击伪造成键盘 detail=0。
+  // 3.3.1（上游 main 4e71eb67，适配宿主 0.2.2）保留 viewport-meta 的可见视口变量与
+  // interactive-widget=resizes-content；上游未恢复按帧合并的视口试验，这里也不带回。
+  // 按实际鼠标/touch/pen 事件分流；不能把用户点击伪造成键盘 detail=0。
   replaceRange('            // DSHA detail=0 follows the host\'s keyboard/programmatic open path.',
     '            // A touch row-tap owns the close (pointerup or the navigation observer);',
     '            // DSHA_SESSION_INPUT_V4：保留原始点击，实际打开仍由 dsha-session-open 关闭抽屉。\n');
-  replaceRange('  /* 手机档收掉搜索行', '  /* 这一层的遮罩',
-    '  /* DSHA 保留手机搜索；上游定向首轮焦点守卫不删除宿主 React 节点。 */\n');
+  // 0.2.2 的快捷键弹层仍按 ≤767px 收搜索行；DSHA 保留手机搜索（首次自动聚焦由
+  // 0.2.2 的定向守卫拦下，只隐藏 CSS 而不删除宿主 React 节点）。
+  replace(`  @media (max-width: 767px) {
+    [aria-modal="true"][data-shortcut-modal="shortcuts"] [class*="_searchRow"] {
+      display: none !important;
+    }
+  }`,
+    '  /* DSHA 保留手机搜索；首次自动聚焦由 0.2.2 的定向守卫拦下，不删除宿主 React 节点。 */');
   // Documentation-only: V4 opens valid touch/pen/mouse clicks through the host;
   // keep the owned-row exemption and close on the actual open event, not pointerup.
   replace('        // DSHA_SESSION_INTERACTION_V1：宿主把「单击=选中、双击=打开」拆成了两步\n'
@@ -77,45 +83,15 @@ export function applyMobileClientPatches(bytes) {
     + '        // 所以抽屉的关闭挂在这个事实上，而不是挂在点击上。',
     '        // DSHA V4 有效单击打开会话后派发 dsha-session-open；\n'
     + '        // 抽屉只在打开事实到达时关闭，保留原始 click 与行标记豁免。');
-  // The full-page backdrop is a button for accessibility, so the upstream
-  // generic :active inset tint also paints it. On dark-theme touch taps that
-  // adds #ffffff24 across the whole dim layer. Keep its own fade/close behavior
-  // and ordinary button feedback; only this owned backdrop skips the tint.
-  replace('/* Floating fallback button (hero / blank phases without a session header).',
-    `/* DSHA_BACKDROP_PRESS_V1: a dimming surface must not become a bright pressed button. */
-@media (max-width: 1023px) and (pointer: coarse) and (hover: none) {
-  [data-mobile-nav="backdrop"]:active {
-    box-shadow: none;
-  }
-}
-
-/* Floating fallback button (hero / blank phases without a session header).`);
-  // 宽屏触屏档（≥1024 + 粗指针）沿用手机壳的「⋯ 常显」，又把三颗按钮放大到 40×40；
-  // 宿主只在 hover/menuOpen 隐藏 .time，触屏没有 hover，于是行尾同时常显
-  // 「时间 + ⋯ + 归档 + 置顶」，280px 侧栏里的标题只剩约 55px。按手机壳 #154 的
-  // 同一份 zh/en aria-label 名单收起归档/置顶，⋯ 仍保留 40×40 热区。
-  // 上游 PR mexiaosqwq/dsh-web-mobile#256 是同一改动；内置快照包含它后删本块。
-  replace('  /* ① 隐藏「更多视图」⋯（owner 2026-10-29）：手机档早就藏了（≤1023 那条在下面），',
-    `  /* @patch
-     id: wide-touch-row-actions
-     for: dsh-web-mobile 3.2.2（bb0e5e15）的 (min-width: 1024px) and (pointer: coarse) 档
-     why: 40×40 的 ⋯ / 归档 / 置顶三颗按钮和常显的 .time 把 280px 侧栏的标题压到约
-          55px（实测 1024×640 / dpr 2.5）；手机壳自 #154 起已按 aria-label 收起
-          归档/置顶，宽屏触屏档缺同一条规则。上游 PR #256 合并后删本块。
-     until: 内置上游同步到包含 mexiaosqwq/dsh-web-mobile#256 的提交——届时删本块并
-            重新生成产物
-     test: tools/test-mobile-client-patches.mjs
-  */
-  /* DSHA_WIDE_TOUCH_ROW_ACTIONS_V1：只藏归档/置顶两颗快捷按钮，⋯ 与行高不动；
-     名单与手机壳 #154 完全一致，宿主换语言时静默失效、不误伤第三方按钮。 */
-  [class*="sessionRow"] [class*="_rowActions"] :is([aria-label="归档会话"], [aria-label="取消归档"], [aria-label="置顶会话"], [aria-label="取消置顶"], [aria-label="Archive session"], [aria-label="Unarchive session"], [aria-label="Pin session"], [aria-label="Unpin session"]) {
-    display: none !important;
-  }
-
-  /* ① 隐藏「更多视图」⋯（owner 2026-10-29）：手机档早就藏了（≤1023 那条在下面），`);
+  // 3.3.1 的整页遮罩是 div（不是 button），0.2.2 之后通用 :active inset 染色不再落到
+  // 遮罩上；旧的 DSHA_BACKDROP_PRESS_V1 没有可修的对象，已随本次同步删除。
+  // 宽屏触屏档收起归档/置顶已由上游 3.3.1 自带（712999a / PR #257，规则落在
+  // (min-width: 1024px) and (pointer: coarse) 档，名单与手机壳一致），不再重放。
+  //
+  // 0.2.2 起手机档设置弹层交回宿主官方全屏；DSHA 只给快捷键弹层按可见带收口。
+  // 原生已消费 IME/systemBars，这里只读 DSHA 发布的实际浏览器视口（viewport-meta）。
   const css = `
   /* DSHA 可见区域边界：原生已消费 IME/systemBars，只读浏览器实际视口。 */
-  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]),
   [aria-modal="true"][data-shortcut-modal="shortcuts"] {
     top: calc(env(safe-area-inset-top, 0px) + 12px + var(--dsha-mobile-viewport-top, 0px)) !important;
     max-height: max(1px, calc(var(--dsha-mobile-visible-vh, 100vh) - 24px - env(safe-area-inset-top, 0px))) !important;
@@ -131,17 +107,15 @@ export function applyMobileClientPatches(bytes) {
 
   /* @patch
      id: font-family-row-wrap-rc5
-     for: dsh-client-ui-theme 0.2.1-rc.5 的 FontFamilyRow（FontSizeRow.module.css 的
+     for: dsh-client-ui-theme 0.2.2-rc.1 的 FontFamilyRow（FontSizeRow.module.css 的
           .bVCLcG_row / .bVCLcG_rowText，加 primitives Input 的 .vnGTiq_field）
      why: 宿主的 .row 是不换行 flex、.field 固定 flex:0 240px；手机设置弹层内容宽约 340px，
-          标题+说明列因此被压成约 1 字/行、弹层被纵向撑高。上游 dsh-web-mobile main 已核对
-          为固定提交 bb0e5e151ca549fef506e829020a5d7138074711（2026-10-31，0 个 open PR；
-          该提交同时是当前 v3.2.2 标签），插件 client 里没有任何 FontFamilyRow / rowText
-          选择器，暂无上游修复。
+          标题+说明列因此被压成约 1 字/行、弹层被纵向撑高。固定上游 3.3.1（4e71eb67）的
+          client 里仍没有任何 FontFamilyRow / rowText 选择器，暂无上游修复。
      until: 上游给字体行手机档换行排版，或宿主把 .field 固定宽改成可收缩——届时删本块
      test: tools/test-mobile-client-patches.mjs
   */
-  /* DSHA_FONT_FAMILY_ROW_V1：rc.5 的 Input 原语把 <input> 包在 span[class*="_wrap"] 里，
+  /* DSHA_FONT_FAMILY_ROW_V1：0.2.2 的 Input 原语把 <input> 包在 span[class*="_wrap"] 里，
      240px 与 spellcheck/autocomplete/maxlength 也落在 wrapper 内层，因此同时覆盖
      「裸 input」与「wrapper 内 input」两种形态；只命中设置弹层里带 FontFamilyRow 那组
      属性的输入框行，字号行是 stepper、没有 input，天然不命中。:has 保持单层。 */
@@ -167,23 +141,29 @@ export function applyMobileClientPatches(bytes) {
     }
   }
 `;
-  replace('  /* ---------- sidebar panel enter / exit (see effects/panel-exit.ts) ----------',
-    css + '  /* ---------- sidebar panel enter / exit (see effects/panel-exit.ts) ----------');
+  // 3.3.1 构建剥了 CSS 注释，锚点改为规则本体；DSHA 覆盖紧跟在宿主规则之后。
+  const modalRule = `  [aria-modal="true"][data-shortcut-modal="shortcuts"] {
+    position: absolute !important;
+    left: 8px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: min(760px, calc(var(--dsh-web-mobile-vh, 100dvh) - 24px - env(safe-area-inset-top, 0px))) !important;
+    transition: max-height .2s var(--ds-ease-out, ease-in-out);
+    transform: none !important;
+    border-radius: 14px !important;
+    animation: none !important;
+  }`;
+  replace(modalRule, modalRule + '\n' + css);
   // DSHA_GEAR_FIT_V1（T61）：footer 齿轮的让位判据改成**只量几何**，不再读宿主
   // ConnectionIndicator 是否存在。DSH 0.2.2 首次连接不再渲染指示灯后，上游
   // `:has(> button[data-phase], > [role="status"])` 判据永远「放得下」，手机上这条
   // 行第一次走进「没有指示灯」分支；让位口径改成实测行内剩余宽度，宿主以后增删任何
-  // 孩子（指示灯、更新条、新按钮）都自动计入。
-  replace(`/* @patch
-   id: drawer-quick-settings-chip-guard
-   for: dsh-client-ui-primitives 的 ConnectionIndicator（connecting/disconnected 渲染 button[data-phase]，recovered 渲染 div[role="status"]）与账户 launcher 同处 settingsArea 的 triggerRow
-   why: 该行只有 260px；连接条 flex:none（中文约 136px、英文约 190px），齿轮常驻会在英文下把账户按钮挤到约 26px、头像被裁
-   until: 宿主给该行提供独立的次要动作位，或连接条不再占用行宽——届时删本块
-   test: tests/drawer-quick-settings.test.ts
-*/
-[data-mobile-nav="frame"] [class*="sidebarCol"] [class*="triggerRow"]:has(> button[data-phase], > [role="status"]) [data-mobile-nav="quick-settings-wrap"] {
+  // 孩子（指示灯、更新条、新按钮）都自动计入。3.3.1 构建剥了 CSS 注释，锚点改为规则本体。
+  const gearGuardRule = `[data-mobile-nav="frame"] [class*="sidebarCol"] [class*="triggerRow"]:has(> button[data-phase], > [role="status"]) [data-mobile-nav="quick-settings-wrap"] {
   display: none !important;
-}`,
+}`;
+  replace(gearGuardRule,
     `/* @patch
    id: drawer-quick-settings-fit-guard
    for: 侧栏 footer 的 triggerRow（账户 launcher + 宿主连接条 / 更新条 / 以后新增的孩子）
@@ -251,9 +231,11 @@ function createDrawerQuickSettingsTask(ctx) {`);
     "        const keep = trigger !== null && trigger.getAttribute('aria-expanded') === 'true' && gearVisible;");
   replace(`            if (wrap !== null && wrap.parentElement !== target)
                 target.appendChild(wrap);
+            bindRowHook();
             syncMenuEntry(target);`,
     `            if (wrap !== null && wrap.parentElement !== target)
                 target.appendChild(wrap);
+            bindRowHook();
             // DSHA_GEAR_FIT_V1：可见性只由实测宽度决定，结论写在插件自己的属性上；
             // 幂等写入（值没变就不写），避免自己的 mutation 再把任务唤醒一轮。
             const gearVisible = gearAvailable(target);
