@@ -202,4 +202,69 @@ public final class WebSessionKernelEvidenceTest {
     kernel.actualBoot = "other-boot";
     assertEquals(WebProcessManager.SessionObservation.EXITED, kernel.observeSession(saved));
   }
+
+  @Test
+  public void recoveryObservationFallsBackToBirthProofOnlyWhenStrictFilesAreUnknown() {
+    String boot = "12345678-1234-1234-1234-123456789abc";
+    String command = "node /usr/local/bin/dsh web";
+    var saved =
+        new com.deepseekharness.app.util.WebSessionProof.Saved(
+            boot, 7, INSTANCE, "ab".repeat(32), 42, 123, command, 41, 122, "launcher");
+    class RecoveryKernel extends WebProcessManager {
+      boolean verified, webAlive = true;
+      long webBirth = 123;
+      String generation = "7", launcherCommand = "launcher";
+
+      RecoveryKernel() {
+        super(null);
+      }
+
+      @Override
+      String recoveryBoot() {
+        return boot;
+      }
+
+      @Override
+      int recoveryHostUid() {
+        return 10001;
+      }
+
+      @Override
+      com.deepseekharness.app.util.WebSessionProof.Process recoveryProcess(int pid) {
+        if (pid == 42)
+          return new com.deepseekharness.app.util.WebSessionProof.Process(
+              42, webBirth, 10001, command, generation, INSTANCE, "ab".repeat(32), webAlive);
+        return new com.deepseekharness.app.util.WebSessionProof.Process(
+            41, 122, 10001, launcherCommand, "7", INSTANCE, "ab".repeat(32), true);
+      }
+
+      @Override
+      public boolean verifySession(com.deepseekharness.app.util.WebSessionProof.Saved proof) {
+        return verified;
+      }
+    }
+    var kernel = new RecoveryKernel();
+    // 严格文件核验成功时不需要证明版；文件不可用（UNKNOWN）时才按出生身份复核。
+    kernel.verified = true;
+    assertEquals(WebProcessManager.SessionObservation.LIVE, kernel.observeRecoveredSession(saved));
+    kernel.verified = false;
+    assertEquals(WebProcessManager.SessionObservation.UNKNOWN, kernel.observeSession(saved));
+    assertEquals(WebProcessManager.SessionObservation.LIVE, kernel.observeRecoveredSession(saved));
+    // 出生身份任一不符都不是记录里的实例：保持 UNKNOWN，不得接回或当作退出。
+    kernel.generation = "8";
+    assertEquals(
+        WebProcessManager.SessionObservation.UNKNOWN, kernel.observeRecoveredSession(saved));
+    kernel.generation = "7";
+    kernel.launcherCommand = "other-launcher";
+    assertEquals(
+        WebProcessManager.SessionObservation.UNKNOWN, kernel.observeRecoveredSession(saved));
+    kernel.launcherCommand = "launcher";
+    kernel.webAlive = false;
+    assertEquals(
+        WebProcessManager.SessionObservation.EXITED, kernel.observeRecoveredSession(saved));
+    kernel.webAlive = true;
+    kernel.webBirth = 124;
+    assertEquals(
+        WebProcessManager.SessionObservation.EXITED, kernel.observeRecoveredSession(saved));
+  }
 }
