@@ -110,6 +110,17 @@ public class StartupRecoveryStateTest {
         Outcome.INTERRUPTED, StartupRecoveryState.outcome("starting", false, -1, false, true));
     assertEquals(
         Outcome.INTERRUPTED, StartupRecoveryState.outcome("interrupted", false, -1, false, false));
+    // 已拿到鉴权链接但没写最终 ready/failed：不是“无结果”，旧代次应显示已就绪等待进入 / 被新启动取代。
+    assertEquals(
+        Outcome.READY_WAITING,
+        StartupRecoveryState.outcome("starting", false, 7500, -1, false, true));
+    assertEquals(
+        Outcome.READY_WAITING,
+        StartupRecoveryState.outcome("starting", false, 7500, -1, true, false));
+    assertEquals(
+        Outcome.RUNNING, StartupRecoveryState.outcome("starting", false, 7500, -1, true, true));
+    assertEquals(
+        Outcome.INTERRUPTED, StartupRecoveryState.outcome("starting", false, -1, -1, false, true));
   }
 
   @Test
@@ -123,6 +134,9 @@ public class StartupRecoveryStateTest {
     assertEquals("9 秒就绪", StartupRecoveryState.elapsedLabel(Outcome.READY, 12000, 9400));
     assertEquals("第 3 秒失败", StartupRecoveryState.elapsedLabel(Outcome.FAILED, 3200, -1));
     assertEquals("已用 12 秒", StartupRecoveryState.elapsedLabel(Outcome.RUNNING, 12500, -1));
+    assertEquals(
+        "已就绪 · 等待进入", StartupRecoveryState.outcomeLabel(Outcome.READY_WAITING, Kind.FAILED));
+    assertEquals("第 12 秒已就绪", StartupRecoveryState.elapsedLabel(Outcome.READY_WAITING, 12500, -1));
   }
 
   @Test
@@ -130,6 +144,7 @@ public class StartupRecoveryStateTest {
     assertEquals(Tone.GOOD, Outcome.READY_THEN_STOPPED.tone);
     assertEquals(Tone.IDLE, Outcome.CANCELLED.tone);
     assertEquals(Tone.WARN, Outcome.INTERRUPTED.tone);
+    assertEquals(Tone.INFO, Outcome.READY_WAITING.tone);
     assertEquals(Tone.BAD, Outcome.FAILED.tone);
     assertEquals(Tone.IDLE, Kind.IDLE.tone);
     assertEquals(Tone.IDLE, Kind.STOPPED.tone);
@@ -148,6 +163,9 @@ public class StartupRecoveryStateTest {
     assertEquals(Kind.IDLE, StartupRecoveryState.page(in));
     in.latest = Outcome.READY_THEN_STOPPED;
     assertEquals(Kind.STOPPED, StartupRecoveryState.page(in));
+    // 已就绪但被新启动取代：不是故障，页面保持空闲态。
+    in.latest = Outcome.READY_WAITING;
+    assertEquals(Kind.IDLE, StartupRecoveryState.page(in));
   }
 
   @Test

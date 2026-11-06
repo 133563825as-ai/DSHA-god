@@ -31,6 +31,7 @@ public class SettingsFragment extends Fragment {
     new TabOption(
         "设备能力授权", "Root · Shizuku · ADB · 权限", DeviceGrantsFragment::new, R.drawable.ic_ui_shield),
     new TabOption("任务状态上岛", "状态栏胶囊 · 灵动岛 · 实时活动", IslandFragment::new, R.drawable.ic_ui2_box),
+    new TabOption("GitHub 登录", "账号 · 授权 · 登录状态", GitHubLoginFragment::new, R.drawable.ic_ui_link),
   };
 
   private static final String STATE_SELECTED = "settings_selected";
@@ -118,6 +119,42 @@ public class SettingsFragment extends Fragment {
           com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
           describe.accept(checked);
         });
+
+    TextView keepTitle = v.findViewById(R.id.settings_keep_screen_on_title);
+    keepTitle.setText(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
+    TextView keepHint = v.findViewById(R.id.settings_keep_screen_on_hint);
+    keepHint.setText(com.deepseekharness.app.util.UiText.text("不自动息屏；网页与终端适用"));
+    com.google.android.material.materialswitch.MaterialSwitch keepOn =
+        v.findViewById(R.id.settings_keep_screen_on_switch);
+    keepOn.setContentDescription(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
+    keepOn.setChecked(config.isKeepScreenOn());
+    keepOn.setOnCheckedChangeListener(
+        (button, checked) -> {
+          config.setKeepScreenOn(checked);
+          android.app.Activity activity = getActivity();
+          if (activity != null) ModernAndroidUi.applyKeepScreenOn(activity);
+        });
+
+    // 隐藏后台：只改最近任务可见性，不动常驻通知、前台服务与 ADB 保活。
+    TextView hiddenTitle = v.findViewById(R.id.settings_hidden_recents_title);
+    hiddenTitle.setText(com.deepseekharness.app.util.UiText.text("隐藏后台"));
+    TextView hiddenHint = v.findViewById(R.id.settings_hidden_recents_hint);
+    hiddenHint.setText(com.deepseekharness.app.util.UiText.text("从最近任务中隐藏 DSHA"));
+    com.google.android.material.materialswitch.MaterialSwitch hiddenSwitch =
+        v.findViewById(R.id.settings_hidden_recents_switch);
+    hiddenSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("隐藏后台"));
+    hiddenSwitch.setChecked(config.isHideFromRecents());
+    hiddenSwitch.setOnCheckedChangeListener(
+        (button, checked) -> {
+          config.setHideFromRecents(checked);
+          if (!BrowserTasks.applyRecentsPreference(requireContext()))
+            android.widget.Toast.makeText(
+                    requireContext(),
+                    com.deepseekharness.app.util.UiText.text("设置已保存，但系统未允许立即隐藏；下次打开 App 时重试"),
+                    android.widget.Toast.LENGTH_LONG)
+                .show();
+        });
+    v.findViewById(R.id.settings_hidden_recents).setOnClickListener(x -> hiddenSwitch.toggle());
 
     String version = "unknown";
     try {

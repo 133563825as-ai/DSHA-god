@@ -2,7 +2,7 @@
 
 > 2026-10-23 build191修订：CAS改专用轻入口与FD安全扫描，仍固定proot并完整扫描；分段计时只作诊断，不替代唯一回执和退出证明。`backendReadyMs`记录实际官方鉴权接受，`browserReadyMs`记录首次有效网页ready；`elapsedMs`在ready/失败/停止后冻结，`runElapsedMs`另记运行代次时长。ready后的真实错误保留为运行期记录，不复制关键词推测的`RELATED_PLUGIN_LOG`或触发已就绪代次的启动失败。准入/排队另有观察，trace仍从`diagnostics.begin`开始；接入旧Web的0ms不是新启动测速。[本轮实现、模块检查与最终待验范围](releases/v0.2.1-rc.2-build191-startup-20261023.md)优先于下方F13说明。
 
-> 核验基线：2026-10-21（原于 build190/F13 入口与数据流核对）。当前身份为 build312 / DSH 0.2.1-rc.5 / 单一 Standard；F10–F13 记录属于历史，不代表本版。本页更新只核对源码，未运行设备、模型对话或长时验收；最终版本、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执，本文不预填测试总数。
+> 核验基线：2026-10-21（原于 build190/F13 入口与数据流核对）。当前身份为 build334 / DSH 0.2.2-rc.1 / 单一 Standard；F10–F13 记录属于历史，不代表本版。本页更新只核对源码，未运行设备、模型对话或长时验收；最终版本、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执，本文不预填测试总数。
 
 先在 Main 判断失败发生在哪一层，再选择检查、恢复或导出。环境就绪、后端鉴权、网页就绪分别有自己的证据；某一层完成不能替代后一层。安装操作见[安装与维护](install-and-maintenance.md)，配置修复见[配置快照](config-snapshots.md)。
 
@@ -18,9 +18,11 @@
 | 已捕获后端鉴权地址 | 后端输出提供当前本机服务地址与鉴权资料 | 不等于网页 bundle、插件或页面已经就绪 |
 | 网页已就绪 | 当前页面观察器报告 ready，写入启动状态 | 仍不证明未使用的插件、外部模型或所有设备能力成功 |
 
+覆盖安装后“旧树 + 新 APK”的展示层判定、自动开始安全门禁与 Web 启动准入见[覆盖升级、运行时维护与插件依赖契约](overwrite-upgrade-and-maintenance.md)；本页只描述启动状态分层，不替代该契约。
+
 入口为[MainActivity](../app/src/main/java/com/deepseekharness/app/ui/MainActivity.java)、[OnboardingActivity](../app/src/main/java/com/deepseekharness/app/ui/OnboardingActivity.java)、[ExtractActivity](../app/src/main/java/com/deepseekharness/app/ui/ExtractActivity.java)（维护详情）与[FirstRunWebStart](../app/src/main/java/com/deepseekharness/app/ui/FirstRunWebStart.java)。[StartupPipeline](../app/src/main/java/com/deepseekharness/app/core/StartupPipeline.java)处理正常启动准备，[StartupDiagnostics](../app/src/main/java/com/deepseekharness/app/core/StartupDiagnostics.java)整合后端与网页观察。页面事件仍校验宿主、运行代次、当前同源文档、nonce 与顺序，见[StartupPageGate](../app/src/main/java/com/deepseekharness/app/util/StartupPageGate.java)；nonce 不是同源脚本之间的安全隔离。
 
-停止与重启必须遵循真实进程身份及退出屏障；不能按端口、名字或裸 PID 强杀。proroot 鉴权前明确失败后的窄回退条件见[运行引擎](runtime-engines.md)，不能把慢启动和插件错误当成换引擎重放理由。
+停止与重启必须遵循真实进程身份及退出屏障；不能按端口、名字或裸 PID 强杀。proroot 鉴权前明确失败后的窄回退条件见[运行引擎](runtime-engines.md)，不能把慢启动和插件错误当成换引擎重放理由。用户手点维护时由维护动作自行完成停止（普通停止未确认时按身份核验升级一次强制结束，见契约 I9），**不需要**用户先进入受限主界面手动停止再回来更新。
 
 ## 宿主重建与网页首次说明
 

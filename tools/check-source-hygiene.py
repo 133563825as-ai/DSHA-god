@@ -3,10 +3,10 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
+from git_guard import git_output
 
 ROOT = Path(__file__).resolve().parents[1]
-names = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode("utf-8").split("\0")
+names = git_output(["ls-files", "-z"], cwd=ROOT).decode("utf-8").split("\0")
 errors = []
 byte_pinned = {'app/src/main/assets/ubuntu-tools.manifest.json', 'app/src/main/assets/builtin-plugins/dsh-auto-review/package.json', 'app/src/main/assets/builtin-plugins/dsh-device-shell-guide/package.json', 'app/src/main/assets/lan-settings-upstream-contract.json', 'app/src/main/assets/builtin-plugins/dsh-web-mobile/lib/index.js', 'app/src/main/assets/builtin-plugins/dsh-computer-use-android/package.json', 'app/src/main/assets/ubuntu-tools.layout', 'app/src/main/assets/startup-mcp-timing-patch.json', 'app/src/main/assets/managed-runtime-inputs.json'}
 byte_pinned.add("tools/mobile-server/index.js")
@@ -21,32 +21,27 @@ history_fixture_pins = {
 # These frozen language sources retain their reviewed bytes. Runtime generators
 # use the signed descriptor; native catalogues and notes have explicit CI pins.
 language_generator_pins = {
-    "tools/fixtures/language-v1-patch.json",
     "tools/i18n/web-translations/ar.json",
-    "tools/i18n/web-translations/fr.json",
-    "tools/i18n/web-translations/ja.json",
     "tools/i18n/web-translations/ko.json",
     "tools/i18n/web-translations/la.json",
-    "tools/i18n/web-translations/pt.json",
-    "tools/i18n/web-translations/ru.json",
     "tools/i18n/web-translations/zh-Hant.json",
 }
 language_source_pins = {
     "docs/releases/build197-changes.ar.md": "a96ff6d4f58886938ada1197aa758da75a19ef378c2347830128ca71eda00030",
     "docs/releases/build197-changes.la.md": "24a72be4658c4874920e25f430bbbfdd912ce7d6deb74b428dd9cd32daabcaaa",
     "docs/releases/build197-changes.pt.md": "9c84cad387a0496aa7a0affa9c8a2ee6617ff5d747236e1ebcce84723cbf8500",
-    "tools/i18n/translations-extra/ar.json": "4fb8d515a60c4fa9e23fcfca0f045f542ce93c3c60746f9ae1d9050b7c5dec54",
-    "tools/i18n/translations-extra/fr.json": "afc6983e318a4189fef795c7b2b6eb74a4bca76fafad345f9ab4f1ae5f05afde",
-    "tools/i18n/translations-extra/ja.json": "b91f5377fb8aadca34dc37fd71be278e45f2ddb888d57c609769d1101399b9b8",
-    "tools/i18n/translations-extra/ko.json": "109e94cb7d8b7d6c7689a57f01554b8cce0b33df77fbc184eee9b0a0b0779c46",
-    "tools/i18n/translations-extra/pt.json": "c75e55b3fe8d91e0ca43115fc197d0263ee974bac30e1b299a7f2a1ca213c470",
-    "tools/i18n/translations-extra/ru.json": "5b68bc21740c02fc165a0ff27568e2b4d7da37beb660988c1ac47d74c183b71c",
-    "tools/i18n/translations/ar.json": "ab4779855d2e1917843544a511745309d6ea54a98734852530dbcdacfcf93fbe",
-    "tools/i18n/translations/fr.json": "6da3b9cea589700067b9cdbfe6b33865e9ac7b53f39d5c529456d09bdda31ae9",
-    "tools/i18n/translations/ja.json": "79d37c25c87eafdc63767ac0766b5af8d14763bbf74592461ca5e38e722c636e",
-    "tools/i18n/translations/ko.json": "4c19be15c69cb011ac8d0d370b5042aa62f0333c827cd8b8b2d4a2c14519f271",
-    "tools/i18n/translations/pt.json": "9d458193e70288fb09275df65673dae6203078c7883da73e51d94c3b93038afe",
-    "tools/i18n/translations/ru.json": "b530fed29661da197ce01b728e7287f1c53580f8ea3ba8f3de125f62f4dda797",
+    "tools/i18n/translations-extra/ar.json": "16669ae427d92ea549057c5ee0e4b0094b2553e2a571b13c6c3c3533606ea21b",
+    "tools/i18n/translations-extra/fr.json": "9f89f27757fd2ce77d2506ba2c04f894b7a5d8f5e0052d8dbbea95be7183e4d7",
+    "tools/i18n/translations-extra/ja.json": "33d757bdc1d0a1a5de4920f76428ee5f0d719a72f4dd859fe61a635345b80a8b",
+    "tools/i18n/translations-extra/ko.json": "70d469bde9b05f597858b2cb447ec7f71d438d5b03f5a1143f26b1858873be35",
+    "tools/i18n/translations-extra/pt.json": "95117453bb7f6c7c7e32339ecc34afd3d2fd0e38cf538fef5e51adef0956e3ee",
+    "tools/i18n/translations-extra/ru.json": "1fac09b7c8370aae28d2c7a7018a41065f4cc0befcf7eb4401b1b8a8852a2263",
+    "tools/i18n/translations/ar.json": "28e901511ddc6419d2e6b27284d9b425b471a1b1a07a08d6261d792078f03100",
+    "tools/i18n/translations/fr.json": "2f73073b05d10087245e9ec63b47aca53efe3b9e1062f093b5f62526d421192b",
+    "tools/i18n/translations/ja.json": "7c5d05b6380b442cc86c4cea00e40bf01b952990c4e12f30a456b74c7ff82c01",
+    "tools/i18n/translations/ko.json": "d332da51f31498d12365227d34da143e4f6b12ca236a7d76d91b073cef7b0d4a",
+    "tools/i18n/translations/pt.json": "74c22f0f578239e50a7520ba2978b298205042ca9d4342ecea0d34cdd004b384",
+    "tools/i18n/translations/ru.json": "7f172bf97b37b7d800551370194fed19d5da849d1da591b0e22ddee416b119af",
 }
 descriptor = json.loads((ROOT / "app/src/main/assets/runtime-descriptor.json").read_text(encoding="utf-8"))
 binary = {".so", ".bin", ".jar", ".aar", ".gz", ".tgz", ".zip", ".png", ".jpg", ".webp", ".pdf", ".keystore"}
@@ -84,8 +79,8 @@ for name, expected in history_fixture_pins.items():
     path = ROOT / name
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         errors.append("HISTORICAL_FIXTURE_BYTES: " + name)
-attributes = subprocess.check_output(
-    ["git", "check-attr", "-z", "text", "eol", "--", *history_paths], cwd=ROOT
+attributes = git_output(
+    ["check-attr", "-z", "text", "eol", "--", *history_paths], cwd=ROOT
 ).rstrip(b"\0").split(b"\0")
 for at in range(0, len(attributes), 3):
     if attributes[at + 2] != b"unset":

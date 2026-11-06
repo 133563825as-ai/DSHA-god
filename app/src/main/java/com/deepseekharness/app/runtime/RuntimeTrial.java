@@ -19,6 +19,10 @@ public final class RuntimeTrial {
 
   public interface Renderer extends AutoCloseable {
     void check() throws IOException;
+
+    default Map<String, Object> diagnostics(String expectedNonce) {
+      return Map.of();
+    }
   }
 
   public interface BrowserProbe {
@@ -163,6 +167,7 @@ public final class RuntimeTrial {
     Process process = null;
     Renderer browser = null;
     Map<String, Object> proof = null;
+    Map<String, Object> lastRendererDiagnostic = Map.of();
     Output captured = null;
     Throwable primaryFailure = null;
     long hostStarted = System.nanoTime();
@@ -275,6 +280,13 @@ public final class RuntimeTrial {
               throw new IOException("TRIAL_BROWSER_UNAVAILABLE", error);
             }
           browser.check();
+          Map<String, Object> rendererDiagnostic = browser.diagnostics(nonce);
+          if (!rendererDiagnostic.isEmpty() && !rendererDiagnostic.equals(lastRendererDiagnostic)) {
+            lastRendererDiagnostic = rendererDiagnostic;
+            com.deepseekharness.app.core.DiagnosticLog.record(
+                context, "TRIAL_RENDERER_STATE", rendererDiagnostic.toString());
+            android.util.Log.i("DSHA", "TRIAL_RENDERER_STATE " + rendererDiagnostic);
+          }
           if (Boolean.TRUE.equals(status.get("renderer"))) {
             markHost(hostTimings, "rendererConfirmed", hostStarted);
             break;
@@ -309,6 +321,13 @@ public final class RuntimeTrial {
       detail.put("runtimeId", expected.id());
       detail.put("error", BackupErrorCode.from(failure));
       detail.put("runtimeMode", runtimeMode);
+      if (browser != null) {
+        Map<String, Object> rendererDiagnostic = browser.diagnostics(nonce);
+        detail.put("rendererDiagnostic", rendererDiagnostic);
+        com.deepseekharness.app.core.DiagnosticLog.record(
+            context, "TRIAL_RENDERER_STATE", rendererDiagnostic.toString());
+        android.util.Log.i("DSHA", "TRIAL_RENDERER_STATE " + rendererDiagnostic);
+      }
       detail.put("failedAt", System.currentTimeMillis());
       detail.put("output", captured == null ? "" : captured.diagnostics());
       detail.put(
@@ -345,6 +364,19 @@ public final class RuntimeTrial {
                     throw new IOException(
                         "TRIAL_PROCESS_UNCONFIRMED: " + SensitiveData.redact(stopped));
                   ProcessTermination.awaitExit(tracked, 3000);
+                  // proroot 启动器可能在 guest 已确认退出后仍不退出（Android 16 实测）：只对本次持有
+                  // 的 Process 句柄做一次有界清理，不按 PID / 名称扫描；清理失败不改变 guest 退出结论。
+                  if (!ProcessTermination.exited(tracked)) {
+                    try {
+                      com.deepseekharness.app.util.Compat.destroy(tracked);
+                    } catch (RuntimeException | Error cleanup) {
+                      com.deepseekharness.app.core.DiagnosticLog.record(
+                          context,
+                          "TRIAL_LAUNCHER_RETENTION",
+                          com.deepseekharness.app.backup.BackupErrorCode.from(cleanup));
+                    }
+                    ProcessTermination.awaitExit(tracked, 1000);
+                  }
                   markHost(hostTimings, "launcherAwaitEnd", hostStarted);
                 }
 
@@ -561,15 +593,24 @@ public final class RuntimeTrial {
     TrialRecovery.recover(
         fs,
         home,
-        payload -> {
-          WebProcessManager manager = new WebProcessManager(proot, payload);
-          TrialImportStop.Io importIo = legacyImportIo(manager);
-          TrialImportStop.stop(fs, payload.getParentFile(), payload, importIo);
-          String stopped = manager.stop();
-          if (!stopped.isEmpty() || !manager.confirmStopped(false))
-            throw new IOException("TRIAL_PROCESS_UNCONFIRMED");
-          String nonce = payload.getParentFile().getName().replace("-", "");
-          importIo.confirmNoRelated(nonce, "/root/.dsha-runtime-trial-" + nonce, payload);
+        new TrialRecovery.Stopper() {
+          public void stopAndConfirm(File payload) throws IOException {
+            WebProcessManager manager = new WebProcessManager(proot, payload);
+            TrialImportStop.Io importIo = legacyImportIo(manager);
+            TrialImportStop.stop(fs, payload.getParentFile(), payload, importIo);
+            String stopped = manager.stop();
+            if (!stopped.isEmpty() || !manager.confirmStopped(false))
+              throw new IOException("TRIAL_PROCESS_UNCONFIRMED");
+            String nonce = payload.getParentFile().getName().replace("-", "");
+            importIo.confirmNoRelated(nonce, "/root/.dsha-runtime-trial-" + nonce, payload);
+          }
+
+          /** 没有 PID 记录时只按记录 id 推导的试运行 profile 确认无进程；不碰主 Web 与其他试运行。 */
+          public void confirmAbsent(String id) throws IOException {
+            String nonce = id.replace("-", "");
+            new WebProcessManager(proot)
+                .retireRecordedTrialProfile("dsha-recovery-" + nonce.substring(0, 16));
+          }
         });
   }
 

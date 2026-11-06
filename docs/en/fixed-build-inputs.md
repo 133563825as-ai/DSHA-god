@@ -1,12 +1,11 @@
 # Fixed build inputs (public-repository prerelease asset)
 
-Updated 2026-11-03 (after build297, archive rebuild for the signed built-in plugin dsh-fs-search-scope / bundled DSH 0.2.1-rc.5; the independent emergency DSH is also rc.5). Current asset tag: [`fixed-inputs-20261103c`](https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/tag/fixed-inputs-20261103c)
-(a GitHub prerelease); the lock file is [`ci/sunset-inputs.lock.json`](../../ci/sunset-inputs.lock.json).
+Updated 2026-11-05 (build328 adds the 12th fixed input, `gh-cli.tar.gz` = the official GitHub CLI v2.103.3 linux-arm64 archive, as the only source of the managed `opt/gh/bin/gh`; the 0.2.2-rc.1 runtime and emergency archives are unchanged; since build330 the APK ships the same bytes under the name `gh-cli.bin`, the source fixed-input name stays unchanged and the bundle is not rebuilt). The `fixed-inputs-20261105e` bundle is uploaded and published as a prerelease; the lock file is [`ci/sunset-inputs.lock.json`](../../ci/sunset-inputs.lock.json).
 
 ## Why the fixed inputs are not stored in git
 
-The 7 large fixed binaries/archives (the largest, `offline-rootfs.bin`, is 304 MB) plus the 2 independent recovery
-archives total about 664 MiB. Committing them would exceed repository and git single-file limits, permanently bloat
+The 8 large fixed binaries/archives (the largest, `offline-rootfs.bin`, is 304 MB; `gh-cli.tar.gz` is 13.7 MB) plus the 2 independent recovery
+archives total about 684 MiB (the bundle is 716,787,167 B). Committing them would exceed repository and git single-file limits, permanently bloat
 history, and duplicate bytes that managed recipes can regenerate and that are already pinned by SHA-256. They are
 therefore published only as **GitHub Release assets**:
 
@@ -19,32 +18,39 @@ therefore published only as **GitHub Release assets**:
   before anything is written.
 
 The 2 provenance `*.inputs.json` files are small and remain tracked in the repository. They are also packed into the
-asset so the restoration set stays a single 11-member source; restored bytes are identical to the tracked files.
-`.gitignore` lists the 9 non-tracked inputs; because the two `*.inputs.json` files are already tracked, the ignore
+asset so the restoration set stays a single 12-member source; restored bytes are identical to the tracked files.
+`.gitignore` lists the 10 non-tracked inputs; because the two `*.inputs.json` files are already tracked, the ignore
 rules do not apply to them, which is expected.
 
-## Asset contents (11 members, STORED zip)
+## Asset contents (12 members, STORED zip)
 
 | ZIP member | Bytes | Current pin source |
 |---|---:|---|
 | `app/src/main/assets/offline-rootfs.bin` | 304037588 | `runtime-descriptor.json` |
-| `app/src/main/assets/dsh-runtime.bin` | 127674970 | `runtime-descriptor.json` |
+| `app/src/main/assets/dsh-runtime.bin` | 131056363 | `runtime-descriptor.json` |
 | `app/src/main/assets/ubuntu-tools.bin` | 29919475 | `runtime-descriptor.json` |
 | `app/src/main/assets/pnpm-runtime.bin` | 3837861 | `runtime-descriptor.json` |
 | `app/src/main/assets/python-support.bin` | 904360 | `tools/ci-build-inputs.lock.json` (size + digest) |
 | `app/src/main/assets/glibc-python.tar.gz` | 6565414 | `runtime-descriptor.json` |
 | `app/src/main/assets/adb-wheels.tar.gz` | 9951074 | `app/src/main/assets/adb-wheels.lock.json` |
-| `app/src/main/assets/dsh-runtime.inputs.json` | 11490 | provenance (no separate binary pin) |
+| `app/src/main/assets/gh-cli.tar.gz` | 13661485 | `tools/gh-cli/packages.lock.json` (archive + member + license digest) |
+| `app/src/main/assets/dsh-runtime.inputs.json` | 11629 | provenance (no separate binary pin) |
 | `app/src/main/assets/ubuntu-tools.inputs.json` | 592 | provenance (no separate binary pin) |
 | `tools/recovery-runtime/archives/recovery-rootfs.bin` | 85783057 | `tools/recovery-runtime/lock.json` |
-| `tools/recovery-runtime/archives/recovery-dsh-runtime.bin` | 127674970 | `tools/recovery-runtime/lock.json` |
+| `tools/recovery-runtime/archives/recovery-dsh-runtime.bin` | 131056363 | `tools/recovery-runtime/lock.json` |
 
 The set covers the Ubuntu offline rootfs, DSH runtime, ubuntu tools, pnpm runtime, Python support, glibc Python,
-and ADB wheels, plus the independent emergency DSH rootfs/runtime archives. The normal archive is now bundled DSH
-`0.2.1-rc.5` (127,674,970 B / SHA-256 `5c24b1f29db8a14581b17d1692c5585e8b78a7197940c3f45040be8ffcd0aa08`). Since build215 the independent emergency lock was moved, with the user's authorization, to the same `0.2.1-rc.5`
-archive bytes (synchronized again, with authorization, on 2026-11-01 after the normal archive was rebuilt for the
-signed built-in plugin dsh-launch-target, and twice on 2026-11-03 after the rebuilds for the mcp-version-negotiation-patch.json runtime patch and the signed built-in plugin dsh-fs-search-scope), so the APK stores one shared copy (mapped by `recovery-asset-locations.json`). The locks and
-verification contracts remain independent; a regular upgrade never changes the emergency lock automatically.
+ADB wheels, the GitHub CLI (gh), plus the independent emergency DSH rootfs/runtime archives. The S1 archive bundles DSH
+`0.2.2-rc.1` (131,056,363 B / SHA-256 `c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe`). S1 synchronizes the independent emergency lock to the same `0.2.2-rc.1` bytes and the T54+T58 rebuild re-synchronizes it to the new archive bytes, with separate locks and extracted roots; `recovery-asset-locations.json` maps only the package bytes. build328 adds `gh-cli.tar.gz` without changing the emergency lock: `tools/recovery-runtime/lock.json` and both recovery archive bytes are untouched and are still carried verbatim in this bundle. The locks and verification contracts remain independent; a regular upgrade never changes the emergency lock automatically.
+
+**APK packaging name separated from the source name (build330)**: the source fixed input is always
+`app/src/main/assets/gh-cli.tar.gz`, and both this bundle and the `runtime-descriptor.json` pin keep that name; the APK
+member is `assets/gh-cli.bin`. AGP 9.1.1's asset merge automatically gunzips `.gz` files and drops the extension, so the
+official build328/329 APKs only contain `assets/gh-cli.tar` and a managed install opening `gh-cli.tar.gz` must fail. The
+`sourceTransforms` entry in `tools/asset-deployment.json` and `tools/prepare-standard-assets.py` perform the rename,
+`RuntimeTools` opens the packaged name (falling back to the source name for old packages), and
+`tools/verify-apk-managed-assets.py` checks the actual APK member names, byte digests and the pinned gh member in the
+production and test-package build chains so a silent rename cannot recur.
 
 ## Lock and restoration
 
@@ -53,19 +59,19 @@ Fields in [`ci/sunset-inputs.lock.json`](../../ci/sunset-inputs.lock.json):
 ```json
 {
   "schema": 1,
-  "url": "https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261103c/dsha-a-su-fixed-inputs-20261103c.zip",
-  "sha256": "f8bad93baab2ddfda9e096ffccb6a89743701e48c10d9bb88b4de6d3529218f2",
+  "url": "https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261105e/dsha-a-su-fixed-inputs-20261105e.zip",
+  "sha256": "be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5",
   "format": "bundle",
-  "release": "fixed-inputs-20261103c",
-  "asset": "dsha-a-su-fixed-inputs-20261103c.zip",
-  "bytes": 696362745
+  "release": "fixed-inputs-20261105e",
+  "asset": "dsha-a-su-fixed-inputs-20261105e.zip",
+  "bytes": 716787167
 }
 ```
 
 When no explicit paired `SUNSET_DISPATCH_*` / `SUNSET_REPOSITORY_*` override is provided,
 [`tools/sunset-ci-inputs.py`](../../tools/sunset-ci-inputs.py) reads this lock and emits `url` / `sha256` / `format`.
 CI passes `--source-archive` to [`tools/ci-assets.py`](../../tools/ci-assets.py) only when `format == "source-archive"`;
-`bundle` restores the fixed 11-member set directly. Manual overrides require a URL + SHA pair; half a pair fails.
+`bundle` restores the fixed 12-member set directly. Manual overrides require a URL + SHA pair; half a pair fails.
 
 Restore from the lock (the CI path):
 
@@ -76,8 +82,8 @@ python3 tools/ci-assets.py --url "<lock.url>" --sha256 "<lock.sha256>"
 Or reuse a local archive:
 
 ```bash
-python3 tools/ci-assets.py --archive dsha-a-su-fixed-inputs-20261103c.zip \
-  --sha256 f8bad93baab2ddfda9e096ffccb6a89743701e48c10d9bb88b4de6d3529218f2
+python3 tools/ci-assets.py --archive dsha-a-su-fixed-inputs-20261105e.zip \
+  --sha256 be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5
 ```
 
 `ci-assets.py` verifies, in order: whole-archive SHA-256 → member whitelist/path/type/duplicate and total size →
@@ -89,18 +95,19 @@ everything passes. Any failure leaves existing inputs untouched and never execut
 
 | Item | Value |
 |---|---|
-| release tag | `fixed-inputs-20261103c` (prerelease, target `main`) |
-| release id | `432811486` |
-| asset | `dsha-a-su-fixed-inputs-20261103c.zip` |
-| bytes | `696362745` |
-| SHA-256 | `f8bad93baab2ddfda9e096ffccb6a89743701e48c10d9bb88b4de6d3529218f2` |
-| download URL | `https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261103c/dsha-a-su-fixed-inputs-20261103c.zip` |
+| release tag | `fixed-inputs-20261105e` (prerelease, target `main`) |
+| release id | `435405154` |
+| asset | `dsha-a-su-fixed-inputs-20261105e.zip` |
+| bytes | `716787167` |
+| SHA-256 | `be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5` |
+| download URL | `https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261105e/dsha-a-su-fixed-inputs-20261105e.zip` |
 
-> Upload status is authoritative from the `name`/`size`/`state` returned by
-> `gh api repos/SunsetRNE/DSHA-Sunset-mod/releases/tags/fixed-inputs-20261103c`: only `size=696362745` and
-> `state=uploaded` mean the upload completed. The direct URL is determined by the tag plus the asset filename and does
-> not depend on the asset id. A same-tag `--clobber` replacement keeps the filename but changes the content and
-> SHA-256, so the lock must be updated.
+> The bundle was uploaded and published as a public prerelease on 2026-11-05T16:07:48Z.
+> `gh api repos/SunsetRNE/DSHA-Sunset-mod/releases/435405154` reports release id `435405154`, asset id `713925229` (audit only),
+> `dsha-a-su-fixed-inputs-20261105e.zip` with `size=716787167`, `state=uploaded`, and remote digest
+> `sha256:be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5` matching the lock; the anonymous direct URL returned HTTP 200 afterwards.
+> The direct URL is determined by the tag plus the asset filename and does not depend on the asset id. A same-tag `--clobber` replacement keeps the filename
+> but changes the content and SHA-256, so the lock must be updated.
 
 ## Upgrade flow (new prerelease asset)
 
@@ -110,7 +117,7 @@ everything passes. Any failure leaves existing inputs untouched and never execut
    python3 tools/ci-assets.py --pack /root/DSHA/build-inputs/dsha-a-su-fixed-inputs-YYYYMMDD.zip
    ```
 
-   Record the printed `sha256` and `bytes`. `--pack` first validates all 11 inputs against current pins and produces
+   Record the printed `sha256` and `bytes`. `--pack` first validates all 12 inputs against current pins and produces
    no asset on failure.
 2. Create a new prerelease in the public repository (new dated tag such as `fixed-inputs-YYYYMMDD`). The notes must list
    members, bytes, SHA-256, and purpose. Upload the STORED bundle:

@@ -140,7 +140,12 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
   private Outcome outcome(StartupHistoryStore.Entry entry) {
     boolean current = entry.id.equals(controller.startupDiagnostics().recordId());
     return StartupRecoveryState.outcome(
-        entry.status, entry.safe, entry.browserReadyMs, current, controller.isStarting());
+        entry.status,
+        entry.safe,
+        entry.backendReadyMs,
+        entry.browserReadyMs,
+        current,
+        controller.isStarting());
   }
 
   private static Failure failure(StartupHistoryStore.Entry entry) {

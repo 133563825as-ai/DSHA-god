@@ -2460,7 +2460,8 @@
     "zh": "可用",
     "en": "Available",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/InstallFragment.java"
+      "app/src/main/java/com/deepseekharness/app/ui/InstallFragment.java",
+      "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
   },
   {
@@ -10685,7 +10686,8 @@
     "zh": "版本",
     "en": "Version",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java",
+      "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
   },
   {
@@ -10701,7 +10703,8 @@
     "zh": "来源",
     "en": "Source",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java",
+      "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
   },
   {
@@ -10982,7 +10985,8 @@
     "zh": "状态",
     "en": "Status",
     "files": [
-      "app/src/main/res/values/diagnostics_strings.xml"
+      "app/src/main/res/values/diagnostics_strings.xml",
+      "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
   },
   {
@@ -12824,7 +12828,8 @@
     "zh": "运行环境未就绪",
     "en": "Runtime not ready",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java"
+      "app/src/main/java/com/deepseekharness/app/ui/TransferText.java",
+      "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
   },
   {
@@ -15777,6 +15782,88 @@
     "en": "proot (compatibility mode: no seccomp)",
     "files": [
       "app/src/main/java/com/deepseekharness/app/util/RuntimeModeLabel.java"
+    ]
+  },
+  {
+    "id": "x296plugin001",
+    "zh": "临时插件请在对应 Web 会话的 Cordis 插件管理中删除。",
+    "en": "Delete this temporary plugin in Cordis plugin management in its Web session.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/core/PluginRepository.java",
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
+  },
+  {
+    "id": "x296plugin002",
+    "uiFormat": true,
+    "zh": "%s\n\n临时插件请在对应 Web 会话的 Cordis 插件管理中删除。",
+    "en": "%s\n\nDelete this temporary plugin in Cordis plugin management in its Web session.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
+  },
+  {
+    "id": "x296plugin003",
+    "zh": "插件元数据无法读取；可删除加载入口，原件保留在数据页。",
+    "en": "Plugin metadata cannot be read. You can remove its load entry; the original stays in Data.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
+  },
+  {
+    "id": "x296plugin004",
+    "zh": "插件元数据不可用",
+    "en": "Plugin metadata unavailable",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
+  },
+  {
+    "id": "x319keep001",
+    "zh": "屏幕常亮",
+    "en": "Keep screen on",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
+    ]
+  },
+  {
+    "id": "x319keep002",
+    "zh": "不自动息屏；网页与终端适用",
+    "en": "Prevent automatic screen-off; applies to Web and terminal.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
+    ]
+  },
+  {
+    "id": "x1972001",
+    "zh": "目录项超过 500，无法定位目标；请在浏览器/助手里直接指定更短路径。",
+    "en": "More than 500 entries; the target cannot be located. Use a shorter path.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafBrowseFragment.java"
+    ]
+  },
+  {
+    "id": "x1972002",
+    "zh": "目标应用超时：稍后重试或先在后台打开那个应用。",
+    "en": "The target app timed out. Retry later or open that app in the background.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafBrowseFragment.java"
+    ]
+  },
+  {
+    "id": "x1972003",
+    "zh": "该文件夹只给了写权限，请重新授权并允许读写",
+    "en": "That folder only grants write access; grant it again and allow reading",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
+  },
+  {
+    "id": "x1972004",
+    "zh": "该文件夹只给了写权限，且系统未释放写授权；已记录，稍后会自动重试清理",
+    "en": "The folder only grants write access and the system did not release it; cleanup will be retried later",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
     ]
   }
 ]

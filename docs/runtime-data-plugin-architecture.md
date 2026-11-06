@@ -1,7 +1,7 @@
 # 运行环境、数据与插件机制
 
 本文面向准备修改 DSHA 的开发者，说明环境从哪里来、数据归谁、插件如何进入真实启动链。
-> 核验基线：2026-10-21（原于 build190/F13 工作树核对）。当前身份为 build312 / 单一 Standard：Ubuntu base10、官方 DSH `0.2.1-rc.5`、Node 24、随包 pnpm `10.34.5`。F10–F13、build190 与 Low 相关段落属于历史记录，不代表当前构建；最终身份、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执，本文不预填测试总数或设备验收结论。
+> 核验基线：2026-11-05（S1 运行时切换前后的源码与固定输入核对）。当前 S1 运行时身份为单一 Standard：Ubuntu base10、官方 DSH `0.2.2-rc.1`、Node 24、随包 pnpm `10.34.5`；APK 发布版本/版本码仍以发布提交和 [README](../README.md) 为准。F10–F13、build190 与 Low 相关段落属于历史记录，不代表当前构建；本文不预填测试总数或设备验收结论。
 默认引擎是 `proot`，用户可显式选择 `proroot`；当前生产方案不使用 bxroot。
 这里的流程和约束属于 DSHA 实现，不代表 Ubuntu、Node、pnpm 或 DSH 上游对 Android 的保证。
 本文是源码导航，不是一次新的构建、设备验收或所有旧数据兼容性证明。
@@ -74,6 +74,27 @@ guest 中的 `/root` 不是 Android UID0；工具审批模式也不会改变应�
 Android 宿主、guest bash 与实际 Node 的 PID 不能混作同一个进程身份。
 当前 proroot vendor 为 `v1.2.8`，受[本地 ABI 锁](../tools/proroot-compat/abi.lock.json)约束；它与历史 DSHA 应用版本号无关。
 厂商二进制、兼容适配器和可从源码生成的部分需分别看来源说明，不能承诺全部 vendor 可源码重建。
+
+### 1.3 环境更新与整树重建会动哪些目录（明文契约）
+
+覆盖升级有两条路径，替换范围不同：
+
+1. **受管运行时更新**（[`EnvironmentMaintenance.update`](../app/src/main/java/com/deepseekharness/app/core/EnvironmentMaintenance.java)）：`.offline-identity` 的 Ubuntu 基础版本未变时走这条，只替换 [`ManagedRuntimeLayout.paths()`](../app/src/main/java/com/deepseekharness/app/util/ManagedRuntimeLayout.java) 列出的受管路径。versionCode 或内置 DSH 版本变化本身不会把 `/opt`、工作区或其它数据当作重建目标。
+2. **整树重建**（`EnvironmentMaintenance.rebuild`）：首次部署、Ubuntu 基础环境版本变化、用户显式“重建环境”或恢复指定现场时，整个 `files/linux` 先移为 `previous-linux`，再解压新 rootfs；随后 (a) 受管资产重新注入，(b) 数据快照恢复。
+
+| 目录 | 受管更新 | 整树重建 | 归属 |
+|---|---|---|---|
+| `ManagedRuntimeLayout.paths()`（如 `root/dsh-bin/gh`、`usr/local/share/dsha/gh-proxy.mjs`、`opt/gh/bin/gh`） | 替换 | 由受管注入重建 | 受管 |
+| `/usr/local/share/dsha/**` | 同受管路径 | 受管注入 | 受管；不要放用户文件 |
+| `/opt/**`（`opt/gh/bin/gh` 受管路径除外） | 不动 | 作为用户工具数据复制并恢复 | 用户工具 |
+| `/usr/**`（含 `/usr/local/bin`） | 不动（受管子路径除外） | 新系统树整段替换，**不保留** | 系统 |
+| `/root/**`、`/data/**`、工作区等 | 不动 | 数据快照逐项恢复（机器状态/凭据按现有规则排除） | 数据 |
+
+判定单点是 [`util/MaintenanceToolPaths`](../app/src/main/java/com/deepseekharness/app/util/MaintenanceToolPaths.java)（`SYSTEM_ROOTS` / `USER_TOOL_ROOTS` / `managed()`），回归见 `MaintenanceToolPathsTest` 与 `NativeEnvironmentRebuildTest`。
+
+**实测成本与上限**：整树重建把 `/opt` 当数据复制（本机实测 **3.5 GB、48,294 条目**）。快照受 `BackupLimits.ENTRIES = 100,000` 的硬上限约束，大 SDK/缓存会让重建失败或耗尽空间；`rebuild` 在切换旧树前做有界预检，超限时给出“用户工具目录超过环境重建快照上限”的可操作错误，而不是写到一半才失败。建议把大体积工具放在 `/opt/<tool>/…` 并定期清理；不要把用户可执行文件放到 `/usr/local/bin`（重建会丢）。
+
+**受管 gh 的供给链**：第 12 项固定输入 `gh-cli.tar.gz`（官方 linux-arm64 release 归档）由 `RuntimeTools` 只提取固定成员到受管路径 `opt/gh/bin/gh` 并二次校验摘要；源固定输入名是 `gh-cli.tar.gz`，APK 内的成员名是 `assets/gh-cli.bin`：AGP 9.1.1 的资产合并会把 `.gz` 自动 gunzip 并去掉扩展名（build328/329 只剩 `assets/gh-cli.tar`），所以 `RuntimeTools` 按打包名打开、旧包回退源名，`tools/verify-apk-managed-assets.py` 在发布链核对实际成员。包装脚本在二进制缺失/损坏时按固定 URL + 固定摘要自举兜底，失败打印确切恢复命令。gh 是静态 Go 二进制，绕过 proroot 路径翻译、只能用宿主路径读取 CA 与配置：`RuntimeTools` 用 rootfs 的 canonical 路径设置 `DSHA_GH_HOST_ROOT`（`/data/user/0` 别名视图在 guest 内不可达），包装脚本再按 `/data/user/0` 与 `/data/data` 两个数据视图依次寻找受管 CA，两处都缺时打印明确错误并退出，不再静默回退旧系统 CA。事故根因、三件套协作与手工恢复命令见 [build328 回执](releases/v0.2.1-rc.5-build328-gh-provision-20261105.md)。
 
 ## 二、首次启动与普通启动
 
@@ -316,9 +337,9 @@ proroot 中 Git 源码 prepare 调用原生 Go 工具时，可能遇到内核可
 
 ### 5.7 附件resolver的注册对象与退休
 
-原raw/F12的`FileUploads.registerAgentResolver`把函数直接保存在Service属性；Cordis tracing读取后包装为新Proxy，使disposer的函数`===`比对失败，旧slot残留。实际Cordis及原raw/managed模块已复现registry/`SessionController`停启后重复注册错误。这是独立于目录组合的已证路径，不能由健康启动或目录专项结果覆盖，也不能推广成所有插件故障或手机截图唯一原因。
+原raw/F12的`FileUploads.registerAgentResolver`曾把函数直接保存在Service属性；Cordis tracing读取后包装为新Proxy，使disposer的函数`===`比对失败，旧slot残留。该历史路径已由 DSH 0.2.2-rc.1 上游改为稳定的 `agentResolution={resolver}` 数据对象，`file-upload-resolver-lifecycle-patch.json` 已退休；退休证明见 [test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这是独立于目录组合的历史证据，不能推广成所有插件故障或手机截图唯一原因。
 
-[窄生命周期补丁](../app/src/main/assets/file-upload-resolver-lifecycle-patch.json)只在锁定file-upload模块使用稳定`{ resolve }`对象持有该次注册，disposer按对象身份清理，调用时解出函数。保留live重复注册拒绝、旧disposer围栏、真实上传接收与session回执检查，不重播上传、不删旧附件或工作区内容。专项已完成原CLI（不含目录补丁）重复错误负控，以及只加载附件补丁的两轮workspace停启applied、raw/typed上传实际字节落盘读回、冷进程同Session上传/列表保留；鉴权、foreignOrigin、415/400及未知Session拒绝仍保留。真实Cordis/Commands/LocalAttachmentStore核对live重复、旧disposer、owner退休与同Session回执，入口为[test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这不是目录+附件组合或最终共享运行时/APK通过；软件范围不扩大为所有附件端到端、账号/模型或真机矩阵，最终组合门禁由负责人另跑。
+DSHA 不再对当前 0.2.2-rc.1 file-upload 模块套用该窄生命周期补丁；当前启动链以受管 runtime 版本和 `runtime-patches.json` 的 retired 记录为准。保留live重复注册拒绝、旧disposer围栏、真实上传接收与session回执检查，不重播上传、不删旧附件或工作区内容。专项已完成原CLI（不含目录补丁）重复错误负控，以及只加载附件补丁的两轮workspace停启applied、raw/typed上传实际字节落盘读回、冷进程同Session上传/列表保留；鉴权、foreignOrigin、415/400及未知Session拒绝仍保留。真实Cordis/Commands/LocalAttachmentStore核对live重复、旧disposer、owner退休与同Session回执，入口为[test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这不是目录+附件组合或最终共享运行时/APK通过；软件范围不扩大为所有附件端到端、账号/模型或真机矩阵，最终组合门禁由负责人另跑。
 
 ## 六、配置与凭据
 

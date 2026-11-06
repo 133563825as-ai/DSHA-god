@@ -33,6 +33,9 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 public final class DeviceGrantsFragment extends Fragment {
   private MaterialSwitch sms;
   private TextView smsStatus;
+  private TextView clipboardTitle, clipboardStatus;
+  private android.widget.RadioGroup clipboardModes;
+  private android.widget.RadioButton[] clipboardModeButtons;
   private TextView screenPolicyStatus;
   private MaterialSwitch screenPause;
   private android.widget.RadioGroup screenSegment;
@@ -49,6 +52,9 @@ public final class DeviceGrantsFragment extends Fragment {
   private boolean updating;
   private int adbStatusRequest;
   private FullPermissionControls fullPermissions;
+  private java.util.concurrent.ExecutorService safExecutor;
+  private int safStatusGeneration;
+
   private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
   private final Runnable refreshConnections =
       new Runnable() {
@@ -65,6 +71,7 @@ public final class DeviceGrantsFragment extends Fragment {
   @Override
   public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle saved) {
     View view = inflater.inflate(R.layout.fragment_device_grants, container, false);
+    safExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
     Context ctx = requireContext();
     columns = 1;
     ((TextView) view.findViewById(R.id.grants_global_label))
@@ -263,6 +270,14 @@ public final class DeviceGrantsFragment extends Fragment {
           } else startActivity(new Intent(ctx, AdbPairActivity.class));
         });
     view.findViewById(R.id.config_all_files).setOnClickListener(button -> openAllFilesAccess(ctx));
+    // 跨应用文件访问：授权管理在子页，行上只报数量与失效数。
+    ((TextView) view.findViewById(R.id.config_saf_access_title))
+        .setText(com.deepseekharness.app.util.UiText.choose("跨应用文件访问", "Cross-app files"));
+    view.findViewById(R.id.config_saf_access)
+        .setOnClickListener(
+            button ->
+                SettingsPanes.open(
+                    this, new com.deepseekharness.app.ui.SafAccessFragment(), "saf-access"));
     view.findViewById(R.id.config_battery_opt).setOnClickListener(button -> openBatteryOpt(ctx));
     sms = view.findViewById(R.id.device_sms);
     smsStatus = view.findViewById(R.id.device_sms_status);
@@ -286,9 +301,11 @@ public final class DeviceGrantsFragment extends Fragment {
               .show();
         });
     updateSms();
+    addClipboardControls(ctx, view);
     // 压缩版：各通道的长说明合并到「设备执行通道」标签旁的 ⓘ；页面说明在概览头部的 ⓘ。
     bindChannelInfo(ctx, view);
     buildSummaryHeader(ctx, view);
+    placeSummaryHeader(view);
     adaptColumns(view);
     refreshSummary();
     return view;
@@ -459,7 +476,7 @@ public final class DeviceGrantsFragment extends Fragment {
       case VIRTUAL:
         return UiText.choose("虚拟识屏", "Virtual screen");
       default:
-        return UiText.choose("关闭", "Off");
+        return offStateText();
     }
   }
 
@@ -1322,6 +1339,7 @@ public final class DeviceGrantsFragment extends Fragment {
 
   /** 四个概览胶囊（全局 / Root / Shizuku / 屏幕）+ 页面说明 ⓘ；点胶囊滚到对应分组。 */
   private void buildSummaryHeader(Context ctx, View page) {
+    PluginFlowRow pillsRow = page.findViewById(R.id.grants_pills);
     android.widget.LinearLayout header = page.findViewById(R.id.grants_header);
     int[] targets = {
       R.id.grants_section_global,
@@ -1338,8 +1356,9 @@ public final class DeviceGrantsFragment extends Fragment {
       pill.setOrientation(android.widget.LinearLayout.VERTICAL);
       pill.setGravity(android.view.Gravity.CENTER_VERTICAL);
       pill.setBackgroundResource(R.drawable.bg_grants_pill);
-      pill.setMinimumHeight(dp(44));
-      pill.setPadding(dp(8), dp(5), dp(6), dp(5));
+      pill.setMinimumHeight(getResources().getDimensionPixelSize(R.dimen.grants_pill_min_height));
+      pill.setMinimumWidth(getResources().getDimensionPixelSize(R.dimen.grants_pill_min_width));
+      pill.setPadding(dp(8), dp(5), dp(8), dp(5));
       pill.setClickable(true);
       pill.setFocusable(true);
       android.widget.LinearLayout top = new android.widget.LinearLayout(ctx);
@@ -1351,31 +1370,33 @@ public final class DeviceGrantsFragment extends Fragment {
       dotParams.setMarginEnd(dp(5));
       top.addView(dot, dotParams);
       TextView title = new TextView(ctx);
-      title.setTextSize(12);
+      title.setTextSize(
+          android.util.TypedValue.COMPLEX_UNIT_PX,
+          getResources().getDimension(R.dimen.grants_pill_title));
       title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
       title.setTextColor(ctx.getColor(R.color.shell_text));
       title.setSingleLine(true);
       title.setEllipsize(android.text.TextUtils.TruncateAt.END);
       title.setIncludeFontPadding(false);
-      top.addView(title, new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
+      top.addView(title, new android.widget.LinearLayout.LayoutParams(-2, -2));
       pill.addView(top, new android.widget.LinearLayout.LayoutParams(-1, -2));
       TextView value = new TextView(ctx);
-      value.setTextSize(11);
+      value.setTextSize(
+          android.util.TypedValue.COMPLEX_UNIT_PX,
+          getResources().getDimension(R.dimen.grants_pill_value));
       value.setTextColor(ctx.getColor(R.color.shell_text_secondary));
-      value.setSingleLine(true);
+      value.setMaxLines(2);
       value.setEllipsize(android.text.TextUtils.TruncateAt.END);
       value.setIncludeFontPadding(false);
       android.widget.LinearLayout.LayoutParams valueParams =
           new android.widget.LinearLayout.LayoutParams(-1, -2);
       valueParams.topMargin = dp(3);
-      valueParams.setMarginStart(dp(12));
+      // 状态与标题左对齐；原先额外的 12dp 起始缩进是「全部手动」被截成「全部手…」的直接原因。
       pill.addView(value, valueParams);
       final int target = targets[i];
       pill.setOnClickListener(v -> scrollToSection(target));
-      android.widget.LinearLayout.LayoutParams params =
-          new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
-      if (i > 0) params.setMarginStart(dp(6));
-      header.addView(pill, params);
+      // 间距交给 PluginFlowRow 的 6dp 流式间隙；胶囊自身不再带外边距。
+      pillsRow.addView(pill, new PluginFlowRow.LayoutParams(-2, -2));
       pills[i] = pill;
       pillDots[i] = dot;
       pillTitles[i] = title;
@@ -1393,7 +1414,27 @@ public final class DeviceGrantsFragment extends Fragment {
         v ->
             InfoHint.show(
                 ctx, getString(R.string.ui2_device_grants), getString(R.string.ui2_grants_sub)));
-    header.addView(info, new android.widget.LinearLayout.LayoutParams(dp(44), dp(44)));
+    android.widget.LinearLayout.LayoutParams infoParams =
+        new android.widget.LinearLayout.LayoutParams(dp(44), dp(44));
+    infoParams.setMarginStart(dp(6));
+    header.addView(info, infoParams);
+  }
+
+  /**
+   * 概览条默认吸顶；短屏（screenHeightDp ≤ 480，例如手机横屏）改为滚动区首项，
+   * 与 OnboardingKit.shortScreen 同一判据。宽屏、常规高度保持吸顶与点按跳转。
+   */
+  private void placeSummaryHeader(View page) {
+    android.content.res.Configuration configuration = getResources().getConfiguration();
+    if (configuration.screenHeightDp <= 0 || configuration.screenHeightDp > 480) return;
+    View header = page.findViewById(R.id.grants_header);
+    android.view.ViewGroup root = page.findViewById(R.id.grants_root);
+    android.view.ViewGroup content = page.findViewById(R.id.grants_content);
+    if (header == null || root == null || content == null) return;
+    root.removeView(header);
+    // 内容区已有左右 14dp 内边距，嵌入后去掉头部自身横向内边距，避免双重缩进。
+    header.setPaddingRelative(0, 0, 0, dp(6));
+    content.addView(header, 0, new android.widget.LinearLayout.LayoutParams(-1, -2));
   }
 
   private void scrollToSection(int id) {
@@ -1455,10 +1496,11 @@ public final class DeviceGrantsFragment extends Fragment {
     };
   }
 
-  private static String summaryText(GrantSummary.Label label) {
+  /** 概览状态词映射；包内可见，供 DeviceGrantsLayoutTest 直接核对十语种词义。 */
+  static String summaryText(GrantSummary.Label label) {
     return switch (label) {
       case GLOBAL_ON -> UiText.choose("已开启", "On");
-      case GLOBAL_OFF -> UiText.choose("关闭", "Off");
+      case GLOBAL_OFF -> offStateText();
       case GLOBAL_ATTENTION -> UiText.choose("需处理", "Check");
       case GLOBAL_UPDATING -> UiText.choose("更新中", "Updating");
       case ROOT_OFF -> UiText.choose("未启用", "Off");
@@ -1478,6 +1520,18 @@ public final class DeviceGrantsFragment extends Fragment {
       case SCREEN_CUSTOM -> UiText.choose("按应用", "By app");
       case SCREEN_ALLOW_ALL -> UiText.choose("全部允许", "Allow all");
     };
+  }
+
+  /**
+   * 状态词「关闭」：中文保留「关闭 / 關閉」，其余语种改用现成的「已关闭」译条（i18n x1970619），
+   * 避免复用「关闭按钮」词条时得到 Close / Fermer / Закрыть 这类动词译法。
+   */
+  private static String offStateText() {
+    String language = UiText.language();
+    if (com.deepseekharness.app.util.UiLanguagePreference.ZH.equals(language)
+        || com.deepseekharness.app.util.UiLanguagePreference.ZH_HANT.equals(language))
+      return UiText.choose("关闭", "Off");
+    return UiText.choose("已关闭", "Off");
   }
 
   // ===== 平板 / 宽窗格：按实际宽度分栏 =====
@@ -1700,6 +1754,84 @@ public final class DeviceGrantsFragment extends Fragment {
     toast(com.deepseekharness.app.util.UiText.format("已保存拦截档位：%s", RootShell.policyLabel(ctx)));
   }
 
+  private void addClipboardControls(Context ctx, View page) {
+    clipboardTitle = page.findViewById(R.id.device_clipboard_title);
+    clipboardStatus = page.findViewById(R.id.device_clipboard_status);
+    clipboardModes = page.findViewById(R.id.device_clipboard_modes);
+    clipboardTitle.setText(UiText.choose("读剪贴板", "Read clipboard"));
+    clipboardTitle.setContentDescription(
+        UiText.choose(
+            "读剪贴板：允许助手读取系统剪贴板内容",
+            "Read clipboard: let the assistant read system clipboard content"));
+    String[] names = {
+      offStateText(), UiText.choose("每次询问", "Ask each time"), UiText.choose("预授权", "Pre-authorized")
+    };
+    String[] spoken = {
+      UiText.choose("关闭，读取会被阻止", "Off, reads are blocked"),
+      UiText.choose("每次读取前询问", "Ask before each read"),
+      UiText.choose("直接读取，可随时撤销", "Read directly, revocable at any time")
+    };
+    var modes = com.deepseekharness.app.util.ClipboardReadPolicy.Mode.values();
+    clipboardModeButtons =
+        buildSegment(
+            ctx,
+            clipboardModes,
+            names,
+            spoken,
+            new int[] {R.color.shell_good, R.color.shell_warn, R.color.shell_accent},
+            index -> pickClipboardMode(modes[index]));
+    refreshClipboardMode();
+  }
+
+  private void pickClipboardMode(com.deepseekharness.app.util.ClipboardReadPolicy.Mode mode) {
+    if (!isAdded()) return;
+    var grants = new DeviceGrants(requireContext());
+    var current = grants.clipboardReadMode();
+    refreshClipboardMode();
+    if (current == mode) return;
+    if (mode == com.deepseekharness.app.util.ClipboardReadPolicy.Mode.ALLOW) {
+      new DshaDialogBuilder(requireContext(), true)
+          .setTitle(UiText.text("持续允许读取剪贴板？"))
+          .setMessage(
+              UiText.choose(
+                  "助手和插件可读取当前系统剪贴板内容。DSHA 不把内容写入桥日志，但剪贴板本身可能含有密码、验证码或私人信息。之后可在此页撤销。",
+                  "The assistant and plugins may read the system clipboard. DSHA does not write the content to bridge logs, but the clipboard may contain passwords, codes, or private data. Revoke this here at any time."))
+          .setPositiveButton(
+              UiText.choose("预授权读取", "Pre-authorize reads"),
+              (dialog, which) -> saveClipboardMode(mode))
+          .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+          .show();
+    } else saveClipboardMode(mode);
+  }
+
+  private void saveClipboardMode(com.deepseekharness.app.util.ClipboardReadPolicy.Mode mode) {
+    boolean saved = new DeviceGrants(requireContext()).setClipboardReadMode(mode);
+    refreshClipboardMode();
+    if (!saved) toast(UiText.text("授权保存失败，请重试"));
+  }
+
+  private void refreshClipboardMode() {
+    if (clipboardModes == null || !isAdded()) return;
+    var mode = new DeviceGrants(requireContext()).clipboardReadMode();
+    var modes = com.deepseekharness.app.util.ClipboardReadPolicy.Mode.values();
+    updating = true;
+    for (int i = 0; i < clipboardModeButtons.length; i++)
+      clipboardModeButtons[i].setChecked(modes[i] == mode);
+    updating = false;
+    clipboardStatus.setText(
+        switch (mode) {
+          case OFF -> UiText.choose("已关闭 · 读取会被阻止", "Off · reads are blocked");
+          case ASK -> UiText.choose("每次读取前询问", "Ask before each read");
+          case ALLOW -> UiText.choose("已预授权 · 可随时撤销", "Pre-authorized · revocable");
+        });
+    clipboardStatus.setTextColor(
+        requireContext()
+            .getColor(
+                mode == com.deepseekharness.app.util.ClipboardReadPolicy.Mode.ALLOW
+                    ? R.color.primary
+                    : R.color.text_muted));
+  }
+
   private void saveSms(boolean enabled) {
     boolean saved = new DeviceGrants(requireContext()).setSmsReadAllowed(enabled);
     updateSms();
@@ -1767,6 +1899,59 @@ public final class DeviceGrantsFragment extends Fragment {
     }
   }
 
+  /**
+   * 跨应用文件访问：副标题只报数量；具体目录、可写开关与撤销都在子页。
+   *
+   * <p>每个授权都可能要跨进程问目标 Provider 的目录名，必须在后台线程查：慢/离线应用
+   * 不能把设置页主线程拖成 ANR。只有最新一代结果能落到界面上。
+   */
+  private void refreshSafAccessStatus(TextView view) {
+    if (view == null) return;
+    java.util.concurrent.ExecutorService running = safExecutor;
+    if (running == null) return;
+    int generation = ++safStatusGeneration;
+    android.content.Context app = requireContext().getApplicationContext();
+    running.execute(
+        () -> {
+          var grants = com.deepseekharness.app.saf.SafGrants.list(app);
+          String text;
+          if (grants.isEmpty()) {
+            text =
+                com.deepseekharness.app.util.UiText.choose(
+                    "未授权：选一个应用文件夹，助手即可读写", "Not granted: pick a folder for the assistant");
+          } else {
+            int valid = 0, writable = 0, stale = 0;
+            for (var grant : grants) {
+              if (!grant.valid) {
+                stale++;
+                continue;
+              }
+              valid++;
+              if (grant.writable) writable++;
+            }
+            text =
+                stale > 0
+                    ? com.deepseekharness.app.util.UiText.format(
+                        com.deepseekharness.app.util.UiText.choose(
+                            "已授权 %d 个，%d 个已失效：点此处理", "%d granted, %d expired: tap to review"),
+                        valid,
+                        stale)
+                    : com.deepseekharness.app.util.UiText.format(
+                        com.deepseekharness.app.util.UiText.choose(
+                            "已授权 %d 个文件夹（可写 %d 个）：点此管理",
+                            "%d folders granted (%d writable): tap to manage"),
+                        valid,
+                        writable);
+          }
+          String result = text;
+          main.post(
+              () -> {
+                if (generation != safStatusGeneration || getView() == null) return;
+                view.setText(result);
+              });
+        });
+  }
+
   @Override
   public void onResume() {
     super.onResume();
@@ -1780,10 +1965,12 @@ public final class DeviceGrantsFragment extends Fragment {
     refreshExternalDeviceStatus();
     if (page != null) {
       refreshAllFilesStatus(page.findViewById(R.id.config_all_files_status));
+      refreshSafAccessStatus(page.findViewById(R.id.config_saf_access_status));
       refreshA11yStatus(page.findViewById(R.id.config_a11y_status));
       refreshAdbStatus(page.findViewById(R.id.config_adb_status));
     }
     refreshScreenMode();
+    refreshClipboardMode();
   }
 
   @Override
@@ -1802,6 +1989,10 @@ public final class DeviceGrantsFragment extends Fragment {
     adbStatusRequest++;
     sms = null;
     smsStatus = null;
+    clipboardTitle = null;
+    clipboardStatus = null;
+    clipboardModes = null;
+    clipboardModeButtons = null;
     rootModes = null;
     rootModeButtons = null;
     screenModeButtons = null;
@@ -1811,6 +2002,10 @@ public final class DeviceGrantsFragment extends Fragment {
     pillValues = null;
     externalDevice = null;
     externalDeviceStatus = null;
+    safStatusGeneration++;
+    java.util.concurrent.ExecutorService running = safExecutor;
+    safExecutor = null;
+    if (running != null) running.shutdownNow();
     super.onDestroyView();
   }
 

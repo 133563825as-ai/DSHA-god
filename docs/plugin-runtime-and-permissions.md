@@ -1,6 +1,6 @@
 # 内置插件、协议、权限与变更生效
 
-> 核验基线：2026-10-21（原于 build190/F12 源码核对注册表、生成器、插件入口与宿主读取链）。当前发布身份为 build312 / DSH 0.2.1-rc.5 / 单一 Standard；F10–F13 记录属于历史，不代表本版。最终身份、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执。本页不新增设备验收结论；上游热加载结论需要绑定随包输入及实际运行证据，不能用本页或旧审计推断 Android 已经验证。
+> 核验基线：2026-10-21（原于 build190/F12 源码核对注册表、生成器、插件入口与宿主读取链）。当前发布身份为 build334 / DSH 0.2.2-rc.1 / 单一 Standard；F10–F13 记录属于历史，不代表本版。最终身份、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执。本页不新增设备验收结论；上游热加载结论需要绑定随包输入及实际运行证据，不能用本页或旧审计推断 Android 已经验证。
 
 ## 7个可选项、8个签名项与策略源
 
@@ -11,7 +11,7 @@
 | 可见 | `dsh-device-shell-guide` 0.1.19 | 设备通道/桥使用说明，`lib/index.js` |
 | 可见 | `dsh-task-notifier` 0.2.0 | `/app/tasks/*`任务状态与通知 |
 | 可见 | `dsh-status-overlay` 0.1.4 | `/app/overlay`流式状态 |
-| 可见 | `dsh-web-mobile` 3.2.2 | Web移动界面；上游锁和本地差异独立记录 |
+| 可见 | `dsh-web-mobile` 3.2.2 | Web移动界面；上游锁和本地差异独立记录；build327 起[默认禁用，覆盖更新也收敛](plugins.md) |
 | 可见 | `dsh-computer-use-android` 0.1.1 | MCP stdio `dsha-android`，180秒调用预算 |
 | 可见 | `dsh-tool-vscreen` 0.1.1 | MCP stdio `dsha-vscreen`，60秒调用预算 |
 | 可见兼容包装 | `dsh-auto-review` 0.1.0 | 包装/alias；实际功能来自锁定官方实验Auto包，不能把空包装当完整实现 |

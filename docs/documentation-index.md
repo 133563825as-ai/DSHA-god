@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5` / build312 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版挑入协作者 ym2025szz 的两项修复：文件接口大目录流式列出并可取消（实验性）；通知进入 Web 就绪即进；启动页次要按钮改为重启 / 停止。本机定向单测与源码门禁通过，尚未真机核对。改动说明见 [build312 更新说明](releases/build312-changes.zh.md)，验证记录见 [build312 记录](releases/v0.2.1-rc.5-build312-documents-listing-ready-enter-20261104.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1` / build334 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为 P0 覆盖更新修复（T91，`a70232fc`）：build333 真机覆盖更新后 proroot 启动器在试用 guest 退出后残留，trial 收尾误判 `TRIAL_PROCESS_UNCONFIRMED`，运行时更新事务半提交、启动被拦、重启无效；现在 trial 只按 guest 退出证据确认并对本实例启动器做有界清理，缺 PID 的恢复按记录推导的试运行 profile 确认无进程（fail-closed），维护任务开始 / 失败可导出、外部恢复后清旧失败快照、启动记录「已就绪 · 等待进入」，覆盖更新按 I10 先 guest 后旧启动器双次身份核验（普通停止、当前实例、终端、虚拟屏与隔离试运行不变）。受管输入随 T91 重算 runtime-descriptor（runtimeId `28d51d65`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时 / 插件。宿主 contracts 整组、全量单测、lint、全树格式、host-tests manifest、文档链接、changelog 与源码整洁检查由本轮发布准备执行（结果见工作树声明）；**build334 未真机验收**，验收项是从 build333 覆盖安装后不再卡在 `TRIAL_PROCESS_UNCONFIRMED`、维护能完成并进入网页。改动说明见 [build334 更新说明](releases/build334-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
@@ -21,7 +21,7 @@
 | [任务状态上岛](island-status.md) | 实时活动/胶囊两代判据、岛位选举、完成态、心跳收敛与验证范围 |
 | [ADR0001](adr/0001-build154-boundaries.md) / [ADR0002](adr/0002-current-threat-model.md) / [ADR0003](adr/0003-virtual-screen-lifecycle-and-input.md) | 架构取舍、权限与数据边界、虚拟屏生命周期及后果 |
 | [资料与来源依据](references-and-provenance.md) | 官方primary入口、工程上游关系、固定版本/摘要、许可与来源限制 |
-| [固定构建输入](fixed-build-inputs.md) | 公开仓库预发布资产、11 项输入、SHA-256 锁定与还原流程 |
+| [固定构建输入](fixed-build-inputs.md) | 公开仓库预发布资产、12 项输入、SHA-256 锁定与还原流程 |
 | [CI 构建与发布](ci-release.md) | 公开仓库 Actions 正式成品：触发参数、Secrets、门禁、签名核验与 Release 产物 |
 | [CI 节点图](ci-nodes.md) | Actions 可复用节点、入口工作流、交接与耗时依据 |
 | [Mod 身份与签名](mod-identity-and-signing.md) | DSH-A-Su 包名、证书、verifyPublishCertificate 与覆盖升级边界 |
@@ -29,7 +29,9 @@
 | [首次引导重构设计](design/onboarding-20261031/README.md) | 4 步引导、部署胶囊、受限主界面、授权卡片、自适应布局与落地差异 |
 | [DSH Web 独立进程设计（待确认）](design/web-process-isolation-20261102/README.md) | `:web` 进程划分、IWebHost 接口、维护屏障跨进程协议、故障场景与分阶段计划；未实现 |
 | [proot 本体开销调查（T34）](design/proot-overhead-20261103/README.md) | 随包 libproot.so 对应 termux/proot v5.1.107.91、上游新修订无提速、停顿来源与 readlink 入口直答方案；未实现 |
+| [跨应用文件访问（SAF）](design/cross-app-files-20261104/README.md) | 设备能力授权里的 SAF 授权簿、`/app/saf/*` 九个桥接端点、取消与超时、TOCTOU 固定身份、内置提示插件；已随本 PR 实现 |
 | [ADB 通道原生化设计（T42）](design/adb-native-20261103/README.md) | ADB 配对、私钥与客户端移到安卓壳，容器只经桥提交命令；含用户 Q1–Q9 决定与 E1–E4 取证，未实现 |
+| [GitHub 凭据原生化设计（T50）](design/github-credential-native.md) | 壳内 OAuth Device Flow 登录、token 存 Keystore、容器经桥按需取 access token；待确认，未实现 |
 
 ## 用户操作与开发入口
 
@@ -42,6 +44,8 @@
 | 场景 | 文档 |
 |---|---|
 | 首次安装、组件探测、按需修复、维护与中断恢复 | [安装与维护](install-and-maintenance.md)、[启动与诊断](startup-and-diagnostics.md)、[应用及受管更新](update.md) |
+| 覆盖安装后白屏 / 不触发环境维护 / 内置插件依赖宿主控件 | [覆盖升级、运行时维护与插件依赖契约](overwrite-upgrade-and-maintenance.md) |
+| 外部 PR / 外部合并的强制逐行审查 | [外部 PR 与外部合并审查流程](external-pr-review.md) |
 | 引擎/静态加载器/seccomp、DNS、端口排查 | [运行与网络选择](runtime-and-network.md)、[引擎](runtime-engines.md)、[DNS](dns-configuration.md)、[端口](ports-and-networking.md) |
 | 设备通道、3090协议、LAN、文件与系统文档入口 | [设备通道](device-channels.md)、[桥与文件](bridge-and-files.md)、[LAN](lan.md)、[Web文件](web-file-sharing.md) |
 | 一键/手动/自动备份、恢复、快照与独立应急 | [备份与恢复](backup-and-restore.md)、[配置快照](config-snapshots.md)、[独立应急](emergency-recovery.md)、[v5格式](backup-format-v5.md) |
@@ -49,6 +53,7 @@
 | 临时内置修复：`file has not been read` 读取提示（上游 #11977）与撤除条件 | [dsh-fs-read-hint](fs-read-hint-plugin.md) |
 | 临时内置修复：glob 跳过嵌套 git 工作树（T45）与撤除条件 | [dsh-fs-search-scope](fs-search-scope-plugin.md) |
 | 内置移动 Web 适配、dsh-web-mobile 本地补丁与设置弹层修复；宽屏触屏会话行挤压跟踪 | [移动 Web 适配补丁](web-mobile-patches.md)、[平板会话行挤压（上游 #255）](web-mobile-tablet-rows-20261031.md) |
+| 首次连接提示补丁（T58）：为什么归档、不合并；切页返回黄标的真实行为与再修边界 | [T58 首次连接提示归档](design/first-connect-indicator-20261106/README.md) |
 | PTY/简易终端、WebView/Gecko、桌面UA、PiP | [终端](terminal.md)、[浏览器内核](browser-engines.md)、[画中画](picture-in-picture.md) |
 | 语言锁存、悬浮条、审批和任务通知 | [语言](i18n.md)、[悬浮与通知](overlay-and-notifications.md) |
 | 源码/固定输入/签名/发布与测试证据 | [构建与发布](build-and-release.md)、[领域边界](agents/domain.md)、[议题流程](agents/issue-tracker.md)、[分诊用语](agents/triage-labels.md) |

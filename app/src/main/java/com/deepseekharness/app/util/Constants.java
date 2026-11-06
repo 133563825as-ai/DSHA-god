@@ -39,7 +39,7 @@ public final class Constants {
    * 当前 APK 内置 dsh 版本（不是远端 latest 标签）。
    * 对应上游 deepseek-ai/deepseek-harness 仓库。
    */
-  public static final String DSH_VERSION = "0.2.1-rc.5";
+  public static final String DSH_VERSION = "0.2.2-rc.1";
 
   public static final String DSH_RUNTIME_ID = "dsh-v" + DSH_VERSION;
 
@@ -72,6 +72,12 @@ public final class Constants {
 
   /** 电脑模式（预览用桌面浏览器 UA）。 */
   public static final String KEY_DESKTOP_MODE = "desktop_mode";
+
+  /** 屏幕常亮：仅本机 UI 行为，默认关闭，不进入备份。 */
+  public static final String KEY_KEEP_SCREEN_ON = "ui_keep_screen_on";
+
+  /** 隐藏后台：从最近任务隐藏本应用任务；仅本机 UI 行为，默认关闭，不进入备份。 */
+  public static final String KEY_HIDE_FROM_RECENTS = "hide_from_recents";
 
   /** 任务状态上岛（Android 16 实时活动 / promoted ongoing），默认开启。 */
   public static final String KEY_TASK_ISLAND = "task_island";

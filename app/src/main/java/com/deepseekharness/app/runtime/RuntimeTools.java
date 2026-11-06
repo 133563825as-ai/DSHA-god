@@ -2,8 +2,10 @@ package com.deepseekharness.app.runtime;
 
 import android.content.Context;
 import com.deepseekharness.app.util.Compat;
+import com.deepseekharness.app.util.GhHostRoot;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
@@ -15,10 +17,20 @@ import java.util.zip.ZipFile;
 final class RuntimeTools {
   static final String CERT_PATH = "/usr/local/share/dsha/ca-certificates.crt";
   private static final String MANAGED_MARKER = "usr/local/share/dsha/managed-assets-v2";
+
+  /** 覆盖安装代次；guest 内置插件默认禁用策略用它区分「本安装内显式启用」与旧版本状态。 */
+  private static final String APK_GENERATION = "usr/local/share/dsha/apk-generation";
+
   private static final Object LOCK = new Object();
+
+  /** Host mirror 字节契约在 rc5 与 0.2.2-rc.1 之间不变，但代次门仍须精确识别。 */
+  private static final Map<String, String> LAN_SETTINGS_CONTRACT_VERSIONS =
+      Map.of("0.2.1-rc.5", "0.2.1-rc.5", "0.2.2-rc.1", "0.2.1-rc.5");
+
   private static String preparedRoot;
   private static String preparedApk;
   private static String preparedStamp;
+  private static String preparedInvalidation = "not-prepared";
   private static boolean preparedWithNpm;
   private static final java.util.Set<File> preparedFiles = new java.util.LinkedHashSet<>();
 
@@ -31,75 +43,88 @@ final class RuntimeTools {
   }
 
   private static void prepare(Context context, File rootfs, boolean requireNpm) throws IOException {
-    GuestScriptBudget.checkpoint();
-    rootfs = RuntimeAssetFiles.root(context, rootfs);
-    try (RuntimeHostPorts.Scope scope =
-        RuntimeHostPorts.fromOwner(context.getApplicationContext()).open()) {
-      // 设备 DNS 查询与网络回调注册都可能跨 Binder；不能在资产准备 monitor 内调用系统服务。
-      ResolverRefresher.start(context);
-      NetworkEpochPublisher.start(context);
-      java.util.List<String> deviceDns = deviceDns(context);
-      RuntimeHostPorts.Settings settings =
-          RuntimeHostPorts.fromOwner(context.getApplicationContext()).settings();
-      synchronized (LOCK) {
-        GuestScriptBudget.checkpoint();
-        // 预配置工具归档不运行旧 install-ubuntu-tools 的 mkdir /tmp；普通启动也修复缺失目录。
-        RuntimeTemporaryDirectories.prepare(
-            new com.deepseekharness.app.backup.AndroidBackupFileSystem(), rootfs);
-        try {
-          prepareResolver(context, rootfs, settings, deviceDns);
-        } catch (IOException error) {
-          android.util.Log.w("DSHA", "DNS configuration unchanged", error);
-        }
-        File apk = new File(context.getPackageCodePath());
-        String identity = apk.getPath() + ":" + apk.length() + ":" + apk.lastModified();
-        String root = rootfs.getCanonicalPath();
-        File installedDescriptor = new File(rootfs.getParentFile(), ".runtime-descriptor.json");
-        if (requireNpm
-            && installedDescriptor.isFile()
-            && !com.deepseekharness.app.util.MaintenanceGate.shared().isOwner()) {
-          // 已登记运行时的主体只能由维护事务切换。身份完全一致时仍允许修复 APK 自有
-          // 脚本/内置插件覆盖层，解决旧版提前 return 后长期沿用旧文件的问题。
-          String expected = assetRuntimeId(context);
-          if (expected.equals(descriptorRuntimeId(installedDescriptor))) {
-            if (root.equals(preparedRoot)
-                && identity.equals(preparedApk)
-                && preparedWithNpm
-                && preparedStamp != null
-                && preparedStamp.equals(stamp(rootfs))) return;
-            preparedStamp = null;
-            prepareManagedOverlay(context, rootfs, expected);
-            preparedFiles.add(installedDescriptor);
-            preparedFiles.add(new File(rootfs, MANAGED_MARKER));
-            preparedRoot = root;
-            preparedApk = identity;
-            preparedWithNpm = true;
-            preparedStamp = stamp(rootfs);
+    RuntimeToolsTiming timing = new RuntimeToolsTiming();
+    try {
+      GuestScriptBudget.checkpoint();
+      rootfs = RuntimeAssetFiles.root(context, rootfs);
+      timing.mark(0);
+      try (RuntimeHostPorts.Scope scope =
+          RuntimeHostPorts.fromOwner(context.getApplicationContext()).open()) {
+        // 设备 DNS 查询与网络回调注册都可能跨 Binder；不能在资产准备 monitor 内调用系统服务。
+        ResolverRefresher.start(context);
+        NetworkEpochPublisher.start(context);
+        timing.mark(1);
+        java.util.List<String> deviceDns = deviceDns(context);
+        timing.mark(2);
+        RuntimeHostPorts.Settings settings =
+            RuntimeHostPorts.fromOwner(context.getApplicationContext()).settings();
+        synchronized (LOCK) {
+          timing.mark(3);
+          GuestScriptBudget.checkpoint();
+          // 预配置工具归档不运行旧 install-ubuntu-tools 的 mkdir /tmp；普通启动也修复缺失目录。
+          RuntimeTemporaryDirectories.prepare(
+              new com.deepseekharness.app.backup.AndroidBackupFileSystem(), rootfs);
+          try {
+            prepareResolver(context, rootfs, settings, deviceDns);
+          } catch (IOException error) {
+            android.util.Log.w("DSHA", "DNS configuration unchanged", error);
           }
-          return;
+          timing.mark(4);
+          File apk = new File(context.getPackageCodePath());
+          String identity = apk.getPath() + ":" + apk.length() + ":" + apk.lastModified();
+          String root = rootfs.getCanonicalPath();
+          File installedDescriptor = new File(rootfs.getParentFile(), ".runtime-descriptor.json");
+          if (requireNpm
+              && installedDescriptor.isFile()
+              && !com.deepseekharness.app.util.MaintenanceGate.shared().isOwner()) {
+            // 已登记运行时的主体只能由维护事务切换。身份完全一致时仍允许修复 APK 自有
+            // 脚本/内置插件覆盖层，解决旧版提前 return 后长期沿用旧文件的问题。
+            String expected = assetRuntimeId(context);
+            if (expected.equals(descriptorRuntimeId(installedDescriptor))) {
+              String miss = cacheMiss(rootfs, root, identity, true);
+              timing.mark(5);
+              if (miss == null) return;
+              reportCacheMiss(miss);
+              preparedInvalidation = "preparation-incomplete";
+              preparedStamp = null;
+              prepareManagedOverlay(context, rootfs, expected);
+              writeApkGeneration(context, rootfs);
+              preparedFiles.add(installedDescriptor);
+              preparedFiles.add(new File(rootfs, MANAGED_MARKER));
+              preparedRoot = root;
+              preparedApk = identity;
+              preparedWithNpm = true;
+              preparedStamp = stamp(rootfs);
+              timing.mark(6);
+            }
+            return;
+          }
+          String miss = cacheMiss(rootfs, root, identity, requireNpm);
+          timing.mark(5);
+          if (miss == null) return;
+          reportCacheMiss(miss);
+          preparedInvalidation = "preparation-incomplete";
+          preparedStamp = null;
+          preparedFiles.clear();
+          String managedIdentity = assetRuntimeId(context);
+          installManagedAssets(context, rootfs);
+          preparePackageCommands(context, rootfs, requireNpm);
+          applyPatchChain(context, rootfs);
+          writeIfChanged(
+              context,
+              new File(rootfs, MANAGED_MARKER),
+              com.deepseekharness.app.util.ManagedAssetVersion.bytes(managedIdentity),
+              false);
+          writeApkGeneration(context, rootfs);
+          preparedRoot = root;
+          preparedApk = identity;
+          preparedWithNpm = requireNpm;
+          preparedStamp = stamp(rootfs);
+          timing.mark(6);
         }
-        if (root.equals(preparedRoot)
-            && identity.equals(preparedApk)
-            && (!requireNpm || preparedWithNpm)
-            && !com.deepseekharness.app.util.MaintenanceGate.shared().isOwner()
-            && preparedStamp != null
-            && preparedStamp.equals(stamp(rootfs))) return;
-        preparedStamp = null;
-        preparedFiles.clear();
-        String managedIdentity = assetRuntimeId(context);
-        installManagedAssets(context, rootfs);
-        preparePackageCommands(context, rootfs, requireNpm);
-        applyPatchChain(context, rootfs);
-        writeIfChanged(
-            context,
-            new File(rootfs, MANAGED_MARKER),
-            com.deepseekharness.app.util.ManagedAssetVersion.bytes(managedIdentity),
-            false);
-        preparedRoot = root;
-        preparedApk = identity;
-        preparedWithNpm = requireNpm;
-        preparedStamp = stamp(rootfs);
       }
+    } finally {
+      timing.finish(line -> android.util.Log.i("DSHA", line));
     }
   }
 
@@ -142,7 +167,59 @@ final class RuntimeTools {
 
   static void invalidate() {
     synchronized (LOCK) {
+      preparedInvalidation = "explicit-repair";
       preparedStamp = null;
+    }
+  }
+
+  /** Same reuse predicate as preparation; names and indices explain work without authorizing it. */
+  private static String cacheMiss(File rootfs, String root, String apk, boolean requireNpm)
+      throws IOException {
+    if (preparedRoot == null) return "reason=unprepared";
+    if (!root.equals(preparedRoot)) return "reason=root";
+    if (!apk.equals(preparedApk)) return "reason=apk";
+    if (requireNpm && !preparedWithNpm) return "reason=npm";
+    if (com.deepseekharness.app.util.MaintenanceGate.shared().isOwner())
+      return "reason=maintenance";
+    if (preparedStamp == null) return "reason=invalidated source=" + preparedInvalidation;
+    RuntimeAssetStamp.Snapshot observed = RuntimeAssetStamp.inspect(rootfs, preparedFiles);
+    if (preparedStamp.equals(observed.value)) return null;
+    int changed =
+        observed.value == null
+            ? observed.unavailableEntry
+            : RuntimeAssetStamp.firstDifference(preparedStamp, observed.value);
+    String result =
+        "reason="
+            + (observed.value == null ? "unavailable" : "metadata")
+            + " entry="
+            + changed
+            + " entries="
+            + preparedFiles.size();
+    if (changed >= 0) {
+      int at = 0;
+      for (File file : preparedFiles)
+        if (at++ == changed) {
+          // These are the fixed managed inputs, never session, user-plugin or workspace files.
+          try {
+            String relative =
+                rootfs.toPath().relativize(file.toPath()).toString().replace('\\', '/');
+            if (relative.matches("[A-Za-z0-9_@./+-]{1,240}")) result += " asset=" + relative;
+          } catch (RuntimeException diagnosticUnavailable) {
+            // Diagnostic spelling cannot prevent the required full verification.
+          }
+          break;
+        }
+    }
+    return result;
+  }
+
+  private static void reportCacheMiss(String reason) {
+    try {
+      // Logcat only: writing a durable diagnostic file here would add synchronous IO
+      // to the very preparation path being measured.
+      android.util.Log.i("DSHA", "RUNTIME_TOOLS_CACHE_MISS " + reason);
+    } catch (RuntimeException diagnosticUnavailable) {
+      // Diagnostics never authorize reuse or prevent the full verification.
     }
   }
 
@@ -266,6 +343,7 @@ final class RuntimeTools {
               GuestScripts.read(context.getAssets().open("adb-setup.sh"))),
           true);
       host.verify(fs);
+      preparedInvalidation = "adb-scripts";
       preparedStamp = null;
     }
   }
@@ -516,6 +594,8 @@ final class RuntimeTools {
             || !targets.add(target)
             || !(entry.get("executable") instanceof Boolean))
           throw new IOException("MANAGED_INPUT_PATH");
+        org.json.JSONObject extract = entry.optJSONObject("extract");
+        if (extract != null) validateExtract(asset, extract);
       }
       for (int i = 0; i < entries.length(); i++) {
         org.json.JSONObject entry = entries.getJSONObject(i);
@@ -524,13 +604,110 @@ final class RuntimeTools {
             rootfs,
             entry.getString("asset"),
             entry.getString("target"),
-            entry.getBoolean("executable"));
+            entry.getBoolean("executable"),
+            entry.optJSONObject("extract"));
       }
       for (String name :
           new String[] {"builtin-plugins.json", "runtime-tools.json", "bridge-token-compat.cjs"})
         install(context, rootfs, name, "root/.dsh/" + name, false);
     } catch (org.json.JSONException error) {
       throw new IOException("MANAGED_INPUT_MANIFEST", error);
+    }
+  }
+
+  /**
+   * Managed release archive: exactly one pinned member with an exact digest, published
+   * atomically below the runtime root. The archive bytes are already covered by the signed
+   * descriptor; this second check keeps a mismatched member from ever being executed.
+   */
+  private static void validateExtract(String asset, org.json.JSONObject extract)
+      throws IOException {
+    String member = extract.optString("member", ""), sha256 = extract.optString("sha256", "");
+    if (!asset.endsWith(".tar.gz")
+        || !com.deepseekharness.app.util.ManagedInstallPath.valid(member)
+        || !sha256.matches("[a-f0-9]{64}")) throw new IOException("MANAGED_INPUT_EXTRACT");
+  }
+
+  /**
+   * AGP 9.1.1 的资产合并会对 .gz 自动 gunzip 并去掉扩展名，所以受管归档在 APK 内按
+   * tools/asset-deployment.json 的 sourceTransforms 改用 .bin 打包名。旧构建入口与
+   * Robolectric 夹具仍只有源名，打不开打包名时回退，避免把兼容读法一起删掉。
+   */
+  private static InputStream openManagedArchive(Context context, String asset) throws IOException {
+    if ("gh-cli.tar.gz".equals(asset)) {
+      try {
+        return context.getAssets().open("gh-cli.bin");
+      } catch (IOException missingPackagedName) {
+        return context.getAssets().open(asset);
+      }
+    }
+    return context.getAssets().open(asset);
+  }
+
+  private static void installExtracted(
+      Context context,
+      File rootfs,
+      String asset,
+      String path,
+      boolean executable,
+      org.json.JSONObject extract)
+      throws IOException {
+    String member = extract.optString("member", ""), expected = extract.optString("sha256", "");
+    validateExtract(asset, extract);
+    File staging =
+        new File(
+            rootfs,
+            ".dsha-managed-extract-" + Integer.toHexString((asset + ":" + path).hashCode()));
+    if (staging.exists()) deleteTemporary(staging);
+    if (!staging.mkdirs()) throw new IOException("MANAGED_INPUT_EXTRACT_STAGE");
+    try {
+      final boolean[] found = {false};
+      try (InputStream input = openManagedArchive(context, asset)) {
+        // ArchiveFileBoundary over the app-private filesystem: descendant writes never follow
+        // links, and the extracted member is digest-checked before publication. The signed-asset
+        // root-anchor variant is Android-only and cannot run in the host Robolectric tests.
+        TarGzipExtractor.extractSelected(
+            input,
+            staging,
+            0,
+            name -> {
+              if (!name.equals(member)) return false;
+              found[0] = true;
+              return true;
+            },
+            new com.deepseekharness.app.backup.AndroidBackupFileSystem());
+      }
+      if (!found[0]) throw new IOException("MANAGED_INPUT_EXTRACT_MEMBER");
+      File extracted = new File(staging, member);
+      if (!extracted.isFile() || Compat.isSymbolicLink(extracted))
+        throw new IOException("MANAGED_INPUT_EXTRACT_TYPE");
+      com.deepseekharness.app.util.FileIntegrity.Result proof;
+      try (InputStream input = new FileInputStream(extracted)) {
+        proof = com.deepseekharness.app.util.FileIntegrity.copy(input, null, 64L * 1024 * 1024);
+      }
+      if (!proof.sha256.equals(expected)) throw new IOException("MANAGED_INPUT_EXTRACT_DIGEST");
+      var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
+      fs.parents(rootfs, path);
+      File target = fs.child(rootfs, path);
+      var current = fs.stat(target);
+      if (!current.type.equals("MISSING") && !current.type.equals("FILE"))
+        throw new IOException("MANAGED_INPUT_EXTRACT_TARGET");
+      try {
+        java.nio.file.Files.move(
+            extracted.toPath(),
+            target.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+        java.nio.file.Files.move(
+            extracted.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      }
+      fs.mode(target, executable ? 0755 : 0600);
+      fs.syncDirectory(target.getParentFile());
+      preparedFiles.add(target);
+      GuestScriptBudget.checkpoint();
+    } finally {
+      deleteTemporary(staging);
     }
   }
 
@@ -557,12 +734,13 @@ final class RuntimeTools {
     try {
       File pkg = new File(rootfs, "usr/local/lib/node_modules/@deepseek-ai/dsh/package.json");
       String version = fileObject(pkg).getString("version");
-      if ("0.2.1-rc.5".equals(version)) {
-        // 0.2.1-rc.3 and 0.2.1-rc.5 expose the same Host mirror bytes; keep the
-        // signed, byte-exact contract instead of the retired text replacement.
+      String contractVersion = LAN_SETTINGS_CONTRACT_VERSIONS.get(version);
+      if (contractVersion != null) {
+        // rc5 与 0.2.2-rc.1 暴露相同 Host mirror 字节；保留签名的精确契约，
+        // 但按运行时版本表选择对应的契约族，不能让未知版本复用旧摘要。
         var contract = assetObject(context, "lan-settings-upstream-contract.json");
         if (contract.getInt("schema") != 1
-            || !version.equals(contract.getString("dshVersion"))
+            || !contractVersion.equals(contract.getString("dshVersion"))
             || !"@deepseek-ai/dsh-client-ui-settings/lib/client.js"
                 .equals(contract.getString("module")))
           throw new IOException("LAN_SETTINGS_CONTRACT");
@@ -634,29 +812,7 @@ final class RuntimeTools {
 
   /** 只 stat 固定数量的受管文件；不读取大 JS，不遍历会话、附件和项目依赖。 */
   private static String stamp(File rootfs) throws IOException {
-    try {
-      StringBuilder value = new StringBuilder();
-      android.system.StructStat root = android.system.Os.lstat(rootfs.getAbsolutePath());
-      value.append(root.st_dev).append(':').append(root.st_ino);
-      for (File file : preparedFiles) {
-        if (!file.isFile() || Compat.isSymbolicLink(file)) return null;
-        android.system.StructStat stat = android.system.Os.lstat(file.getAbsolutePath());
-        value
-            .append('|')
-            .append(stat.st_ino)
-            .append(':')
-            .append(stat.st_size)
-            .append(':')
-            .append(file.lastModified())
-            .append(':')
-            .append(stat.st_ctime)
-            .append(':')
-            .append(stat.st_mode);
-      }
-      return value.toString();
-    } catch (android.system.ErrnoException error) {
-      return null;
-    }
+    return RuntimeAssetStamp.read(rootfs, preparedFiles);
   }
 
   static void prepareResolver(Context context, File rootfs) throws IOException {
@@ -756,6 +912,11 @@ final class RuntimeTools {
     // silently add confirmation, frozen-lockfile, or lifecycle blocking.
     environment.put("DSHA_PLUGIN_UNLOCKED", "1");
     environment.put("DSHA_ANDROID_RUNTIME", "1");
+    // The Go gh binary bypasses proroot path translation. Keep the host root explicit
+    // so its config/CA and file arguments resolve to the same private runtime tree.
+    // 必须用 canonical 路径：/data/user/0 别名视图在 guest 内不可达，包装脚本的 CA 检查会失败。
+    if (rootfs != null) environment.put("DSHA_GH_HOST_ROOT", GhHostRoot.resolve(rootfs));
+    environment.put("DSHA_GH_PROXY_SCRIPT", "/usr/local/share/dsha/gh-proxy.mjs");
     environment.put("DSHA_DNS_MODE", settings.dnsMode);
     // DNS 兼容与切网后回收外网连接（net-epoch.cjs，T37）；文件缺失（旧环境）时不加。
     for (String name : new String[] {"net-epoch.cjs", "dns-compat.cjs"}) {
@@ -1010,6 +1171,21 @@ final class RuntimeTools {
   private static void install(
       Context context, File rootfs, String asset, String path, boolean executable)
       throws IOException {
+    install(context, rootfs, asset, path, executable, null);
+  }
+
+  private static void install(
+      Context context,
+      File rootfs,
+      String asset,
+      String path,
+      boolean executable,
+      org.json.JSONObject extract)
+      throws IOException {
+    if (extract != null) {
+      installExtracted(context, rootfs, asset, path, executable, extract);
+      return;
+    }
     try (InputStream input = context.getAssets().open(asset);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
       byte[] buffer = new byte[8192];
@@ -1034,5 +1210,15 @@ final class RuntimeTools {
     GuestScriptBudget.checkpoint();
     preparedFiles.add(file);
     RuntimeAssetFiles.write(context, file, content, executable);
+  }
+
+  /** 每次 APK 覆盖更新更新代次；只重建受管资产的维护不改变代次。 */
+  private static void writeApkGeneration(Context context, File rootfs) throws IOException {
+    writeIfChanged(
+        context,
+        new File(rootfs, APK_GENERATION),
+        com.deepseekharness.app.util.ApkGeneration.bytes(
+            com.deepseekharness.app.BuildConfig.VERSION_CODE),
+        false);
   }
 }

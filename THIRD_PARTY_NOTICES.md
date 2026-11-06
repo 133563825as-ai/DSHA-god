@@ -4,7 +4,7 @@
 
 ## DSH 与 npm 依赖
 
-- 当前 `@deepseek-ai/dsh` 为 **0.2.1-rc.5**。完整版本、来源与 integrity 见 `tools/dsh-runtime/package-lock.json`；各包原许可文件保留在运行归档中。
+- 当前 `@deepseek-ai/dsh` 为 **0.2.2-rc.1**。完整版本、来源与 integrity 见 `tools/dsh-runtime/package-lock.json`；各包原许可文件保留在运行归档中。
 - Office 入口 `@deepseek-ai/libreoffice-kit` **0.1.5**、WASM **0.1.5**：保留上游 NOTICE、licenses、sources 与预构建说明。DSHA 的字体路径适配见 `assets/office-fonts-patch.json`。
 - pnpm **10.34.5**（MIT）和 certifi **2026.7.22**（MPL-2.0）：版本和原包摘要由 `tools/runtime-tools.lock.json` 固定。CA 未关闭 TLS 核验。
 - 许可目录和实际依赖需结合归档成员检查；锁文件内其他平台可选依赖不等于已进入 arm64 APK。
@@ -19,7 +19,7 @@
 - 上游 client 摘要 `3cd931bcd261e7b280398f8849a556ec1dd54edaa4147c49c808d0ea60d94173`；本地差异由 `tools/apply-mobile-client-patches.mjs` 与 `tools/mobile-server/` 管理。不是未修改的上游产物。
 - 许可全文：`app/src/main/assets/builtin-plugins/dsh-web-mobile/LICENSE`。当前产物摘要：
 
-- `client.js`：`39e984073778b922da30fbebd05ae19674af88f5338b55a3c56f3b7ea90b1d46`
+- `client.js`：`c6194218eaaed275ba1de0b8fe93d2cd33b7a93b6dc2a4b044b5624958e35f5e`
 - `index.js`：`dcddbce73ec1052b7c02e961bac1389d227f72f1ef49f62a2f16f692e8f930ab`
 - `compress.js`：`a7f4f7f89cc99490978ed4cbfd16ab86f71e1f7fbf2241c00c2811e7cde9aeab`
 - `delete-session.js`：`cb119ff9703716fe1111ee5a2f211d14886ab1d2310601c5787efc8d91219d51`
@@ -77,6 +77,10 @@
 | `app/src/main/jniLibs/arm64-v8a/libtalloc.so` | LGPL family; exact binary revision unverified | Samba talloc; original Standard binary exact revision unverified |
 | `app/src/main/jniLibs/arm64-v8a/libtermux.so` | Apache-2.0 exception | tools/termux-jni, v0.118.0 source plus local handshake changes |
 
+## 受管命令行工具
+
+- GitHub CLI（gh）v2.103.3：MIT，官方 `https://github.com/cli/cli` release 的 linux-arm64 归档，固定输入 `app/src/main/assets/gh-cli.tar.gz` 的版本、URL、归档与成员摘要见 `tools/gh-cli/packages.lock.json`；许可全文 `assets/licenses/gh-MIT.txt`（SHA-256 `6da4adc42392c8485e40b4251c7e332fc3352df1947c9ffade71dd60b14a7a4f`）。受管安装只提取固定成员并二次校验摘要，不执行归档中的其它内容。
+
 ## npm 锁中需另核对的许可声明
 
 此表来自当前锁，包含其它平台可选包。`check-third-party-notices.py --archive` 再核对实际运行归档中的包版本和声明；两者都不代替源码提供、嵌入库或法律来源核验。
@@ -120,5 +124,6 @@
 | `node_modules/@ubjs/node-win32-arm64-msvc` | 0.31.0-3 | MPL-2.0 | https://registry.npmjs.org/@ubjs/node-win32-arm64-msvc/-/node-win32-arm64-msvc-0.31.0-3.tgz |
 | `node_modules/@ubjs/node-win32-x64-msvc` | 0.31.0-3 | MPL-2.0 | https://registry.npmjs.org/@ubjs/node-win32-x64-msvc/-/node-win32-x64-msvc-0.31.0-3.tgz |
 | `node_modules/argparse` | 2.0.1 | Python-2.0 | https://registry.npmjs.org/argparse/-/argparse-2.0.1.tgz |
+| `node_modules/lru-cache` | 11.5.3 | BlueOak-1.0.0 | https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.3.tgz |
 
 GPL、MPL、LGPL 等组件的具体再分发义务应按相应包和修改范围核对。源码入口与许可副本不等于已证明所有上游二进制可逐字节重现。

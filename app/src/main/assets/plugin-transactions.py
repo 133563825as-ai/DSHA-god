@@ -41,6 +41,39 @@ def journal_name_kind(name):
     return 'FOREIGN'
 
 
+# Linux UAPI renameat2 numbers (asm-generic for arm64, x86_64 table for host tests).
+RENAMEAT2_SYSCALL = {'aarch64': 276, 'arm64': 276, 'x86_64': 316, 'amd64': 316}
+RENAME_NOREPLACE = 1
+
+
+def rename_noreplace(source_dir, source_name, target_dir, target_name):
+    """Atomic descriptor-relative rename that refuses an existing target.
+
+    Calls the kernel syscall directly instead of the libc renameat2 symbol:
+    proroot v1.2.8 preloads its own renameat2 that ignores both directory
+    descriptors and resolves the names against the current directory, so it
+    returns ENOENT or, worse, renames an unrelated cwd object. Single-component
+    names under real descriptors need no guest path translation, and proot
+    (ptrace) translates the raw syscall exactly like the libc wrapper. There is
+    no non-atomic renameat fallback; unsupported systems fail closed.
+    """
+    import ctypes
+    import platform
+    for name in (source_name, target_name):
+        if not name or '/' in name or name in ('.', '..'):
+            raise ValueError('插件保留移动名称无效，全部现场保留')
+    number = RENAMEAT2_SYSCALL.get(platform.machine().lower())
+    library = ctypes.CDLL(None, use_errno=True)
+    call = getattr(library, 'syscall', None)
+    if number is None or call is None:
+        raise ValueError('系统缺少原子保留移动能力，全部现场保留')
+    call.argtypes = [ctypes.c_long, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    call.restype = ctypes.c_long
+    if call(number, source_dir, os.fsencode(source_name), target_dir, os.fsencode(target_name), RENAME_NOREPLACE) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
 class DeleteObjects:
     """Fingerprint retained objects, never resolving a link's contents.
 
@@ -239,16 +272,7 @@ class DeleteObjects:
                         raise ValueError('旧 pnpm 链接在保留身份期间变化，全部现场保留')
             self.check(); original[2](); retained[2]()
             if self.relative:
-                import ctypes
-                library = ctypes.CDLL(None, use_errno=True)
-                rename = getattr(library, 'renameat2', None)
-                if rename is None:
-                    raise ValueError('系统缺少原子保留移动能力，全部现场保留')
-                rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-                rename.restype = ctypes.c_int
-                if rename(original[0], os.fsencode(original[1]), retained[0], os.fsencode(retained[1]), 1) != 0:
-                    number = ctypes.get_errno()
-                    raise OSError(number, os.strerror(number))
+                rename_noreplace(original[0], original[1], retained[0], retained[1])
                 os.fsync(original[0]); os.fsync(retained[0])
             else:
                 os.rename(source, target)
@@ -454,13 +478,18 @@ class Transactions:
     def cas_links(self):
         """Inspect every real profile directory without following directory links.
 
-        POSIX traversal is anchored to held NOFOLLOW directory descriptors. Each
-        directory edge is checked while visiting its children and its caller
-        checks the containing edge on entry/return. This avoids re-statting the
-        full ancestor chain for every ordinary file. Detaching an ancestor
-        cannot redirect descriptor-relative reads. Directory stable/member and
-        outer path identity checks still reject persistent replacements before
-        a result is returned; publishing separately rechecks each selected path.
+        POSIX traversal is anchored to held NOFOLLOW directory descriptors.
+        Fresh scandir entries supply file types without a separate stat for
+        every ordinary file (DT_UNKNOWN falls back to NOFOLLOW stat in Python).
+        Each directory's entry types and inode numbers are sampled again after
+        its children are visited, closing the cached-dirent replacement window
+        without turning the fast path back into one stat per ordinary file.
+        No stored receipt, root timestamp or previous entry list skips a scan.
+        Directory identity, timestamps and membership are checked on return;
+        replacing an entry changes its containing directory, even if its name
+        is restored. Detaching an ancestor cannot redirect descriptor-relative
+        reads, and each containing edge is checked as recursion unwinds. Links
+        still receive full snapshots and independent publishing checks.
         Windows has path-based reads, so it retains the full ancestor checks.
         """
         root = self.g['local'](self.g['builtin'].NODE_MODULES)
@@ -486,22 +515,53 @@ class Transactions:
                         raise ValueError('旧 pnpm 模块父目录在核验期间变化，全部现场保留')
                 counts['directories'] += 1
                 counts['maxDepth'] = max(counts['maxDepth'], depth)
-                names = sorted(os.listdir(directory))
+                def dirent_mode(entry):
+                    return (stat.S_IFLNK if entry.is_symlink() else
+                            stat.S_IFDIR if entry.is_dir(follow_symlinks=False) else
+                            stat.S_IFREG if entry.is_file(follow_symlinks=False) else 0)
+                def dirent_inode(entry):
+                    inode = getattr(entry, 'inode', None)
+                    return inode() if callable(inode) else None
+                def scan_dirents():
+                    with os.scandir(directory) as scan:
+                        return {entry.name: entry for entry in scan}
+                if reader.relative:
+                    entries = scan_dirents()
+                    names = sorted(entries)
+                    initial_modes = {child: dirent_mode(entries[child]) for child in names}
+                    initial_inodes = {child: dirent_inode(entries[child]) for child in names}
+                else:
+                    entries = None
+                    names = sorted(os.listdir(directory))
+                    initial_modes = {}
                 for child in names:
-                    self.g['check_cancel'](); nested_verify()
+                    self.g['check_cancel']()
                     budget[0] += 1
                     counts['entries'] = budget[0]
                     counts['maxDepth'] = max(counts['maxDepth'], depth + 1)
                     if budget[0] > 100000:
                         raise ValueError('旧 pnpm 模块条目超过核验上限，全部现场保留')
-                    info = reader.stat(directory, child)
+                    if reader.relative:
+                        entry = entries[child]
+                        mode = dirent_mode(entry)
+                        info = None
+                    else:
+                        nested_verify()
+                        info = reader.stat(directory, child)
+                        mode = 0 if reader.reparse(info) and not stat.S_ISLNK(info.st_mode) else info.st_mode
                     relative = prefix + child
-                    if stat.S_ISLNK(info.st_mode):
+                    if stat.S_ISLNK(mode):
                         # Native enable/disable markers are intent, not package
                         # cache entries, even if a user made one a CAS link.
                         if relative.endswith('.disabled') and ('/' not in relative or relative.startswith('@') and relative.count('/') == 1):
                             continue
+                        if info is None:
+                            info = reader.stat(directory, child)
+                        if not stat.S_ISLNK(info.st_mode):
+                            raise ValueError('旧 pnpm 模块链接在核验期间变化，全部现场保留')
                         old = reader.snapshot(directory, child, nested_verify)
+                        if old['kind'] != 'link':
+                            raise ValueError('旧 pnpm 模块链接在核验期间变化，全部现场保留')
                         path = self.cas_module_path(relative)
                         target = self.g['local'](old['target']) if os.path.isabs(old['target']) else os.path.normpath(os.path.join(os.path.dirname(path), old['target']))
                         target = os.path.abspath(target)
@@ -514,11 +574,20 @@ class Transactions:
                         found.append({'path': relative, 'before': old, 'beforeStat': [info.st_mtime_ns, info.st_ctime_ns], 'cas': cas_relative,
                                       'sha512': match[1] + match[2], 'mode': 0o755 if match[3] else 0o644})
                         counts['candidates'] = len(found)
-                    elif stat.S_ISDIR(info.st_mode) and not reader.reparse(info):
+                    elif stat.S_ISDIR(mode):
                         walk(directory, child, nested_verify, relative + '/', depth + 1)
-                    elif not stat.S_ISREG(info.st_mode) or reader.reparse(info):
+                    elif not stat.S_ISREG(mode):
                         raise ValueError('旧 pnpm 模块含特殊文件，全部现场保留')
-                if names != sorted(os.listdir(directory)) or not reader.stable(before, os.fstat(descriptor) if reader.relative else os.lstat(directory)):
+                if reader.relative:
+                    current = scan_dirents()
+                    if sorted(current) != names or any(
+                            dirent_mode(current[child]) != initial_modes[child] or (
+                                initial_inodes[child] is not None and dirent_inode(current[child]) != initial_inodes[child])
+                            for child in names):
+                        raise ValueError('旧 pnpm 模块条目在扫描期间变化，全部现场保留')
+                elif names != sorted(os.listdir(directory)):
+                    raise ValueError('旧 pnpm 模块目录在扫描期间变化，全部现场保留')
+                if not reader.stable(before, os.fstat(descriptor) if reader.relative else os.lstat(directory)):
                     raise ValueError('旧 pnpm 模块目录在核验期间变化，全部现场保留')
                 nested_verify()
                 verify()

@@ -157,7 +157,7 @@ public final class BackupTask {
   }
 
   private synchronized boolean start(
-      String requestedKind, boolean recovery, boolean stopWeb, Work work) {
+      String requestedKind, boolean recovery, boolean stopWeb, boolean allowForceStop, Work work) {
     String kind = com.deepseekharness.app.util.BackupTaskKinds.normalize(requestedKind);
     invalidatePendingCache();
     if (busy() || (!recovery && pendingMaintenance())) return false;
@@ -174,6 +174,7 @@ public final class BackupTask {
       lease.close();
       return false;
     }
+    DiagnosticLog.record(app, "MAINTENANCE_TASK_START", kind + ":" + id);
     try {
       persist();
     } catch (IOException e) {
@@ -215,7 +216,11 @@ public final class BackupTask {
                                     ? com.deepseekharness.app.util.UiText.text("正在停止 Web，等待运行队列完成…")
                                     : com.deepseekharness.app.util.UiText.text("正在准备数据快照…"));
                             return stopWeb
-                                ? MaintenanceCoordinator.exclusive(controller, () -> work.run(id))
+                                ? allowForceStop
+                                    ? MaintenanceCoordinator.exclusiveUserConfirmed(
+                                        controller, () -> work.run(id))
+                                    : MaintenanceCoordinator.exclusive(
+                                        controller, () -> work.run(id))
                                 : work.run(id);
                           });
                   state.update(id, Status.SUCCEEDED, result);
@@ -225,12 +230,15 @@ public final class BackupTask {
                       Status.CANCELLED,
                       com.deepseekharness.app.util.UiText.text("已取消恢复，当前数据未覆盖。"));
                 } catch (Exception e) {
-                  state.update(
-                      id,
+                  Status failure =
                       e instanceof java.io.InterruptedIOException && !pendingMaintenance()
                           ? Status.CANCELLED
-                          : Status.FAILED,
-                      BackupManager.safeError(e));
+                          : Status.FAILED;
+                  String reason = BackupManager.safeError(e);
+                  state.update(id, failure, reason);
+                  // 维护 / 恢复失败必须进入可导出的记录，不能只留在本次界面内存里。
+                  DiagnosticLog.record(
+                      app, "MAINTENANCE_TASK_" + failure.name(), kind + ":" + reason);
                 } finally {
                   OWNER_CONTROL.remove();
                   if (activeCancellation == cancellation) activeCancellation = null;
@@ -288,6 +296,7 @@ public final class BackupTask {
         com.deepseekharness.app.util.BackupTaskKinds.RESTORE,
         false,
         false,
+        false,
         id -> {
           progress(id, com.deepseekharness.app.util.UiText.text("正在读取独立副本并检查归档…"));
           try (BackupManager.PreparedRestore prepared =
@@ -305,7 +314,7 @@ public final class BackupTask {
               if (!accepted) throw new Cancelled();
             }
             progress(id, com.deepseekharness.app.util.UiText.text("已确认恢复，正在停止 Web 并等待退出…"));
-            return MaintenanceCoordinator.exclusive(
+            return MaintenanceCoordinator.exclusiveUserConfirmed(
                 controller, () -> BackupManager.restoreWithinDataTask(controller, prepared));
           }
         });
@@ -325,20 +334,29 @@ public final class BackupTask {
         com.deepseekharness.app.util.BackupTaskKinds.REBUILD,
         false,
         true,
+        true,
         id -> EnvironmentMaintenance.rebuild(controller, detail -> progress(id, detail)));
   }
 
+  /** 自动开始与首次部署使用：普通停止失败只如实失败，不升级强制结束。 */
   public boolean updateEnvironment() {
+    return updateEnvironment(false);
+  }
+
+  /** 用户已在维护页显式确认后的更新；{@code allowForceStop} 允许停止流程按身份核验强制结束旧 Web。 */
+  public boolean updateEnvironment(boolean allowForceStop) {
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.UPDATE,
         false,
         true,
+        allowForceStop,
         id -> EnvironmentMaintenance.update(controller, detail -> progress(id, detail)));
   }
 
   public boolean recoverMaintenance() {
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.RECOVER,
+        true,
         true,
         true,
         id -> EnvironmentMaintenance.recover(controller));
@@ -350,6 +368,7 @@ public final class BackupTask {
         com.deepseekharness.app.util.BackupTaskKinds.ISOLATE_PLUGIN_JOURNALS,
         true,
         true,
+        true,
         id -> PluginJournalIsolation.isolate(controller, expectedDigest));
   }
 
@@ -357,6 +376,7 @@ public final class BackupTask {
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.ROLLBACK,
         false,
+        true,
         true,
         id ->
             EnvironmentMaintenance.rollbackRuntime(
@@ -366,6 +386,7 @@ public final class BackupTask {
   public boolean selectDataHome(com.deepseekharness.app.backup.UserDataLayout.Home home) {
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.SELECT_HOME,
+        true,
         true,
         true,
         id -> {
@@ -390,6 +411,7 @@ public final class BackupTask {
         com.deepseekharness.app.util.BackupTaskKinds.RESET,
         false,
         true,
+        true,
         id -> {
           progress(
               id,
@@ -405,6 +427,7 @@ public final class BackupTask {
         com.deepseekharness.app.util.BackupTaskKinds.REPAIR,
         "recover".equals(request.optString("command")),
         true,
+        true,
         id -> StartupRepairs.change(app, controller, request));
   }
 
@@ -412,6 +435,7 @@ public final class BackupTask {
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.REMOVE_PLUGIN,
         false,
+        true,
         true,
         id -> StartupRepairs.deletePlugin(controller, name));
   }

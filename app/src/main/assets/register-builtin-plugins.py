@@ -24,6 +24,11 @@ dsh-web-mobile）的实体随离线 rootfs 烘焙在 /root/dsha-*，但 dsh 只�
 禁用标记：profiles/web/node_modules/<name>.disabled（空文件）—— 存在即表示用户主动
 禁用，注册流程会尊重它而永远跳过（与 selftest.py 的判定一致），只有 --enable 会清掉。
 
+默认启停：builtin-plugins.json 的行可声明 defaultDisabled=true。没有当前 APK 代次的显式
+启用记录时，注册器把该插件收敛为禁用（全新安装与覆盖更新一致，不保留旧版本启用状态）；
+只有用户在当前安装里显式启用（node_modules/<name>.enabled 记录当前代次）才保持启用，
+下一次 APK 覆盖更新会再次收敛。
+
 清单通过临时文件原子替换，不为每次开关累积备份；每次运行写 repair-builtin.log。
 
 只读 / 保守原则：只对「名字已知且实体存在」的插件动手；不删除已有 bundle、
@@ -64,11 +69,14 @@ def _registry():
     names = [row.get('name') for row in rows + official]
     if len(set(names)) != len(names) or any(not isinstance(name, str) or not re.fullmatch(r'(?:@[a-z0-9._-]+/)?[a-z0-9._-]+', name) for name in names):
         raise ValueError('BUILTIN_REGISTRY_NAME')
+    if any(not isinstance(row.get('defaultDisabled', False), bool) for row in rows):
+        raise ValueError('BUILTIN_REGISTRY_DEFAULT')
     return rows, official
 
 
 _REGISTRY_ROWS, _OFFICIAL_ROWS = _registry()
 DEFAULT_BUILTINS = tuple(row['name'] for row in _REGISTRY_ROWS)
+DEFAULT_DISABLED = tuple(row['name'] for row in _REGISTRY_ROWS if row.get('defaultDisabled') is True)
 OFFICIAL_BUNDLES = tuple(row['name'] for row in _OFFICIAL_ROWS)
 BUILTIN_DIRECTORIES = {row['name']: row['guestDirectory'] for row in _REGISTRY_ROWS}
 
@@ -103,6 +111,9 @@ def local(path):
 # os.path.join(ROOT, ...) 构造，否则会随启动工作目录（通常为 /root）漂移。
 BUILTIN_LIST = local("/root/dsha-builtin.txt")
 MANAGED_ASSET_MARKER = local("/usr/local/share/dsha/managed-assets-v2")
+APK_GENERATION_MARKER = local("/usr/local/share/dsha/apk-generation")
+APK_GENERATION_HEADER = "DSHA_APK_GENERATION_V1"
+DEFAULT_DISABLED_ENABLED_HEADER = "DSHA_DEFAULT_OFF_ENABLED_V1"
 
 
 def valid_name(name):
@@ -116,11 +127,26 @@ def ensure_relative_link(link, target):
         if not os.path.islink(link):
             return False
         current = os.readlink(link)
-        same = os.path.realpath(link) == os.path.realpath(target)
-        if not same and os.path.normpath(current) != os.path.normpath(target):
-            return False
-        if not os.path.isabs(current) and same:
-            return False
+        if os.path.isabs(target):
+            # Runtime targets are absolute. An existing relative link is always
+            # preserved by this helper, whether correct or user-owned: formerly
+            # both realpath outcomes returned False. Do not resolve its target
+            # (and all shared ancestors) again for every bundled dependency.
+            if not os.path.isabs(current):
+                return False
+            # Identical absolute spellings already name the same target. Only
+            # different absolute aliases need canonical resolution before the
+            # legacy absolute -> relative migration may replace a link.
+            if (os.path.normpath(current) != os.path.normpath(target)
+                    and os.path.realpath(link) != os.path.realpath(target)):
+                return False
+        else:
+            # Retain the historical helper contract for non-runtime callers.
+            same = os.path.realpath(link) == os.path.realpath(target)
+            if not same and os.path.normpath(current) != os.path.normpath(target):
+                return False
+            if not os.path.isabs(current) and same:
+                return False
     os.makedirs(os.path.dirname(link), exist_ok=True)
     relative = os.path.relpath(target, os.path.dirname(link))
     # 原子替换，避免中断恰好发生在删旧链接与建新链接之间。
@@ -172,10 +198,29 @@ def managed_asset_identity():
     return value if len(value) == 64 and all(char in '0123456789abcdef' for char in value) else ''
 
 
+def apk_generation():
+    """当前 APK 覆盖安装代次；宿主在插件注册前写标记。
+
+    缺失时退回受管资产身份，让本地测试/手工运行仍有稳定代次；真正缺环境时由
+    注册失败路径拦住，不能用空串让「旧版本显式启用」意外延续。
+    """
+    try:
+        lines = Path(APK_GENERATION_MARKER).read_text(encoding='ascii').splitlines()
+    except (OSError, UnicodeError):
+        lines = []
+    if len(lines) == 2 and lines[0] == APK_GENERATION_HEADER \
+            and re.fullmatch(r'[0-9]{1,12}', lines[1] or ''):
+        return 'apk:' + lines[1]
+    identity = managed_asset_identity()
+    return 'runtime:' + identity if identity else 'unmanaged'
+
+
 def ensure_runtime_modules(force=False):
     cache = local(os.path.join(DSH_HOME, '.runtime-links-cache.json'))
+    started = time.monotonic()
     stamp = runtime_links_stamp()
     asset_identity = managed_asset_identity()
+    registration_timing('runtime-links-stamp', started, entries=len(stamp))
     if not force:
         try:
             with open(cache, encoding='utf-8') as stream:
@@ -186,7 +231,10 @@ def ensure_runtime_modules(force=False):
         except (OSError, ValueError):
             pass
     print('RUNTIME_LINKS_CHECK: 检查共享依赖链接', flush=True)
+    started = time.monotonic()
     count = repair_runtime_modules()
+    registration_timing('runtime-links-repair', started, changed=count)
+    started = time.monotonic()
     try:
         os.makedirs(os.path.dirname(cache), exist_ok=True)
         temporary = cache + '.tmp'
@@ -196,7 +244,15 @@ def ensure_runtime_modules(force=False):
         os.replace(temporary, cache)
     except OSError:
         pass
+    registration_timing('runtime-links-cache-write', started)
     return count
+
+
+def registration_timing(phase, started, **counts):
+    # Aggregate timings only: no package names, private paths or content.
+    print('REGISTER_TIMING: ' + json.dumps(dict(phase=phase,
+          elapsedMs=round((time.monotonic() - started) * 1000, 3), **counts),
+          separators=(',', ':')), flush=True)
 
 
 def repair_runtime_modules():
@@ -653,34 +709,49 @@ def is_web_builtin_disabled(name):
         return False
 
 
+def enable_intent_path(name):
+    """默认关闭插件的「本安装代次显式启用」记录；位于 node_modules 但不参与加载。"""
+    return os.path.join(local(NODE_MODULES), name + ".enabled")
+
+
+def current_enable_intent(name):
+    expected = DEFAULT_DISABLED_ENABLED_HEADER + "\n" + apk_generation() + "\n"
+    try:
+        with open(enable_intent_path(name), encoding="utf-8") as stream:
+            return stream.read(len(expected) + 1) == expected
+    except (OSError, UnicodeError):
+        return False
+
+
+def write_enable_intent(name):
+    path = enable_intent_path(name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        os.write(descriptor, (DEFAULT_DISABLED_ENABLED_HEADER + "\n" + apk_generation() + "\n").encode("utf-8"))
+    finally:
+        os.close(descriptor)
+
+
+def clear_enable_intent(name):
+    try:
+        os.remove(enable_intent_path(name))
+    except FileNotFoundError:
+        pass
+
+
 def selection_aliases(name):
     return AUTO_REVIEW_ALIASES if name in AUTO_REVIEW_ALIASES else (name,)
 
 
-_builtin_names_cache = None
-
-
 def builtin_names():
-    """当前签名内置清单；固定清单永远是下限，文件只能追加合法名称。"""
-    global _builtin_names_cache
-    try:
-        info = os.stat(BUILTIN_LIST)
-        stamp = (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size)
-    except OSError:
-        stamp = None
-    if _builtin_names_cache is not None and _builtin_names_cache[0] == stamp:
-        return list(_builtin_names_cache[1])
-    names = list(DEFAULT_BUILTINS)
-    try:
-        with open(BUILTIN_LIST, encoding="utf-8") as f:
-            for line in f:
-                name = line.strip()
-                if name in DEFAULT_BUILTINS and name not in names:
-                    names.append(name)
-    except OSError:
-        pass
-    _builtin_names_cache = (stamp, tuple(names))
-    return names
+    """当前签名清单是唯一来源；旧文本既不能减少，也不能追加受管名称。
+
+    DEFAULT_BUILTINS 已包含所有合法签名项，重复 stat/read 旧文本不会改变
+    结果。返回副本，避免调用者修改后影响同进程的注册、删除与导出保护。
+    """
+    return list(DEFAULT_BUILTINS)
 
 
 # ================= profile 读写 =================
@@ -916,6 +987,11 @@ def enable_plugin(name):
                 if os.path.isfile(marker_path(alias)):
                     os.remove(marker_path(alias))
                     lines.append("已清除禁用标记：" + alias)
+        if name in DEFAULT_DISABLED and d is not None:
+            try:
+                write_enable_intent(name)
+            except OSError as error:
+                raise RuntimeError("无法记录启用代次：" + str(error))
     except RuntimeError as e:
         lines.append(str(e))
         _write_log(lines, ok=False)
@@ -932,6 +1008,11 @@ def disable_plugin(name):
     lines = ["== " + time.strftime("%Y-%m-%d %H:%M:%S") + " 禁用 " + name]
     try:
         d = entity_dir(name)
+        if name in DEFAULT_DISABLED:
+            try:
+                clear_enable_intent(name)
+            except OSError as error:
+                raise RuntimeError("无法清除启用记录：" + str(error))
         if d is not None:
             marker_name = AUTO_REVIEW_ALIASES[0] if name in AUTO_REVIEW_ALIASES else name
             os.makedirs(os.path.dirname(marker_path(marker_name)), exist_ok=True)
@@ -984,6 +1065,34 @@ def disable_plugin(name):
 
 # ================= 注册主流程 =================
 
+def persist_default_disabled(name):
+    """默认关闭：落与原生禁用一致的空标记，注册器下次启动不会再把它补回 bundles。"""
+    marker = marker_path(name)
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    os.close(os.open(marker, flags, 0o600))
+
+
+def apply_default_disabled():
+    """没有「本安装代次显式启用」记录时，把默认关闭项收敛为禁用。
+
+    - 全新安装 / profile 尚不存在：写禁用标记，不进入注册名单；
+    - 覆盖更新（APK 代次变化）：旧版本启用过的也收敛为禁用；
+    - 用户在当前安装代次从原生插件页显式启用：.enabled 记录与代次一致，保持启用；
+    - 显式禁用标记优先，并清掉旧启用记录。
+    """
+    if not DEFAULT_DISABLED:
+        return
+    for name in DEFAULT_DISABLED:
+        if is_disabled(name):
+            clear_enable_intent(name)
+            continue
+        if current_enable_intent(name):
+            continue
+        persist_default_disabled(name)
+        clear_enable_intent(name)
+
+
 def register():
     os.makedirs(local(DSH_HOME), exist_ok=True)
     lines = ["== " + time.strftime("%Y-%m-%d %H:%M:%S")]
@@ -991,6 +1100,14 @@ def register():
         linked = ensure_runtime_modules()
         if linked: lines.append('已补充 %d 个共享运行时模块链接' % linked)
     except (OSError, RuntimeError) as error:
+        print('BUILTIN_REGISTER_FAIL: ' + str(error))
+        return 1
+
+    try:
+        apply_default_disabled()
+    except (OSError, RuntimeError) as error:
+        lines.append(str(error))
+        _write_log(lines, ok=False)
         print('BUILTIN_REGISTER_FAIL: ' + str(error))
         return 1
 

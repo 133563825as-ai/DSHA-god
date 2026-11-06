@@ -49,8 +49,13 @@ public final class ManagedRuntimeLayout {
           "bridge-token-compat.cjs"
         }) out.add("root/.dsh/" + name);
     for (String name :
-        new String[] {"dsh", "npm", "npx", "dsha-plugin", "adb-shell", "install-ubuntu-tools"})
-      out.add("root/dsh-bin/" + name);
+        new String[] {
+          "dsh", "npm", "npx", "gh", "dsha-plugin", "adb-shell", "install-ubuntu-tools"
+        }) out.add("root/dsh-bin/" + name);
+    out.add("usr/local/share/dsha/gh-proxy.mjs");
+    // Managed gh binary (extracted from the pinned release archive). It is owned here so a
+    // full environment rebuild re-injects it instead of treating it as user data under /opt.
+    out.add("opt/gh/bin/gh");
     return out;
   }
 

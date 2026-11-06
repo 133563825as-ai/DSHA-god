@@ -1,5 +1,173 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1 / build334（P0：覆盖更新后 trial 收尾误判半提交，修复弃旧版与恢复出口）
+
+- P0 覆盖更新修复（T91，`a70232fc`）：build333 真机覆盖更新后，proroot 启动器在试用 guest 退出后残留（OnePlus PJD110 / Android 16 / WebView 156 实测，后台无其它 Web 也复现），trial 收尾误判 `TRIAL_PROCESS_UNCONFIRMED`，运行时更新事务停在半提交（`files-committed` / `settings-committed`）、启动被维护屏障拦住、重启无效。trial 收尾改为只按本记录 guest 的退出证据确认，启动器残留不再改变结论；`RuntimeTrial` 只对本次持有的 `Process` 句柄做一次有界清理（超时 / 失败仅写 `TRIAL_LAUNCHER_RETENTION` 诊断）；`launched` 但缺 `.dsha-web.pid` / `.stale` 的 trial 恢复改按记录 id 推导的试运行 profile 确认无此进程（同 UID、两次一致；仍存在 / 拒读 / 身份变化继续 fail-closed）。
+- 维护失败可诊断、恢复后清旧失败：维护任务开始 / 失败写入可导出的操作记录（`MAINTENANCE_TASK_START` / `MAINTENANCE_TASK_FAILED`），失败态保留应急 DSH、维护记录、导出可读副本与「进入受限主界面」；外部恢复完成后，环境可运行且无维护进行 / 待恢复时丢弃旧失败快照（`RuntimeUpgradeState.clearStaleFailure`），回到「上一版运行时待更新」并给出更新入口，不再要求再点重试；启动记录把「已拿到鉴权链接但未写最终 ready / failed」标为「已就绪 · 等待进入」。
+- 覆盖更新弃旧版（I10）：只有「已装 APK 身份 ≠ 记录中的会话身份」时，维护 / 强制停止动作内才按记录出生身份（boot、PID、出生时间、命令行、UID、代次/实例/nonce）双次核验，先结束记录中的 guest，再结束对应的旧 proot 启动器（SIGTERM → 短等待 → 复核 → SIGKILL）；guest 未确认退出不碰启动器，任一核验失败 / 读不了 / PID 复用 / 他人 UID / 两次观察变化都不发信号；普通停止、当前实例、终端、虚拟屏与隔离试运行路径不变（I9）。
+- build333 真机事故：2026-11-06 在 OnePlus PJD110（Android 16，WebView 156）从 build332 覆盖安装 build333 后触发上述半提交（事务 `69ebb4f7…`），启动被拦且重启无效；经应急 DSH `recover-maintenance` + 重试后恢复 READY / 42117，数据完好。**build334 尚未真机验收**，验收项为从 build333 覆盖安装后不再卡在 `TRIAL_PROCESS_UNCONFIRMED`、维护能完成并进入网页，不预写通过。
+- 验证范围：全量单测（`:app:testStandardDebugUnitTest`）、`:app:lintStandardRelease`、宿主 contracts 整组 12 项、全树格式检查（JDK 17）、`generate-changelog --check`、文档链接与源码整洁检查；结果以本机发布准备回执为准。版本码提升为 334（基于 build333）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1；runtimeId 随 T91 的 `launcherInputs` 变更重算为 `28d51d65…`，版本与文档改动不再改变它；固定输入未重建，不新增受管运行时或插件。
+- 十语种更新说明见 [build334 更新说明](docs/releases/build334-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.1830-dsh0.2.2-rc.1 / build333（跨应用文件访问 SAF + 隐藏后台开关 + 设备授权页 UI 一致性）
+
+- 跨应用文件访问（SAF，PR #3，review `5797594537` APPROVE，merge `9cc91f5e`）：设置 → 设备能力授权 → 系统权限新增「跨应用文件访问」；用户经系统文档选择器授权目录后持久化读/写（最多 8 棵树），授权页管理与只读浏览。新增 `/app/saf/*` 桥端点（read 256 KiB、write 16 KiB、push/pull 32 MiB、列表 500 项、`rm` 两段式一次性 token），协议版本保持 3（纯加法）；只认授权短 id、写/删要求可写，容器路径复用 `BridgePathPolicy`，本地文件用 `O_NOFOLLOW` + dev/ino + `/proc/self/fd` 真实路径复核并拒绝硬链接与 `.l2s`；内置 `dsh-device-shell-guide` 提示词与 `/app/help` 各加一条入口说明。受管输入随该 PR 重算 runtime-descriptor（runtimeId `04b24571`），固定输入不重建。
+- 设置 → 体验新增「隐藏后台」开关（`73896284`，ADB 保活辅助）：默认关闭、本机偏好、不进备份白名单；开启后把本应用全部有效任务移出最近任务，关闭后恢复并按「只留一张主卡」重新分类；重启后重新读取偏好并应用，失败写 `DiagnosticLog` 并下次重试。只影响最近任务可见性，不改 `DeviceBridgeService`、常驻通知、前台服务与停止语义，不承诺保活。
+- 设备能力授权页 UI 一致性修复（`8509ae0a`）：状态胶囊在 `PluginFlowRow` 内自适应（`wrap_content` + 最小 56dp 宽，放不下换行），状态去掉 12dp 缩进、允许两行、字号收进资源（12sp）；其余 9 个语种「关闭」状态词改用「已关闭」译条（中文保留「关闭 / 關閉」），覆盖概览状态、识屏与剪贴板档位三处；概览条压平（`shell_bg` + 1dp 底线，去下圆角/强描边/阴影），短屏并入滚动区。`DeviceGrantsLayoutTest` 同步新增十语种词义、320dp 长译文、1.3 倍字体与短屏用例。
+- 验证范围：宿主 contracts 整组、全树格式检查（JDK17）、`generate-changelog --check`、文档链接与源码整洁检查、`test-release-*` 相关门禁，以及定向单测（更新页、SAF 五类 + 路由、`TaskNavigationPolicy`、`BrowserTasks`、`ConfigStore` 隐藏后台、设备授权页布局）。**两项新功能未真机验收**：`androidTest` 源集存在既有编译错误（`RecoveryInstrumentation` 调 `HarnessService.refreshPowerMode()` 少传 `Context`），隐藏后台的最近任务行为与授权页像素级截断（1.3 倍字体、短屏、RTL）待真机。版本码提升为 333（基于 build332）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1；runtimeId 保持 `04b24571`。
+- 十语种更新说明见 [build333 更新说明](docs/releases/build333-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.0700-dsh0.2.2-rc.1 / build332（docs-only：更正 T58 归档文档事实口径）
+
+- 本版只更正 T58 归档文档的事实口径：首次连接提示补丁自 build324（`a54f9854`）起已并入并随包，build324–build332 都携带；归档 tag `archive/feat/first-connect-indicator-20261106`（`5918af63`）只是同一补丁的独立分支快照，不另行合并，也不表示补丁不在包内。`docs/design/first-connect-indicator-20261106/README.md`、文档索引与 build331 更新说明已按此更正。
+- 无新功能、无行为变化、不改运行时：不重建 fixed-inputs，不改 managed-runtime-inputs 与 runtime-descriptor（runtimeId 仍 `35e3f499`），不新增受管运行时或插件。
+- 验证范围：宿主 contracts 整组、全树格式检查（JDK17）、host-tests manifest 与定向单测（更新页）；未真机验收。版本码提升为 332（基于 build331）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build332 更新说明](docs/releases/build332-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.0400-dsh0.2.2-rc.1 / build331（proroot git 大 diff 崩溃 fail-loud + 首次连接提示补丁归档）
+
+- proroot 下 git 大 diff 崩溃改为 fail-loud（T82）：build330（proroot v1.2.8）本机实测 `git show --stat`、`git diff --stat` / `--numstat` 对某些提交或 ≥8 路径组合 exit 139、stdout 0 字节、stderr 仅 `[proroot] SIGSEGV pc=… lr=…`；命令接 `| head` / `;` 时最终 rc 被吞成 0，审查与合入可能静默拿到空数据。新增 `tools/git_guard.py`（`GitSigsegvError` / `GIT_PROROOT_SIGSEGV`，不重试、不返回部分输出、给出安全替代），`check-source-hygiene` / `ci-handoff` / `format-java` / `verify-stability` / `verify-ci-package` 统一改用 `git_output`；新增 `tools/test-git-guard.py` 并登记 host-tests manifest；AGENTS 与运行引擎文档中英记录本机陷阱与审查/合入安全用法。未改 proroot 本体、固定输入、受管运行时输入与 runtime-descriptor（runtimeId 仍 `35e3f499`）。
+- 首次连接提示补丁归档（T58）：`docs/design/first-connect-indicator-20261106/README.md` 记录补丁的结论、难复现原因、维护/风险代价与后续任务前置条件，并加入文档索引；该补丁自 build324（`a54f9854`）起已并入并随包（build324–build331 都携带）；归档 tag `archive/feat/first-connect-indicator-20261106`（`5918af63`）是同一补丁的独立分支快照，不另行合并；本归档不新增或扩展补丁，也不回退已并入补丁；本版不改运行时。
+- 验证范围：宿主 contracts 整组、全树格式检查（JDK17）、host-tests manifest（251 项，含 git guard 回归）与定向单测（更新页）；未真机验收。版本码提升为 331（基于 build330）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build331 更新说明](docs/releases/build331-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.0230-dsh0.2.2-rc.1 / build330（虚拟屏拒绝宿主自身启动 + APK 受管 gh 资产改名修复）
+
+- 虚拟屏 self-launch 拒绝（T76）：`/app/vscreen/launch` 不再接受把 DSHA 自身启动到虚拟屏。系统不会为副屏另起实例，而是复用正在运行的同一进程；本进程里已绑定默认 display 的 WebView 在副屏会以 `libmonochrome` 空指针崩溃（relay 真机证据：display 4、主线程 Looper 进入 WebView、复用已运行的进程 14715）。bridge 在授权询问前、Manager 在 claim 前、Core 在 `am start` 前三层用同一条判定拒绝，返回 `VSCREEN_SELF_LAUNCH_REFUSED`（state=NOT_SENT，不发出启动命令、不再崩溃）；内置插件把该码归 pre-dispatch，原生选择器不再列出宿主，结果页给中英原因。这是安全拒绝，不是支持副屏 self-launch；以后若要支持须 createDisplayContext + 独立 WebView。runtime-descriptor 重生成，固定输入不重建。
+- APK 受管 gh 资产修复（T79，T78 结论 B）：官方 build328/329 的 APK 里只有 `assets/gh-cli.tar`（38,727,680 B，STORED），没有 `gh-cli.tar.gz`——AGP 9.1.1 资产合并对 `.gz` 自动 gunzip 并去掉扩展名，受管安装按 `gh-cli.tar.gz` 打开必定失败（wrapper 自举可兜底）。源固定输入名与 `runtime-descriptor.json` pin 不变、固定输入不重建；APK 打包名改为 `gh-cli.bin`（`tools/asset-deployment.json` 的 sourceTransforms 与 `tools/prepare-standard-assets.py`），`RuntimeTools` 按打包名打开并回退源名；新增 `tools/verify-apk-managed-assets.py` 发布门禁，在正式包（release-production build-signed）与测试包构建链上核对实际成员名、逐字节摘要与 gh 固定成员，防止再次静默改名。runtime-descriptor 随受管生成器改动重生成（runtimeId `35e3f499`），固定输入不重建。
+- 验证范围：宿主 contracts 整组、全树格式检查（JDK17）与定向单测（VirtualScreenPolicy / Manager ownership / 更新页）；未真机验收。版本码提升为 330（基于 build329）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build330 更新说明](docs/releases/build330-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.0130-dsh0.2.2-rc.1 / build329（GitHub 登录原生页 + gh CA 双视图修复 + 引导底栏统一）
+
+- GitHub 登录原生页（T71）：显示容器 `hosts.yml` 的账号、作用域与来源，标明受管 `gh` 是否可用，并用只读 `gh api -i /user` 区分 CA/TLS 失败、token 401、未登录、网络与超时；提供登录、重新授权与退出。页面不显示 token；已知缺口是本机 token 仍存于容器 `hosts.yml`，同 UID 的网页与插件可读（隔离另立 T50，本批不处理）。
+- gh 的 CA 路径修复（T73）：`RuntimeTools` 改用 canonical 宿主根设置 `DSHA_GH_HOST_ROOT`；`gh` 包装脚本在 `/data/user/0` 与 `/data/data` 两个视图查找受管 CA，两处都缺或 `DSHA_GH_CA` 指向缺失文件时明确报错退出，不再静默回退到缺新根证书的旧系统 CA。固定输入不重建，runtime-descriptor 重生成（runtimeId 10e8595e）。
+- 引导第 4 步底栏统一（T72）：欢迎流程完成页改用与运行环境维护页相同的 `ExtractFooter` 紧凑两行布局，更新中显示 x/5、恢复主操作，就绪后进入主界面。
+- 验证范围：宿主 contracts 整组、全树格式检查（JDK17）与定向单测（更新页、GitHub 登录、gh 宿主根、引导页）；未真机验收。版本码提升为 329（基于 build328）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build329 更新说明](docs/releases/build329-changes.zh.md)。
+
+## 0.2.1-rc.5-20261106.0010-dsh0.2.2-rc.1 / build328（gh 纳入受管资产 + 自举兜底 + /opt 跨重建契约）
+
+- gh 不可用根因修复（T69）：官方 GitHub CLI v2.103.3 作为第 12 项固定输入 `gh-cli.tar.gz` 进入受管资产，安装时只提取固定成员、二次校验并原子发布到 `/opt/gh/bin/gh`；整树重建按受管注入。包装脚本在缺失/损坏时按固定 URL + 摘要自举，失败 fail-closed 并打印恢复命令；删除「bundled」误导文案。
+- 新增 `util/MaintenanceToolPaths` 明文契约与重建前有界预检：`/opt` 保留为用户工具，`/usr/local/bin` 不保留，`usr/local/share/dsha` 受管注入；`/opt` 超过 10 万条在移动旧树前拒绝重建。
+- 固定输入 11→12 项，bundle 716,787,167 B / sha256 be97d9f0…f08f5（fixed-inputs-20261105e，已发布 prerelease）；APK 增大约 13.0 MiB。宿主测试、contracts 整组与源码/描述符/第三方声明门禁通过；未真机验证。版本码提升为 328（基于 build327）。
+- 十语种更新说明见 [build328 更新说明](docs/releases/build328-changes.zh.md)；验证记录见 [build328 gh 固定输入与 /opt 契约记录](docs/releases/v0.2.1-rc.5-build328-gh-provision-20261105.md)。
+
+## 0.2.1-rc.5-20261105.2310-dsh0.2.2-rc.1 / build327（维护页一步完成覆盖更新；内置竖屏适配插件默认禁用并覆盖更新收敛）
+
+- 维护页自行停止（T67）：点「更新运行时」会先按出生身份核验（boot/pid/启动时间/命令行/nonce）把旧网页进程完全停止，再取维护屏障执行更新；不必先进受限主界面点「停止」再回维护页；核验不过不杀，给出提示与重试入口，自动开始路径仍不强杀。
+- 竖屏插件默认禁用（T68）：内置 `dsh-web-mobile` 默认禁用，覆盖更新同样收敛为禁用；只有当前版本内从原生插件页显式启用才生效，下一次 APK 覆盖更新再次收敛。原因：大量代码未适配 build324 起的新页面与新逻辑（曾造成白屏与侧栏重复）。恢复默认启用须满足 `docs/plugins.md` 的硬门槛并附真机证据。
+- 验证范围：宿主测试、contracts 整组与源码/描述符门禁；真机结论按当次实际确认记录填写，未预写通过。版本码提升为 327（基于 build326）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build327 更新说明](docs/releases/build327-changes.zh.md)；验证记录见 [build327 维护自停记录](docs/releases/v0.2.1-rc.5-build327-maintenance-self-stop-20261105.md) 与 [build327 竖屏插件默认禁用记录](docs/releases/v0.2.1-rc.5-build327-web-mobile-default-disabled-20261105.md)。
+
+## 0.2.1-rc.5-20261105.2200-dsh0.2.2-rc.1 / build326（覆盖安装按补丁级判定是否维护：同一 DSH 版本换受管补丁也进维护页，更新回到主操作位）
+
+- 维护判定（T60）：同一 DSH 版本、只更换内置受管补丁的覆盖安装也会进入运行环境维护页；「更新运行时」回到主操作位，不再被「进入主界面」压过。新增 `util/RuntimeUpgradeState`（`upToDate` / `maintenanceRequired` / `limitedEntry` / `openMaintenancePage`），`ExtractActivity`、`EnvironmentUiStatus`、`MainActivity.checkEntry` 接入。
+- 入口放开（T60 第二笔）：未确认的旧网页会话只拦「自动开始更新」（`EnvironmentIdentity.shouldAutoStart` 未改），维护页与一键手点更新保留；未知实例不会自动重放。
+- 验证范围：宿主测试、contracts 整组、本版记录的 11 个定向测试类与源码/描述符门禁；真机覆盖安装结论待用户按记录逐项核对后补写，未预写通过。版本码提升为 326（基于 build325）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 契约文档 [覆盖升级与维护门禁](docs/overwrite-upgrade-and-maintenance.md)（I1–I8）已随本版落地；十语种更新说明见 [build326 更新说明](docs/releases/build326-changes.zh.md)，验证记录见 [build326 记录](docs/releases/v0.2.1-rc.5-build326-overwrite-maintenance-20261105.md)。
+
+## 0.2.1-rc.5-20261105.2135-dsh0.2.2-rc.1 / build325（修复 build324 覆盖安装后的白屏：移动壳齿轮让位不再依赖连接指示灯）
+
+- 白屏修复（T61）：移动壳侧栏 footer 齿轮改按实测行宽让位（`DSHA_GEAR_FIT_V1`），不再依赖宿主是否渲染「连接状态」指示；侧栏不再叠加，工作台不再白屏。重新生成 `dsh-web-mobile` 的 `client.js` 与第三方声明摘要，`dsh-runtime.bin` 与固定输入包不变。
+- 覆盖升级：本版测试包在真机上能正常触发运行环境维护与重建，不再把「进入主界面」当成主操作。
+- 验证范围：宿主测试、源码与运行时描述符门禁（含移动壳齿轮契约回归）；用户已在测试包真机确认白屏消失、覆盖升级能正常触发环境重建；其余项（齿轮可见可点、首连提示、技能审批弹窗、平板档）待用户补确认，未写为通过。版本码提升为 325（基于 build324）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build325 更新说明](docs/releases/build325-changes.zh.md)，验证记录见 [build325 记录](docs/releases/v0.2.1-rc.5-build325-mobile-gear-fit-20261105.md)。
+
+## 0.2.1-rc.5-20261105.2020-dsh0.2.2-rc.1 / build324（user-only 技能调用一次性审批；首次进入不再闪烁连接提示）
+
+- 技能调用确认（T54）：模型调用标记为「仅用户可批准」的技能时弹窗询问允许或拒绝；本次允许只对这次调用生效，拒绝则不放行。
+- 首次进入不再闪烁提示（T58）：打开页面不再先闪「重新连接中」再闪「已连接」；真实断开后恢复仍给出提示。首次连接提示改由受管补丁 `first-connect-indicator-patch.json`（`DSHA_FIRST_CONNECT_SILENT_V1`）静默，真实断开红色提示与恢复黄 → 绿保持。
+- 验证范围：宿主测试、运行时描述符与源码门禁，另有 T54/T58 的专项软件回归（见 build324 记录）；真机结论按当次实际确认记录，不扩写为全机型矩阵。版本码提升为 324（基于 build323）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build324 更新说明](docs/releases/build324-changes.zh.md)，验证记录见 [build324 记录](docs/releases/v0.2.1-rc.5-build324-first-connect-indicator-20261105.md)。
+
+## 0.2.1-rc.5-20261105.1930-dsh0.2.2-rc.1 / build323（DSH 0.2.2 升级第一步：内置与应急 DSH 切换到 0.2.2-rc.1）
+
+- DSH 0.2.2 升级第一步（T55 S1）：内置 DSH 与独立应急 DSH 同时切换到 0.2.2-rc.1；宿主执行器与配置迁移保持兼容，受管运行时输入按 0.2.2 重建并锁回固定摘要，插件、会话与个人数据保持原位。
+- 已知显示问题：首次进入页面会先闪一下「重新连接中」再闪「已连接」；已确认为上游首次连接提示的显示行为，不影响连接与对话，修复排在下一版。
+- 验证范围：宿主测试、运行时描述符校验与源码门禁；真机结论按当次实际确认记录，不扩写为全机型矩阵。版本码提升为 323（基于 build322）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1。
+- 十语种更新说明见 [build323 更新说明](docs/releases/build323-changes.zh.md)，验证记录见 [build323 记录](docs/releases/v0.2.1-rc.5-build323-dsh022-s1-connection-display-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0830-dsh0.2.1-rc.5 / build322（修复 proroot 下第三方插件无法卸载）
+
+- 插件卸载（T56）：修复 proroot 引擎下第三方插件一律卸不掉、报「No such file or directory」的问题；卸载仍按原有事务执行，失败时完整回滚。
+- 实现（fa5b03ea）：proroot v1.2.8 预加载的 libc `renameat2` 忽略目录描述符、按当前目录解析名称；`plugin-transactions.py` 的保留移动改为直接发 `renameat2` 系统调用（RENAME_NOREPLACE），保留按目录描述符遍历与 NOFOLLOW 防护，不支持时仍拒绝执行；新增回归测试。
+- 验证范围：发布会话在 build322 上复跑 主机测试 `test-plugin-delete-nofollow.py`、`test-plugin-transactions.py`；`*UpdateVersionPageTest` / `*RuntimeToolsRegistryAndroidTest` / `*WebLifecycleTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 322（基于 build321）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build322 更新说明](docs/releases/build322-changes.zh.md)，验证记录见 [build322 记录](docs/releases/v0.2.1-rc.5-build322-proroot-plugin-delete-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0730-dsh0.2.1-rc.5 / build321（DSH 0.2.2 升级预备：宿主与内置插件同时兼容 0.2.1-rc.5 与 0.2.2，发现数据被更高版本写过时只提示不自动修复）
+
+- DSH 0.2.2 升级预备（S0，T51）：宿主与内置插件同时兼容当前 0.2.1-rc.5 与即将切换的 0.2.2；内置 DSH 仍是 0.2.1-rc.5，本版不换运行时。
+- 实现（1503a647、a04e77ae）：内置插件 peer 版本范围放宽到 0.2.2；网页兼容层补 `URL.canParse`；LAN 契约识别 rc5 / 0.2.2 两族；`dsh-fs-search-scope` 同时适配新旧工具 API；新增 `DshVersionPolicy` 检测 DSH 数据代次：仅当数据由更高版本写过（INSTALLED_NEWER）时维护页提示并拦截自动覆盖，版本未知或缺失不再阻断启动与维护。
+- 验证范围：发布会话在 build321 上复跑 `*DshVersionPolicyTest` / `*RuntimeToolsRegistryAndroidTest` / `*UpdateVersionPageTest` / `*WebLifecycleTest` / `*WebLifecycleStartProtectionTest` / `*WebLifecycleResponsivenessTest`；主机测试 `test-fs-search-scope.mjs`、`test-runtime-input-contract.py`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 321（基于 build320）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build321 更新说明](docs/releases/build321-changes.zh.md)，验证记录见 [build321 记录](docs/releases/v0.2.1-rc.5-build321-dsh022-s0-prep-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0630-dsh0.2.1-rc.5 / build320（设置页新增屏幕常亮开关（默认关闭），网页与终端页面不自动息屏）
+
+- 设置（T53，来自 PR #4）：新增「屏幕常亮」开关，默认关闭；开启后应用内各页面（含网页预览与终端）保持亮屏，关闭即恢复系统息屏；该开关是本机设置，不随备份恢复。
+- 实现（874822e9）：`ConfigStore.isKeepScreenOn` / `setKeepScreenOn`；`ModernAndroidUi` 在 Activity 创建与恢复时按设置同步 `FLAG_KEEP_SCREEN_ON`，读取失败保持系统默认；设置页新增开关与图标及十种语言文案。
+- 验证范围：发布会话在 build320 上复跑 `*ConfigStoreKeepScreenOnTest` / `*ModernAndroidUiKeepScreenOnTest` / `*ConfigStoreRuntimeSettingsTest` / `*WebLifecycleTest` / `*WebLifecycleStartProtectionTest` / `*WebLifecycleResponsivenessTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 320（基于 build319）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build320 更新说明](docs/releases/build320-changes.zh.md)，验证记录见 [build320 记录](docs/releases/v0.2.1-rc.5-build320-keep-screen-on-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0530-dsh0.2.1-rc.5 / build319（剪贴板读取改为关闭 / 每次询问 / 预授权三态（默认关闭），打开外部链接按类型确认）
+
+- 设备能力授权（T43）：剪贴板读取新增关闭 / 每次询问 / 预授权三态，默认关闭；写入剪贴板不受影响。`/app/open` 只直接放行 http(s) 与 geo，tel / mailto / market 先原生确认，其余 scheme 一律拒绝。
+- 实现（c2d8341a、21822a5a）：新增纯逻辑 `ClipboardReadPolicy`、`ExternalOpenPolicy`、`TurnCapabilityGrants`；询问模式经能力票据与前台复核后原生确认；设备能力页增加三态控件；剪贴板 / 短信 / 设备授权偏好排除出可迁移偏好与备份范围（`PortablePreferenceProjection`、`BackupScope`），授权不随备份恢复。
+- 验证范围：发布会话在 build319 上复跑 `*ClipboardReadPolicyTest` / `*ExternalOpenPolicyTest` / `*TurnCapabilityGrantsTest` / `*BackupScopeTest` / `*PortablePreferenceProjectionTest` / `*BridgeRoutesTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 319（基于 build318）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build319 更新说明](docs/releases/build319-changes.zh.md)，验证记录见 [build319 记录](docs/releases/v0.2.1-rc.5-build319-clipboard-open-grant-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0430-dsh0.2.1-rc.5 / build318（技能页：新增禁用开关、最近删除与彻底删除，按内容宽度分三档布局）
+
+- 技能管理：每个技能可单独禁用（`SKILL.md` 原地改名为 `SKILL.md.disabled`，DSH 不再发现它，重新启用即恢复）；删除先移到「最近删除」，默认保留 30 天（1–365 天可调），到期在打开技能页时清理，也可随时恢复或彻底删除（T52）。
+- 实现（439d3e45、2aa52f61）：新增 `SkillLibrary`（禁用 / 移入最近删除 / 恢复 / 彻底删除，经受控文件系统 NOFOLLOW 操作）与纯逻辑 `SkillLifecycle`（槽位命名、元数据、过期判定）；`SkillsFragment` 按内容宽度分窄屏 / 宽行 / 并排三档布局。
+- 验证范围：发布会话在 build318 上复跑 `*SkillLibraryTest` / `*SkillLifecycleTest` / `*SkillCatalogueFixture` 相关 / `*CompactLayoutTest` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 318（基于 build317）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build318 更新说明](docs/releases/build318-changes.zh.md)，验证记录见 [build318 记录](docs/releases/v0.2.1-rc.5-build318-skill-disable-trash-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0330-dsh0.2.1-rc.5 / build317（gh 适配纳入受管运行时：包装脚本与 GitHub 转发代理随包写入，转发只放行 GitHub 域名）
+
+- gh 适配：`gh` 包装脚本与 CONNECT 转发代理改为受管资产，由 RuntimeTools 随包写入并纳入运行时描述符；代理只监听 127.0.0.1，只放行 github.com / api.github.com / codeload.github.com / uploads.github.com 与 *.githubusercontent.com 的 443 端口（T49）。
+- 实现（fed4f46b）：新增 `gh-wrapper.sh` / `gh-proxy.mjs`，同步 `managed-runtime-inputs.json`、`asset-deployment.json`、`ManagedRuntimeLayout` 与 `RuntimeTools` 的主机路径、CA 与代理环境；端口被占用时自动换临时端口，代理退出后自恢复。
+- 验证范围：发布会话在 build317 上复跑 `*RuntimePackageCommandsAndroidTest`；主机测试 `tools/test-gh-managed-shim.mjs`（4 项）、`test-runtime-descriptor-inputs.py`、`test-runtime-input-contract.py`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 317（基于 build316）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build317 更新说明](docs/releases/build317-changes.zh.md)，验证记录见 [build317 记录](docs/releases/v0.2.1-rc.5-build317-gh-managed-shim-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0230-dsh0.2.1-rc.5 / build316（插件依赖核验：CAS 扫描快路径复核目录项类型与 inode；文件快照在 SQLite 初始化出错时释放许可）
+
+- 插件依赖核验与文件快照：CAS 扫描快路径复核目录项类型与 inode，堵住同一时间刻度内的替换漏检（T48）；`DocumentRowsSnapshot` 在 SQLite 初始化抛出 Error 时也释放许可（T47）。
+- CAS 扫描（c8010c9c）：`plugin-transactions.py` 的 scandir 快路径保存初始目录项类型与 inode，子项处理完后重新读取并比对，同一 ctime 刻度内把普通文件换成符号链接并复原修改时间不再漏检；仍不对每个普通文件额外 stat。
+- 文件快照（T47）：`DocumentRowsSnapshot` 构造阶段捕获 Throwable，先清理再原样重抛，SQLite 原生库加载失败等 Error 不再泄漏 ACTIVE 许可；新增可注入 opener 的回归测试。
+- 验证范围：发布会话在 build316 上复跑 `*DocumentRowsSnapshotTest` / `*UpdateVersionPageTest`；主机测试 `test-plugin-transactions` / `test-plugin-cas-scan-review` / `test-plugin-cas-materialize`（依赖 aarch64 `renameat2` 与 Robolectric 原生 SQLite 的既有用例以 CI 为准）、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 316（基于 build315）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build316 更新说明](docs/releases/build316-changes.zh.md)，验证记录见 [build316 记录](docs/releases/v0.2.1-rc.5-build316-cas-scandir-document-rows-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0130-dsh0.2.1-rc.5 / build315（实验性：运行时准备缓存与分阶段计时；更新试运行记录渲染卡点；阅读位置空闲保存与原图 Blob 生命周期；诊断报告恢复数据与备份行（修复挑自协作者 ym2025szz））
+
+- 实验性：运行时准备缓存记录未命中原因并按 APK 身份缓存预载与证明摘要；更新试运行记录渲染器卡在哪一步；阅读位置改为空闲时保存、原图 Blob 随页面卸载中止；诊断报告恢复「数据与备份」只读行（修复挑自协作者 ym2025szz efe03f81 快照）。
+- 运行时准备（76c267b1）：`RuntimeTools` 记录缓存未命中原因；准备戳抽为 `RuntimeAssetStamp`，一次 lstat 判定；`RuntimeApkAssets` 预载与包证明摘要按不可变 APK 身份缓存；慢准备由 `RuntimeToolsTiming` 分阶段计时。
+- 试运行诊断（7aea87a9）：新增 `util/TrialRendererDiagnostic`，`RuntimeBrowserProbe` / `RuntimeTrial` / `runtime-trial-page.js` 记录页面加载、Cookie、视图可见、WebSocket 就绪帧与回执 POST 的进度，只作诊断，不改变试运行接受条件。
+- 页面脚本（42e3ddd0、c2680232）：阅读位置在空闲、`scrollend`、切换会话 / 路由与页面隐藏时保存，不再逐帧序列化；原图保存直接用 Blob 并随页面卸载中止。内置移动插件只按既有补丁重建，未带入 mobile 3.2.3。
+- 诊断（19784e74）：补齐 build311 剥掉的 `BackupOperationDiagnostics`，诊断报告与环境忙时的只读采样都列出备份任务、失败阶段与 errno。
+- 运行时描述符随源码重算。
+- 验证范围：发布会话在 build315 上复跑 `*RuntimeTools*` / `*RuntimeAsset*` / `*RuntimeApk*` / `*TrialRenderer*` / `*RuntimeBrowserProbe*` / `*BackupOperation*` / `*RuntimeStateDiagnostics*` / `*UpdateVersionPageTest`；主机测试 `test-trial-renderer-diagnostic` / `test-reading-position-checkpoint`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 315（基于 build314）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build315 更新说明](docs/releases/build315-changes.zh.md)，验证记录见 [build315 记录](docs/releases/v0.2.1-rc.5-build315-runtime-cache-trial-diagnostics-reading-backup-20261105.md)。
+
+## 0.2.1-rc.5-20261105.0030-dsh0.2.1-rc.5 / build314（实验性：插件卡片不对临时插件显示删除、元数据损坏仍可删除；应急确认按实际包名；插件启动路径减少 import 与 I/O（修复挑自协作者 ym2025szz））
+
+- 实验性：插件卡片不对临时插件显示删除，元数据损坏的插件仍可删除；应急原生确认与旧源恢复广播按实际安装包名；插件管理启动路径减少 import 与元数据 I/O（修复挑自协作者 ym2025szz efe03f81 快照）。
+- 插件卡片（eaef0bcd）：临时插件不再显示删除，改为提示到对应 Web 会话的 Cordis 插件管理中移除；`package.json` 缺失或损坏时卡片仍显示并标注元数据错误，仍可删除；带保留注册的已禁用插件不再从列表消失。`plugin-manager.py` 新增 `plugin_card_metadata`。
+- 应急确认包名（1281c88b）：`recovery-native-consent.cjs` 读取 `DSHA_BRIDGE_APPLICATION_ID`，缺省为 `io.github.sunsetrne.dsha`；`RecoveryRuntime` 注入实际包名；`BrowserOriginRestore.QUIESCE` 改用 `AppIdentity.applicationId()`。快照中把缺省改为原版包名的部分未挑入。
+- 插件启动（f96f200b）：`plugin-manager.py` / `register-builtin-plugins.py` / `plugin-transactions.py` 延迟导入 tar / zip / ssl / urllib，`ensure_relative_link` 走快路径，CAS 链接扫描改用 `scandir` 类型，新增 `REGISTER_TIMING` 阶段计时；`startup-observer.cjs` 复用 require 与 YAML schema。插件锁相关改动未挑入。
+- 运行时描述符随源码重算；六份补充翻译的字节钉同步更新。
+- 验证范围：发布会话在 build314 上复跑 `*Plugin*` / `*Recovery*` / `*UpdateVersionPageTest`；主机测试 `test-plugin-startup-imports` / `test-plugin-runtime-links` / `test-plugin-cas-scan-review` / `test-recovery-native-consent` / `test-native-consent-transport` / `test-runtime-proof`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 314（基于 build313）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build314 更新说明](docs/releases/build314-changes.zh.md)，验证记录见 [build314 记录](docs/releases/v0.2.1-rc.5-build314-plugin-cards-recovery-identity-startup-20261105.md)。
+
+## 0.2.1-rc.5-20261104.2330-dsh0.2.1-rc.5 / build313（实验性：WebView 渲染进程退出后回收上传、下载与麦克风；输入法、画中画与颜色探针去重（修复挑自协作者 ym2025szz））
+
+- 实验性：WebView 渲染进程退出后回收上传、下载与麦克风，旋转期间旧页面仍有清理方；相同输入法帧、画中画恢复布局与颜色探针不再重复（修复挑自协作者 ym2025szz efe03f81 快照）。
+- 渲染进程退出（6215ae02）：`WebPreviewActivity` 在 renderer 退出时清理页面状态并回收文件选择、Blob 下载与麦克风授权；旋转改用保留的 renderer 客户端，旧页面仍有清理方；`BrowserTasks.browserUnavailable`、`WebBlobDownload.close`、`BrowserOriginRestore*`、`CommunityActivity` 同步。快照中的 `UiFrameRate` 帧率改造未挑入，保留 `WebFrameRate.apply/clear`。
+- 去重（f9731b0e）：`WebFullscreenUi` 相同 IME 帧不重复发送；`PictureInPictureFrame.resumeViewport` 关闭画中画时不重复布局；`web-integration/page.js` 颜色探针去重。
+- 运行时描述符随源码重算（受管启动器输入）。
+- 验证范围：发布会话在 build313 上复跑 `*RendererSurfaceLifecycle*` / `*WebBackgroundPageLifecycle*` / `*WebFullscreenUi*` / `*PictureInPictureFrame*` / `*WebPreview*` / `*BrowserOriginRestore*` / `*WebBlobDownload*` / `*Community*` / `*UpdateVersionPageTest`、`lintStandardRelease` 与源码门禁。未上真机。版本码提升为 313（基于 build312）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.1-rc.5。
+- 十语种更新说明见 [build313 更新说明](docs/releases/build313-changes.zh.md)，验证记录见 [build313 记录](docs/releases/v0.2.1-rc.5-build313-renderer-exit-ime-dedupe-20261104.md)。
+
 ## 0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5 / build312（实验性：文件接口大目录流式列出并可取消；通知进入 Web 就绪即进；启动页按钮改为重启 / 停止（修复挑自协作者 ym2025szz））
 
 - 实验性：文件接口（DocumentsProvider）大目录流式列出并可取消；通知点击进入 Web 改为就绪即进；启动页次要按钮顺序改为重启 / 停止（修复挑自协作者 ym2025szz efe03f81 快照）。

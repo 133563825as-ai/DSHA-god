@@ -1,6 +1,6 @@
 # Application updates and managed runtime updates
 
-> Baseline checked on 2026-10-21 against build190 update code. Current publication identity is build312 / `io.github.sunsetrne.dsha` / single Standard; F10–F13/build190 records are historical. This page did not inspect the live remote feed, install an APK, or perform device acceptance. Current identity is documented by [README](../../README.en.md) and the [release introduction](release-introduction.md).
+> Baseline checked on 2026-10-21 against build190 update code. Current publication identity is build334 / `io.github.sunsetrne.dsha` / single Standard; F10–F13/build190 records are historical. This page did not inspect the live remote feed, install an APK, or perform device acceptance. Current identity is documented by [README](../../README.en.md) and the [release introduction](release-introduction.md).
 
 APK updates and managed-component updates inside Ubuntu are different chains. An APK passes download and package-identity checks before the system installer opens. Managed components require plan review, normal task shutdown, candidate preparation/trial, and transactional switching. Both retain specific failures; version text does not replace actual outcomes.
 
@@ -50,6 +50,8 @@ Canceling system installation leaves the original application installed; opening
 “Review update plan” opens environment maintenance, compares installed and bundled components, then runs [EnvironmentMaintenance](../../app/src/main/java/com/deepseekharness/app/core/EnvironmentMaintenance.java) after confirmation. Within the same Ubuntu base, only managed components update; personal data stays in place, and UI-only APK changes should not rebuild the environment directly. An unsuitable base requires a data-preserving rebuild plan.
 
 Managed commit first uses [MaintenanceCoordinator](../../app/src/main/java/com/deepseekharness/app/core/MaintenanceCoordinator.java) to stop Web/terminals normally and enforce the exit barrier. It prepares a candidate, records digests/predecessor, and runs [RuntimeTrial](../../app/src/main/java/com/deepseekharness/app/runtime/RuntimeTrial.java), checking actual port/authentication, sessions/storage, browser handshake, and exit before commit. Failure retains originals. Unknown exit cannot switch, clean, or replay. A compatibility rollback tries the predecessor with the current launcher and does not roll back conversation snapshots. See [installation and maintenance](install-and-maintenance.md).
+
+Whether a patch-level update enters the maintenance page after an over-the-top install, how to keep a user entry when auto-start is blocked by an old Web session, and the pre-release checklist and device overwrite acceptance steps are in [over-the-top upgrades, runtime maintenance, and plugin dependency contracts](overwrite-upgrade-and-maintenance.md).
 
 ## Change and validation entry points
 

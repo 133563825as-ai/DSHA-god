@@ -335,6 +335,9 @@ public class MainActivity extends AppCompatActivity {
    * 入口门禁：覆盖更新、环境未就绪、未完成的维护事务或未关闭的试运行现场，都整屏进入运行环境维护页
    * （ExtractActivity），由维护页按原有一次性规则自动开始更新或给出恢复入口。只有用户在维护页显式选择
    * “进入受限主界面”后，同一安装身份才留在受限主界面；这里不写任何就绪标记。
+   *
+   * <p>未确认的原实例（unresolved）只拦自动开始（维护页的 shouldAutoStart 判定），不再阻止打开维护页：
+   * 覆盖安装后旧 Web 仍存活时，用户必须能看到唯一的修复入口并自己点更新。
    */
   private void checkEntry(
       Bundle saved, ConfigStore config, HarnessController controller, boolean skipExtract) {
@@ -388,7 +391,8 @@ public class MainActivity extends AppCompatActivity {
                   + restoring
                   + " restored="
                   + (saved != null));
-          if (!failed && maintenance && !unresolved && !restoring) {
+          if (com.deepseekharness.app.util.RuntimeUpgradeState.openMaintenancePage(
+              failed, maintenance, restoring)) {
             // 覆盖更新与中断恢复都走整屏维护页：自动开始仍只按同一候选一次的规则。
             startActivity(new Intent(this, ExtractActivity.class));
             finish();
@@ -824,6 +828,28 @@ public class MainActivity extends AppCompatActivity {
 
   /** 所有本机终端入口共用门禁；不替换Main页面，也不把导航当新建命令。 */
   public void openTerminal() {
+    launchTerminal(null);
+  }
+
+  /**
+   * 打开终端并先运行一条固定 guest 命令（GitHub 登录引导）。
+   *
+   * <p>门禁、页面切换与普通终端完全一致；固定命令只作为新 PTY 的初始 argv，不携带 token，
+   * 也不改变会话关闭、维护屏障或保护票的既有路径。
+   */
+  public void openTerminalWithCommand(String[] guestCommand, String title) {
+    if (guestCommand == null || guestCommand.length == 0) {
+      openTerminal();
+      return;
+    }
+    Intent intent = new Intent(this, TerminalActivity.class);
+    intent.putExtra(TerminalActivity.EXTRA_GUEST_COMMAND, guestCommand);
+    if (title != null && !title.isEmpty())
+      intent.putExtra(TerminalActivity.EXTRA_GUEST_TITLE, title);
+    launchTerminal(intent);
+  }
+
+  private void launchTerminal(Intent prepared) {
     if (!mainReady
         || terminalPageInFlight
         || isFinishing()
@@ -837,7 +863,7 @@ public class MainActivity extends AppCompatActivity {
     // 打开页面、查看和切换已有会话不依赖插件列表；新建会话在页面内单独做维护/环境准入。
     terminalPageInFlight = true;
     try {
-      terminalPage.launch(new Intent(this, TerminalActivity.class));
+      terminalPage.launch(prepared == null ? new Intent(this, TerminalActivity.class) : prepared);
     } catch (RuntimeException error) {
       terminalPageInFlight = false;
       android.widget.Toast.makeText(
@@ -947,6 +973,10 @@ public class MainActivity extends AppCompatActivity {
     else if (shown instanceof ConfigFragment) title.setText(R.string.ui2_runtime_config);
     else if (shown instanceof DeviceGrantsFragment)
       title.setText(com.deepseekharness.app.util.UiText.text("设备能力授权"));
+    else if (shown instanceof SafAccessFragment)
+      title.setText(com.deepseekharness.app.util.UiText.choose("跨应用文件访问", "Cross-app files"));
+    else if (shown instanceof SafBrowseFragment)
+      title.setText(com.deepseekharness.app.util.UiText.choose("浏览文件夹", "Browse folder"));
     else if (shown instanceof SkillsFragment)
       title.setText(com.deepseekharness.app.util.UiText.choose("技能", "Skills"));
     else if (shown instanceof WorkspaceFragment)

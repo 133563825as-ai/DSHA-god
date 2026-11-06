@@ -1,6 +1,6 @@
 # 插件安装、更新与分享
 
-> 核验基线：2026-10-21（原于 build190/F13 源码核对）。当前发布身份为 build312 / DSH `0.2.1-rc.5` / 单一 Standard；F10–F13、build190 记录属于历史，不代表本版。本文描述 DSH 0.2.1-rc.5 的 DSHA 入口；最终应用身份、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执，本文不预填测试总数或设备验收结论。
+> 核验基线：2026-10-21（原于 build190/F13 源码核对）。当前发布身份为 build334 / DSH `0.2.2-rc.1` / 单一 Standard；F10–F13、build190 记录属于历史，不代表本版。本文描述 DSH 0.2.2-rc.1 的 DSHA 入口；最终应用身份、软件与 APK 结果见 [README](../README.md) 与本轮 CI / Release 回执，本文不预填测试总数或设备验收结论。
 
 在插件市场粘贴链接、从系统文件选择器导入本地包，或使用网站提供的 DSHA 唤起链接。应用解析实际包，核对格式、路径、包名/版本、实际依赖与摘要，再由插件事务提交并启用。现行正式插件无需原生审阅确认。网站浏览本身不会安装插件；只有用户主动打开安装入口才会继续安装。启停和更新后按应用提示重启 Web。
 
@@ -59,6 +59,76 @@ dsha-plugin install @作者/插件@1.0.0
 
 普通 `npm install` 不自动修改 DSH 启用列表；`dsha-plugin` 通过当前插件入口处理实际候选。不要用裸 shell 修改事务现场来绕过维护屏障。
 
+## 内置竖屏适配插件 `dsh-web-mobile` 当前默认禁用（build327 起，覆盖更新也禁用）
+
+> 决策：2026-11-05 用户批准**暂时默认禁用**，同日把口径收紧为：**竖屏适配没有回归修复之前，
+> 默认禁用；覆盖更新也禁用；只有明确回归之后才能默认启用。** 这是停用一项可选适配插件，
+> 不删除插件、不改插件字节；插件仍随 APK 重建。
+
+### 为什么禁用
+
+- `dsh-web-mobile` 是竖屏 / 移动端界面的适配层（上游 3.2.2 + DSHA 本地补丁）。build324 起
+  宿主新增或改动了主界面、维护页、首次连接提示、技能调用确认、插件页、设置项、会话与侧栏
+  导航等页面与逻辑，插件侧大量渲染代码没有同步做竖屏适配。
+- 已经造成用户可见事故：build324 覆盖安装后主界面白屏 + 侧栏 footer 重复。插件用 `:has()`
+  依赖宿主 `ConnectionIndicator` 是否存在，宿主改变首连渲染后整条渲染链失效；build325 只修了
+  齿轮这一处契约（`DSHA_GEAR_FIT_V1`），同类「依赖宿主结构」的隐患仍在。
+- 在适配补齐前继续启用，会让新装和升级用户都暴露在同类界面上；因此**全新安装与覆盖更新
+  都收敛为禁用**，先保证主界面与维护流程可用。
+
+### 禁用范围：默认值 + 覆盖更新迁移
+
+- 全新安装 / 干净 profile：默认禁用。注册器写入与原生禁用一致的 `.disabled` 标记，插件不进入
+  `dsh.profile.bundles`，不建立 `node_modules` 入口。
+- **覆盖更新（APK 安装代次变化）同样禁用**，不保留旧版本「已启用」状态。宿主在插件注册前把
+  当前 APK 代次写到 `/usr/local/share/dsha/apk-generation`；注册器没有发现本代次的显式启用
+  记录时，写 `.disabled` 标记并把插件移出 `bundles`。
+- 唯一例外：用户**在当前安装里**从原生「插件」页显式重新启用。启用会在
+  `node_modules/dsh-web-mobile.enabled` 记录当前代次，同一安装内跨 Web 重启保持启用；
+  **下一次 APK 覆盖更新会再次收敛为禁用**，需要重新显式启用。
+- 用户显式禁用始终优先：`.disabled` 标记存在时注册器只清理旧启用记录，不会改回启用。
+- 禁用状态在原生「插件」页可见、可重新启用；备份只记录启停意图，插件字节仍由当前 APK 的
+  受管证明重建。本策略只作用于 `builtin-plugins.json` 中声明 `defaultDisabled: true` 的条目，
+  目前只有 `dsh-web-mobile`。
+
+### 机制（沿用现有注册 / 标记，不新增第二套开关）
+
+- [`builtin-plugins.json`](../app/src/main/assets/builtin-plugins.json) 的 `defaultDisabled` 是唯一
+  默认值来源；
+- [`register-builtin-plugins.py`](../app/src/main/assets/register-builtin-plugins.py) 的
+  `apply_default_disabled` 在每次 Web 启动前收敛默认禁用状态，沿用
+  `node_modules/<name>.disabled` 用户禁用标记；
+- 原生插件页 `enable-state` / `disable-state` 仍是唯一启停入口；
+- `apk-generation`（宿主写）与 `<name>.enabled`（guest 在显式启用时写）只用于判断
+  「当前安装内显式启用」，APK 更新即失效。
+
+### 临时启用做回归
+
+1. 原生「插件」页 → `dsh-web-mobile` → 打开开关；
+2. 按页面提示重启 Web（插件在 Web 启动时加载）；
+3. 回归结束关闭开关并再次重启 Web，恢复默认禁用。
+
+显式启用只对**本次安装**有效，换 APK（包括覆盖安装同类修复包）后会重新禁用。不要手改
+profile、删除 `.disabled` 或直接改 `node_modules` 来绕过插件页；那是注册器与用户意图的边界。
+容器内也可用 `python3 /root/.dsh/register-builtin-plugins.py --enable dsh-web-mobile` /
+`--disable dsh-web-mobile`，它与插件页写同一套状态，仍需重启 Web。
+
+### 何时可以恢复默认启用（硬门槛）
+
+必须**同时**满足，任一项不满足不得改回默认启用：
+
+1. 新页面 / 新逻辑的竖屏适配补齐，并通过**真机覆盖升级验收**（至少覆盖 build324 起的主界面、
+   维护页、首次连接提示、技能调用确认、插件页、设置项、会话与侧栏导航）；
+2. `tools/test-mobile-gear-contract.mjs`（build325 齿轮契约）与 build324 白屏路径回归全绿；
+3. 真机覆盖安装后白屏、侧栏重复、footer 设置入口重复等事故不再出现，并验证「升级后默认启用」
+   本身；
+4. 移除 `builtin-plugins.json` 中 `dsh-web-mobile` 的 `defaultDisabled`（或改为 `false`），重跑
+   `tools/generate-builtin-plugins.py`、`tools/prepare-runtime-descriptor.py --write` 与发布前门禁。
+
+只凭 CI 或单测通过不构成恢复条件。**恢复到默认启用的提交必须引用本节判据并附真机证据**
+（版本记录写清覆盖升级路径、`runtimeId` 前后值与逐项结果）。本次默认禁用与后续回归要求也
+记录在 [build327 记录](releases/v0.2.1-rc.5-build327-web-mobile-default-disabled-20261105.md)。
+
 ## 工作区目录选择器与服务注册
 
 网页工作区目录选择器报告 `active Service directoryPickerController unavailable`，表示该次请求所需的Remote服务没有处于活动状态，不等于目录不存在、文件已丢失或需要重装环境。它与Android系统文件选择器、原生备份的SAF目录授权是不同入口；更换备份保存位置不能代替修复这个Web服务。
@@ -75,7 +145,7 @@ F13在锁定真实Host中复现了一条耦合路径：原模块的默认入口�
 
 F13后续又在原raw/F12模块确认了相邻但独立的生命周期缺陷。`FileUploads.registerAgentResolver`原来把回调函数直接存在Service属性中；Cordis tracing读取函数属性时会返回新的Proxy，disposer用`this.agentResolver === resolve`比对失败，旧resolver未清。registry/`SessionController`停止后重新注册可能报`file-upload: Agent resolver is already registered`。它与目录组合补丁无关，健康启动检查也不能覆盖这条停启路径；同样不能直接判定为截图的唯一原因。
 
-[附件resolver生命周期补丁](../app/src/main/assets/file-upload-resolver-lifecycle-patch.json)在锁定`@deepseek-ai/dsh-client-file-upload/lib/index.js`里使用稳定的`{ resolve }`注册对象作为slot，按该次对象身份退休；调用时再取出回调。仍拒绝同时存在的重复注册，迟到的旧disposer不能清掉新注册，找不到session时仍明确拒绝。补丁不放宽上传接收、session归属、Gateway认证或回执语义，也不删除已有附件或替换用户数据。专项软件回归已冻结：不含目录修复的原CLI可精确复现workspace停止后恢复的重复注册错误；仅加载附件修复后两轮关/开均applied，raw HTTP与typedRPC上传的真实字节落盘读回、冷进程同Session上传及列表保留通过，鉴权、foreignOrigin、415/400及未知Session拒绝仍保留。真实Cordis/Commands/LocalAttachmentStore还检查live重复拒绝、旧disposer围栏、owner退休及同Session回执。回归入口为[test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这是独立附件补丁的隔离主机软件范围，不是目录与附件组合、最终共享运行时/正式APK、所有插件、所有附件端到端或手机已全通过；组合与最终门禁由负责人另做。
+附件resolver生命周期补丁（rc.5 起，`file-upload-resolver-lifecycle-patch.json`）（DSH 0.2.2-rc.1 上游已改用稳定的 `agentResolution={resolver}` 数据对象，该配方已退休；退休证明见 [test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。）在锁定`@deepseek-ai/dsh-client-file-upload/lib/index.js`里使用稳定的`{ resolve }`注册对象作为slot，按该次对象身份退休；调用时再取出回调。仍拒绝同时存在的重复注册，迟到的旧disposer不能清掉新注册，找不到session时仍明确拒绝。补丁不放宽上传接收、session归属、Gateway认证或回执语义，也不删除已有附件或替换用户数据。专项软件回归已冻结：不含目录修复的原CLI可精确复现workspace停止后恢复的重复注册错误；仅加载附件修复后两轮关/开均applied，raw HTTP与typedRPC上传的真实字节落盘读回、冷进程同Session上传及列表保留通过，鉴权、foreignOrigin、415/400及未知Session拒绝仍保留。真实Cordis/Commands/LocalAttachmentStore还检查live重复拒绝、旧disposer围栏、owner退休及同Session回执。回归入口为[test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这是独立附件补丁的隔离主机软件范围，不是目录与附件组合、最终共享运行时/正式APK、所有插件、所有附件端到端或手机已全通过；组合与最终门禁由负责人另做。
 
 ## 验证入口与限度
 

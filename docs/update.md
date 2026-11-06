@@ -1,6 +1,6 @@
 # 应用更新与受管运行时更新
 
-> 核验基线：2026-10-21（按 build190 的实际更新代码核对）；当前发布身份为 build312 / `io.github.sunsetrne.dsha` / 单一 Standard。F10–F13/build190 记录属于历史。本文未检查实时远端清单，也未安装 APK 或执行设备验收。
+> 核验基线：2026-10-21（按 build190 的实际更新代码核对）；当前发布身份为 build334 / `io.github.sunsetrne.dsha` / 单一 Standard。F10–F13/build190 记录属于历史。本文未检查实时远端清单，也未安装 APK 或执行设备验收。
 
 应用 APK 更新和 Ubuntu 内受管组件更新是两条链。APK 先通过下载与包身份检查，再交系统安装器；受管组件先审阅计划、正常停止运行任务、准备候选并试运行，再事务切换。两者都保留具体失败状态，不能用版本文案替代实际结果。
 
@@ -50,6 +50,8 @@ Android 8+ 未允许此应用安装未知来源时，页面先打开系统授权
 更新页的“检查更新计划”进入环境维护页，比较当前环境和包内组件，确认后走[EnvironmentMaintenance](../app/src/main/java/com/deepseekharness/app/core/EnvironmentMaintenance.java)。同一 Ubuntu base 下只更新受管组件；个人数据保持原位，UI-only APK 变化不应直接重建环境。基础不适合局部更新时，进入保数据重建计划。
 
 受管提交先经过[MaintenanceCoordinator](../app/src/main/java/com/deepseekharness/app/core/MaintenanceCoordinator.java)正常停止 Web/终端和退出屏障，再准备候选、记录摘要及前代、进行[RuntimeTrial](../app/src/main/java/com/deepseekharness/app/runtime/RuntimeTrial.java)，核验真实端口/鉴权、会话与存储、网页握手和进程退出后提交。失败保留原件，未知退出不能切换、清理或重放。兼容运行时回退用当前启动器重新试运行，不回退用户对话快照；详见[安装与维护](install-and-maintenance.md)。
+
+覆盖安装后补丁级更新是否进维护页、自动开始被旧 Web 会话拦住时如何保留用户入口、以及发布前必跑清单与真机覆盖验收步骤，见[覆盖升级、运行时维护与插件依赖契约](overwrite-upgrade-and-maintenance.md)。
 
 ## 修改与验证入口
 

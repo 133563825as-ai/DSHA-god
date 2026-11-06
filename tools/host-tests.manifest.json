@@ -32,6 +32,20 @@
       "reason": "Execute the pinned SDK stdio transport and exact-patched image projection with an 8 MiB PNG and canonical Base64 boundaries; no device access."
     },
     {
+      "path": "tools/test-saf-local-files.py",
+      "stage": "fast",
+      "platform": [
+        "linux"
+      ],
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Real Linux syscall negative controls for SAF container-path anchoring: plain O_NOFOLLOW still follows a swapped ancestor and reads credentials, opened-fd readlink mismatch is the rejection signal, per-level O_PATH|O_NOFOLLOW traversal rejects the swapped ancestor, and publishing through an already-open parent fd stays in that directory after rename."
+    },
+    {
       "path": "tools/test-web-fetch-unicode.mjs",
       "stage": "support",
       "requires": [
@@ -1099,7 +1113,9 @@
         "raw",
         "managed"
       ],
-      "environment": {},
+      "environment": {
+        "NARB_DISABLE_NATIVE_CACHE": ""
+      },
       "cli": "no positional arguments; see explicit environment/requirements"
     },
     {
@@ -1819,19 +1835,6 @@
       "args": []
     },
     {
-      "path": "tools/test-rc2-tooltips.mjs",
-      "stage": "runtime",
-      "reason": "Locked current rc2 React/Tooltip in a real browser with pointer, touch, scrolling and blur events",
-      "requires": [
-        "node24",
-        "raw",
-        "browser"
-      ],
-      "environment": {},
-      "timeoutSeconds": 600,
-      "args": []
-    },
-    {
       "path": "tools/test-third-party-notices.py",
       "stage": "fast",
       "reason": "Current notice generator on isolated npm/JNI trees rejects metadata drift, missing notices and unknown native sources",
@@ -1946,7 +1949,7 @@
     {
       "path": "tools/test-skill-import.mjs",
       "stage": "runtime",
-      "reason": "Generate two real JVM SkillImports fixtures with JDK17 and SHA-verified SnakeYAML/Gson from the existing backup dependency lock, then read with the pinned rc2 provider/tool; no Android, JUnit, phone or user-data operations.",
+      "reason": "Generate three real JVM SkillImports fixtures with JDK17 and SHA-verified SnakeYAML/Gson from the existing backup dependency lock, then exercise the current locked skill provider/tool: ordinary, user-only approval, and fully-disabled invocation policies; no Android, JUnit, phone or user-data operations.",
       "args": [
         "--jdk",
         "{jdk}",
@@ -2151,6 +2154,18 @@
       "reason": "Current build172 isolated source/runtime fixture; no Android device, live model request or user data operations",
       "environment": {},
       "cli": "no positional arguments; explicit current fixture requirements"
+    },
+    {
+      "path": "tools/test-mobile-gear-contract.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 300,
+      "reason": "Shipped mobile bundle in a minimal DOM harness: the sidebar-footer gear yields only by measured row width, so the contract holds when the host ConnectionIndicator is not rendered; no device, model or user data",
+      "environment": {},
+      "cli": "no positional arguments; reads the deployed builtin plugin asset"
     },
     {
       "path": "tools/test-mobile-locales.mjs",
@@ -2489,6 +2504,41 @@
       ],
       "environment": {},
       "cli": "No arguments; uses the verified current managed test-runtime fixture and the host git binary"
+    },
+    {
+      "path": "tools/test-gh-managed-shim.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 180,
+      "environment": {},
+      "reason": "Runs the managed gh CONNECT proxy and wrapper on loopback, then exercises the pinned bootstrap with a fake curl and local fixture archive: install success, no re-download, checksum failures install nothing, custom DSHA_GH_BIN is never written, and the exact recovery command is printed; no network egress."
+    },
+    {
+      "path": "tools/test-gh-provision-contract.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Read-only contract check: pinned gh tarball/license bytes, managed install member digest, asset deployment and fixed-input restore lists, wrapper pins, and the explicit /opt rebuild classification with its measured 100k-entry risk; no network or device operations.",
+      "cli": "no arguments; requires app/src/main/assets/gh-cli.tar.gz restored from fixed inputs"
+    },
+    {
+      "path": "tools/test-verify-apk-managed-assets.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Synthetic ZIP APKs exercise the release gate for managed member names, repository byte digests, transform-source leaks, AGP gunzip survivors and the pinned gh archive member; no real APK, offline input or network.",
+      "cli": "no arguments; hand-built fixture repository root and ZIP APKs"
     },
     {
       "path": "tools/test-signed-builtin-web-intent.mjs",
@@ -2864,6 +2914,28 @@
       "reason": "Independent real Linux FD/NOFOLLOW negative controls for ancestor swaps during CAS scan and before transaction publication."
     },
     {
+      "path": "tools/test-plugin-startup-imports.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Fresh Python interpreters exercise actual local startup commands, lazy optional I/O imports and cancellation."
+    },
+    {
+      "path": "tools/test-plugin-runtime-links.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 30,
+      "environment": {},
+      "reason": "Actual POSIX relative/absolute link preservation, canonical migration and failure cleanup; Windows explicitly skips unsupported symlink scenarios."
+    },
+    {
       "path": "tools/test-deepseek-account-requests.mjs",
       "stage": "runtime",
       "requires": [
@@ -3210,6 +3282,92 @@
       "timeoutSeconds": 60,
       "environment": {},
       "reason": "Exact Android filesystem final-open flag expressions exercised with real Linux FIFO replacement, old blocking negative control, regular reads, directory rejection and FD balance; no phone."
+    },
+    {
+      "path": "tools/test-trial-renderer-diagnostic.mjs",
+      "stage": "fast",
+      "reason": "Exact original-versus-diagnostic trial page POST/retry trajectory; bounded safe telemetry without runtime/device or new acceptance semantics",
+      "args": [],
+      "timeoutSeconds": 120,
+      "requires": [
+        "node24"
+      ],
+      "environment": {}
+    },
+    {
+      "path": "tools/test-reading-position-checkpoint.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Production reading-position checkpoints: scrollend/trailing fallback, node removal, page lifetime, session identity and disposal without per-frame path serialization."
+    },
+    {
+      "path": "tools/test-reading-position-browser.mjs",
+      "stage": "runtime",
+      "requires": [
+        "node24",
+        "browser"
+      ],
+      "args": [],
+      "timeoutSeconds": 300,
+      "environment": {},
+      "reason": "Actual browser DOM scroll offsets and event delivery with detached/reused nodes, horizontal position, session routing and visibility; synthetic local page only."
+    },
+    {
+      "path": "tools/test-file-image-lifetime.mjs",
+      "stage": "runtime",
+      "requires": [
+        "node24",
+        "raw",
+        "browser",
+        "browser_react"
+      ],
+      "args": [],
+      "timeoutSeconds": 180,
+      "environment": {
+        "DSHA_TEST_RUNTIME": "{raw}",
+        "DSHA_REACT": "{reactReference}"
+      },
+      "reason": "Actual shipped mobile image controls: no duplicate whole-image JS chunks, preserve 33MiB payload and cancel delayed completion after disposal."
+    },
+    {
+      "path": "tools/test-first-connect-indicator.mjs",
+      "stage": "runtime",
+      "requires": [
+        "node24",
+        "python39",
+        "raw"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Current signed first-connect recipe applies to the locked settings client and executes the production transition helpers: first connect stays silent (no yellow or green), real disconnect/recovery keeps yellow→green, including remount while disconnected; no device or browser."
+    },
+    {
+      "path": "tools/test-builtin-plugin-default-off.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Execute the guest builtin-registry default-off policy in an isolated fake root: clean install and over-the-top APK generations disable dsh-web-mobile, only an explicit enable recorded for the current generation survives restarts, older-generation enables are reset, explicit disable wins and re-enable round-trips; no device or Web."
+    },
+    {
+      "path": "tools/test-git-guard.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "proroot git SIGSEGV guard: rc=139 and '[proroot] SIGSEGV' stderr fail loudly with empty stdout, one execution and no retry; normal rc=0 and ordinary failures keep their behavior; module API, CLI and process exit are exercised with a simulated git and no device."
     }
   ]
 }

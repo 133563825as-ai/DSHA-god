@@ -1,8 +1,8 @@
 # AGENTS.md
 
 
-> **当前状态**：`0.2.1-rc.5-20261104.2230-dsh0.2.1-rc.5` / build312 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
-> 主线分支 `main`；Android 11+（API 30）/ arm64；proot 默认、proroot 可选；内置 DSH 0.2.1-rc.5。
+> **当前状态**：`0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1` / build334 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
+> 主线分支 `main`；Android 11+（API 30）/ arm64；proot 默认、proroot 可选；内置 DSH 0.2.2-rc.1。
 > 上岛能力已并入正式包；旧 low/GeckoView 兼容线与独立上岛包已删除；签名使用 Mod 自有证书（见 BUILD.md）。
 
 DSHA 的 AI / 新贡献者入口。本文让你不扫全库就能上手 —— 读它之前先读 [README.md](README.md)。
@@ -113,7 +113,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 
 ### 版本与构建
 
-- **当前身份以 `app/build.gradle`、`ci/release-identity.json` 与 [CHANGELOG.md](CHANGELOG.md) 为准**：build312 / DSHA 修订 `0.2.1-rc.5`（内置 DSH 0.2.1-rc.5）/ `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard；更早的 code/build 编号、旧包名 `dsh.android.client` 与历史 E7E3 签名均为历史记录，不作为当前构建或签名输入。
+- **当前身份以 `app/build.gradle`、`ci/release-identity.json` 与 [CHANGELOG.md](CHANGELOG.md) 为准**：build334 / DSHA 修订 `0.2.1-rc.5`（内置 DSH 0.2.2-rc.1）/ `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard；更早的 code/build 编号、旧包名 `dsh.android.client` 与历史 E7E3 签名均为历史记录，不作为当前构建或签名输入。
 - `standard`：minSdk 30（Android 11+），系统 WebView，arm64-v8a，是唯一构建线，任务为 `assembleStandardRelease`。`low`/GeckoView 兼容线已整体删除（含 `assembleLowRelease`、legacy proot/loader），**不再声明 Android 10 及以下可用**；测试变体仅通过 `-Pdsha.sunsetTest=true` 生成 `io.github.sunsetrne.dsha.test`。
 - 离线 rootfs（`assets/offline-rootfs.bin`）**不提交**，由准备脚本生成；APK 用 `offline-rootfs.layout=split-runtime-v1` 标记 Ubuntu 与 `dsh-runtime.bin` 分包，构建核验两份摘要。
 - 新 dsh 依赖由 `tools/dsh-runtime/package-lock.json` 锁定；`tools/prepare-runtime-descriptor.py` 生成独立受管契约描述，APK 版本仅作诊断来源。相同基础版本更新受管树，个人数据保持原位；**不因 UI-only APK 更新替换环境，不因普通 dsh 更新递增 Ubuntu 基础环境版本**。
@@ -165,6 +165,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 
 - `welcomed == false` → `OnboardingActivity`（欢迎 → 用途 → 授权 → 完成）→ `MainActivity`；`MainActivity` 进入前校验 `welcomed`，否则永远回引导。
 - 正常运行检查 `.offline-extracted` 与完整环境身份。覆盖更新、环境未就绪、未完成维护事务或未关闭的隔离试运行现场，都整屏进入运行环境维护页（`ExtractActivity`），同一候选只自动尝试一次；用户在维护页显式选择后才进入受限主界面，**受限入口不写就绪标记**，终端、Web 与插件执行仍须通过环境门禁。
+- **覆盖安装后只要已装运行时不是当前候选，就必须让用户看到整屏维护页并可一键更新**：`isEnvironmentReady()`（兼容 + 健康回执）不等于「无事可做」，补丁级更新也须按 `RuntimeDescriptor.latest` 进维护；自动开始可以因未关闭的 Web 会话被拦，但入口不能消失。**客户端插件不得依赖宿主某个控件是否存在**，只能用自有属性 + 实测几何。详见[覆盖升级与维护门禁](docs/overwrite-upgrade-and-maintenance.md)。
 - 启动失败自动进入原生 `StartupRecoveryActivity`；等待鉴权本身不是故障。最近五次脱敏启动记录独立保存在私有目录。
 - 兼容重试仅在 proroot 已确认退出、鉴权前且无明确插件故障时进行一次，**不能由超时触发**。
 - 配置快照由宿主 `ConfigurationSnapshots` 执行：正文逐文件存于 rootfs 外，保留三份健康与三份修复前快照；旧日志已提交后不得覆盖后来修改的配置。
@@ -187,6 +188,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 ## 交付与验收
 
 - 当前版本的改动见 [CHANGELOG.md](CHANGELOG.md)；各版本的构建、验收与回执归档在 [docs/releases/](docs/releases/) 与 `artifacts/`。
+- **外部 PR / 外部合并必须专职逐行审查**：由专门的 AI 审查会话审阅**全部 diff**（不得抽样、不得只看 CI），逐项检查安全边界、逻辑缺失、测试覆盖与仓库不变式；结论只有 APPROVE / REQUEST_CHANGES，打回意见必须带 `file:line`、问题、修法、P0/P1/P2。CI 全绿不等于可合并；冲突必须 rebase 后重看生成文件差异；审查会话不得合并 PR 或 push 作者分支，合并仍需用户在主会话明确同意。流程见[外部 PR 与外部合并审查流程](docs/external-pr-review.md)。
 - 验收范围如实声明：不把本机验证扩写成全部系统版本、机型或外部模型服务矩阵；单一 Standard 与虚拟屏能力按实际设备证据声明，Android 10 及以下不在支持范围。
 - 私钥、用户数据、设备截图与日志不进入仓库；安装、设备操作与发布按当次授权执行。
 
@@ -226,6 +228,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
   ```
 
   它启动时实测 `fcntl`：未修复时全局互斥、`--no-daemon`；已修复时按可用内存开最多 3 个并发槽位并复用常驻 daemon，内存不够就排队。Gradle JVM 的 `oom_score_adj` 设为 900，内存吃紧时先杀构建、不先杀 dsh。日志在 `/root/.cache/dsha-gradle-logs/`。不要直接跑 `./gradlew`，不要再建 `/root/.gradle-<任务>` 副本绕锁（每份约 1 GB，并多起一个 2–3 GB 堆的 JVM），不要杀别的会话的 Gradle 进程。
+- **proroot 下 git 大 diff 会 SIGSEGV**：build330（proroot v1.2.8）实测 `git show --stat`、`git diff --stat` / `--numstat` 对某些提交或 ≥8 路径组合 exit 139、stdout 0 字节、stderr 为 `[proroot] SIGSEGV`；`--name-status` / `--dirstat`、`git log` 与拆成 ≤7 路径的分片不崩，GitHub Linux CI 不受影响。审查 / 合入不要用 `--stat` 大范围输出，也不要让 `| head` 或 `;` 吞掉 rc；需要统计时用 `python3 tools/git_guard.py -- <git 参数>`（命中签名立即报错、不重试、不返回部分输出），仓库工具已统一走该封装。细节见[运行引擎](docs/runtime-engines.md)。
 - **内存即稳定性**：并发 Gradle / Robolectric 抢内存会把 dsh web 一起拖死，所有会话同时中断。一次只跑一个构建；全量单测只在合并前跑，日常跑定向 `--tests`。
 - **不在本机覆盖安装正式包**：安装 `io.github.sunsetrne.dsha` 会被系统以 PACKAGE UPDATED 结束整个 App，DSH 与全部会话随之中断。会话不得自行安装或降级正式包；测试包 `io.github.sunsetrne.dsha.test` 可装。用户要装正式包时，先让各活跃会话更新声明。
 - **本机专用覆盖放仓库外**：Conscrypt 关闭等只走 `-I /opt/dsha-x86/local-ci.init.gradle`，不往工作树写 `app/src/test/resources/robolectric.properties` 这类临时文件（已被忽略的 `local.properties` 除外），中断后才不会留下会被提交的残留。
