@@ -198,7 +198,7 @@
       "args": [],
       "timeoutSeconds": 180,
       "environment": {},
-      "reason": "Actual locked rc3 SessionController and local assistant adapter preserve full session and active-turn identities, authenticated loopback requests, cancellation and runtime-owned attachment without model or device actions."
+      "reason": "Actual locked SessionController state/history reads (no removed inspect entrypoint) and the local assistant adapter preserve full session and active-turn identities, bounded transcripts, authenticated loopback requests, cancellation and runtime-owned attachment without model or device actions."
     },
     {
       "path": "tools/test-generate-changelog.py",

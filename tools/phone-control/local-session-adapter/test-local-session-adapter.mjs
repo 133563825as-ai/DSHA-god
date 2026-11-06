@@ -20,53 +20,26 @@ const require = createRequire(join(runtime, 'package.json'))
 const load = name => import(pathToFileURL(require.resolve('@deepseek-ai/' + name)))
 const { Context } = await load('cordis')
 const { SessionController } = await load('dsh-api-session-controller')
+const SessionQuery = (await load('dsh-session-query')).default
 const { createUserMessage, createAssistantMessage } = await load('dsh-llm')
 const titleModule = await load('dsh-session-title')
 const modules = await Promise.all(['dsh-session', 'dsh-agent', 'dsh-session-projection', 'dsh-llm',
   'dsh-system-prompt', 'dsh-tools', 'dsh-agent-loop'].map(load))
-async function fixture(run) {
-  const ctx = new Context()
-  try {
-    for (let index = 0; index < modules.length; index++)
-      await ctx.plugin(modules[index].default, index === 5 ? { mode: 'native' } : index === 6 ? { agents: [], maxParallelToolCalls: 1 } : {})
-    const handles = await Promise.all(['prefix-A-same1234', 'prefix-B-same1234'].map(sessionId => ctx.agents.create({ sessionId, meta: { cwd: resolve('.') } })))
-    // Real rc3 inspect/prompt entrypoints, with an explicit public Agent admission port.
-    // No model, network, file mutation, or complete Host assembly is claimed here.
-    const controller = Object.create(SessionController.prototype); controller.ctx = ctx
-    const modes = []
-    controller.commands = { prompt(request, source) {
-      modes.push(request.mode)
-      ctx.agents.get(request.sessionId).send(createUserMessage({ source, content: request.content }), 'next-turn', false)
-      return { accepted: true }
-    } }
-    const call = sessionAdapter({ sessionController: controller, agents: ctx.agents }, 'host-actual-rc3')
-    await run(ctx, call, handles.map(handle => handle.agent), modes)
-  } finally { await ctx.fiber.dispose() }
-}
-const args = sessionId => ({ hostInstanceId: 'host-actual-rc3', sessionId })
-
-test('send forwards an explicit steer mode, defaults to queue and rejects unknown modes', () => fixture(async (_ctx, call, [agent], modes) => {
-  await call('sessions.send', { ...args(agent.id), text: 'queued by default', requestId: 'mode-default' })
-  await call('sessions.send', { ...args(agent.id), text: 'into the running turn', requestId: 'mode-steer', mode: 'steer' })
-  await assert.rejects(call('sessions.send', { ...args(agent.id), text: 'bad', requestId: 'mode-bad', mode: 'interrupt' }), /PROMPT_INVALID/)
-  assert.deepEqual(modes, ['queue', 'steer'])
-}))
-
-/** Real controller constructor, list/create/prompt and real Agent/Session/Inbox.
- * Storage/auth/attachment ports are isolated fixtures; no model/network provider or Android is claimed.
+/** Real locked SessionController over real SessionQuery, Agents, Sessions and Inbox.
+ * Storage/auth/attachment ports are isolated fixtures; no model, network, file mutation,
+ * complete Host assembly or Android is claimed here.
  */
-async function hostFixture(run) {
-  const directory = await mkdtemp(join(tmpdir(), 'dsha-assistant-rc3-'))
-  const ctx = new Context(), routes = [], retired = []
-  let server
+async function hostContext(run) {
+  const ctx = new Context(), routes = []
   try {
     for (let index = 0; index < modules.length; index++)
-      await ctx.plugin(modules[index].default, index === 5 ? { mode: 'native' } : index === 6 ? { agents: [], maxParallelToolCalls: 1 } : {})
+      await ctx.plugin(modules[index].default, index === 6 ? { agents: [], maxParallelToolCalls: 1 } : {})
     await ctx.plugin(titleModule.default, { fallbackMaxWords: 12, fallbackMaxBytes: 100, maxTitleBytes: 200 })
+    await ctx.plugin(SessionQuery, {})
     ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'owned-test', model: 'no-network' }) })
     ctx.provide('typert', { resources: { register() {} }, lookups: { configure() {} }, contexts: { configureHost() {} } })
+    ctx.provide('typertGateway', { getPendingRemoteEvents: () => [] })
     ctx.provide('remoteAccess', { allows: () => true })
-    ctx.provide('sessionQuery', { listSessions: async () => ctx.sessions.list().map(session => ({ header: session.header })) })
     ctx.provide('workspaceRegistry', { archivedSessionIds: [], get() {} })
     ctx.provide('fileUploads', { registerAgentResolver() { return () => {} },
       bindPrompt() { return { commit() {}, [Symbol.dispose]() {} } } })
@@ -78,29 +51,62 @@ async function hostFixture(run) {
     ctx.provide('connection', { requestRejection: req => req.headers.cookie === 'fixture-auth=owned' ? undefined : 401 })
     await ctx.plugin(SessionController, { nativeOpen: false })
     const controller = ctx.sessionController
-    assert.ok(controller, 'the actual rc3 Controller plugin and its declared dependencies activate')
-    controller.commands.defaultCwd = directory
-    installSessionAdapter(ctx, () => 'fixture live stream', identity => retired.push(identity))
-    // The actual injected registration must activate, rather than exercising an unmounted helper.
-    await new Promise(resolve => setImmediate(resolve))
-    const route = routes.find(route => route.path === '/api/dsha-assistant')
-    assert.ok(route, 'installed exact assistant route activates against actual rc3 Controller')
-    server = createServer((req,res) => req.url === route.path ? route.handler(req,res) : (res.writeHead(404),res.end()))
-    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-    const url = `http://127.0.0.1:${server.address().port}${route.path}`
-    const request = async (method, args = {}, headers = {}) => {
-      const response = await fetch(url, { method: 'POST', headers: { Cookie: 'fixture-auth=owned', ...headers }, body: JSON.stringify({ method,args }) })
-      return { status: response.status, ...await response.json() }
-    }
-    await run({ ctx,controller,request,retired,url })
-  } finally {
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
-    await ctx.fiber.dispose()
-    assert.ok(resolve(directory).startsWith(resolve(tmpdir(), 'dsha-assistant-rc3-')))
-    await rm(directory, { recursive: true, force: true })
-  }
+    assert.ok(controller, 'the actual locked Controller plugin and its declared dependencies activate')
+    await run({ ctx, controller, routes })
+  } finally { await ctx.fiber.dispose() }
 }
-test('real locked rc3 Session inspection retains complete IDs sharing the same suffix', () => fixture(async (ctx, call, [a,b]) => {
+async function fixture(run) {
+  await hostContext(async ({ ctx, controller }) => {
+    const handles = await Promise.all(['prefix-A-same1234', 'prefix-B-same1234'].map(sessionId => ctx.agents.create({ sessionId, meta: { cwd: resolve('.') } })))
+    // Real passive state, history and prompt entrypoints; only prompt admission is replaced
+    // so queue/steer modes stay observable without any model, provider or network.
+    const modes = []
+    controller.commands = { prompt(request, source) {
+      modes.push(request.mode)
+      ctx.agents.get(request.sessionId).send(createUserMessage({ source, content: request.content }), 'next-turn', false)
+      return { accepted: true }
+    } }
+    const call = sessionAdapter({ sessionController: controller, agents: ctx.agents }, 'host-actual-fixture')
+    await run(ctx, call, handles.map(handle => handle.agent), modes)
+  })
+}
+const args = sessionId => ({ hostInstanceId: 'host-actual-fixture', sessionId })
+
+test('send forwards an explicit steer mode, defaults to queue and rejects unknown modes', () => fixture(async (_ctx, call, [agent], modes) => {
+  await call('sessions.send', { ...args(agent.id), text: 'queued by default', requestId: 'mode-default' })
+  await call('sessions.send', { ...args(agent.id), text: 'into the running turn', requestId: 'mode-steer', mode: 'steer' })
+  await assert.rejects(call('sessions.send', { ...args(agent.id), text: 'bad', requestId: 'mode-bad', mode: 'interrupt' }), /PROMPT_INVALID/)
+  assert.deepEqual(modes, ['queue', 'steer'])
+}))
+
+test('status reads current passive state and history without the removed inspect entrypoint', () => fixture(async (ctx, call, [agent]) => {
+  // The pinned Host has no SessionController.inspect; a regression here is the build336 409.
+  assert.equal(typeof ctx.sessionController.inspect, 'undefined')
+  ctx.sessionController.inspect = () => { throw new Error('removed inspect must never be called') }
+  agent.session.append('turn/start', { turn: 6 })
+  const status = await call('sessions.status', args(agent.id))
+  assert.deepEqual(Object.keys(status).sort(), ['failed','hostInstanceId','messages','running','sessionId','streamText','taskId','text','turnActive','turnId'])
+  assert.equal(status.sessionId, agent.id); assert.equal(status.hostInstanceId, 'host-actual-fixture')
+  assert.equal(status.taskId, agent.id); assert.equal(status.turnId, '6'); assert.equal(status.turnActive, true)
+  assert.equal(status.running, false); assert.equal(status.failed, false)
+  assert.deepEqual(status.messages, []); assert.equal(status.streamText, ''); assert.equal(status.text, '')
+}))
+
+test('a long open turn keeps its identity while the transcript stays bounded to the newest eight messages', () => fixture(async (_ctx, call, [agent]) => {
+  agent.session.append('turn/start', { turn: 12 })
+  for (let index = 0; index < 20; index++)
+    agent.session.append('user/message', createUserMessage({ source: { kind: 'user', rpcId: 'long-turn-' + index },
+      content: [{ type: 'text', text: 'long turn message ' + index }] }), { surfaceOp: 'append' })
+  const status = await call('sessions.status', args(agent.id))
+  // The current turn started before the bounded page cut; the Host projection still names it.
+  assert.equal(status.turnId, '12'); assert.equal(status.turnActive, true)
+  assert.deepEqual(status.messages.map(item => item.text),
+    Array.from({ length: 8 }, (_, index) => 'long turn message ' + (12 + index)))
+  assert.ok(!status.text.includes('long turn message 11'))
+  assert.ok(status.text.endsWith('long turn message 19'))
+}))
+
+test('real locked Session inspection retains complete IDs sharing the same suffix', () => fixture(async (ctx, call, [a,b]) => {
   a.session.append('turn/start', { turn: 17 }); b.session.append('turn/start', { turn: 29 })
   a.session.append('assistant/message', { turn: 17, step: 1, message: createAssistantMessage({
     source: { provider: 'owned-test', model: 'no-network' }, content: [{ type: 'text', text: 'Committed assistant reply survives stream removal' }],
@@ -155,7 +161,7 @@ test('stale turn cancellation is rejected without cancelling a newer real turn',
   assert.equal(agent.session.snapshotEvents().at(-1).data.turn, 8)
 }))
 
-test('actual rc3 message provenance hides time/runtime injections while preserving identical human text', () => fixture(async (ctx,call,[agent]) => {
+test('actual message provenance hides time/runtime injections while preserving identical human text', () => fixture(async (ctx,call,[agent]) => {
   const append = (text,source) => agent.session.append('user/message', createUserMessage({source,content:[{type:'text',text}]}), {surfaceOp:'append'})
   const human = 'Time sampled while preparing turn 3, step 1: this is my own quoted text. DSHA runtime context.'
   append(human,{kind:'user',rpcId:'human-provenance'})
@@ -167,7 +173,35 @@ test('actual rc3 message provenance hides time/runtime injections while preservi
   assert.ok(!JSON.stringify(result).includes('HIDDEN_'))
 }))
 
-test('installed HTTP route lists and creates via actual rc3 Controller, then admits and cancels exact conversation', () => hostFixture(async ({ctx,request,retired}) => {
+/** Real controller, route and authenticated loopback transport over an isolated workspace. */
+async function hostFixture(run) {
+  const directory = await mkdtemp(join(tmpdir(), 'dsha-assistant-current-'))
+  const retired = []
+  let server
+  try {
+    await hostContext(async ({ ctx, controller, routes }) => {
+      controller.commands.defaultCwd = directory
+      installSessionAdapter(ctx, () => 'fixture live stream', identity => retired.push(identity))
+      // The actual injected registration must activate, rather than exercising an unmounted helper.
+      await new Promise(resolve => setImmediate(resolve))
+      const route = routes.find(route => route.path === '/api/dsha-assistant')
+      assert.ok(route, 'installed exact assistant route activates against the actual locked Controller')
+      server = createServer((req,res) => req.url === route.path ? route.handler(req,res) : (res.writeHead(404),res.end()))
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+      const url = `http://127.0.0.1:${server.address().port}${route.path}`
+      const request = async (method, args = {}, headers = {}) => {
+        const response = await fetch(url, { method: 'POST', headers: { Cookie: 'fixture-auth=owned', ...headers }, body: JSON.stringify({ method,args }) })
+        return { status: response.status, ...await response.json() }
+      }
+      await run({ ctx,controller,request,retired,url })
+    })
+  } finally {
+    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    assert.ok(resolve(directory).startsWith(resolve(tmpdir(), 'dsha-assistant-current-')))
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+test('installed HTTP route lists and creates via the actual locked Controller, then admits and cancels exact conversation', () => hostFixture(async ({ctx,request,retired}) => {
   const first = await request('sessions.list')
   assert.equal(first.ok, true); assert.deepEqual(first.value.items, [])
   const host = first.value.hostInstanceId; assert.equal(host, hostInstanceId)
@@ -186,6 +220,7 @@ test('installed HTTP route lists and creates via actual rc3 Controller, then adm
   assert.equal(agent.inbox.nextTurn[0].content[0].text, 'real native conversation prompt')
   const running = await request('sessions.status', identity)
   assert.equal(running.ok, true, JSON.stringify(running)); assert.equal(running.value.running, true)
+  assert.equal(running.value.turnId, '41'); assert.equal(running.value.turnActive, true)
   assert.equal((await request('sessions.list')).value.items[0].running, true)
   const stopped = await request('sessions.cancel', { ...identity, turnId: '41' })
   assert.equal(stopped.ok, true); await maintenance
@@ -220,6 +255,8 @@ test('installed HTTP route denies missing auth/cross origin and preserves unknow
   assert.equal((await request('sessions.list', {}, { Origin: 'https://different.example' })).status, 403)
   const created = await request('sessions.create', { hostInstanceId })
   const identity = { sessionId: created.value.sessionId, hostInstanceId }
+  const missing = await request('sessions.status', { hostInstanceId, sessionId: 'session-missing' })
+  assert.equal(missing.status, 409); assert.equal(missing.code, 'session/not-found')
   const stale = await request('sessions.send', { ...identity, hostInstanceId: 'stale', text: 'blocked', requestId: 'stale' })
   assert.equal(stale.rejected, true); assert.equal(ctx.agents.get(identity.sessionId).inbox.nextTurn.length, 0)
   // Explicit injected pre-admission failure and transport-like error must remain distinguishable.
