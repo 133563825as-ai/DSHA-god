@@ -115,7 +115,7 @@ if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeSt
 
 ### 事故案例：`dsh-web-mobile` 侧栏齿轮
 
-- 上游 3.2.2 的 `drawer-quick-settings-chip-guard` 用 `:has(> button[data-phase], > [role="status"])` 判断连接指示灯是否在场，再决定 footer 齿轮要不要让位。这使插件渲染**依赖宿主某个子节点存在**。
+- 上游（3.2.2 起，3.3.1 仍保留）的 `drawer-quick-settings-chip-guard` 用 `:has(> button[data-phase], > [role="status"])` 判断连接指示灯是否在场，再决定 footer 齿轮要不要让位。这使插件渲染**依赖宿主某个子节点存在**。
 - build324 的受管补丁 `DSHA_FIRST_CONNECT_SILENT_V1` 让首次进入不再渲染 `ConnectionIndicator`。于是该 `:has()` 判据永远“放得下”，但行的真实宽度没人核对；插件渲染链失效，用户看到侧栏 footer 重复叠加，禁用内置插件后恢复正常。
 - 修复（T61，`DSHA_GEAR_FIT_V1`）：
   - 导出纯判据 `dshaGearFits(rowWidth, usedWidth)`：`行内容宽度 − 其它可见孩子宽度 ≥ 40px` 才显示齿轮；布局未就绪（宽度 ≤ 0 / 非有限数）按“放不下”处理，保守保留账户菜单入口；
@@ -131,7 +131,7 @@ if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeSt
 3. 尺寸不可读、布局未就绪时选择**保守降级**（少显示一个入口），不要选择“假设存在、直接渲染”。
 4. 每个类似依赖都要有可在 Node 里跑的契约测试，用真实产物 + 最小 DOM，而不是只测手写函数。
 5. 宿主 UI 变更（例如新增/删除连接指示灯、更新条）必须同步检查所有内置插件补丁的 CSS 选择器与 DOM 假设。
-6. **`dsh-web-mobile` 当前默认禁用（build327 起），且覆盖更新也会再次收敛为禁用**：原因（大量代码不适配 build324 起的新页面与新逻辑、已发生白屏/侧栏重复）与范围见[插件页](plugins.md)。只有当前安装内从原生插件页显式启用才生效；恢复默认启用前必须满足那里的硬门槛：竖屏适配补齐并通过真机覆盖升级验收、build325 齿轮契约与 build324 白屏路径回归全绿；只凭 CI 或单测通过不得恢复。**恢复到默认启用的提交必须引用该判据并附真机证据。**
+6. **`dsh-web-mobile` 从 build336 起恢复默认启用**：上游 3.3.1（4e71eb67）已适配宿主 0.2.2，插件字节、锁与补丁取舍见[插件页](plugins.md)和 [build336 记录](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)；build327 的默认禁用与事故原因保留在 build327 记录。恢复引用了原硬门槛：build325 齿轮契约与 build324 白屏路径回归全绿，`generate-builtin-plugins` / `prepare-runtime-descriptor` 与发布前门禁已重跑；**真机覆盖升级验收（不白屏、侧栏不重复、footer 设置入口不重复、升级后默认启用）仍须在 build336 发布前补写回执**，只凭 CI 或单测通过不得宣称真机通过。
 
 ## 发布前必跑清单
 

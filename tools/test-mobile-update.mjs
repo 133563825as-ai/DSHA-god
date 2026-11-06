@@ -17,16 +17,19 @@ function loadModules() {
   return {modules: window.__testModules};
 }
 
-test('3.2.2 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () => {
-  assert.equal(packageJson.version, '3.2.2');
-  assert.equal(packageJson.dshaUpstream.commit, 'bb0e5e151ca549fef506e829020a5d7138074711');
-  assert.equal(packageJson.dshaUpstream.clientSha256, '3cd931bcd261e7b280398f8849a556ec1dd54edaa4147c49c808d0ea60d94173');
+test('3.3.1 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () => {
+  assert.equal(packageJson.version, '3.3.1');
+  assert.equal(packageJson.dshaUpstream.commit, '4e71eb67de7dac9d8b2572757c81e47aa32a32fb');
+  assert.equal(packageJson.dshaUpstream.clientSha256, '7f82fac2100d70daf34c9c68cc402f6adb2302bf9913122d3402ab0926773c75');
   assert.equal(packageJson.dshaUpstream.ref, 'main');
-  assert.equal(packageJson.dshaUpstream.releaseTag, 'v3.2.2');
-  assert.equal(packageJson.dshaUpstream.releaseCommit, 'bb0e5e151ca549fef506e829020a5d7138074711');
-  assert.equal(packageJson.dshaUpstream.commit, packageJson.dshaUpstream.releaseCommit); // 上游已把 v3.2.2 标签重指到当前 main 提交
+  assert.equal(packageJson.dshaUpstream.releaseTag, 'v3.3.1');
+  assert.equal(packageJson.dshaUpstream.releaseCommit, '4e71eb67de7dac9d8b2572757c81e47aa32a32fb');
+  assert.equal(packageJson.dshaUpstream.commit, packageJson.dshaUpstream.releaseCommit); // 上游把修好的 3.4.0 内容重编号为 3.3.1，标签指向同一提交
   for (const marker of [
-    'DSHA_SESSION_INPUT_V4',
+    'DSHA_GEAR_FIT_V1',
+    'mobileNavLocales',
+    'DSHAFileTransfer',
+    'var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px))',
     '[data-dsha-session-select]',
     'dsha-preset-header-anchor',
     'data-mobile-nav="file-upload"',
@@ -47,9 +50,6 @@ test('3.2.2 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () 
     'downloadMenu',
     'data-sidebar-right-open',
     '.dsh-pet-root',
-    'fullscreen-panel-sheet',
-    'wallpaper-panel-fill',
-    'pet-hidden-under-sheets',
     'findFloatingWidget',
   ]) assert.ok(source.includes(marker), marker);
   for (const stale of [
@@ -60,14 +60,26 @@ test('3.2.2 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () 
     'dsh_client_ui_primitives_1.IconPaperclipOutline16',
     'panel.getBoundingClientRect().left < window.innerWidth',
     'transform: scale(.66)',
+    // 3.2.2 代的 DSHA 本地补丁：上游 3.3.1 已接管，或 build336 按「完全追随上游」删除。
+    'DSHA_WIDE_TOUCH_ROW_ACTIONS_V1',
+    'DSHA_BACKDROP_PRESS_V1',
+    'DSHA_SESSION_INPUT_V4',
+    'DSHA_FONT_FAMILY_ROW_V1',
+    'var(--dsha-mobile-visible-vh, 100vh)',
   ]) assert.equal(source.includes(stale), false, stale);
+  // 上游自己的手机搜索隐藏与会话打开流程保持原字节（C 基线不再接管）。
+  assert.ok(source.includes('[class*="_searchRow"]'));
+  assert.ok(source.includes("// DSHA detail=0 follows the host's keyboard/programmatic open path."));
   assert.equal(packageJson.peerDependencies['@deepseek-ai/dsh-client-runtime'], undefined);
-  assert.ok(packageJson.peerDependencies['@deepseek-ai/dsh-client-ui-conversation'].includes('>=0.2.0-rc.1 <0.3.0-0'));
+  assert.ok(packageJson.peerDependencies['@deepseek-ai/dsh-client-ui-conversation'].includes('>=0.2.2-rc.1 <0.3.0-0'));
+  // react 在宿主运行时树里没有实体：3.4.0/3.3.0 把它当必选 peer 会让依赖门槛判 missing，
+  // 上游 3.3.1（c41f65c + be9b7fc）改为 optional，必须保持。
+  assert.equal(packageJson.peerDependenciesMeta.react.optional, true);
   assert.equal(packageJson.peerDependencies['@deepseek-ai/dsh-client-ui-sidebar-right'], undefined);
   assert.ok(source.includes('function openFilesPanel'));
 });
 
-test('3.2.2 侧栏与文件面板手势使用同一方向/速度门槛', () => {
+test('3.3.1 侧栏与文件面板手势使用同一方向/速度门槛', () => {
   const {modules} = loadModules();
   const swipe = {};
   modules['effects/sidebar-swipe.js'](() => ({}), {}, swipe);
@@ -81,7 +93,7 @@ test('3.2.2 侧栏与文件面板手势使用同一方向/速度门槛', () => {
   assert.equal(swipe.slidingVelocity([{x: 0, t: 900}, {x: 20, t: 940}, {x: 50, t: 1000}], 60, 1000), .5);
 });
 
-test('3.2.2 拖动让位与水平滚动容器判定仍由纯函数负责', () => {
+test('3.3.1 拖动让位与水平滚动容器判定仍由纯函数负责', () => {
   const {modules} = loadModules();
   const swipe = {};
   modules['effects/sidebar-swipe.js'](() => ({}), {}, swipe);
@@ -89,7 +101,7 @@ test('3.2.2 拖动让位与水平滚动容器判定仍由纯函数负责', () =>
   assert.equal(swipe.hitTestStart(200, 390, false, {startZonePx: 176}), false);
 });
 
-test('3.2.2 DOM reconciler 按 dirty scope 合并到一帧', () => {
+test('3.3.1 DOM reconciler 按 dirty scope 合并到一帧', () => {
   const {modules} = loadModules();
   const reconciler = {};
   modules['core/reconciler-core.js'](() => ({}), {}, reconciler);
@@ -111,7 +123,7 @@ test('3.2.2 DOM reconciler 按 dirty scope 合并到一帧', () => {
 });
 
 // 验证实际部署 bundle 中的新缩放模块，不以下载到的源码代替产物。
-test('3.2.2 原图缩放保持触点锚定，缩回原尺寸必须清除平移', () => {
+test('3.3.1 原图缩放保持触点锚定，缩回原尺寸必须清除平移', () => {
   const {modules} = loadModules();
   const zoom = {};
   modules['core/image-zoom-core.js'](() => ({}), {}, zoom);
@@ -126,7 +138,7 @@ test('3.2.2 原图缩放保持触点锚定，缩回原尺寸必须清除平移',
   assert.equal(invalid.scale, before.scale); assert.equal(invalid.x, before.x); assert.equal(invalid.y, before.y);
 });
 
-test('3.2.2 缩放平移受实际可见边界限制，双击第二次返回原图', () => {
+test('3.3.1 缩放平移受实际可见边界限制，双击第二次返回原图', () => {
   const {modules} = loadModules();
   const zoom = {};
   modules['core/image-zoom-core.js'](() => ({}), {}, zoom);

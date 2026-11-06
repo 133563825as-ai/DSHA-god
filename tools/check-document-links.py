@@ -68,13 +68,13 @@ WINDOWS_PATH = re.compile(r'^[A-Za-z]:[/\\]')
 # source path and literal target. Do not generalize this to vendor/history trees.
 UPSTREAM_SOURCE_RELATIVE = {
     "app/src/main/assets/builtin-plugins/dsh-web-mobile/README.md": {
-        "sha256": "2262a23310f73373cb31b761b7a2aa01066628ae4e82283c2fe9f1a903321c36",
+        "sha256": "a1c401a59c4cc2b08dc0b3371c41e54692c552122059598f1c073dda9421ceae",
         "targets": {
-            "assets/banner.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/bb0e5e151ca549fef506e829020a5d7138074711/assets/banner.png",
-            "assets/drawer.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/bb0e5e151ca549fef506e829020a5d7138074711/assets/drawer.png",
-            "assets/hero.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/bb0e5e151ca549fef506e829020a5d7138074711/assets/hero.png",
-            "assets/settings.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/bb0e5e151ca549fef506e829020a5d7138074711/assets/settings.png",
-            "AGENTS.md": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/bb0e5e151ca549fef506e829020a5d7138074711/AGENTS.md",
+            "assets/banner.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/4e71eb67de7dac9d8b2572757c81e47aa32a32fb/assets/banner.png",
+            "assets/drawer.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/4e71eb67de7dac9d8b2572757c81e47aa32a32fb/assets/drawer.png",
+            "assets/hero.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/4e71eb67de7dac9d8b2572757c81e47aa32a32fb/assets/hero.png",
+            "assets/settings.png": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/4e71eb67de7dac9d8b2572757c81e47aa32a32fb/assets/settings.png",
+            "AGENTS.md": "https://github.com/mexiaosqwq/dsh-web-mobile/blob/4e71eb67de7dac9d8b2572757c81e47aa32a32fb/AGENTS.md",
         },
     },
     "tools/termux-jni/LICENSE.upstream.md": {

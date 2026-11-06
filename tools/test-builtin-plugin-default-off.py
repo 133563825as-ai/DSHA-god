@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""内置插件默认启停：dsh-web-mobile 默认禁用，覆盖更新同样收敛为禁用。
+"""内置插件默认启停机制：注册器收敛、显式启用与覆盖更新代次。
 
-覆盖注册器（register-builtin-plugins.py）的真实文件系统流程，不启动 Web / DSH：
+build336 起 `dsh-web-mobile` 不再默认禁用（上游 3.3.1 适配宿主 0.2.2），
+`builtin-plugins.json` 里当前没有任何 `defaultDisabled: true` 条目；本测试仍用
+**合成的** `DEFAULT_DISABLED=('dsh-web-mobile',)` 覆盖注册器
+（register-builtin-plugins.py）的真实文件系统流程，不启动 Web / DSH：
   1. 干净 profile：默认关闭项写禁用标记、不进入 bundles，其余内置插件照常注册；
   2. 覆盖更新：旧版本启用过的（含上一代次的显式启用记录）都收敛为禁用；
   3. 只有当前安装代次的显式启用（node_modules/<name>.enabled）跨重启保持，
@@ -49,9 +52,13 @@ class BuiltinPluginDefaultOffTest(unittest.TestCase):
         self.names = patch.object(
             self.builtin, 'builtin_names', return_value=[NOTIFIER, MOBILE])
         self.names.start()
+        # 当前注册表没有默认禁用项；机制用合成的默认关闭项继续覆盖。
+        self.default_off = patch.object(self.builtin, 'DEFAULT_DISABLED', (MOBILE,))
+        self.default_off.start()
         self.write_generation(327)
 
     def tearDown(self):
+        self.default_off.stop()
         self.names.stop()
         self.environment.stop()
         self.temp.cleanup()
@@ -124,13 +131,18 @@ class BuiltinPluginDefaultOffTest(unittest.TestCase):
         self.assertFalse(self.enable_marker.exists())
         self.assertFalse(os.path.lexists(self.mobile_link))
 
-    def test_registry_declares_only_the_mobile_ui_default_off(self):
+    def test_registry_declares_no_default_disabled_plugin(self):
         registry = json.loads((ASSETS / 'builtin-plugins.json').read_text(encoding='utf-8'))
         disabled = [row['name'] for row in registry['plugins'] if row.get('defaultDisabled') is True]
-        self.assertEqual([MOBILE], disabled)
-        self.assertEqual((MOBILE,), self.builtin.DEFAULT_DISABLED)
+        self.assertEqual([], disabled)
+        # 夹具覆盖的是合成默认关闭项；真实模块从注册表派生的列表必须为空。
+        spec = importlib.util.spec_from_file_location(
+            'builtin_real_registry', ASSETS / 'register-builtin-plugins.py')
+        real = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(real)
+        self.assertEqual((), real.DEFAULT_DISABLED)
         self.assertTrue(all(row.get('defaultDisabled', False) is False
-                            for row in registry['plugins'] if row['name'] != MOBILE))
+                            for row in registry['plugins']))
 
     def test_clean_install_disables_mobile_and_registers_the_rest(self):
         self.assertFalse(self.manifest.exists())

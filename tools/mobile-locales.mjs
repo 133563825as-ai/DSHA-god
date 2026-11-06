@@ -86,7 +86,7 @@ function liveLocalePatches(name, typed) {
     const replacement = typed
       ? `      if (button === null || wrap === null) {\n        build()\n        unsubscribeLocale?.()\n        // DSHA_MOBILE_LIVE_LOCALE_V1\n        unsubscribeLocale = ctx.locale.subscribe?.(() => {\n          if (button === null) return\n          const label = t('quickSettings')\n          button.setAttribute('aria-label', label)\n          button.title = label\n        }) ?? null\n      }`
       : `            if (button === null || wrap === null) {\n                build();\n                unsubscribeLocale?.();\n                // DSHA_MOBILE_LIVE_LOCALE_V1\n                unsubscribeLocale = ctx.locale.subscribe?.(() => {\n                    if (button === null) return;\n                    const label = t('quickSettings');\n                    button.setAttribute('aria-label', label);\n                    button.title = label;\n                }) ?? null;\n            }`;
-    const dispose = typed ? '    dispose: () => {\n      clearPending()' : '        dispose: () => {\n            clearPending();';
+    const dispose = typed ? '    dispose: () => {\n      window.clearTimeout(pressTimer)' : '        dispose: () => {\n            window.clearTimeout(pressTimer);';
     return [[anchor, anchor + declaration], [build, replacement],
       [dispose, dispose + (typed ? '\n      unsubscribeLocale?.()\n      unsubscribeLocale = null' : '\n            unsubscribeLocale?.();\n            unsubscribeLocale = null;')]];
   }

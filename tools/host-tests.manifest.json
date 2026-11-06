@@ -876,20 +876,6 @@
       "cli": "no positional arguments; see explicit environment/requirements"
     },
     {
-      "path": "tools/test-mobile-modal-behavior.mjs",
-      "stage": "runtime",
-      "reason": "Current source/verified runtime host fixture; explicit dependencies and sandbox HOME; no Android device operations",
-      "args": [],
-      "timeoutSeconds": 900,
-      "requires": [
-        "node24",
-        "raw",
-        "browser"
-      ],
-      "environment": {},
-      "cli": "no positional arguments; see explicit environment/requirements"
-    },
-    {
       "path": "tools/test-mobile-server-patches.mjs",
       "stage": "fast",
       "reason": "Current source behavior regression; explicit platform inputs required",
@@ -2783,20 +2769,6 @@
       "path": "tools/test-ui-operation-pending.mjs",
       "stage": "runtime",
       "reason": "Real pinned React/client browser UI: truthful pending, confirmed mutation state, changed-event freshness, default preset same-session boundary and single-touch conversation activation. No Android, live model or personal data operations.",
-      "args": [],
-      "timeoutSeconds": 1200,
-      "requires": [
-        "node24",
-        "raw",
-        "browser"
-      ],
-      "environment": {},
-      "cli": "No positional arguments; uses exact pinned fixtures and isolated host/browser state."
-    },
-    {
-      "path": "tools/test-mobile-backdrop-press.mjs",
-      "stage": "runtime",
-      "reason": "Trusted Chromium touch on exact mobile CSS/rc2 tokens: backdrop press flash negative control and ordinary-button feedback/drag/cancellation lifecycle. No Android, live model or personal data operations.",
       "args": [],
       "timeoutSeconds": 1200,
       "requires": [

@@ -154,9 +154,9 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
       <textarea> computes font-size < 16px, and only reverts on blur. The ask
       dialog is a modal composer takeover, so taps outside never blur the
       field and the magnification persists until the field loses focus
-      (e.g. the dialog is dismissed). The ask
-      composer's custom-answer <input> (.customInput) and optionless free-form
-      <textarea> (.customTextarea) both ship at 14px (ui-user-questions
+      (e.g. the dialog is dismissed). On 0.2.2 the ask composer's answer
+      field is a single .fieldInput (it replaced the older .customInput /
+      .customTextarea pair) and inherits the card's 14px (ui-user-questions
       QuestionComposer.module.css). Raise them to 16px on iOS only, where the
       zoom can actually happen: on Android and desktop there is nothing to
       suppress, so they keep the compact size they were designed with
@@ -168,8 +168,7 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
       class-name suffix match follows the plugin's established harness
       CSS-module convention (verified against the live app: generated names
       end with the original local name, e.g. uV2eYG_input / bhn1Oq_searchInput). */
-  html[data-mobile-nav-ios] [data-question-key] [class*="_customInput"],
-  html[data-mobile-nav-ios] [data-question-key] [class*="_customTextarea"] {
+  html[data-mobile-nav-ios] [data-question-key] [class*="Mbwy4a_fieldInput"] {
     font-size: 16px !important;
   }
 
@@ -247,7 +246,7 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      max rAF gap 167 -> 33ms; the benefit scales with conversation length.
      Desktop untouched (this block lives inside the max-width: 1023px
      media query). */
-  [data-mobile-nav="frame"] > :first-child [role="tree"] {
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"] [role="tree"] {
     content-visibility: auto;
     contain-intrinsic-size: auto 600px;
   }
@@ -291,8 +290,8 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      selected chars, opening with the title / mode / tab labels). On the
      composer side only the input card ([data-composer-card], host marker
      since 0.1.2) and the plugin stats row. */
-  [data-mobile-nav="frame"] > :first-child,
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header,
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"],
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]),
   [data-mobile-nav="frame"] [data-composer-card],
   [data-mobile-nav="stats"],
   [data-mobile-nav="fab"],
@@ -302,10 +301,10 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   }
   [data-mobile-nav="frame"] [data-composer-input],
   [data-mobile-nav="frame"] [data-composer-card] textarea,
-  [data-mobile-nav="frame"] > :first-child [role="dialog"],
-  [data-mobile-nav="frame"] > :first-child input,
-  [data-mobile-nav="frame"] > :first-child textarea,
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header input {
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"] [role="dialog"],
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"] input,
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"] textarea,
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) input {
     -webkit-user-select: text !important;
     user-select: text !important;
   }
@@ -374,7 +373,6 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 @media (min-width: 1024px), (pointer: fine), (pointer: none) {
   [data-mobile-nav="toggle"],
   [data-mobile-nav="files"],
-  [data-mobile-nav="downloads"],
   [data-mobile-nav="file-upload"],
   [data-mobile-nav="fab"],
   [data-mobile-nav="backdrop"],
@@ -436,6 +434,17 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     border-radius: 10px;
   }
 
+  /* @patch
+     id: wide-touch-session-shortcuts
+     for: dsh-client-ui-workspace 的会话行 _rowActions 与归档 / 置顶快捷按钮
+     why: 宽屏触屏常显三颗 40px 按钮挤压标题；沿用手机档 #154 的精确标签收进 ⋯ 菜单（#255）
+     until: 宿主自带触屏快捷按钮收起规则，或会话行提供独立的操作区布局契约，届时删本块
+     test: tests/dsha-session-interaction.test.ts
+  */
+  [class*="sessionRow"] [class*="_rowActions"] :is([aria-label="归档会话"], [aria-label="取消归档"], [aria-label="置顶会话"], [aria-label="取消置顶"], [aria-label="Archive session"], [aria-label="Unarchive session"], [aria-label="Pin session"], [aria-label="Unpin session"]) {
+    display: none !important;
+  }
+
   /* ① 隐藏「更多视图」⋯（owner 2026-10-29）：手机档早就藏了（≤1023 那条在下面），
      它的入口是宿主 header 里的 viewsMoreAnchor；平板这一档没有壳的帧内规则，
      于是这颗对触屏平板毫无用处的按钮就漏了出来。只藏按钮与锚点，菜单不会再弹。 */
@@ -460,6 +469,16 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
     flex-direction: column !important;
     border-radius: 14px !important;
+  }
+  /* ②″ 内容列可收缩（#259 ①，横屏设置拖不动、下半截被裁）：上面把 panel 改成纵向 flex 后，
+     内容列这个 flex item 的 min-height 默认 auto，不会缩到 panel 的 max-height 以下，
+     于是宿主内层 options（flex:1; min-height:0; overflow-y:auto）永远拿不到受限高度，
+     超出部分被 panel 的 overflow:hidden 裁掉。与手机档（layout.css 设置 sheet 内容列）同形。
+     max-height 仍用 100dvh：平板档不跑 syncStableViewportHeight，没有 --dsh-web-mobile-vh 可用；
+     sheet 顶边贴齐，键盘弹起时 dvh 变矮只是让内容区多滚一截，不会把 sheet 推走。 */
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :last-child {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :first-child {
     width: 100%;
@@ -518,36 +537,57 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     display: inline-flex !important;
   }
 
-  /* ④ 设置弹层顶部的「Open configuration file」按钮：手机档在 layout.css 的家族谓词里
-     藏了它（约 94px + 32px 关闭键会把工具栏撑到 138px，挤掉页签行）。平板照做。 */
-  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :last-child > [class*="_header"]:not([class*="_headerActions"]) [class*="_actions"] {
+  /* ③′ 输入框回形针放回来（#259 ②）：触屏平板同样没有拖放与 hover，回形针是顺手的文件入口；
+     弹层逻辑见 effects/composer-file-picker.ts（按 TOUCH_QUERY 武装）。手机档的盒子样式
+     （28px 圆、-8px 左移、::after 外扩命中区）在 layout.css 的移动块里，平板不命中，这里补
+     同尺寸的盒子，不带手机那条按宿主 modes 留白量出来的 -8px 左移（平板工具行是宿主原生排布）。
+     宿主没有 hidden input 的旧代（rc）照手机档同样藏掉：点了是永久的空操作。 */
+  [data-composer-card] [data-mobile-nav="file-upload"] {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    display: inline-grid !important;
+    place-items: center;
+    border: 0 !important;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-composer-card] [data-mobile-nav="file-upload"]:active {
+    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06));
+  }
+  [data-composer-card] [data-mobile-nav="file-upload"]::after {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: 999px;
+  }
+  [data-composer-card] [data-mobile-nav="file-upload"]:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
+  [data-composer-card]:not(:has(input[type=file])) [data-mobile-nav="file-upload"] {
     display: none !important;
   }
-  /* ⑤ 关掉上面那颗按钮之后，内容列顶部的工具栏（关闭 ✕）会留在文档流里、落到页签行
-     左下方（实测 x≈38 / y≈123）。手机档的做法是把它绝对定位钉到弹层右上角
-     （layout.css 的 #105 A′：top 10 / right 12 / z-index 10 / 32px 高）；平板这里
-     补同一条，让 ✕ 与页签行右端对齐。 */
-  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :last-child > [class*="_header"]:not([class*="_headerActions"]) {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    z-index: 10;
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 8px;
-    padding: 0 0 0 4px;
-    height: 32px;
-    min-height: 32px;
-  }
+
+  /* （2026-11-06 审计 D4）这里原本是两条 0.1.x 的设置工具栏规则，锚在
+     「面板末子 > _header」上。0.2.2 的 aria-modal 面板子节点顺序是
+     navTitle → nav → header → options —— 末子是 options，这条链 0 命中
+     （layout.css 的同批清理早已删掉同一串）。现行做法见 layout.css 的
+     settings.action 隐藏与「关闭键热区」两条，手机与平板共用。 */
 }
 
 /* 手机档：「更多视图」⋯ 与侧边栏「更多」重复，而且它把页签行挤成两行
    （tablist 宽 100% → flex 换行），连带把谱系 chip 顶到 header 底边那条空行。
    只藏按钮本身：菜单以它为锚点，藏了按钮就不会再弹出。 */
 @media (max-width: 1023px) and (pointer: coarse) {
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header button[class*="viewsMore"],
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header [class*="viewsMoreAnchor"] {
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) button[class*="viewsMore"],
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [class*="viewsMoreAnchor"] {
     display: none !important;
   }
 }
@@ -560,16 +600,6 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     left: 8px !important;
     right: auto !important;
     max-width: calc(min(88vw, 280px) - 16px) !important;
-  }
-}
-
-/* 头部「下载记录」按钮：它是 headerActions 里唯一留在文档流里的插件按钮
-   （toggle/files 都绝对定位到两角），所以会孤零零卡在标题和「标准模式」之间。
-   右侧图标簇已经没有 28px 的空位（团队 chip 的箭头与文件按钮只隔 ~39px），
-   先把它从头部撤下；要保留入口就放进抽屉品牌行或文件面板。 */
-@media (max-width: 1023px) and (pointer: coarse) {
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header [data-mobile-nav="downloads"] {
-    display: none !important;
   }
 }
 
@@ -622,13 +652,10 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 }
 
 
-/* 头部顶部留白：屏幕状态栏高 38px（152px @4x），标题原始落在 54px。
-   2026-10-25 试过 -16（标题约 38），会进入 App 的顶部遮盖层，已回退到 -8
-   （标题约 46，仍在状态栏之下）；再往上需要 App 层配合，见 04-plan 交接文档。 */
-@media (max-width: 1023px) and (pointer: coarse) {
-  [data-mobile-nav="frame"] [data-phase] header.wSkVaW_header {
-    margin-top: -8px !important;
-  }
-}
+/* 头部顶部留白：自适应（2026-11-05 店主定）。顶部只认外壳的
+   padding-top: env(safe-area-inset-top)（layout.css 的 frame 规则）：有刘海/状态栏 inset 的
+   全屏 WebView、PWA、iOS Safari 由系统给出真实 inset，非全屏容器 inset 为 0、header 贴视口顶。
+   以前按一台机器量出来的 -8 / -12 / -16 负上移（及 max(-12px, -inset) 夹取）全部撤掉：
+   它在 inset 为 0 的容器里是 0，在 inset 真实的设备上却会把标题拉进状态栏。 */
 
 `

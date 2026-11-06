@@ -30,7 +30,7 @@ The following values come from current files. Update the lock before this page w
 | Component | Current local selection | Original lock/configuration |
 |---|---|---|
 | Main DSH package | `@deepseek-ai/dsh` `0.2.1-rc.5` | [package.json](../../tools/dsh-runtime/package.json), [package-lock.json](../../tools/dsh-runtime/package-lock.json) |
-| Mobile plugin | `3.2.2`; actual main input commit below | [mobile-plugin-upstream.lock.json](../../tools/mobile-plugin-upstream.lock.json) |
+| Mobile plugin | `3.3.1`; actual main input commit below | [mobile-plugin-upstream.lock.json](../../tools/mobile-plugin-upstream.lock.json) |
 | Managed environment | Ubuntu 24.04 arm64; DSHA `baseVersion=10` | [runtime-descriptor.json](../../app/src/main/assets/runtime-descriptor.json), [Ubuntu package lock](../../tools/ubuntu-tools/packages.lock.json) |
 | Runtime tools | pnpm `10.34.5`, certifi `2026.7.22` | [runtime-tools.lock.json](../../tools/runtime-tools.lock.json) |
 | Default/optional engine | proot/proroot; the latter locally declared v1.2.8 | [AGENTS](../../AGENTS.en.md), [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES.md) |
@@ -51,12 +51,12 @@ The lock also retains resolved URLs, integrity and declared licenses throughout 
 
 The current lock distinguishes the release tag from later main inputs:
 
-- The current `v3.2.2` tag points to `bb0e5e151ca549fef506e829020a5d7138074711`, and releaseCommit is the same value. Upstream retargeted the tag on 2026-10-30 from the original release commit `4c798ecc554009e401dc1f166b73c314cdf5273f` to this commit; the Release body still says main is `04dcd19f…`, which is stale upstream metadata and cannot prove the bytes behind the current tag.
-- The imported commit is [`bb0e5e151ca549fef506e829020a5d7138074711`](https://github.com/mexiaosqwq/dsh-web-mobile/tree/bb0e5e151ca549fef506e829020a5d7138074711), matching the current v3.2.2 tag; it contains nine changes plus the merge commit landed after the original v3.2.2 release, focused on panel, pet and gesture contracts.
+- The current fixed commit is [`4e71eb67de7dac9d8b2572757c81e47aa32a32fb`](https://github.com/mexiaosqwq/dsh-web-mobile/tree/4e71eb67de7dac9d8b2572757c81e47aa32a32fb); the v3.3.1 tag and releaseCommit are the same value (2026-11-06). Upstream renumbered the host-0.2.2 adaptation (3.4.0 content) as 3.3.1, and the 3.3.2 packaging fix that made `react` an optional peer is included; `lib/client.js` digest `7f82fac2100d70daf34c9c68cc402f6adb2302bf9913122d3402ab0926773c75`.
+- This import has 87 commits (merge commits included) beyond the previous pin `bb0e5e151ca549fef506e829020a5d7138074711` (v3.2.2), focused on host 0.2.2 adaptation (full-page blank screen, clipped header toggle, missing file button, overlapping tabs, file-panel tab strip covered by the header), keyboard/input, plugin page and drawer feedback; the same release removed `lib/file-transfer.js`, which DSHA now keeps providing from `tools/file-transfer/file-transfer.js`.
 - The upstream source-archive SHA-256 in the lock is `80973622839452e52e586b4f7a87eb5a81a9fc26460d76c84d027c7ce6773e2c` (3,284,160 B).
 - Upstream client and final local client are recorded separately; final member digests are in the current THIRD_PARTY_NOTICES and descriptor.
 
-An internal package version of 3.2.2 does not mean it contains only that tag's original bytes. [apply-mobile-client-patches.mjs](../../tools/apply-mobile-client-patches.mjs) and [mobile-server](../../tools/mobile-server) manage local differences. Check individually whether an upstream upgrade absorbed local patches; do not apply the entire old patch set again.
+An internal package version of 3.3.1 does not mean it contains only that tag's original bytes. [apply-mobile-client-patches.mjs](../../tools/apply-mobile-client-patches.mjs) and [mobile-server](../../tools/mobile-server) manage local differences. Check individually whether an upstream upgrade absorbed local patches; do not apply the entire old patch set again.
 
 ## 4. Licenses and unresolved provenance boundaries
 
