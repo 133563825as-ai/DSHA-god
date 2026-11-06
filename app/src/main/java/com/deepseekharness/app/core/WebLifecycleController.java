@@ -1501,10 +1501,19 @@ final class WebLifecycleController {
     }
     WebProcessManager.ForceCandidate candidate;
     try {
-      candidate = webProc.prepareForceStop();
-    } catch (IOException fileEvidenceUnavailable) {
-      // 覆盖安装会换掉进程：PID/身份文件可能缺失，但会话记录里的出生身份仍可核验同一 guest。
-      candidate = recordedForceCandidate(fileEvidenceUnavailable);
+      // 覆盖更新弃旧版：已装 APK 与记录中的会话身份不同时，按记录同时准备 guest 与旧启动器候选。
+      // 记录不可读或核验不过时返回 null，继续走既有路径，绝不放宽信号条件。
+      candidate = overwriteRetireCandidate();
+    } catch (IOException | RuntimeException unavailable) {
+      candidate = null;
+    }
+    if (candidate == null) {
+      try {
+        candidate = webProc.prepareForceStop();
+      } catch (IOException fileEvidenceUnavailable) {
+        // 覆盖安装会换掉进程：PID/身份文件可能缺失，但会话记录里的出生身份仍可核验同一 guest。
+        candidate = recordedForceCandidate(fileEvidenceUnavailable);
+      }
     }
     synchronized (lifecycle) {
       if (!forceStopAllowed(lifecycle, state.lastStopResult, generation))
@@ -1514,6 +1523,34 @@ final class WebLifecycleController {
           ? null
           : new HarnessController.ForceStopRequest(generation, candidate);
     }
+  }
+
+  /**
+   * 覆盖更新弃旧版：只有「已装 APK 身份 ≠ 记录中的会话 appIdentity」才返回候选。
+   *
+   * <p>调用前 App 已被新包替换，记录里的 guest 与旧 proot 启动器都属于上一实例；本方法只准备候选，
+   * 真正发信号仍在停止队列里按记录出生身份两次核验。记录缺失 / 不可读或身份不符都返回 null，保留既有
+   * I9 路径；隔离试运行（records != null）由 {@link WebProcessManager} 拒绝。
+   */
+  private WebProcessManager.ForceCandidate overwriteRetireCandidate() throws IOException {
+    com.deepseekharness.app.runtime.StoredWebSession.Record record = storedSession.read();
+    if (record == null) return null;
+    if (!previousBuildInstance(record.app(), storedSession.appIdentity())) return null;
+    return webProc.prepareOverwriteRetire(record.proof());
+  }
+
+  /**
+   * 覆盖更新弃旧版只对「已装 APK 身份与记录中的会话身份不同」的上一实例成立。
+   *
+   * <p>{@code StoredWebSession.appIdentity()} 含包名、APK lastUpdateTime 与版本名；同一安装内重读
+   * 恒等，覆盖安装后必不等。任一为空或无法比较时不成立，继续走既有 I9 路径（只结束 guest）。
+   */
+  static boolean previousBuildInstance(String recordedApp, String installedApp) {
+    return recordedApp != null
+        && installedApp != null
+        && !recordedApp.isEmpty()
+        && !installedApp.isEmpty()
+        && !recordedApp.equals(installedApp);
   }
 
   /** 只用已保存且完整匹配的出生身份准备候选；读不到或任一字段不符都不杀。 */

@@ -93,6 +93,27 @@ public final class WebProofStop {
     return killed != null ? killed : failed(WebStopDiagnostic.Code.EXIT_UNCONFIRMED, null);
   }
 
+  /**
+   * 覆盖更新弃旧版：guest 与它记录中的启动器按顺序回收。
+   *
+   * <p>只有 guest 已确认退出后才观察 / 结束启动器；启动器 probe 只在完整出生身份（PID、出生时间、
+   * 命令行、UID、代次/实例/nonce）两次一致时返回 {@link Observation#LIVE}。任一对象核验不过都不发送
+   * 信号，并返回该对象的结论。这里不按端口、名称、进程组或扫描结束任何进程。
+   */
+  public static Outcome runRetiringLauncher(
+      boolean allowForce,
+      Probe guest,
+      SignalSender guestTerm,
+      SignalSender guestKill,
+      Probe launcher,
+      SignalSender launcherTerm,
+      SignalSender launcherKill,
+      Clock clock) {
+    Outcome retiredGuest = run(allowForce, guest, guestTerm, guestKill, clock);
+    if (!retiredGuest.stopped()) return retiredGuest;
+    return run(allowForce, launcher, launcherTerm, launcherKill, clock);
+  }
+
   /** 同一检查连读两次，避免 stat 与 environ 之间进程被替换。 */
   private static Observation verifyTwice(Probe probe) throws IOException {
     Observation first = probe.observe();

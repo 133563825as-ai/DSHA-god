@@ -116,6 +116,39 @@ public final class TrialRecoveryTest {
   }
 
   @Test
+  public void confirmedAbsentTrialWithoutPidClosesAndRemovesOnlyItsPayload() throws Exception {
+    File home = home(), entry = entry(home);
+    write(entry, "launched", entry.getName());
+    AtomicInteger absent = new AtomicInteger();
+    TrialRecovery.recover(
+        fs,
+        home,
+        new TrialRecovery.Stopper() {
+          public void stopAndConfirm(File payload) {
+            throw new AssertionError("no PID evidence must not stop by payload");
+          }
+
+          public void confirmAbsent(String id) {
+            assertEquals(entry.getName(), id);
+            absent.incrementAndGet();
+          }
+        });
+    assertEquals(1, absent.get());
+    assertEquals(entry.getName(), Files.readString(new File(entry, "closed").toPath()));
+    assertFalse(new File(entry, "payload").exists());
+  }
+
+  @Test
+  public void absentEvidenceFailureStillRetainsTheRecord() throws Exception {
+    File home = home(), entry = entry(home);
+    write(entry, "launched", entry.getName());
+    IOException error =
+        assertThrows(IOException.class, () -> TrialRecovery.recover(fs, home, payload -> {}));
+    assertEquals("TRIAL_PROCESS_UNCONFIRMED", error.getMessage());
+    retained(entry);
+  }
+
+  @Test
   public void unconfirmedPlatformStopCannotPublishClosedOrDeletePayload() throws Exception {
     File home = home(), entry = entry(home);
     write(entry, "launched", entry.getName());

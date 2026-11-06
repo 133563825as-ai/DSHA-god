@@ -142,6 +142,7 @@ public final class StartupRecoveryState {
     READY(Tone.GOOD),
     READY_SAFE(Tone.GOOD),
     READY_THEN_STOPPED(Tone.GOOD),
+    READY_WAITING(Tone.INFO),
     RUNNING(Tone.INFO),
     CANCELLED(Tone.IDLE),
     INTERRUPTED(Tone.WARN),
@@ -161,6 +162,20 @@ public final class StartupRecoveryState {
    */
   public static Outcome outcome(
       String status, boolean safe, long browserReadyMs, boolean current, boolean starting) {
+    return outcome(status, safe, -1, browserReadyMs, current, starting);
+  }
+
+  /**
+   * 带后端就绪证据的版本。{@code backendReadyMs >= 0} 表示这次启动已经拿到鉴权链接，
+   * 只是没有写下最终 ready/failed：这不是“中断 · 无结果”，而是已就绪等待进入 / 被新启动取代。
+   */
+  public static Outcome outcome(
+      String status,
+      boolean safe,
+      long backendReadyMs,
+      long browserReadyMs,
+      boolean current,
+      boolean starting) {
     boolean ready = browserReadyMs >= 0;
     switch (status == null ? "" : status) {
       case "ready":
@@ -170,6 +185,7 @@ public final class StartupRecoveryState {
       case "failed":
         return ready ? Outcome.LOST_AFTER_READY : Outcome.FAILED;
       default:
+        if (backendReadyMs >= 0 && !(current && starting)) return Outcome.READY_WAITING;
         return current && starting ? Outcome.RUNNING : Outcome.INTERRUPTED;
     }
   }
@@ -205,6 +221,8 @@ public final class StartupRecoveryState {
         return UiText.choose("成功 · 安全模式", "Succeeded · safe mode");
       case READY_THEN_STOPPED:
         return UiText.choose("成功 · 后已手动停止", "Succeeded · stopped later");
+      case READY_WAITING:
+        return UiText.choose("已就绪 · 等待进入", "Ready · waiting to enter");
       case RUNNING:
         return UiText.text("进行中");
       case CANCELLED:
@@ -227,6 +245,8 @@ public final class StartupRecoveryState {
       case READY_THEN_STOPPED:
       case LOST_AFTER_READY:
         return UiText.format("%s 秒就绪", readySeconds);
+      case READY_WAITING:
+        return UiText.format("第 %s 秒已就绪", seconds);
       case RUNNING:
         return UiText.format("已用 %s 秒", seconds);
       case INTERRUPTED:
@@ -266,6 +286,8 @@ public final class StartupRecoveryState {
       case READY_THEN_STOPPED:
       case CANCELLED:
         return Kind.STOPPED;
+      case READY_WAITING:
+        return Kind.IDLE;
       default:
         return Kind.IDLE;
     }

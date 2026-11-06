@@ -1052,6 +1052,7 @@
     "app/src/test/java/com/deepseekharness/app/runtime/TrialRecoveryTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/TrialSupportTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/UserDataBindingsTest.java",
+    "app/src/test/java/com/deepseekharness/app/runtime/WebOverwriteRetireTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/WebProcessScanPolicyTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/WebRecordedStopTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/WebSessionExitEvidenceTest.java",

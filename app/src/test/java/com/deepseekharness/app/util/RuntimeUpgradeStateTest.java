@@ -41,4 +41,16 @@ public class RuntimeUpgradeStateTest {
     assertTrue(RuntimeUpgradeState.limitedEntry(true, true, false, true));
     assertFalse(RuntimeUpgradeState.limitedEntry(true, true, false, false));
   }
+
+  @Test
+  public void staleFailureSnapshotClearsOnlyAfterExternalRecoveryIsRunnable() {
+    // 外部恢复成功、环境可运行且无待恢复：旧失败快照不再显示，页面回到标准更新入口。
+    assertTrue(RuntimeUpgradeState.clearStaleFailure(false, false, true, true, 7, 7));
+    // 环境不可运行 / 维护中 / 待恢复 / 不是本页任务 / 快照本就成功：都保留原渲染。
+    assertFalse(RuntimeUpgradeState.clearStaleFailure(false, false, false, true, 7, 7));
+    assertFalse(RuntimeUpgradeState.clearStaleFailure(true, false, true, true, 7, 7));
+    assertFalse(RuntimeUpgradeState.clearStaleFailure(false, true, true, true, 7, 7));
+    assertFalse(RuntimeUpgradeState.clearStaleFailure(false, false, true, true, 6, 7));
+    assertFalse(RuntimeUpgradeState.clearStaleFailure(false, false, true, false, 7, 7));
+  }
 }

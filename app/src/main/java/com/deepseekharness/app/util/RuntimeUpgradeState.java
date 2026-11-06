@@ -41,4 +41,27 @@ public final class RuntimeUpgradeState {
       boolean environmentReady, boolean installedLatest, boolean busy, boolean pending) {
     return busy || pending || !upToDate(environmentReady, installedLatest);
   }
+
+  /**
+   * 维护页是否应丢弃上次失败快照。
+   *
+   * <p>外部恢复（应急 DSH 的恢复中断维护、手动回切）成功后，本页缓存的仍是失败任务快照；
+   * 若继续把它当成“本页当前任务”，页面会一直显示旧失败文案，用户必须再点一次重试才会刷新。
+   * 只要环境可继续运行、没有维护进行 / 待恢复，且快照确为失败或中断，就丢弃旧快照：页面回到
+   * “上一版运行时尚未更新”的标准状态并给出重试更新入口，而不是停留在失败详情。
+   */
+  public static boolean clearStaleFailure(
+      boolean busy,
+      boolean pending,
+      boolean environmentReady,
+      boolean snapshotFailedOrInterrupted,
+      long pageTaskId,
+      long snapshotId) {
+    return environmentReady
+        && !busy
+        && !pending
+        && snapshotFailedOrInterrupted
+        && pageTaskId != 0
+        && pageTaskId == snapshotId;
+  }
 }

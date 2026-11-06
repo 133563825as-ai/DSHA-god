@@ -111,15 +111,25 @@ public class WebProcessManager {
   public static final class ForceCandidate {
     private final com.deepseekharness.app.util.WebForceStop.Candidate proof;
     private final com.deepseekharness.app.util.WebSessionProof.Saved recorded;
+    private final boolean retirePreviousLauncher;
 
     private ForceCandidate(com.deepseekharness.app.util.WebForceStop.Candidate proof) {
-      this.proof = proof;
-      this.recorded = null;
+      this(proof, null, false);
     }
 
-    private ForceCandidate(com.deepseekharness.app.util.WebSessionProof.Saved recorded) {
-      this.proof = null;
+    private ForceCandidate(
+        com.deepseekharness.app.util.WebSessionProof.Saved recorded,
+        boolean retirePreviousLauncher) {
+      this(null, recorded, retirePreviousLauncher);
+    }
+
+    private ForceCandidate(
+        com.deepseekharness.app.util.WebForceStop.Candidate proof,
+        com.deepseekharness.app.util.WebSessionProof.Saved recorded,
+        boolean retirePreviousLauncher) {
+      this.proof = proof;
       this.recorded = recorded;
+      this.retirePreviousLauncher = retirePreviousLauncher;
     }
 
     public int pid() {
@@ -128,6 +138,11 @@ public class WebProcessManager {
 
     public String generation() {
       return recorded != null ? Long.toString(recorded.generation()) : proof.generation();
+    }
+
+    /** 覆盖更新弃旧版：用户确认后还会结束记录中的上一版容器启动器。 */
+    public boolean retiresPreviousLauncher() {
+      return retirePreviousLauncher;
     }
   }
 
@@ -162,7 +177,63 @@ public class WebProcessManager {
     if (saved == null) return null;
     if (observeRecordedSession(saved) != SessionObservation.LIVE)
       throw new WebStopException(Code.RECORDED_SESSION_UNCONFIRMED);
-    return new ForceCandidate(saved);
+    return new ForceCandidate(saved, false);
+  }
+
+  /**
+   * 覆盖更新弃旧版：只有当前已装 APK 与记录中的会话身份不同（上一实例）时，调用方才应准备本候选。
+   *
+   * <p>guest 与旧启动器各自连读两次出生身份：只有同一结论才继续；任何一次 UNKNOWN（PID 复用、
+   * 出生时间 / 命令行 / UID / 代次 / 实例 / nonce 不符或环境不可读）都不发送任何信号。guest 已退出时
+   * 允许只为旧启动器准备候选；两者都已退出返回 {@code null}。
+   */
+  public ForceCandidate prepareOverwriteRetire(
+      com.deepseekharness.app.util.WebSessionProof.Saved saved) throws IOException {
+    if (records != null)
+      throw new WebStopException(Code.FORCE_EVIDENCE_UNCONFIRMED, "TRIAL_FORBIDDEN");
+    if (saved == null) return null;
+    SessionObservation guestFirst = observeRecordedSession(saved);
+    SessionObservation guestSecond = observeRecordedSession(saved);
+    if (guestFirst != guestSecond || guestFirst == SessionObservation.UNKNOWN)
+      throw new WebStopException(Code.RECORDED_SESSION_UNCONFIRMED);
+    com.deepseekharness.app.util.WebProofStop.Observation launcherFirst =
+        observeRecordedLauncher(saved);
+    com.deepseekharness.app.util.WebProofStop.Observation launcherSecond =
+        observeRecordedLauncher(saved);
+    if (launcherFirst != launcherSecond
+        || launcherFirst == com.deepseekharness.app.util.WebProofStop.Observation.UNKNOWN)
+      throw new WebStopException(Code.RECORDED_SESSION_UNCONFIRMED);
+    if (guestFirst == SessionObservation.EXITED
+        && launcherFirst == com.deepseekharness.app.util.WebProofStop.Observation.EXITED)
+      return null;
+    return new ForceCandidate(saved, true);
+  }
+
+  /**
+   * 只读核对记录中的上一版启动器；退出或编号已复用是退出证明，读不了是不匹配。
+   *
+   * <p>覆盖更新后旧启动器仍存活时，它不属于本次实例，只能凭记录里的完整出生身份识别；这里不发送
+   * 信号，也不按名称 / 端口 / 进程组扫描。
+   */
+  com.deepseekharness.app.util.WebProofStop.Observation observeRecordedLauncher(
+      com.deepseekharness.app.util.WebSessionProof.Saved saved) {
+    if (saved == null || records != null)
+      return com.deepseekharness.app.util.WebProofStop.Observation.UNKNOWN;
+    try {
+      if (!saved.boot().equals(recoveryBoot()))
+        return com.deepseekharness.app.util.WebProofStop.Observation.EXITED;
+      var launcher = recoveryProcess(saved.launcherPid());
+      if (!launcher.alive() || launcher.started() != saved.launcherStarted())
+        return com.deepseekharness.app.util.WebProofStop.Observation.EXITED;
+      return com.deepseekharness.app.util.WebSessionProof.matchesLauncher(
+              saved, recoveryHostUid(), launcher)
+          ? com.deepseekharness.app.util.WebProofStop.Observation.LIVE
+          : com.deepseekharness.app.util.WebProofStop.Observation.UNKNOWN;
+    } catch (IOException | RuntimeException unavailable) {
+      if (recordedProcessExited(saved.launcherPid(), saved.launcherStarted()))
+        return com.deepseekharness.app.util.WebProofStop.Observation.EXITED;
+      return com.deepseekharness.app.util.WebProofStop.Observation.UNKNOWN;
+    }
   }
 
   /**
@@ -179,7 +250,7 @@ public class WebProcessManager {
       if (!web.alive() || web.started() != saved.webStarted()) return SessionObservation.EXITED;
       var launcher = recoveryProcess(saved.launcherPid());
       return com.deepseekharness.app.util.WebSessionProof.matches(
-              saved, boot, android.os.Process.myUid(), web, launcher)
+              saved, boot, recoveryHostUid(), web, launcher)
           ? SessionObservation.LIVE
           : SessionObservation.UNKNOWN;
     } catch (IOException | RuntimeException unavailable) {
@@ -194,7 +265,7 @@ public class WebProcessManager {
     if (records != null)
       throw new WebStopException(Code.FORCE_EVIDENCE_UNCONFIRMED, "TRIAL_FORBIDDEN");
     if (candidate != null && candidate.recorded != null)
-      return forceRecordedStop(candidate.recorded);
+      return forceRecordedStop(candidate.recorded, candidate.retirePreviousLauncher);
     try {
       sentinel();
       com.deepseekharness.app.util.WebForceStop.signal(
@@ -217,12 +288,26 @@ public class WebProcessManager {
     }
   }
 
-  /** 按会话记录里的出生身份结束同一 guest；核验不过不发送信号，启动器始终保留。 */
-  private StopResult forceRecordedStop(com.deepseekharness.app.util.WebSessionProof.Saved saved)
+  /**
+   * 按会话记录里的出生身份结束同一 guest；覆盖更新弃旧版时，guest 确认退出后再按同一份出生身份结束
+   * 该记录对应的旧容器启动器。核验不过不发送任何信号；普通停止 / 试运行路径不放宽。
+   */
+  private StopResult forceRecordedStop(
+      com.deepseekharness.app.util.WebSessionProof.Saved saved, boolean retireLauncher)
       throws IOException {
     try {
       sentinel();
-      var outcome =
+      var clock =
+          new com.deepseekharness.app.util.WebProofStop.Clock() {
+            public long now() {
+              return android.os.SystemClock.elapsedRealtime();
+            }
+
+            public void pause(long millis) throws InterruptedException {
+              Thread.sleep(millis);
+            }
+          };
+      var guest =
           com.deepseekharness.app.util.WebProofStop.run(
               true,
               () ->
@@ -233,19 +318,24 @@ public class WebProcessManager {
                   },
               () -> signalProofTerm(saved.webPid()),
               () -> signalKill(saved.webPid()),
-              new com.deepseekharness.app.util.WebProofStop.Clock() {
-                public long now() {
-                  return android.os.SystemClock.elapsedRealtime();
-                }
-
-                public void pause(long millis) throws InterruptedException {
-                  Thread.sleep(millis);
-                }
-              });
+              clock);
+      com.deepseekharness.app.util.WebProofStop.Outcome launcher = null;
+      // 先结束 guest，再结束旧启动器；guest 未确认退出时绝不碰启动器。
+      if (guest.stopped() && retireLauncher)
+        launcher =
+            com.deepseekharness.app.util.WebProofStop.run(
+                true,
+                () -> observeRecordedLauncher(saved),
+                () -> signalProofTerm(saved.launcherPid()),
+                () -> signalKill(saved.launcherPid()),
+                clock);
       StopResult barrier = result(stopAll());
-      if (outcome.stopped() || barrier.stopped()) return barrier;
+      if (barrier.stopped()) return barrier;
       java.util.List<WebStopDiagnostic> facts = new java.util.ArrayList<>();
-      if (outcome.diagnostic() != null) facts.add(outcome.diagnostic());
+      if (guest.diagnostic() != null) facts.add(guest.diagnostic());
+      if (launcher != null && launcher.diagnostic() != null) facts.add(launcher.diagnostic());
+      if (launcher != null && !launcher.stopped())
+        facts.add(WebStopDiagnostic.of(Code.PREVIOUS_LAUNCHER_UNCONFIRMED));
       facts.addAll(barrier.diagnostics());
       return new StopResult(
           StopStatus.UNCONFIRMED, "WEB_RECORDED_STOP_UNCONFIRMED", facts, proot.hostPorts());
@@ -598,6 +688,19 @@ public class WebProcessManager {
     } catch (Exception error) {
       return WebStopDiagnostic.failure(Code.TRIAL_STOP_FAILED, error);
     }
+  }
+
+  /**
+   * 只回收指定试运行 profile：只接受直接 dsh 试运行命令、同 UID 与两次一致出生身份，绝不按端口 /
+   * 名称扫描。正常返回即表示当前已无该 profile 的进程；拒读、身份变化或退出未确认都抛错保留现场。
+   */
+  public void retireRecordedTrialProfile(String profile) throws IOException {
+    if (records != null) throw new IOException("TRIAL_PROFILE_SCOPE");
+    if (profile == null || !profile.matches("dsha-recovery-[0-9a-f]{16}"))
+      throw new IOException("TRIAL_PROFILE");
+    WebStopDiagnostic diagnostic =
+        stopRecordedTrialProfiles(new java.util.LinkedHashSet<>(java.util.List.of(profile)));
+    if (diagnostic != null) throw new WebStopException(diagnostic, null);
   }
 
   /** 仅隔离仍与本次读取一致的旧记录；保留最后一份编号供诊断。 */
@@ -966,10 +1069,17 @@ public class WebProcessManager {
     }
   }
 
-  /** 仅供本次持有真实 proot Process 对象的试运行使用，不能凭旧 PID 调用。 */
+  /**
+   * 试用收尾只按本记录 guest 的退出证据确认。
+   *
+   * <p>proroot 启动器在 Android 16 上可能在 guest 退出后晚退甚至残留；若把启动器 Process 对象仍活
+   * 当成“试用进程未确认”，一次正常的试用也会留下半提交事务与无法自愈的 trial 记录。这里改为核验
+   * 本记录 PID 已退休且没有本应用 Web 仍在运行；启动器本身由 {@code RuntimeTrial} 用本次持有的
+   * Process 句柄做一次有界清理，不按 PID / 名称扫描。
+   */
   boolean confirmTrackedTrialStopped(Process tracked) throws IOException {
-    if (records == null) throw new IOException("TRIAL_RECORD_DIRECTORY");
-    return confirmStopped(!com.deepseekharness.app.util.ProcessTermination.exited(tracked));
+    if (records == null || tracked == null) throw new IOException("TRIAL_RECORD_DIRECTORY");
+    return confirmStopped(false);
   }
 
   private WebStopDiagnostic stopOne() {

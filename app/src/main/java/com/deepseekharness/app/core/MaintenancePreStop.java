@@ -94,8 +94,8 @@ final class MaintenancePreStop {
   static String unavailable(String first, String reason) {
     return UiText.format(
         UiText.choose(
-            "旧 Web 未能在维护前确认停止，且本次无法用已核验身份强制结束。原运行环境未改动；请保持 DSHA 在前台，点下方「重试更新运行时」再试。\n上次停止结果：%s\n核验结果：%s",
-            "The old Web could not be confirmed stopped before maintenance, and no identity-verified force stop was available. The runtime was not changed; keep DSHA in the foreground and tap Retry runtime update.\nLast stop result: %s\nIdentity check: %s"),
+            "旧 Web 未能在维护前确认停止，且本次无法用已核验身份强制结束。原运行环境未改动；请保持 DSHA 在前台，点下方「重试更新运行时」再试。覆盖更新留下的上一版实例只有在出生身份完整核验通过后，才会连同旧容器启动器一起结束。\n上次停止结果：%s\n核验结果：%s",
+            "The old Web could not be confirmed stopped before maintenance, and no identity-verified force stop was available. The runtime was not changed; keep DSHA in the foreground and tap Retry runtime update. A previous-build instance left by an over-the-top update is ended together with its old container launcher only after its full birth identity verifies.\nLast stop result: %s\nIdentity check: %s"),
         first,
         reason == null || reason.isEmpty() ? "-" : reason);
   }
@@ -111,8 +111,8 @@ final class MaintenancePreStop {
   static String failed(String first, String second) {
     return UiText.format(
         UiText.choose(
-            "已按身份核验尝试强制结束旧 Web，但退出仍未确认。原运行环境未改动；请点下方「重试更新运行时」；仍失败请在系统设置中结束 DSHA 后重新打开。\n普通停止结果：%s\n强制停止结果：%s",
-            "An identity-verified force stop was attempted, but the old Web still has not confirmed exit. The runtime was not changed; tap Retry runtime update, and if it still fails close DSHA from system settings and reopen it.\nOrdinary stop: %s\nForce stop: %s"),
+            "已按身份核验尝试强制结束旧 Web，但退出仍未确认。原运行环境未改动；请点下方「重试更新运行时」；仍失败请在系统设置中结束 DSHA 后重新打开。覆盖更新留下的上一版实例会在核验通过后放弃旧版：先结束 guest，再结束旧容器启动器。\n普通停止结果：%s\n强制停止结果：%s",
+            "An identity-verified force stop was attempted, but the old Web still has not confirmed exit. The runtime was not changed; tap Retry runtime update, and if it still fails close DSHA from system settings and reopen it. A previous-build instance left by an over-the-top update is retired once verification passes: the guest first, then its old container launcher.\nOrdinary stop: %s\nForce stop: %s"),
         first,
         second);
   }

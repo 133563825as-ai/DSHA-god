@@ -2,7 +2,7 @@
 
 > English: [Over-the-top upgrades, runtime maintenance, and built-in plugin dependency contracts](en/overwrite-upgrade-and-maintenance.md)
 >
-> 核验日期：2026-11-05。基线：build324（已发布）/ build325（T61 移动壳齿轮让位）/ build326（T60 展示层与旧 Web 会话修复）/ build327（T67 维护前自行完成完全停止）。本文把“覆盖安装后白屏、不触发环境维护、侧栏重复叠加、维护页要求用户绕道停止 Web”这次事故的判定层、展示层、自动开始安全门禁、维护前停止与 Web 启动准入写成持久化不变式。只核对源码与已有回归，不代替真机验收；具体版本的验证范围以 [docs/releases/](releases/) 对应回执为准。
+> 核验日期：2026-11-06。基线：build324（已发布）/ build325（T61 移动壳齿轮让位）/ build326（T60 展示层与旧 Web 会话修复）/ build327（T67 维护前自行完成完全停止）/ T91（覆盖更新弃旧版：受控结束上一版启动器，下一构建）。本文把“覆盖安装后白屏、不触发环境维护、侧栏重复叠加、维护页要求用户绕道停止 Web”这次事故的判定层、展示层、自动开始安全门禁、维护前停止与 Web 启动准入写成持久化不变式。只核对源码与已有回归，不代替真机验收；具体版本的验证范围以 [docs/releases/](releases/) 对应回执为准。
 
 ## 30 秒结论
 
@@ -12,6 +12,7 @@
 4. **白屏机制**：`WebLifecycleController` 在 `!isEnvironmentReady() || requiresMaintenanceBeforeStart()` 时直接把启动判为 `REJECTED`，防止看门狗用“兼容但过期”的旧运行时拉起 Web。于是宿主重建 / 看门狗重新拉起时，“旧树 + 新 APK”的 Web 根本不会启动，主界面 Web 区域空白。若旧 proot Web 进程仍存活、页面已加载旧树内容，内置插件对宿主指示灯的依赖又会让内容区白屏并出现侧栏重复；T61 真机对照中只改这条插件契约后白屏消失，但直接 JS 栈未取得，见[白屏排查记录](releases/v0.2.1-rc.5-build324-blank-screen-20261105.md)。
 5. **客户端插件不得依赖宿主某个控件是否存在**：内置 `dsh-web-mobile` 的侧栏齿轮曾用 `:has(...)` 依赖宿主 `ConnectionIndicator` 是否渲染；当受管补丁让该指示灯首次不显示时，插件渲染链失效，用户禁用插件才恢复。修复为“按实测宽度让位”，结论幂等写入插件自有属性 `data-mobile-nav-quick-fit`。
 6. **维护动作必须自己完成“完全停止”**（build327 新增）：用户手点「更新运行时」后，维护任务先按既有停止设计（哨兵 → PID 文件 + 出生身份核验）结束旧 Web；普通停止未确认退出时，用同一套身份核验准备强制候选再结束一次。维护页不再要求用户绕道「受限主界面 → 停止 → 回来更新」。停不掉时保留原环境并给出可重试的失败文案。
+7. **覆盖更新弃旧版**（T91 新增）：只有「已装 APK 身份 ≠ 记录中的会话身份」时才允许在维护动作内按记录出生身份先结束上一版 guest，再结束该记录对应的旧 proot 启动器；两者各自两次完整核验，任何一项不符都不发信号。非覆盖路径、当前实例、终端与隔离试运行不变（I9 仍是默认规则）。
 
 ## 不变量（不可破坏）
 
@@ -25,7 +26,8 @@
 | I6 | 只改 UI 的 APK 覆盖**不得**重建环境；同 dsh 版本、受管补丁或描述符输入变化**必须**视为补丁级更新（重算描述符、进维护页、重装受管树）。 | `RuntimeDescriptor.latest` 比较 `id` 与 `inputs`；`OverwriteUpgradeGateTest.uiOnlyApkUpdateWithUnchangedManagedInputsNeverNeedsMaintenance` |
 | I7 | 同一候选只自动尝试一次；失败、中断、旋转、进程重建都不自动重放。受限入口不写就绪标记，终端 / Web / 插件执行仍须过环境门禁。 | `EnvironmentIdentity.shouldAutoStart`；`MaintenanceCoordinator.pending`；`ExtractActivity.proceed()` 的 `limitedEntry` |
 | I8 | 内置插件只能依赖**自己的属性 + 实测几何**，不得依赖宿主某个控件是否存在（类名、`data-*`、`role`、`:has()` 都不行）。宿主 UI 变化不得让插件渲染链崩掉。 | [`tools/test-mobile-gear-contract.mjs`](../tools/test-mobile-gear-contract.mjs)（T61 / build325）；[`tools/apply-mobile-client-patches.mjs`](../tools/apply-mobile-client-patches.mjs) 的 `DSHA_GEAR_FIT_V1` |
-| I9 | 用户显式确认维护后，维护动作必须**自行完成完全停止**，再取维护屏障与执行更新；普通停止未确认时只允许升级一次**身份核验**的强制结束（PID + 出生身份 + 命令行 + 代次），不得按端口 / 名称 / 进程组；无法核验或仍停不掉时保留原环境并给出可重试文案。未确认的旧 Web 会话仍只拦自动开始，不拦用户手点。 | `MaintenancePreStop`（`core/`）与 `WebProofStop`（`util/`）；`MaintenancePreStopTest`、`WebProofStopTest`、`WebRecordedStopTest`、`WebForceStopTest`、`WebSessionProofTest`（T67 / build327） |
+| I9 | 用户显式确认维护后，维护动作必须**自行完成完全停止**，再取维护屏障与执行更新；普通停止未确认时只允许升级一次**身份核验**的强制结束（PID + 出生身份 + 命令行 + 代次），不得按端口 / 名称 / 进程组；无法核验或仍停不掉时保留原环境并给出可重试文案。未确认的旧 Web 会话仍只拦自动开始，不拦用户手点。非覆盖路径（当前实例、普通停止、试运行）不变；覆盖更新例外见 I10。 | `MaintenancePreStop`（`core/`）与 `WebProofStop`（`util/`）；`MaintenancePreStopTest`、`WebProofStopTest`、`WebRecordedStopTest`、`WebForceStopTest`、`WebSessionProofTest`（T67 / build327） |
+| I10 | **覆盖更新弃旧版（T91）**：只有「已装 APK 身份 ≠ 记录中的会话 `appIdentity`」时，才允许在维护 / 强制停止动作内按记录出生身份（boot、PID、出生时间、命令行、UID、代次/实例/nonce）**双次核验**后，先结束该记录中的 guest，再结束它对应的旧 proot 启动器；SIGTERM 后短等待，未退出再 SIGKILL。guest 未确认退出时不碰启动器；任一核验失败 / 读不了 / PID 复用 / 他人 UID / 两次观察变化都**不发信号**并保留原环境。绝不按端口 / 名称 / 进程组 / 扫描；不碰当前实例启动器、终端、虚拟屏与隔离试运行。 | `WebLifecycleController.previousBuildInstance` / `overwriteRetireCandidate`；`WebProcessManager.prepareOverwriteRetire` / `observeRecordedLauncher`；`WebProofStop.runRetiringLauncher`；`WebOverwriteRetireTest`、`WebProofStopTest`、`WebSessionProofTest`、`WebForceStopGateTest`（T91） |
 
 ## 四层机制
 
@@ -101,8 +103,11 @@ if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeSt
   2. 等待 `WebProcessManager` / `WebProcessSession` 的既有退出证明（guest 与启动器都退出）；
   3. 普通停止未确认时，才调用 `HarnessController.prepareForceStop()` 准备**身份核验**候选（PID、出生时间、命令行、UID、代次），再 `forceStop` 结束同一 guest；
   4. 仍无法确认退出 → 失败文案明确写出原环境未改动，并让用户点「重试更新运行时」。
-- **覆盖安装后的残留进程**：App 已被系统结束、`/root/.dsha-web.pid` / `.dsha-web.identity` 可能缺失时，用会话记录里已保存的出生身份（`StoredWebSession.Record.proof`：boot、代次、实例、nonce、guest 与 launcher 的 PID + 出生时间 + 命令行）作为兜底证据。[`WebProofStop`](../app/src/main/java/com/deepseekharness/app/util/WebProofStop.java) 只在两次完整核验一致时先 SIGTERM，允许强制时再次复核后 SIGKILL；PID 复用、出生时间或命令行变化、记录不可读都**不发送任何信号**。启动器永不被结束。
-- **自动路径不升级**：覆盖更新后的自动开始、闲时清理等仍走 `MaintenanceCoordinator.exclusive`（不传 `allowForceStop`）；未确认旧 Web 会话只拦自动开始（I4），只有用户手点维护才允许强制结束。
+- **覆盖安装后的残留进程**：App 已被系统结束、`/root/.dsha-web.pid` / `.dsha-web.identity` 可能缺失时，用会话记录里已保存的出生身份（`StoredWebSession.Record.proof`：boot、代次、实例、nonce、guest 与 launcher 的 PID + 出生时间 + 命令行）作为兜底证据。[`WebProofStop`](../app/src/main/java/com/deepseekharness/app/util/WebProofStop.java) 只在两次完整核验一致时先 SIGTERM，允许强制时再次复核后 SIGKILL；PID 复用、出生时间或命令行变化、记录不可读都**不发送任何信号**。非覆盖路径（当前实例、普通停止、试运行）下启动器仍不被结束（I9）。
+- **覆盖更新弃旧版（T91 / I10）**：覆盖更新后旧 proot 启动器可能先于 guest 存活，只结束 guest 无法解除维护屏障。只有已装 APK 身份与记录身份不同时，`WebLifecycleController.overwriteRetireCandidate` 才按记录准备候选；`WebProcessManager.prepareOverwriteRetire` 对 guest 与旧启动器各自连读两次出生身份，`WebProofStop.runRetiringLauncher` 在 guest 确认退出后才对旧启动器 SIGTERM → 短等待 → 复核 → SIGKILL。guest 未确认退出、启动器 PID 复用 / 属于他人 UID / 命令行或代次不符 / 环境不可读时都不发信号，维护页保留原环境并给出重试文案；用户确认的强制停止对话框会明确写出「放弃上一版 Web 并强制结束」。自动开始 / 闲时清理等自动路径仍不升级。
+- **自动路径不升级**：覆盖更新后的自动开始、闲时清理等仍走 `MaintenanceCoordinator.exclusive`（不传 `allowForceStop`）；未确认旧 Web 会话只拦自动开始（I4），只有用户手点维护才允许身份核验的强制结束（I9 / I10）。
+- **隔离试运行收尾（T91）**：proroot 启动器可能在试用 guest 已退出后晚退或残留（Android 16 实测），因此 `WebProcessManager.confirmTrackedTrialStopped` 只按本记录 guest 的退出证据（PID 退休 + 无本应用 Web）确认，不把启动器对象仍活当成试用失败；`RuntimeTrial` 只对本次持有的 `Process` 句柄做一次有界清理（超时 / 失败只写 `TRIAL_LAUNCHER_RETENTION` 诊断，不改变 guest 退出结论）。`TrialRecovery` 遇到 `launched` 但缺 `.dsha-web.pid` / `.stale` 的记录时，改为要求平台按该记录 id 推导的试运行 profile **确认无此进程**（两次一致出生身份、同 UID；仍存在 / 拒读 / 身份变化继续 fail-closed），不再无条件留下无法自愈的 `TRIAL_NO_PID_OR_BOUND_SESSION_EXIT_EVIDENCE`。
+- **半提交恢复与维护页出口（T91）**：trial 失败留下的 `files-committed / settings-committed` 半提交事务仍只能由 `EnvironmentMaintenance.recover()` 回切；恢复失败的原因现在同时写入任务状态与可导出的操作记录（`MAINTENANCE_TASK_START / MAINTENANCE_TASK_FAILED`），维护页必须能显示。外部完成恢复后，页面只要环境可运行、无维护进行 / 待恢复，就丢弃旧的失败快照（`RuntimeUpgradeState.clearStaleFailure`），回到“上一版运行时待更新”的标准状态并给出更新入口，而不是继续把 `TRIAL_PROCESS_UNCONFIRMED` 留在主位。应急 DSH、维护记录、导出可读副本与「进入受限主界面」在任何失败态都保持可点，不能只剩进度条。
 - **三步绕道作废**：维护页失败文案不再要求“先去受限主界面停止”。主界面 → 停止仍是既有的手动停止 / 强制停止入口，但不再是完成运行环境维护的必经步骤。
 
 ## 内置插件对宿主 UI 的依赖禁令
@@ -237,6 +242,8 @@ dsha-gradle :app:testStandardDebugUnitTest --tests '*WebProofStopTest'         #
 | 覆盖升级门禁（322→323、323→324、合成补丁级前代、UI-only、未确认旧 Web） | `app/src/test/java/com/deepseekharness/app/backup/OverwriteUpgradeGateTest.java`（T60 / build326） |
 | `RuntimeUpgradeState` 纯逻辑 | `app/src/test/java/com/deepseekharness/app/util/RuntimeUpgradeStateTest.java`（T60 / build326） |
 | 维护前自行停止与强制升级顺序 | `app/src/test/java/com/deepseekharness/app/core/MaintenancePreStopTest.java`（T67 / build327） |
+| 覆盖更新弃旧版身份核验与 trial 收尾 | `app/src/test/java/com/deepseekharness/app/runtime/WebOverwriteRetireTest.java`（T91）、`TrialRecoveryTest`（缺 PID 证据的收尾）、`ManagedRuntimeTransactionTest`（半提交回切） |
+| 维护页旧失败快照清理 | `app/src/test/java/com/deepseekharness/app/util/RuntimeUpgradeStateTest.java`（T91） |
 | 残留 Web 按出生身份核验回收（PID 复用 / 记录缺失不杀） | `app/src/test/java/com/deepseekharness/app/util/WebProofStopTest.java`（T67 / build327）、`WebSessionProofTest` |
 | 停止算法与强制结束身份门禁 | `app/src/test/java/com/deepseekharness/app/runtime/WebRecordedStopTest.java`、`app/src/test/java/com/deepseekharness/app/util/WebForceStopTest.java`、`app/src/test/java/com/deepseekharness/app/core/WebForceStopGateTest.java` |
 | 移动壳齿轮契约 | `tools/test-mobile-gear-contract.mjs`（T61 / build325） |

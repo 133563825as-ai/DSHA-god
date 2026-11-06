@@ -121,6 +121,88 @@ public final class WebProofStopTest {
   }
 
   @Test
+  public void retiringLauncherWaitsForGuestExitAndUsesVerifiedSignals() {
+    var guest = new Fixture();
+    guest.observations.add(WebProofStop.Observation.LIVE);
+    guest.observations.add(WebProofStop.Observation.LIVE);
+    guest.observations.add(WebProofStop.Observation.EXITED);
+    var launcher = new Fixture();
+    launcher.observations.add(WebProofStop.Observation.LIVE);
+    launcher.observations.add(WebProofStop.Observation.LIVE);
+    launcher.observations.add(WebProofStop.Observation.EXITED);
+    var outcome =
+        WebProofStop.runRetiringLauncher(
+            true, guest, guest::term, guest::kill, launcher, launcher::term, launcher::kill, guest);
+    assertTrue(outcome.stopped());
+    assertEquals(1, guest.terms);
+    assertEquals(0, guest.kills);
+    assertEquals(1, launcher.terms);
+    assertEquals(0, launcher.kills);
+  }
+
+  @Test
+  public void launcherIsNeverTouchedWhenTheGuestExitIsUnconfirmed() {
+    var guest = new Fixture();
+    guest.fallback = WebProofStop.Observation.LIVE;
+    var launcher = new Fixture();
+    final boolean[] probed = {false};
+    WebProofStop.Probe launcherProbe =
+        () -> {
+          probed[0] = true;
+          return WebProofStop.Observation.LIVE;
+        };
+    var outcome =
+        WebProofStop.runRetiringLauncher(
+            true,
+            guest,
+            guest::term,
+            guest::kill,
+            launcherProbe,
+            launcher::term,
+            launcher::kill,
+            guest);
+    assertFalse(outcome.stopped());
+    assertEquals(WebStopDiagnostic.Code.EXIT_UNCONFIRMED, outcome.diagnostic().code());
+    assertEquals(1, guest.kills);
+    assertFalse(probed[0]);
+    assertEquals(0, launcher.terms);
+    assertEquals(0, launcher.kills);
+  }
+
+  @Test
+  public void unverifiedPreviousLauncherIsNeverSignalled() {
+    var guest = new Fixture();
+    guest.observations.add(WebProofStop.Observation.EXITED);
+    var launcher = new Fixture();
+    launcher.fallback = WebProofStop.Observation.UNKNOWN;
+    var outcome =
+        WebProofStop.runRetiringLauncher(
+            true, guest, guest::term, guest::kill, launcher, launcher::term, launcher::kill, guest);
+    assertFalse(outcome.stopped());
+    assertEquals(WebStopDiagnostic.Code.RECORDED_SESSION_UNCONFIRMED, outcome.diagnostic().code());
+    assertEquals(0, guest.terms);
+    assertEquals(0, launcher.terms);
+    assertEquals(0, launcher.kills);
+  }
+
+  @Test
+  public void previousLauncherIdentityChangeIsNeverRetried() {
+    var guest = new Fixture();
+    guest.observations.add(WebProofStop.Observation.EXITED);
+    var launcher = new Fixture();
+    launcher.observations.add(WebProofStop.Observation.LIVE);
+    launcher.observations.add(WebProofStop.Observation.LIVE);
+    launcher.observations.add(WebProofStop.Observation.UNKNOWN);
+    var outcome =
+        WebProofStop.runRetiringLauncher(
+            true, guest, guest::term, guest::kill, launcher, launcher::term, launcher::kill, guest);
+    assertFalse(outcome.stopped());
+    assertEquals(WebStopDiagnostic.Code.IDENTITY_CHANGED, outcome.diagnostic().code());
+    assertEquals(1, launcher.terms);
+    assertEquals(0, launcher.kills);
+  }
+
+  @Test
   public void prootAndProrootCommandsMatchOnlyTheSavedBirth() {
     String boot = "12345678-1234-1234-1234-123456789abc";
     String instance = "23456789-1234-1234-1234-123456789abc";

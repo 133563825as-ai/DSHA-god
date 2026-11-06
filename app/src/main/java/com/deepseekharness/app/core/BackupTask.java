@@ -174,6 +174,7 @@ public final class BackupTask {
       lease.close();
       return false;
     }
+    DiagnosticLog.record(app, "MAINTENANCE_TASK_START", kind + ":" + id);
     try {
       persist();
     } catch (IOException e) {
@@ -229,12 +230,15 @@ public final class BackupTask {
                       Status.CANCELLED,
                       com.deepseekharness.app.util.UiText.text("已取消恢复，当前数据未覆盖。"));
                 } catch (Exception e) {
-                  state.update(
-                      id,
+                  Status failure =
                       e instanceof java.io.InterruptedIOException && !pendingMaintenance()
                           ? Status.CANCELLED
-                          : Status.FAILED,
-                      BackupManager.safeError(e));
+                          : Status.FAILED;
+                  String reason = BackupManager.safeError(e);
+                  state.update(id, failure, reason);
+                  // 维护 / 恢复失败必须进入可导出的记录，不能只留在本次界面内存里。
+                  DiagnosticLog.record(
+                      app, "MAINTENANCE_TASK_" + failure.name(), kind + ":" + reason);
                 } finally {
                   OWNER_CONTROL.remove();
                   if (activeCancellation == cancellation) activeCancellation = null;

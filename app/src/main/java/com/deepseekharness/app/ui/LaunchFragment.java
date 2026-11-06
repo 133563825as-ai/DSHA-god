@@ -918,11 +918,19 @@ public class LaunchFragment extends Fragment {
                               "尚未确认 Web 退出；进程身份无法核验，保留运行屏障。请查看诊断后重试停止。"));
                       return;
                     }
+                    boolean previous =
+                        candidate.candidate() != null
+                            && candidate.candidate().retiresPreviousLauncher();
                     new DshaDialogBuilder(requireContext(), true)
-                        .setTitle(com.deepseekharness.app.util.UiText.text("强制结束本次 Web？"))
-                        .setMessage(
+                        .setTitle(
                             com.deepseekharness.app.util.UiText.text(
-                                "普通停止尚未确认 Web 退出。本次已核验进程属于 DSHA；强制结束可能中断正在写入的对话或文件。\n\n确认后只结束这次已核验的 Web 进程；身份或状态变化会拒绝执行。取消会保留现场与运行屏障。"))
+                                previous ? "放弃上一版 Web 并强制结束？" : "强制结束本次 Web？"))
+                        .setMessage(
+                            previous
+                                ? com.deepseekharness.app.util.UiText.text(
+                                    "普通停止尚未确认上一版 Web 退出。本次已按保存的出生身份分别核验上一版 guest 与它的容器启动器；强制结束可能中断正在写入的对话或文件。\n\n确认后先结束 guest，再结束该记录对应的旧启动器；任一进程身份或状态变化都会拒绝执行，不会结束其他进程。取消会保留现场与运行屏障。")
+                                : com.deepseekharness.app.util.UiText.text(
+                                    "普通停止尚未确认 Web 退出。本次已核验进程属于 DSHA；强制结束可能中断正在写入的对话或文件。\n\n确认后只结束这次已核验的 Web 进程；身份或状态变化会拒绝执行。取消会保留现场与运行屏障。"))
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(
                             com.deepseekharness.app.util.UiText.text("强制结束"),

@@ -193,7 +193,20 @@ public class ExtractActivity extends AppCompatActivity {
         executionBusy = task.busy();
     // 环境可继续运行（兼容 + 健康回执）且已装运行时就是当前候选，才算真正无事可做；
     // 只有前者的补丁级覆盖会把“进入主界面”错摆到主操作位。
-    boolean ready = environmentReady(s, busy, pending) && cachedLatest;
+    boolean runnable = environmentReady(s, busy, pending);
+    boolean ready = runnable && cachedLatest;
+    // 外部恢复成功后，旧失败快照不能继续当作本页当前任务；否则页面停在旧失败文案，
+    // 用户必须再点一次重试才会看到“上一版运行时待更新”的标准状态。
+    if (com.deepseekharness.app.util.RuntimeUpgradeState.clearStaleFailure(
+        busy,
+        pending,
+        runnable,
+        s.status == BackupTaskState.Status.FAILED || s.status == BackupTaskState.Status.INTERRUPTED,
+        taskId,
+        s.id)) {
+      taskId = 0;
+      automaticDeclined = false;
+    }
     com.deepseekharness.app.util.DshVersionPolicy.Status versionStatus =
         com.deepseekharness.app.core.EnvironmentAccess.runtimeVersionStatus(controller);
     String renderKey =
