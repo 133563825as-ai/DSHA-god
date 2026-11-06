@@ -214,7 +214,8 @@ public final class DeviceGrantsLayoutTest {
     int channels = page.findViewById(R.id.grants_section_channels).getHeight();
     int screen = page.findViewById(R.id.grants_section_screen).getHeight();
     assertTrue("channels too tall: " + channels, channels <= 460);
-    assertTrue("screen too tall: " + screen, screen <= 400);
+    // T96 的虚拟屏预览档位行并入屏幕卡：实测 464，预算按一行余量放宽到 470。
+    assertTrue("screen too tall: " + screen, screen <= 470);
   }
 
   @Test

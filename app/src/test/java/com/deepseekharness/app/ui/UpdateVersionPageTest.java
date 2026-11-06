@@ -135,8 +135,10 @@ public final class UpdateVersionPageTest {
         bundledNotes(inLanguage(activity, language));
       assertTrue(shown.contains("覆盖更新"));
       assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
-      assertTrue(shown.contains("版本码提升为 334"));
-      assertFalse(shown.contains("版本码提升为 333"));
+      assertTrue(shown.contains("T103"));
+      assertTrue(shown.contains("版本码提升为 335"));
+      assertFalse(shown.contains("版本码提升为 334"));
+      assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("跨应用文件访问"));
       assertFalse(shown.contains("隐藏后台"));
       assertFalse(shown.contains("5918af63"));
@@ -330,8 +332,10 @@ public final class UpdateVersionPageTest {
           englishBody);
       assertTrue(shown.contains("overwrite"));
       assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
-      assertTrue(shown.contains("Raises versionCode to 334"));
-      assertFalse(shown.contains("Raises versionCode to 333"));
+      assertTrue(shown.contains("T103"));
+      assertTrue(shown.contains("Raises versionCode to 335"));
+      assertFalse(shown.contains("Raises versionCode to 334"));
+      assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("Cross-app file access"));
       assertFalse(shown.contains("Hide in background"));
       assertFalse(shown.contains("5918af63"));
@@ -472,7 +476,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("Raises versionCode to 264"));
       assertFalse(shown.contains("Closing a terminal tab"));
       assertFalse(shown.contains("Raises versionCode to 263"));
-      assertFalse(shown.contains("screen preview"));
+      assertFalse(shown.contains("compact screen preview"));
       assertFalse(shown.contains("Raises versionCode to 262"));
       assertFalse(shown.contains("Pasting long text into the terminal"));
       assertFalse(shown.contains("Raises versionCode to 261"));
