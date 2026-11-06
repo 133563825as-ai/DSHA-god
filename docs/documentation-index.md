@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261106.1830-dsh0.2.2-rc.1` / build333 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为发布准备：跨应用文件访问（SAF，PR #3）新增设置 → 设备能力授权 → 系统权限入口与 `/app/saf/*` 桥端点（持久读/写、两段式删除，协议版本保持 3）；设置 → 体验新增「隐藏后台」开关（默认关、本机偏好，只影响最近任务可见性、不承诺保活）；设备能力授权页状态胶囊自适应、概览条压平并统一 9 语种「已关闭」状态词。受管输入随 PR #3 重算 runtime-descriptor（runtimeId `04b24571`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时/插件。宿主 contracts 整组、全树格式、host-tests manifest、文档链接、changelog 与定向单测通过；两项新功能未真机验收（androidTest 有既有编译错误，最近任务行为与授权页像素级截断待真机）。改动说明见 [build333 更新说明](releases/build333-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1` / build334 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为 P0 覆盖更新修复（T91，`a70232fc`）：build333 真机覆盖更新后 proroot 启动器在试用 guest 退出后残留，trial 收尾误判 `TRIAL_PROCESS_UNCONFIRMED`，运行时更新事务半提交、启动被拦、重启无效；现在 trial 只按 guest 退出证据确认并对本实例启动器做有界清理，缺 PID 的恢复按记录推导的试运行 profile 确认无进程（fail-closed），维护任务开始 / 失败可导出、外部恢复后清旧失败快照、启动记录「已就绪 · 等待进入」，覆盖更新按 I10 先 guest 后旧启动器双次身份核验（普通停止、当前实例、终端、虚拟屏与隔离试运行不变）。受管输入随 T91 重算 runtime-descriptor（runtimeId `28d51d65`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时 / 插件。宿主 contracts 整组、全量单测、lint、全树格式、host-tests manifest、文档链接、changelog 与源码整洁检查由本轮发布准备执行（结果见工作树声明）；**build334 未真机验收**，验收项是从 build333 覆盖安装后不再卡在 `TRIAL_PROCESS_UNCONFIRMED`、维护能完成并进入网页。改动说明见 [build334 更新说明](releases/build334-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 

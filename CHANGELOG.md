@@ -1,5 +1,14 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261106.2228-dsh0.2.2-rc.1 / build334（P0：覆盖更新后 trial 收尾误判半提交，修复弃旧版与恢复出口）
+
+- P0 覆盖更新修复（T91，`a70232fc`）：build333 真机覆盖更新后，proroot 启动器在试用 guest 退出后残留（OnePlus PJD110 / Android 16 / WebView 156 实测，后台无其它 Web 也复现），trial 收尾误判 `TRIAL_PROCESS_UNCONFIRMED`，运行时更新事务停在半提交（`files-committed` / `settings-committed`）、启动被维护屏障拦住、重启无效。trial 收尾改为只按本记录 guest 的退出证据确认，启动器残留不再改变结论；`RuntimeTrial` 只对本次持有的 `Process` 句柄做一次有界清理（超时 / 失败仅写 `TRIAL_LAUNCHER_RETENTION` 诊断）；`launched` 但缺 `.dsha-web.pid` / `.stale` 的 trial 恢复改按记录 id 推导的试运行 profile 确认无此进程（同 UID、两次一致；仍存在 / 拒读 / 身份变化继续 fail-closed）。
+- 维护失败可诊断、恢复后清旧失败：维护任务开始 / 失败写入可导出的操作记录（`MAINTENANCE_TASK_START` / `MAINTENANCE_TASK_FAILED`），失败态保留应急 DSH、维护记录、导出可读副本与「进入受限主界面」；外部恢复完成后，环境可运行且无维护进行 / 待恢复时丢弃旧失败快照（`RuntimeUpgradeState.clearStaleFailure`），回到「上一版运行时待更新」并给出更新入口，不再要求再点重试；启动记录把「已拿到鉴权链接但未写最终 ready / failed」标为「已就绪 · 等待进入」。
+- 覆盖更新弃旧版（I10）：只有「已装 APK 身份 ≠ 记录中的会话身份」时，维护 / 强制停止动作内才按记录出生身份（boot、PID、出生时间、命令行、UID、代次/实例/nonce）双次核验，先结束记录中的 guest，再结束对应的旧 proot 启动器（SIGTERM → 短等待 → 复核 → SIGKILL）；guest 未确认退出不碰启动器，任一核验失败 / 读不了 / PID 复用 / 他人 UID / 两次观察变化都不发信号；普通停止、当前实例、终端、虚拟屏与隔离试运行路径不变（I9）。
+- build333 真机事故：2026-11-06 在 OnePlus PJD110（Android 16，WebView 156）从 build332 覆盖安装 build333 后触发上述半提交（事务 `69ebb4f7…`），启动被拦且重启无效；经应急 DSH `recover-maintenance` + 重试后恢复 READY / 42117，数据完好。**build334 尚未真机验收**，验收项为从 build333 覆盖安装后不再卡在 `TRIAL_PROCESS_UNCONFIRMED`、维护能完成并进入网页，不预写通过。
+- 验证范围：全量单测（`:app:testStandardDebugUnitTest`）、`:app:lintStandardRelease`、宿主 contracts 整组 12 项、全树格式检查（JDK 17）、`generate-changelog --check`、文档链接与源码整洁检查；结果以本机发布准备回执为准。版本码提升为 334（基于 build333）；DSHA 修订号保持 0.2.1-rc.5，内置 DSH 为 0.2.2-rc.1；runtimeId 随 T91 的 `launcherInputs` 变更重算为 `28d51d65…`，版本与文档改动不再改变它；固定输入未重建，不新增受管运行时或插件。
+- 十语种更新说明见 [build334 更新说明](docs/releases/build334-changes.zh.md)。
+
 ## 0.2.1-rc.5-20261106.1830-dsh0.2.2-rc.1 / build333（跨应用文件访问 SAF + 隐藏后台开关 + 设备授权页 UI 一致性）
 
 - 跨应用文件访问（SAF，PR #3，review `5797594537` APPROVE，merge `9cc91f5e`）：设置 → 设备能力授权 → 系统权限新增「跨应用文件访问」；用户经系统文档选择器授权目录后持久化读/写（最多 8 棵树），授权页管理与只读浏览。新增 `/app/saf/*` 桥端点（read 256 KiB、write 16 KiB、push/pull 32 MiB、列表 500 项、`rm` 两段式一次性 token），协议版本保持 3（纯加法）；只认授权短 id、写/删要求可写，容器路径复用 `BridgePathPolicy`，本地文件用 `O_NOFOLLOW` + dev/ino + `/proc/self/fd` 真实路径复核并拒绝硬链接与 `.l2s`；内置 `dsh-device-shell-guide` 提示词与 `/app/help` 各加一条入口说明。受管输入随该 PR 重算 runtime-descriptor（runtimeId `04b24571`），固定输入不重建。

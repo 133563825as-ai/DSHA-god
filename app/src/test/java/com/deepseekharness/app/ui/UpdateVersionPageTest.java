@@ -133,15 +133,18 @@ public final class UpdateVersionPageTest {
       assertCurrentNotesShown(activity, shown);
       for (String language : UiLanguagePreference.LANGUAGES)
         bundledNotes(inLanguage(activity, language));
-      assertTrue(shown.contains("跨应用文件访问"));
-      assertTrue(shown.contains("隐藏后台"));
-      assertTrue(shown.contains("版本码提升为 333"));
+      assertTrue(shown.contains("覆盖更新"));
+      assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
+      assertTrue(shown.contains("版本码提升为 334"));
+      assertFalse(shown.contains("版本码提升为 333"));
+      assertFalse(shown.contains("跨应用文件访问"));
+      assertFalse(shown.contains("隐藏后台"));
       assertFalse(shown.contains("5918af63"));
       assertFalse(shown.contains("a54f9854"));
       assertFalse(shown.contains("版本码提升为 332"));
       assertFalse(shown.contains("GIT_PROROOT_SIGSEGV"));
       assertFalse(shown.contains("git_guard.py"));
-      assertFalse(shown.contains("虚拟屏"));
+      assertFalse(shown.contains("libmonochrome"));
       assertFalse(shown.contains("VSCREEN_SELF_LAUNCH_REFUSED"));
       assertFalse(shown.contains("版本码提升为 331"));
       assertFalse(shown.contains("GitHub 登录"));
@@ -242,7 +245,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("版本码提升为 279"));
       assertFalse(shown.contains("后台任务页"));
       assertFalse(shown.contains("版本码提升为 278"));
-      assertFalse(shown.contains("导出可读副本"));
+      assertFalse(shown.contains("数据救援入口"));
       assertFalse(shown.contains("版本码提升为 277"));
       assertFalse(shown.contains("首次引导"));
       assertFalse(shown.contains("版本码提升为 276"));
@@ -325,15 +328,18 @@ public final class UpdateVersionPageTest {
           "English notes must resolve a localized body rather than the default Chinese resource",
           body(bundledNotes(inLanguage(controller.get(), "zh"))),
           englishBody);
-      assertTrue(shown.contains("Cross-app file access"));
-      assertTrue(shown.contains("Hide in background"));
-      assertTrue(shown.contains("Raises versionCode to 333"));
+      assertTrue(shown.contains("overwrite"));
+      assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
+      assertTrue(shown.contains("Raises versionCode to 334"));
+      assertFalse(shown.contains("Raises versionCode to 333"));
+      assertFalse(shown.contains("Cross-app file access"));
+      assertFalse(shown.contains("Hide in background"));
       assertFalse(shown.contains("5918af63"));
       assertFalse(shown.contains("a54f9854"));
       assertFalse(shown.contains("Raises versionCode to 332"));
       assertFalse(shown.contains("GIT_PROROOT_SIGSEGV"));
       assertFalse(shown.contains("git_guard.py"));
-      assertFalse(shown.contains("virtual screen"));
+      assertFalse(shown.contains("libmonochrome"));
       assertFalse(shown.contains("VSCREEN_SELF_LAUNCH_REFUSED"));
       assertFalse(shown.contains("Raises versionCode to 331"));
       assertFalse(shown.contains("GitHub login"));
@@ -436,7 +442,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("Raises versionCode to 279"));
       assertFalse(shown.contains("background tasks page"));
       assertFalse(shown.contains("Raises versionCode to 278"));
-      assertFalse(shown.contains("readable copy"));
+      assertFalse(shown.contains("data rescue entries"));
       assertFalse(shown.contains("Raises versionCode to 277"));
       assertFalse(shown.contains("Onboarding now animates"));
       assertFalse(shown.contains("Raises versionCode to 276"));
