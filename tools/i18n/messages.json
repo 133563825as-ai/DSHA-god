@@ -30808,5 +30808,21 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
     ]
+  },
+  {
+    "id": "build335_ui_b8303dd168ef",
+    "zh": "放弃上一版 Web 并强制结束？",
+    "en": "Discard the previous-build Web and force stop?",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ]
+  },
+  {
+    "id": "build335_ui_e74a6f26bca8",
+    "zh": "普通停止尚未确认上一版 Web 退出。本次已按保存的出生身份分别核验上一版 guest 与它的容器启动器；强制结束可能中断正在写入的对话或文件。\n\n确认后先结束 guest，再结束该记录对应的旧启动器；任一进程身份或状态变化都会拒绝执行，不会结束其他进程。取消会保留现场与运行屏障。",
+    "en": "Normal stopping has not confirmed the previous-build Web exit. The saved birth identity was verified separately for the previous guest and its container launcher; force stopping may interrupt ongoing conversation or file writes.\n\nConfirmation ends the guest first, then that record's old launcher; any process identity or state change rejects the operation and no other process is stopped. Cancel keeps the process state and execution barrier.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ]
   }
 ]

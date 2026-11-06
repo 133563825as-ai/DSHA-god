@@ -146,6 +146,7 @@ jobs:
         test-dsh-runtime-packaging.py
         test-generate-changelog.py
         test-ui-language-catalog.py
+        test-terminal-home-i18n.py
         test-format-java-tree.py
 
   inputs:

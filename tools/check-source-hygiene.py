@@ -36,12 +36,12 @@ language_source_pins = {
     "tools/i18n/translations-extra/ko.json": "70d469bde9b05f597858b2cb447ec7f71d438d5b03f5a1143f26b1858873be35",
     "tools/i18n/translations-extra/pt.json": "95117453bb7f6c7c7e32339ecc34afd3d2fd0e38cf538fef5e51adef0956e3ee",
     "tools/i18n/translations-extra/ru.json": "1fac09b7c8370aae28d2c7a7018a41065f4cc0befcf7eb4401b1b8a8852a2263",
-    "tools/i18n/translations/ar.json": "28e901511ddc6419d2e6b27284d9b425b471a1b1a07a08d6261d792078f03100",
-    "tools/i18n/translations/fr.json": "2f73073b05d10087245e9ec63b47aca53efe3b9e1062f093b5f62526d421192b",
-    "tools/i18n/translations/ja.json": "7c5d05b6380b442cc86c4cea00e40bf01b952990c4e12f30a456b74c7ff82c01",
-    "tools/i18n/translations/ko.json": "d332da51f31498d12365227d34da143e4f6b12ca236a7d76d91b073cef7b0d4a",
-    "tools/i18n/translations/pt.json": "74c22f0f578239e50a7520ba2978b298205042ca9d4342ecea0d34cdd004b384",
-    "tools/i18n/translations/ru.json": "7f172bf97b37b7d800551370194fed19d5da849d1da591b0e22ddee416b119af",
+    "tools/i18n/translations/ar.json": "f72ca4f204fdd2e36b25329a0af2e3060113bd2605ab993ad4a1cc33c5042ea0",
+    "tools/i18n/translations/fr.json": "10f60001e8da134c95482e85f965c8f0cae07bfea6122990b72f4c19823afd34",
+    "tools/i18n/translations/ja.json": "5f787b7644b24f85c1d31535b9307d15f0d7bca7a06c9d855d1e6e755d706f7a",
+    "tools/i18n/translations/ko.json": "8bf678a76bcd32496b0cd894cfcc8d78e5b228bd3c658a21c58331e7970a3fa9",
+    "tools/i18n/translations/pt.json": "f1351765e1a8bed99cb1e8d2d38d664a0c021ae97bf8c7ce509459e370a942e5",
+    "tools/i18n/translations/ru.json": "6c40aff3c627040d5a83bb1297f10a7d0215ed3782a0b5023ab66a1621aa3c62",
 }
 descriptor = json.loads((ROOT / "app/src/main/assets/runtime-descriptor.json").read_text(encoding="utf-8"))
 binary = {".so", ".bin", ".jar", ".aar", ".gz", ".tgz", ".zip", ".png", ".jpg", ".webp", ".pdf", ".keystore"}
