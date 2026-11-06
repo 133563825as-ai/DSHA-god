@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <!-- 跨应用文件访问 · 浏览页的一行：图标 + 名字 + 大小/时间。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
@@ -48,5 +49,5 @@
         android:contentDescription="@null"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_ui2_chevron"
-        android:tint="@color/shell_text_muted" />
+        app:tint="@color/shell_text_muted" />
 </LinearLayout>
