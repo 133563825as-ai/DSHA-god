@@ -1,4 +1,4 @@
-"""DSH 0.2.1-rc.5 的 Android 补丁表。路径相对 node_modules 根（含 @deepseek-ai/dsh 的那一层）。
+"""DSH 0.2.2-rc.1 的 Android 补丁表（2026-11-07 随固定输入 20261105e 重钉 4 个 original_sha256，锚点未变）。路径相对 node_modules 根（含 @deepseek-ai/dsh 的那一层）。
 
 每一项都要写清：为什么改、改了什么、上游原始字节的 SHA-256。
 """
@@ -184,7 +184,7 @@ PATCHES = [
     {
         'id': 'session-worker-link',
         'path': D + '@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs',
-        'original_sha256': '4b0f235e772792d7d2ccffc8446ef1a47b080fafc00b71fca899af5886f91066',
+        'original_sha256': 'c5c8ccb7a661ef343e9d0c792d8d5cba376ed783ea48c6489fe90eab264ae321',
         'replace_exact': [(WORKER_LINK_OLD, WORKER_LINK_NEW)],
         'marker': '[dsha-android]',
     },
@@ -268,7 +268,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-computer-use-token',
         'path': 'dsha-computer-use-android/lib/server.cjs',
-        'original_sha256': '7bf3466b8397fcc4f25524dae2160906e465ab80b16a1da67d99caaf145e89c0',
+        'original_sha256': '084dd7629e904d2e11bf3df829308751d2a3da7a326cfaa61ca83e599216c24a',
         'replace_exact': [("dependencies.fs.readFile('/root/.dsh/.bridge_token','utf8')",
                            "dependencies.fs.readFile(" + PLUGIN_TOKEN + ",'utf8')")],
         'append': HELPER,
@@ -277,7 +277,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-vscreen-token',
         'path': 'dsha-tool-vscreen/lib/server.cjs',
-        'original_sha256': '0438b9e245c0617ee92689ba0e9896ac5b8ddcc406478d449db4b66c69acb3cf',
+        'original_sha256': 'e4681b5e642990151477ffd1791efe3a4abbafaeca4a0fd9db950144b62bc42c',
         'replace_exact': [
             ("const TOKEN_FILE='/root/.dsh/.bridge_token',", "const TOKEN_FILE=" + PLUGIN_TOKEN + ","),
             (" for(const path of ['/root','/root/.dsh']){",
@@ -318,7 +318,7 @@ DEVICE_GUIDE_NATIVE = (_pathlib.Path(__file__).with_name('device-guide-native.js
 PLUGIN_PATCHES.append({
     'id': 'plugin-device-guide-native',
     'path': 'dsha-device-shell-guide/lib/index.js',
-    'original_sha256': '8a1cf0a808ece42f46bb796977692f66584da0fc469b8a2284353db8ae7ec99e',
+    'original_sha256': '08632be1e7701089040c85cfe9e65bb46a5fe22c85a2248dd56dd04ef080bca5',
     'replace_exact': [
         ("fs.openSync('/root/.dsh/.bridge_token', ", "fs.openSync(" + PLUGIN_TOKEN + ", "),
         ("export function promptText(language = fallbackLanguage()) {\n  let known;\n",
