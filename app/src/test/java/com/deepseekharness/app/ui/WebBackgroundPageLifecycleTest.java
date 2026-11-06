@@ -43,6 +43,7 @@ public final class WebBackgroundPageLifecycleTest {
     static HarnessController value;
     static PreviewPageSession.Identity ready;
     static boolean exited;
+    static Boolean retained;
     static com.deepseekharness.app.util.WebStartProtection protection;
 
     @Implementation
@@ -56,6 +57,7 @@ public final class WebBackgroundPageLifecycleTest {
     }
 
     static final List<Runnable> callbacks = new ArrayList<>();
+    static final List<Runnable> pageListeners = new ArrayList<>();
 
     @Implementation
     protected static HarnessController get(Context context) {
@@ -69,6 +71,7 @@ public final class WebBackgroundPageLifecycleTest {
 
     @Implementation
     protected boolean isWebSessionRetained(PreviewPageSession.Identity old) {
+      if (retained != null) return retained;
       return ready == null && ORIGINAL.equals(old);
     }
 
@@ -133,10 +136,14 @@ public final class WebBackgroundPageLifecycleTest {
     }
 
     @Implementation
-    protected void addReadyWebPageListener(Runnable ignored) {}
+    protected void addReadyWebPageListener(Runnable listener) {
+      if (listener != null) pageListeners.add(listener);
+    }
 
     @Implementation
-    protected void removeReadyWebPageListener(Runnable ignored) {}
+    protected void removeReadyWebPageListener(Runnable listener) {
+      pageListeners.remove(listener);
+    }
 
     @Implementation
     protected void restoreRunningWebSession(Runnable completed) {
@@ -234,6 +241,8 @@ public final class WebBackgroundPageLifecycleTest {
             new com.deepseekharness.app.util.WebLifecycle(),
             android.os.SystemClock::elapsedRealtime);
     Controller.callbacks.clear();
+    Controller.pageListeners.clear();
+    Controller.retained = null;
     BrowserTasks.nativeNavigation();
     Intent intent =
         new Intent(RuntimeEnvironment.getApplication(), Browser.class)
@@ -603,5 +612,17 @@ public final class WebBackgroundPageLifecycleTest {
     assertNull(stored.view);
     assertNull(stored.pageSession.identity());
     assertNotSame(page, keeper.page() == null ? null : keeper.page().view);
+  }
+
+  @Test
+  public void harnessServiceTaskRemovalRetiresTheKeptPage() {
+    createWithKeeperPage();
+    var service =
+        org.robolectric.Robolectric.buildService(com.deepseekharness.app.HarnessService.class)
+            .get();
+    service.onTaskRemoved(null);
+    assertEquals(1, page.destroyed);
+    assertNull(keeper.page());
+    assertEquals(BrowserPageKeeper.REASON_TASK_REMOVED, keeper.lastRetiredReason());
   }
 }

@@ -5,14 +5,19 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.os.SystemClock;
 
+import com.deepseekharness.app.core.HarnessController;
+import com.deepseekharness.app.util.PreviewPageSession;
+
 /**
- * 实验性页面保活（B-min / K1）：应用作用域、单 owner 的 WebView 页面保管器。
+ * 实验性页面保活（B-min / K1+K2）：应用作用域、单 owner 的 WebView 页面保管器。
  *
  * <p>Activity 被系统回收时只把 WebView 从视图树摘下并交给本对象，不 {@code destroy()}；新 Activity 以同一
- * generation/instance 接管同一 WebView，不重新 loadUrl。显式结束、服务换代、renderer 退出、内存回收与
- * 任务被移除都会 retire 并销毁页面。进程死亡/强杀/APK 更新时本对象随进程消失，仍由文档恢复兜底。
+ * generation/instance 接管同一 WebView，不重新 loadUrl。显式结束、服务换代、renderer 退出、内存回收、
+ * 任务被移除与 origin-restore 都会 retire 并销毁页面。进程死亡/强杀/APK 更新时本对象随进程消失，
+ * 仍由文档恢复兜底。
  *
- * <p>本类不是安全边界：页面在后台仍可能执行脚本。停止 Web、维护与备份必须走 retire（K2 接入点）。
+ * <p>本类不是安全边界：页面在后台仍可能执行脚本。页面摘挂期间监听 Web 运行时身份变化，在停止/维护/
+ * 备份/换代时销毁页面（K2）。
  */
 public final class BrowserPageKeeper implements ComponentCallbacks2 {
   public static final String REASON_CONFIG = "config";
@@ -21,6 +26,8 @@ public final class BrowserPageKeeper implements ComponentCallbacks2 {
   public static final String REASON_RENDERER = "renderer";
   public static final String REASON_IDENTITY = "identity";
   public static final String REASON_SESSION_CHANGED = "session-changed";
+  public static final String REASON_WEB_SESSION = "web-session";
+  public static final String REASON_ORIGIN_RESTORE = "origin-restore";
   public static final String REASON_RELOAD = "reload";
   public static final String REASON_INIT_FAILED = "init-failed";
   public static final String REASON_FALLBACK = "fallback";
@@ -65,6 +72,8 @@ public final class BrowserPageKeeper implements ComponentCallbacks2 {
   private int attaches;
   private int detaches;
   private int retires;
+  private final Runnable runtimeReadyChanged = this::onRuntimeReadyChanged;
+  private boolean observingRuntime;
 
   BrowserPageKeeper(Context context, Clock clock, boolean registerCallbacks) {
     this.context = context;
@@ -95,6 +104,7 @@ public final class BrowserPageKeeper implements ComponentCallbacks2 {
       attaches++;
       WebPageDiagnostics.keepAlive(context, "ATTACH", resumedFrom, generationOf(page), page.ready);
     }
+    observeRuntime();
     return page;
   }
 
@@ -156,6 +166,26 @@ public final class BrowserPageKeeper implements ComponentCallbacks2 {
     return true;
   }
 
+  /** 只退役已摘挂的页面；仍附着在 Activity 的页面交给该 Activity 的 finish/sync 流程收尾。 */
+  public synchronized boolean retireDetachedPage(String reason) {
+    if (page == null || owner.get() != null) return false;
+    retireLocked(reason);
+    return true;
+  }
+
+  /** 进程内是否还持有任何页面（含 attached）；origin-restore 等迁移等待用它确认页面真正销毁。 */
+  public static boolean hasKeptPage() {
+    BrowserPageKeeper current;
+    synchronized (BrowserPageKeeper.class) {
+      current = instance;
+    }
+    return current != null && current.hasPage();
+  }
+
+  private synchronized boolean hasPage() {
+    return page != null;
+  }
+
   public synchronized WebPreviewActivity.Retained page() {
     return page;
   }
@@ -209,6 +239,44 @@ public final class BrowserPageKeeper implements ComponentCallbacks2 {
 
   @Override
   public void onConfigurationChanged(Configuration newConfig) {}
+
+  /**
+   * 摘挂页面期间监听 Web 运行时身份：停止/维护/备份/换代时 ready 身份消失或变化，旧页面必须销毁，
+   * 不能等下一次 attach 才由 Activity 发现。附着中的页面由 Activity 自己的同步流程处理。
+   */
+  private void observeRuntime() {
+    if (observingRuntime) return;
+    try {
+      HarnessController.get(context).addReadyWebPageListener(runtimeReadyChanged);
+      observingRuntime = true;
+    } catch (RuntimeException | LinkageError unavailable) {
+      // 页面保活是尽力适配；失去运行时监听时仍有 Activity 生命周期与 trim 兜底。
+    }
+  }
+
+  private void onRuntimeReadyChanged() {
+    WebPreviewActivity.Retained snapshot;
+    synchronized (this) {
+      snapshot = page;
+      if (snapshot == null || owner.get() != null) return;
+    }
+    PreviewPageSession.Identity identity = snapshot.pageSession.identity();
+    HarnessController controller;
+    try {
+      controller = HarnessController.get(context);
+      PreviewPageSession.Identity current = controller.getReadyWebPageIdentity();
+      boolean keep =
+          current != null ? current.equals(identity) : controller.isWebSessionRetained(identity);
+      if (keep) return;
+    } catch (RuntimeException | LinkageError unavailable) {
+      return;
+    }
+    synchronized (this) {
+      // 回调与 attach 都在主线程；仍复核一次，避免迟到的运行时事件销毁新 owner 的页面。
+      if (page != snapshot || owner.get() != null) return;
+      retireLocked(REASON_WEB_SESSION);
+    }
+  }
 
   private void retireLocked(String reason) {
     WebPreviewActivity.Retained retiring = page;

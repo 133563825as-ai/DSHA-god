@@ -625,6 +625,13 @@ public class HarnessService extends Service {
     super.onDestroy();
   }
 
+  /** 用户划掉任务：显式退役实验性保活页面，不依赖进程随后死亡。 */
+  @Override
+  public void onTaskRemoved(Intent rootIntent) {
+    com.deepseekharness.app.ui.BrowserPageKeeper.forApplication(this).onTaskRemoved();
+    super.onTaskRemoved(rootIntent);
+  }
+
   private void foregroundProtectionFailed() {
     foregroundPromoted = false;
     // Preserve the exact admitted owner before cancelling preparation; otherwise

@@ -4,7 +4,9 @@ import static org.junit.Assert.*;
 
 import android.content.ComponentCallbacks2;
 import android.webkit.WebView;
+import com.deepseekharness.app.core.HarnessController;
 import com.deepseekharness.app.util.PreviewPageSession;
+import java.util.List;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -14,10 +16,14 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadow.api.Shadow;
 
-/** K1：应用级 keeper 的单页所有权、摘挂、trim 与任务移除语义（不创建真实 Activity 生命周期）。 */
+/** K1+K2：应用级 keeper 的单页所有权、摘挂、trim、任务移除与运行时身份变化语义。 */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 34, application = WebBackgroundPageLifecycleTest.App.class)
+@Config(
+    sdk = 34,
+    application = WebBackgroundPageLifecycleTest.App.class,
+    shadows = WebBackgroundPageLifecycleTest.Controller.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public final class BrowserPageKeeperTest {
   private static final PreviewPageSession.Identity IDENTITY =
@@ -32,6 +38,10 @@ public final class BrowserPageKeeperTest {
 
   @Before
   public void setUp() {
+    WebBackgroundPageLifecycleTest.Controller.value = Shadow.newInstanceOf(HarnessController.class);
+    WebBackgroundPageLifecycleTest.Controller.ready = IDENTITY;
+    WebBackgroundPageLifecycleTest.Controller.retained = null;
+    WebBackgroundPageLifecycleTest.Controller.pageListeners.clear();
     keeper = BrowserPageKeeper.forApplication(RuntimeEnvironment.getApplication());
     first = Robolectric.buildActivity(WebBackgroundPageLifecycleTest.Browser.class).get();
     second = Robolectric.buildActivity(WebBackgroundPageLifecycleTest.Browser.class).get();
@@ -155,5 +165,66 @@ public final class BrowserPageKeeperTest {
     assertEquals(1, page.destroyed);
     assertNull(keeper.page());
     assertEquals(BrowserPageKeeper.REASON_RENDERER, keeper.lastRetiredReason());
+  }
+
+  @Test
+  public void runtimeListenerRetiresDetachedPageWhenTheSessionChanges() {
+    assertTrue(keeper.detach(first, BrowserPageKeeper.REASON_SYSTEM));
+    WebBackgroundPageLifecycleTest.Controller.ready =
+        new PreviewPageSession.Identity(
+            8, "32345678-1234-1234-1234-123456789abc", "http://127.0.0.1:41822/?token=next");
+    runRuntimeListeners();
+    assertEquals(1, page.destroyed);
+    assertNull(keeper.page());
+    assertEquals(BrowserPageKeeper.REASON_WEB_SESSION, keeper.lastRetiredReason());
+  }
+
+  @Test
+  public void runtimeListenerKeepsDetachedPageWhileTheSessionIsTransientlyRetained() {
+    assertTrue(keeper.detach(first, BrowserPageKeeper.REASON_SYSTEM));
+    WebBackgroundPageLifecycleTest.Controller.ready = null;
+    WebBackgroundPageLifecycleTest.Controller.retained = true;
+    runRuntimeListeners();
+    assertEquals(0, page.destroyed);
+    assertSame(page, keeper.page().view);
+
+    WebBackgroundPageLifecycleTest.Controller.retained = false;
+    runRuntimeListeners();
+    assertEquals(1, page.destroyed);
+    assertNull(keeper.page());
+    assertEquals(BrowserPageKeeper.REASON_WEB_SESSION, keeper.lastRetiredReason());
+  }
+
+  @Test
+  public void runtimeListenerNeverDestroysAPageAnActivityStillOwns() {
+    WebBackgroundPageLifecycleTest.Controller.ready =
+        new PreviewPageSession.Identity(
+            8, "32345678-1234-1234-1234-123456789abc", "http://127.0.0.1:41822/?token=next");
+    runRuntimeListeners();
+    assertEquals(0, page.destroyed);
+    assertSame(page, keeper.page().view);
+  }
+
+  @Test
+  public void retireDetachedPageLeavesAnAttachedPageAlone() {
+    assertFalse(keeper.retireDetachedPage(BrowserPageKeeper.REASON_ORIGIN_RESTORE));
+    assertEquals(0, page.destroyed);
+    assertTrue(keeper.detach(first, BrowserPageKeeper.REASON_SYSTEM));
+    assertTrue(keeper.retireDetachedPage(BrowserPageKeeper.REASON_ORIGIN_RESTORE));
+    assertEquals(1, page.destroyed);
+    assertNull(keeper.page());
+    assertEquals(BrowserPageKeeper.REASON_ORIGIN_RESTORE, keeper.lastRetiredReason());
+  }
+
+  @Test
+  public void hasKeptPageTracksTheKeeperLifecycle() {
+    assertTrue(BrowserPageKeeper.hasKeptPage());
+    keeper.retire("test-cleanup");
+    assertFalse(BrowserPageKeeper.hasKeptPage());
+  }
+
+  private static void runRuntimeListeners() {
+    for (Runnable listener : List.copyOf(WebBackgroundPageLifecycleTest.Controller.pageListeners))
+      listener.run();
   }
 }
