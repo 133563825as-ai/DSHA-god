@@ -351,6 +351,53 @@ public final class RuntimeTrial {
           markHost(hostTimings, "browserCloseEnd", hostStarted);
         }
       Process tracked = process;
+      TrialGuestCleanup.Io guestStop =
+          new TrialGuestCleanup.Io() {
+            public String stop() {
+              return manager.stop();
+            }
+
+            public String force() {
+              markHost(hostTimings, "guestForceStart", hostStarted);
+              String forced = manager.forceStopTrialGuest();
+              markHost(hostTimings, "guestForceEnd", hostStarted);
+              return forced;
+            }
+
+            public boolean launcherExited() {
+              return ProcessTermination.exited(tracked);
+            }
+
+            public void awaitLauncher(long millis) {
+              ProcessTermination.awaitExit(tracked, millis);
+              markHost(hostTimings, "launcherAwaitEnd", hostStarted);
+            }
+
+            public void destroyLauncher() {
+              // proroot 启动器可能在 guest 确认退出后仍不退出（Android 16 实测）：只对本次持有
+              // 的 Process 句柄做一次有界清理，不按 PID / 名称扫描；清理失败不改变 guest 退出结论。
+              try {
+                com.deepseekharness.app.util.Compat.destroy(tracked);
+              } catch (RuntimeException | Error cleanup) {
+                com.deepseekharness.app.core.DiagnosticLog.record(
+                    context,
+                    "TRIAL_LAUNCHER_RETENTION",
+                    com.deepseekharness.app.backup.BackupErrorCode.from(cleanup));
+              }
+            }
+
+            public void diagnostic(String detail) {
+              com.deepseekharness.app.core.DiagnosticLog.record(
+                  context, "TRIAL_GUEST_STOP_UNCONFIRMED", detail);
+              // 成功试用的收尾失败原先不留 failure.json，latestFailure 也看不到原因；这里补一份
+              // 已脱敏的可导出记录，但不覆盖主流程已经写下的失败详情。
+              try {
+                recordStopFailure(fs, operation, expected.id(), runtimeMode, detail);
+              } catch (IOException | RuntimeException ignored) {
+                // 诊断写不进去不能替换真正的停止结论。
+              }
+            }
+          };
       boolean closed =
           TrialSupport.finish(
               tracked,
@@ -358,26 +405,10 @@ public final class RuntimeTrial {
               new TrialSupport.Cleanup() {
                 public void stop() throws IOException {
                   markHost(hostTimings, "managerStopStart", hostStarted);
-                  String stopped = manager.stop();
+                  String detail = TrialGuestCleanup.stop(guestStop);
                   markHost(hostTimings, "managerStopEnd", hostStarted);
-                  if (!stopped.isEmpty())
-                    throw new IOException(
-                        "TRIAL_PROCESS_UNCONFIRMED: " + SensitiveData.redact(stopped));
-                  ProcessTermination.awaitExit(tracked, 3000);
-                  // proroot 启动器可能在 guest 已确认退出后仍不退出（Android 16 实测）：只对本次持有
-                  // 的 Process 句柄做一次有界清理，不按 PID / 名称扫描；清理失败不改变 guest 退出结论。
-                  if (!ProcessTermination.exited(tracked)) {
-                    try {
-                      com.deepseekharness.app.util.Compat.destroy(tracked);
-                    } catch (RuntimeException | Error cleanup) {
-                      com.deepseekharness.app.core.DiagnosticLog.record(
-                          context,
-                          "TRIAL_LAUNCHER_RETENTION",
-                          com.deepseekharness.app.backup.BackupErrorCode.from(cleanup));
-                    }
-                    ProcessTermination.awaitExit(tracked, 1000);
-                  }
-                  markHost(hostTimings, "launcherAwaitEnd", hostStarted);
+                  if (!detail.isEmpty())
+                    throw new IOException("TRIAL_PROCESS_UNCONFIRMED: " + detail);
                 }
 
                 public boolean confirmed(Process launcher) throws IOException {
@@ -598,9 +629,18 @@ public final class RuntimeTrial {
             WebProcessManager manager = new WebProcessManager(proot, payload);
             TrialImportStop.Io importIo = legacyImportIo(manager);
             TrialImportStop.stop(fs, payload.getParentFile(), payload, importIo);
-            String stopped = manager.stop();
-            if (!stopped.isEmpty() || !manager.confirmStopped(false))
-              throw new IOException("TRIAL_PROCESS_UNCONFIRMED");
+            // 与本次运行内的收尾同一顺序：优雅停止未确认时只强杀该记录绑定的 guest，再复核；
+            // 没有本次持有的启动器句柄，启动器清理不在恢复路径内。
+            TrialGuestCleanup.Io guestStop =
+                recoveryStop(context, fs, payload.getParentFile(), manager);
+            String detail = TrialGuestCleanup.stop(guestStop);
+            if (!detail.isEmpty()) throw new IOException("TRIAL_PROCESS_UNCONFIRMED: " + detail);
+            if (!manager.confirmStopped(false)) {
+              String barrier =
+                  TrialGuestCleanup.unconfirmed(
+                      guestStop, "WEB_GUESTS_STOPPED_CONFIRM_UNCONFIRMED");
+              throw new IOException("TRIAL_PROCESS_UNCONFIRMED: " + barrier);
+            }
             String nonce = payload.getParentFile().getName().replace("-", "");
             importIo.confirmNoRelated(nonce, "/root/.dsha-runtime-trial-" + nonce, payload);
           }
@@ -612,6 +652,67 @@ public final class RuntimeTrial {
                 .retireRecordedTrialProfile("dsha-recovery-" + nonce.substring(0, 16));
           }
         });
+  }
+
+  /**
+   * 恢复路径的收尾适配器：没有本次运行的 Process 句柄，只按记录与保存的出生身份停止 guest。
+   *
+   * <p>诊断写进 App 可导出的操作记录，并在仍未关闭的记录目录里留一份脱敏详情，供维护页的
+   * latestFailure 显示；两者失败都不影响停止结论。
+   */
+  private static TrialGuestCleanup.Io recoveryStop(
+      Context context, BackupFileSystem fs, File operation, WebProcessManager manager) {
+    return new TrialGuestCleanup.Io() {
+      public String stop() {
+        return manager.stop();
+      }
+
+      public String force() {
+        return manager.forceStopTrialGuest();
+      }
+
+      public boolean launcherExited() {
+        return true;
+      }
+
+      public void awaitLauncher(long millis) {}
+
+      public void destroyLauncher() {}
+
+      public void diagnostic(String detail) {
+        com.deepseekharness.app.core.DiagnosticLog.record(
+            context, "TRIAL_RECOVERY_STOP_UNCONFIRMED", detail);
+        try {
+          recordRecoveryStop(fs, operation, detail);
+        } catch (IOException | RuntimeException ignored) {
+          // 诊断落盘失败不能把“仍无法确认退出”改写成成功。
+        }
+      }
+    };
+  }
+
+  /** 成功试用后的收尾失败也留一份可导出记录；已有失败详情时绝不覆盖。 */
+  static void recordStopFailure(
+      BackupFileSystem fs, File operation, String runtimeId, String runtimeMode, String detail)
+      throws IOException {
+    File record = fs.child(operation, "failure.json");
+    if (!fs.stat(record).type.equals("MISSING")) return;
+    Map<String, Object> value = new LinkedHashMap<>();
+    value.put("runtimeId", runtimeId);
+    value.put("error", "TRIAL_PROCESS_UNCONFIRMED");
+    value.put("runtimeMode", runtimeMode);
+    value.put("stopped", detail);
+    value.put("failedAt", System.currentTimeMillis());
+    TrialSupport.write(fs, operation, "failure.json", BackupJson.write(value, 65536));
+  }
+
+  /** 恢复路径的收尾失败：小文本留在仍未关闭的记录目录里，随记录一起被导出或轮换。 */
+  static void recordRecoveryStop(BackupFileSystem fs, File operation, String detail)
+      throws IOException {
+    File record = fs.child(operation, "recovery-stop.json");
+    if (!fs.stat(record).type.equals("MISSING")) return;
+    TrialSupport.write(
+        fs, operation, "recovery-stop.json", detail.getBytes(StandardCharsets.UTF_8));
   }
 
   private static TrialImportStop.Io legacyImportIo(WebProcessManager manager) {

@@ -1083,57 +1083,80 @@ public class WebProcessManager {
   }
 
   private WebStopDiagnostic stopOne() {
-    return WebRecordedStop.run(
-        new WebRecordedStop.Io() {
-          public boolean rootExists() {
-            return root().isDirectory();
-          }
-
-          public boolean trial() {
-            return records != null;
-          }
-
-          public String trialProfile() {
-            return "dsha-recovery-"
-                + records.getParentFile().getName().replace("-", "").substring(0, 16);
-          }
-
-          public long now() {
-            return android.os.SystemClock.elapsedRealtime();
-          }
-
-          public void pause(long millis) throws InterruptedException {
-            Thread.sleep(millis);
-          }
-
-          public void sentinel() throws IOException {
-            WebProcessManager.this.sentinel();
-          }
-
-          public String pidRecord() throws IOException {
-            return WebProcessManager.this.pidRecord();
-          }
-
-          public String savedIdentity(int pid) throws IOException {
-            return WebProcessManager.this.savedIdentity(pid);
-          }
-
-          public ProcessState inspect(int pid) throws IOException {
-            return WebProcessManager.this.inspect(pid);
-          }
-
-          public void retire(String record) throws IOException {
-            WebProcessManager.this.retire(record);
-          }
-
-          public WebRecordedStop.Signal term(int pid) throws IOException {
-            return signalTerm(pid);
-          }
-        });
+    return WebRecordedStop.run(recordedStopIo(false));
   }
 
-  private WebRecordedStop.Signal signalTerm(int pid) throws IOException {
-    return signal(pid, OsConstants.SIGTERM);
+  /**
+   * 只给隔离试运行收尾使用：本轮 payload 记录的 guest 在优雅停止窗口内没有退出时，按记录、
+   * 本轮唯一 profile 与保存的出生身份复核后 SIGKILL，并做有界退出确认。
+   *
+   * <p>不扫描 /proc、不按 PID 或名称结束其它进程，也不作用于主 Web；返回值只用于诊断，
+   * 是否真的停止由随后一次 {@link #stop()} / {@link #confirmStopped(boolean)} 决定。
+   *
+   * @return 空串表示记录已确认退出（或本来就没有记录 / 已退休）；否则是可导出的诊断码。
+   */
+  String forceStopTrialGuest() {
+    if (records == null) return "WEB_FORCE_TRIAL_FORBIDDEN";
+    try {
+      WebStopDiagnostic forced = WebRecordedStop.run(recordedStopIo(true));
+      return forced == null ? "" : SensitiveData.redact(forced.debug());
+    } catch (RuntimeException error) {
+      return SensitiveData.redact(WebStopDiagnostic.failure(Code.TRIAL_STOP_FAILED, error).debug());
+    }
+  }
+
+  /** 生产记录停止的唯一适配器；force 只换信号并加出生身份复核，其它判据共用。 */
+  private WebRecordedStop.Io recordedStopIo(boolean force) {
+    return new WebRecordedStop.Io() {
+      public boolean rootExists() {
+        return root().isDirectory();
+      }
+
+      public boolean trial() {
+        return records != null;
+      }
+
+      public String trialProfile() {
+        return "dsha-recovery-"
+            + records.getParentFile().getName().replace("-", "").substring(0, 16);
+      }
+
+      public boolean requireSavedBirth() {
+        return force;
+      }
+
+      public long now() {
+        return android.os.SystemClock.elapsedRealtime();
+      }
+
+      public void pause(long millis) throws InterruptedException {
+        Thread.sleep(millis);
+      }
+
+      public void sentinel() throws IOException {
+        WebProcessManager.this.sentinel();
+      }
+
+      public String pidRecord() throws IOException {
+        return WebProcessManager.this.pidRecord();
+      }
+
+      public String savedIdentity(int pid) throws IOException {
+        return WebProcessManager.this.savedIdentity(pid);
+      }
+
+      public ProcessState inspect(int pid) throws IOException {
+        return WebProcessManager.this.inspect(pid);
+      }
+
+      public void retire(String record) throws IOException {
+        WebProcessManager.this.retire(record);
+      }
+
+      public WebRecordedStop.Signal term(int pid) throws IOException {
+        return signal(pid, force ? OsConstants.SIGKILL : OsConstants.SIGTERM);
+      }
+    };
   }
 
   private com.deepseekharness.app.util.WebProofStop.Signal signalProofTerm(int pid)
