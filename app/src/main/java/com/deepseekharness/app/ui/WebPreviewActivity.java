@@ -78,6 +78,10 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
   private boolean authRetried;
   private boolean geckoFallbackAttempted;
   private Retained retained;
+
+  /** 实验性页面保活：应用作用域单页 keeper，Activity 只借阅、不拥有。 */
+  private BrowserPageKeeper browserKeeper;
+
   private WebDownloads downloads;
   private Bundle restoreState;
   private boolean navigatingBack;
@@ -140,6 +144,8 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
 
   public static final class Retained extends androidx.lifecycle.ViewModel {
     WebView view;
+    BrowserPageKeeper keeper;
+    boolean disposed;
     boolean ready;
     boolean needsStreamResume;
     String authUrl;
@@ -207,6 +213,15 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       if (uploads != null) rendererCleanup("upload-session", uploads::close);
       if (failed.getParent() instanceof android.view.ViewGroup parent) parent.removeView(failed);
       rendererCleanup("destroy", failed::destroy);
+      BrowserPageKeeper active = keeper;
+      if (active != null) active.retireDetached(this, BrowserPageKeeper.REASON_RENDERER);
+    }
+
+    /** keeper 销毁页面时调用的唯一清理入口；重复调用不会再碰已释放资源。 */
+    void dispose() {
+      if (disposed) return;
+      disposed = true;
+      onCleared();
     }
 
     @Override
@@ -398,7 +413,10 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     BrowserTasks.applyRecentsPreference(this);
     closeOriginRestorePreview = BrowserOriginRestore.registerPreview(this);
     microphone = new BrowserMicrophone(this);
-    retained = new androidx.lifecycle.ViewModelProvider(this).get(Retained.class);
+    // K1：页面所有权提升到应用级 keeper。系统回收 stopped Activity 时页面只摘下不销毁，
+    // 新 Activity 以同一 generation/instance 接管同一 WebView。
+    browserKeeper = BrowserPageKeeper.forApplication(this);
+    retained = browserKeeper.acquire(this);
     retained.owner = new java.lang.ref.WeakReference<>(this);
     emptyHostRetirementPending =
         savedInstanceState != null
@@ -523,7 +541,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       // 旋转保留同一进程的页面；服务已换代时清理旧页面，再用当前凭据加载。
       if (retained.view != null) {
         webView = retained.view;
-        destroyWebView();
+        destroyWebView(BrowserPageKeeper.REASON_IDENTITY);
       }
       if (!conversationHidden()) loadSession();
     }
@@ -701,7 +719,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       restoreState = null;
       restoreIdentity = null;
       if (webView == null && retained.view != null) webView = retained.view;
-      destroyWebView();
+      destroyWebView(BrowserPageKeeper.REASON_SESSION_CHANGED);
       // 服务结束而新服务尚未就绪：停在错误面板说明原因，不留空白页；用户停止与普通维护仍照常收尾。
       if (current == null && !emptyHostRetirementPending && showEndedRuntime(obsolete)) return true;
       retireEmptyHost(obsolete, current, explicitFullEntry);
@@ -868,7 +886,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
   }
 
   private void createWebView(boolean allowAuthRetry, PreviewPageSession.Identity identity) {
-    destroyWebView();
+    destroyWebView(BrowserPageKeeper.REASON_RELOAD);
     // destroyWebView 把系统栏还原为宿主底色；加载页仍在时恢复为加载页底色。
     if (pageBoot != null) applyEntryBars();
     pageFailed = false;
@@ -897,7 +915,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
               ? com.deepseekharness.app.util.UiText.text("系统 WebView 版本未知")
               : provider.packageName + " " + provider.versionName;
       Log.i("DSHA", com.deepseekharness.app.util.UiText.format("标准版预览内核: %s", browserInfo));
-      com.deepseekharness.app.core.DiagnosticLog.record(this, "WEB_ENGINE", browserInfo);
+      WebPageDiagnostics.engine(this, identity.generation(), browserInfo);
       WebSettings settings = view.getSettings();
       settings.setJavaScriptEnabled(true);
       settings.setDomStorageEnabled(true);
@@ -938,7 +956,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
         continueInitialNavigation();
       }
     } catch (RuntimeException | LinkageError e) {
-      destroyWebView();
+      destroyWebView(BrowserPageKeeper.REASON_INIT_FAILED);
       if (identity.equals(currentWebIdentity()) && PreviewFallback.open(this, authUrl, authCookie))
         return;
       Log.w(
@@ -1243,7 +1261,14 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       rendererCleanup("microphone", audio::cancel);
     }
     boolean hadBlob = retained.blobDownload != null;
+    long generation = BrowserPageKeeper.generationOf(retained);
     retained.retireRendererView(failed);
+    WebPageDiagnostics.pageDestroy(
+        this,
+        BrowserPageKeeper.REASON_RENDERER,
+        isChangingConfigurations(),
+        isFinishing(),
+        generation);
     if (hadBlob && downloads != null) rendererCleanup("download", downloads.model::cancel);
     navigatingBack = false;
     refreshPictureInPicture();
@@ -1270,7 +1295,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     geckoFallbackAttempted = true;
     cancelFileSelection();
     if (microphoneRequests != null) microphoneRequests.cancel();
-    destroyWebView();
+    destroyWebView(BrowserPageKeeper.REASON_FALLBACK);
     return PreviewFallback.open(this, authUrl, authCookie);
   }
 
@@ -1723,7 +1748,8 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     pending.complete(null);
   }
 
-  private void destroyWebView() {
+  /** 销毁页面并记录 K0 原因；keeper 已退役（view 已为空）时不会二次 destroy。 */
+  private void destroyWebView(String reason) {
     WebFullscreenUi.cancelIme(this);
     WebFullscreenUi.applyThemeColor(this, getColor(R.color.surface));
     if (microphoneRequests != null) {
@@ -1732,6 +1758,15 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     }
     cancelFileSelection();
     WebView previous = webView;
+    WebView pageView = retained == null ? null : retained.view;
+    WebView destroyed = previous != null ? previous : pageView;
+    if (destroyed != null)
+      WebPageDiagnostics.pageDestroy(
+          this,
+          reason,
+          isChangingConfigurations(),
+          isFinishing(),
+          BrowserPageKeeper.generationOf(retained));
     WebFrameRate.clear(this, previous);
     webView = null;
     if (retained != null) retained.clearPageState();
@@ -1745,14 +1780,33 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       retained.blobDownload = null;
       downloads.model.cancel();
     }
-    if (previous != null) {
-      container.removeView(previous);
-      previous.destroy();
+    if (destroyed != null) {
+      if (container != null) container.removeView(destroyed);
+      destroyed.destroy();
     }
     if (retained != null && retained.uploadSession != null) {
       retained.uploadSession.close();
       retained.uploadSession = null;
     }
+  }
+
+  /**
+   * 把页面从 Activity 摘下但保留 WebView：清掉 Activity 级客户端与上下文，只留 renderer 退出桩。
+   * 视图摘除由本方法完成，keeper.detach 只负责所有权与诊断。
+   */
+  private void detachPageView() {
+    WebView detached = webView;
+    if (detached == null) return;
+    webView = null;
+    WebFullscreenUi.cancelIme(this);
+    WebFrameRate.clear(this, detached);
+    if (container != null) container.removeView(detached);
+    if (retained == null || retained.view != detached) return;
+    detached.setWebViewClient(new RetainedRendererClient(retained));
+    detached.setWebChromeClient(null);
+    detached.setDownloadListener(null);
+    if (detached.getContext() instanceof android.content.MutableContextWrapper context)
+      context.setBaseContext(getApplicationContext());
   }
 
   @Override
@@ -1990,15 +2044,32 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     if (retained != null && retained.owner.get() == this) retained.owner.clear();
     cancelPendingAuthentication();
     if (downloads != null) downloads.dismiss();
-    if (isChangingConfigurations() && webView != null) {
-      container.removeView(webView);
-      webView.setWebViewClient(new RetainedRendererClient(retained));
-      webView.setWebChromeClient(null);
-      webView.setDownloadListener(null);
-      ((android.content.MutableContextWrapper) webView.getContext())
-          .setBaseContext(getApplicationContext());
+    boolean changingConfigurations = isChangingConfigurations();
+    boolean finishing = isFinishing();
+    if (!browserKeeper.owns(this)) {
+      // 新 Activity 已接管同一页面，或 keeper 已退役：旧实例只放手，不摘视图、不改客户端。
+      if (webView != null && container != null) container.removeView(webView);
       webView = null;
-    } else destroyWebView();
+    } else if (changingConfigurations) {
+      // 配置变更：只摘挂，页面留在 keeper，等新 Activity 以同一身份接管。
+      detachPageView();
+      browserKeeper.detach(this, BrowserPageKeeper.REASON_CONFIG);
+    } else if (finishing) {
+      WebPageDiagnostics.pageDestroy(
+          this,
+          BrowserPageKeeper.REASON_FINISH,
+          false,
+          true,
+          BrowserPageKeeper.generationOf(retained));
+      detachPageView();
+      browserKeeper.retireFrom(this, BrowserPageKeeper.REASON_FINISH);
+    } else if (webView != null || retained != null && retained.view != null && !retained.disposed) {
+      // 两者皆否 = 系统回收 stopped Activity：保留页面，不销毁。
+      detachPageView();
+      browserKeeper.detach(this, BrowserPageKeeper.REASON_SYSTEM);
+    } else {
+      browserKeeper.retireFrom(this, BrowserPageKeeper.REASON_EMPTY);
+    }
     super.onDestroy();
     if (closeOriginRestorePreview != null) closeOriginRestorePreview.run();
   }

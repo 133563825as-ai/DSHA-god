@@ -195,6 +195,7 @@ public final class WebBackgroundPageLifecycleTest {
   private Browser browser;
   private Page page;
   private WebPreviewActivity.Retained retained;
+  private BrowserPageKeeper keeper;
   private TextView title;
   private View panel;
   private org.robolectric.android.controller.ActivityController<Browser> lifecycle;
@@ -242,11 +243,15 @@ public final class WebBackgroundPageLifecycleTest {
     browser = lifecycle.get();
     page = new Page(new MutableContextWrapper(browser));
     page.loadUrl("http://127.0.0.1:41821/");
-    retained = new WebPreviewActivity.Retained();
+    keeper = BrowserPageKeeper.forApplication(RuntimeEnvironment.getApplication());
+    retained = keeper.acquire(browser);
     retained.view = page;
     retained.ready = true;
     retained.owner = new java.lang.ref.WeakReference<>(browser);
     retained.pageSession.claim(ORIGINAL);
+    // prepare() 模拟真实页面已完成首次导航：新 Activity attach 只能复用，不能再 loadUrl。
+    retained.navigation.begin(false);
+    assertTrue(retained.navigation.claim());
     title = new TextView(browser);
     panel = new FrameLayout(browser);
     panel.setVisibility(View.GONE);
@@ -268,7 +273,7 @@ public final class WebBackgroundPageLifecycleTest {
   public void finish() {
     try {
       if (created) lifecycle.pause().stop().destroy();
-      else page.destroy();
+      keeper.retire("test-cleanup");
       ((org.robolectric.shadows.ShadowLooper) Shadow.extract(Looper.getMainLooper())).idle();
     } finally {
       UiText.setLanguage(previousLanguage);
@@ -292,11 +297,7 @@ public final class WebBackgroundPageLifecycleTest {
   @Test
   public void rendererDeathDuringRotationGapIsHandledAndClearsOnlyTheRetainedPage()
       throws Exception {
-    var stored =
-        new androidx.lifecycle.ViewModelProvider(browser).get(WebPreviewActivity.Retained.class);
-    stored.view = page;
-    stored.ready = true;
-    stored.pageSession.claim(ORIGINAL);
+    var stored = retained;
     // prepare() already loaded this page. A real retained ready page has also consumed
     // its initial-navigation ticket; leaving the gate new would authorize a first load
     // during onCreate, before the renderer-exit scenario even starts.
@@ -402,11 +403,7 @@ public final class WebBackgroundPageLifecycleTest {
   @Test
   public void actualCreateWithGenerationRouteAttachesOnlyTheSameRetainedUnknownPage()
       throws Exception {
-    var stored =
-        new androidx.lifecycle.ViewModelProvider(browser).get(WebPreviewActivity.Retained.class);
-    stored.view = page;
-    stored.ready = true;
-    stored.pageSession.claim(ORIGINAL);
+    var stored = retained;
     browser
         .getIntent()
         .putExtra(BrowserConversationRoute.GENERATION, ORIGINAL.generation())
@@ -502,5 +499,109 @@ public final class WebBackgroundPageLifecycleTest {
     refresh.invoke(service);
     assertEquals("Web stopped", message.get(service).toString());
     assertNull(cpu.get(service));
+  }
+
+  private WebPreviewActivity.Retained createWithKeeperPage() {
+    browser
+        .getIntent()
+        .putExtra(BrowserConversationRoute.GENERATION, ORIGINAL.generation())
+        .putExtra(BrowserConversationRoute.INSTANCE, ORIGINAL.instanceId());
+    var stored = retained;
+    lifecycle.create().start().resume().visible();
+    created = true;
+    assertEquals(1, page.navigations);
+    return stored;
+  }
+
+  @Test
+  public void systemReclaimKeepsTheSameWebViewAndTheNextActivityAdoptsItWithoutNavigation()
+      throws Exception {
+    var stored = createWithKeeperPage();
+    lifecycle.pause().stop();
+    // 不置 mChangingConfigurations、不 finish：与系统回收 stopped Activity 一致。
+    lifecycle.destroy();
+    created = false;
+    assertEquals("system reclaim must not destroy the page", 0, page.destroyed);
+    assertSame(page, keeper.page().view);
+    assertTrue(keeper.hasDetachedPage());
+    assertEquals(BrowserPageKeeper.REASON_SYSTEM, keeper.lastDetachedReason());
+    assertNull(page.getParent());
+    assertTrue(page.getWebViewClient() instanceof WebPreviewActivity.RetainedRendererClient);
+
+    var secondController =
+        Robolectric.buildActivity(Browser.class, new Intent(browser.getIntent())).create();
+    lifecycle = secondController;
+    created = true;
+    var second = secondController.get();
+    assertSame(stored, keeper.page());
+    assertSame(page, stored.view);
+    secondController.start().resume();
+    assertEquals("adopting the kept page must not navigate", 1, page.navigations);
+    assertEquals(0, page.destroyed);
+    assertNotNull(page.getParent());
+    assertSame(second, stored.owner.get());
+  }
+
+  @Test
+  public void configurationChangeDetachesAndTheNextActivityReusesTheSamePage() throws Exception {
+    var stored = createWithKeeperPage();
+    lifecycle.pause().stop();
+    org.robolectric.util.ReflectionHelpers.setField(browser, "mChangingConfigurations", true);
+    lifecycle.destroy();
+    created = false;
+    assertEquals("configuration change must not destroy the page", 0, page.destroyed);
+    assertTrue(keeper.hasDetachedPage());
+    assertEquals(BrowserPageKeeper.REASON_CONFIG, keeper.lastDetachedReason());
+
+    var secondController =
+        Robolectric.buildActivity(Browser.class, new Intent(browser.getIntent())).create();
+    lifecycle = secondController;
+    created = true;
+    assertSame(stored, keeper.page());
+    secondController.start().resume();
+    assertEquals(1, page.navigations);
+    assertEquals(0, page.destroyed);
+    assertSame(page, stored.view);
+  }
+
+  @Test
+  public void finishingActivityDestroysThePageAndKeeperReleasesIt() throws Exception {
+    var stored = createWithKeeperPage();
+    browser.finish();
+    lifecycle.pause().stop().destroy();
+    created = false;
+    assertEquals(1, page.destroyed);
+    assertNull(keeper.page());
+    assertEquals(BrowserPageKeeper.REASON_FINISH, keeper.lastRetiredReason());
+    assertNull(stored.view);
+  }
+
+  @Test
+  public void newIntentForTheSameGenerationDoesNotNavigateOrRecreateThePage() throws Exception {
+    var stored = createWithKeeperPage();
+    browser.onNewIntent(
+        new Intent(RuntimeEnvironment.getApplication(), Browser.class)
+            .putExtra(BrowserConversationRoute.MODE, "FULL")
+            .putExtra(BrowserConversationRoute.GENERATION, ORIGINAL.generation())
+            .putExtra(BrowserConversationRoute.INSTANCE, ORIGINAL.instanceId())
+            .putExtra(BrowserConversationRoute.REQUEST, "second-request")
+            .putExtra(BrowserConversationRoute.SESSION, "second-session"));
+    assertEquals(1, page.navigations);
+    assertEquals(0, page.destroyed);
+    assertSame(stored, keeper.page());
+    assertSame(page, stored.view);
+  }
+
+  @Test
+  public void changedWebSessionDestroysTheKeeperPageInsteadOfReusingIt() throws Exception {
+    var stored = createWithKeeperPage();
+    Controller.ready =
+        new PreviewPageSession.Identity(
+            8, "32345678-1234-1234-1234-123456789abc", "http://127.0.0.1:41822/?token=next");
+    invoke("synchronizeWebSession", new Class<?>[0]);
+    assertEquals(1, page.destroyed);
+    assertNull(stored.view);
+    assertNull(stored.pageSession.identity());
+    assertNotSame(page, keeper.page() == null ? null : keeper.page().view);
   }
 }

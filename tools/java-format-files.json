@@ -1549,6 +1549,11 @@
     "app/src/main/java/com/deepseekharness/app/core/GitHubLogin.java",
     "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java",
     "app/src/main/java/com/deepseekharness/app/util/GhAuthProbe.java",
-    "app/src/test/java/com/deepseekharness/app/util/GhAuthProbeTest.java"
+    "app/src/test/java/com/deepseekharness/app/util/GhAuthProbeTest.java",
+    "app/src/main/java/com/deepseekharness/app/ui/BrowserPageKeeper.java",
+    "app/src/main/java/com/deepseekharness/app/ui/WebPageDiagnostics.java",
+    "app/src/main/java/com/deepseekharness/app/util/WebPageDiagnosticText.java",
+    "app/src/test/java/com/deepseekharness/app/ui/BrowserPageKeeperTest.java",
+    "app/src/test/java/com/deepseekharness/app/util/WebPageDiagnosticTextTest.java"
   ]
 }
