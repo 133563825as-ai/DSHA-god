@@ -6,3 +6,12 @@
 - 已知风险与接受项（真机未验证前不写通过）：335→336 首次覆盖安装待验证，验收项为主界面不白屏、侧栏与 footer 只有一个设置入口、`dsh-web-mobile` 默认启用、文件面板原生保存/分享/下载记录可用、10 语言标签正确、个人数据完好。上游删除路由本身无宿主鉴权钩子、压缩是进程级全局、删除生命周期未捕获公开句柄，因此 C 方案保留宿主侧服务模块替换（已加鉴权与端口约束）；原生文件传输与 8 种附加语言属于宿主集成，不是上游能力。按上游行为接受的回归：手机快捷键弹层无搜索、设置字体族行可能被压窄、深色主题按压遮罩会亮闪；会话行单击与抽屉关闭回到上游实现。
 - 版本与受管输入：版本码提升为 336（基于 build335）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。合并插件替换后按 `tools/prepare-runtime-descriptor.py --write` 重算 runtime-descriptor（runtimeId `5b502f71…`）；版本与文档改动不改变它；固定输入未重建，不新增受管运行时。
 - 验证范围：`:app:testStandardDebugUnitTest`、`:app:lintStandardRelease`、宿主 contracts 整组 12 项、全树格式检查、`git diff --check`、文档链接、`check-ui-i18n`、`generate-changelog --check`、`test-terminal-home-i18n.py`、`test-ui-language-catalog.py`、`verify-runtime-descriptor-source`、`prepare-runtime-descriptor --check`、host-tests manifest、`generate-builtin-plugins --verify` 与 `test-mobile-*` 整组；结果以本机发布准备回执为准。未 push、未合并、未发布、未安装。
+
+## 真机验收回执（2026-11-07）
+
+- 设备：本次单台测试机（型号/Android/WebView 以现场为准；未扩写为矩阵）。
+- 安装：从 build335 覆盖安装 build336（versionCode 336 / versionName `0.2.1-rc.5-20261107.0330-dsh0.2.2-rc.1`）。
+- 结果：**335→336 首次覆盖通过**；主界面不白屏、侧栏与 footer 只有一个设置入口、`dsh-web-mobile` 默认启用、文件面板原生保存/分享/下载记录可用、10 语言标签正确、个人数据完好、状态 READY。
+- **已知问题（非阻塞，功能验收通过）**：每次从网页返回原生主页面再回网页时，网页 UI 侧边栏连接状态重走「黄→绿→隐藏」，原生侧出现一次加载遮罩；根因为 WebView/页面未保活（非 build336 代码回归，默认启用移动插件后暴露）。已建 T110（K2+K5）修复，目标 build337；修复后本回执再更新状态。
+- 发布侧证据：tag `dsha-a-su-build336-20261107-033000`，release run 42287214579 success，APK SHA-256 `c35e6205…858e`（完整值以 Release 资产为准）。
+- 未验证范围：其他机型 / ROM / Android 版本矩阵；长时间运行、极端存储与非默认端口组合等未纳入本次验收。
