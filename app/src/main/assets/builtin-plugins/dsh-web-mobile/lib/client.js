@@ -1839,58 +1839,11 @@ exports.LAYOUT_CSS = `
     border-radius: 14px !important;
     animation: none !important;
   }
-
-  /* DSHA 可见区域边界：原生已消费 IME/systemBars，只读浏览器实际视口。 */
-  [aria-modal="true"][data-shortcut-modal="shortcuts"] {
-    top: calc(var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px + var(--dsha-mobile-viewport-top, 0px)) !important;
-    max-height: max(1px, calc(var(--dsha-mobile-visible-vh, 100vh) - 24px - var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px)))) !important;
-    min-height: 0 !important;
-    box-sizing: border-box;
-    overflow-y: auto;
-    transition: none;
-  }
-  [aria-modal="true"][data-shortcut-modal="shortcuts"] > :first-child {
-    min-height: 0;
-    max-height: 100%;
-  }
-
-  /* @patch
-     id: font-family-row-wrap-rc5
-     for: dsh-client-ui-theme 0.2.2-rc.1 的 FontFamilyRow（FontSizeRow.module.css 的
-          .bVCLcG_row / .bVCLcG_rowText，加 primitives Input 的 .vnGTiq_field）
-     why: 宿主的 .row 是不换行 flex、.field 固定 flex:0 240px；手机设置弹层内容宽约 340px，
-          标题+说明列因此被压成约 1 字/行、弹层被纵向撑高。固定上游 3.3.1（4e71eb67）的
-          client 里仍没有任何 FontFamilyRow / rowText 选择器，暂无上游修复。
-     until: 上游给字体行手机档换行排版，或宿主把 .field 固定宽改成可收缩——届时删本块
-     test: tools/test-mobile-client-patches.mjs
-  */
-  /* DSHA_FONT_FAMILY_ROW_V1：0.2.2 的 Input 原语把 <input> 包在 span[class*="_wrap"] 里，
-     240px 与 spellcheck/autocomplete/maxlength 也落在 wrapper 内层，因此同时覆盖
-     「裸 input」与「wrapper 内 input」两种形态；只命中设置弹层里带 FontFamilyRow 那组
-     属性的输入框行，字号行是 stepper、没有 input，天然不命中。:has 保持单层。 */
-  @media (max-width: 1023px) and (pointer: coarse) {
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) {
-      flex-wrap: wrap !important;
-      row-gap: 8px !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) {
-      flex-wrap: wrap !important;
-      row-gap: 8px !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > div[class*="_rowText"],
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > div[class*="_rowText"] {
-      flex: 1 1 100% !important;
-      padding-right: 0 !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > input,
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > span[class*="_wrap"] {
-      flex: 1 1 100% !important;
-      width: 100% !important;
-      box-sizing: border-box;
+  @media (max-width: 767px) {
+    [aria-modal="true"][data-shortcut-modal="shortcuts"] [class*="_searchRow"] {
+      display: none !important;
     }
   }
-
-  /* DSHA 保留手机搜索；首次自动聚焦由 0.2.2 的定向守卫拦下，不删除宿主 React 节点。 */
   :has(> [aria-modal="true"][data-shortcut-modal="shortcuts"]) > [class*="_mask"]::after {
     animation: none !important;
     background: transparent !important;
@@ -8426,10 +8379,10 @@ function installOverlayInteractions(ctx) {
                 return false;
             return target.closest(exports.TAP_CLOSE_NAV_SELECTOR) !== null;
         };
-        // DSHA_SESSION_INTERACTION_V4：有效的 touch/pen/mouse 单击由宿主打开会话。
-        // data-dsha-session-select 标记的行等待真实 dsha-session-open 事件关闭抽屉。
-        // 不在 pointerup 提前收起，避免吞掉浏览器随后派发的原始 click。
-        // 关闭依据是宿主已经打开会话的事实（见下方 document 监听）。
+        // DSHA_SESSION_INTERACTION_V1：宿主把「单击=选中、双击=打开」拆成了两步
+        // （data-dsha-session-select 标记 + dsha-session-open 事件）。上游的
+        // 「点行即关抽屉」会在第一次单击就把抽屉收掉，双击永远到不了。
+        // 这些行改由 dsha-session-open 事件关闭（见下方 document 监听）。
         // 非 DSHA 宿主没有这个标记，这一条天然不命中。
         // 豁免只属于点行关抽屉的两个调用方（click / pointerup），不得回流进
         // 长按武装门，否则 DSHA 行长按开不了 ⋯ 菜单（#82）。
@@ -8445,10 +8398,10 @@ function installOverlayInteractions(ctx) {
         let navSignatureAtArm = '';
         let navObserver = null;
         let navTimer = null;
-        /** Swallow the host's title double-click rename: repeated touch taps already
-         *  use the host's normal session-open path. Letting the browser's `dblclick`
-         *  reach the title would also open the rename dialog on that gesture.
-         *  Keep the original click handling unchanged. Capture phase on
+        /** Swallow the host's title double-click rename: on touch a double *tap*
+         *  means "open the session" (DSHA's own two-tap detection sits on the row's
+         *  click handler), and letting the browser's `dblclick` reach the title would
+         *  open the host's rename dialog on that same gesture. Capture phase on
          *  `document`, so the event never reaches React's root container. Only real
          *  (trusted) events are swallowed — nothing here dispatches a synthetic
          *  dblclick since the long-press rename was dropped (2026-10-07). Armed only
@@ -8531,7 +8484,25 @@ function installOverlayInteractions(ctx) {
                     toggleSidebar();
                 return;
             }
-            // DSHA_SESSION_INPUT_V4：保留原始点击，实际打开仍由 dsha-session-open 关闭抽屉。
+            // DSHA detail=0 follows the host's keyboard/programmatic open path.
+            // Replace the real click, rather than opening on pointerup and allowing
+            // the later native click to select again. dsha-session-open owns closing.
+            const dshaRow = target instanceof Element
+                ? target.closest('[role="treeitem"][data-dsha-session-select]') : null;
+            if (dshaRow !== null && event.detail > 0 && isDrawerNavTarget(target)) {
+                if (event.defaultPrevented || touchDownAt !== null &&
+                    (performance.now() - touchStartedAt >= 500 ||
+                        !(0, session_row_fiber_ts_1.isTapWithinSlop)(touchDownAt, { x: event.clientX, y: event.clientY }, TAP_NAV_SLOP_PX)))
+                    return;
+                event.preventDefault();
+                event.stopPropagation();
+                disarmNav();
+                lastTouchNavAt = performance.now();
+                dshaRow.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true, cancelable: true, view: window, detail: 0,
+                }));
+                return;
+            }
             // A touch row-tap owns the close (pointerup or the navigation observer);
             // let the row's click reach React without toggling the drawer twice.
             if (performance.now() - lastTouchNavAt < 500)
@@ -8577,8 +8548,8 @@ function installOverlayInteractions(ctx) {
             // closing here would retract the drawer before the browser dispatches
             // the tap's click, and the target's onClick would never run.
         };
-        // DSHA V4 有效单击打开会话后派发 dsha-session-open；
-        // 抽屉只在打开事实到达时关闭，保留原始 click 与行标记豁免。
+        // DSHA 宿主在「真正打开会话」时才派发 dsha-session-open（单击只选中），
+        // 所以抽屉的关闭挂在这个事实上，而不是挂在点击上。
         const onDshaSessionOpen = () => {
             if (drawerOpen())
                 toggleSidebar();

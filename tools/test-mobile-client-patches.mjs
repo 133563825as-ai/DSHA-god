@@ -1,4 +1,4 @@
-// 源漂移必须拒绝；正式产物只能来自固定预构建 client 与明确 DSHA 差异。
+// 源漂移必须拒绝；正式产物只能来自固定预构建 client 与明确 DSHA 差异（build336 C 基线）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -13,38 +13,32 @@ test('移动 client 固定预构建来源与部署产物闭环，拒绝错误版
   assert.equal(readFileSync(asset,'utf8'),applyMobileClientPatches(source));
   assert.throws(()=>applyMobileClientPatches(Buffer.concat([Buffer.from(source),Buffer.from('\n')])),/字节不匹配/);
 });
-test('手机设置弹层字体族行换行，字号行/其它弹层不受影响且产物逐字节一致',()=>{
-  const source=upstreamSource();
-  const patched=applyMobileClientPatches(Buffer.from(source));
-  const settings='[aria-modal="true"][data-shortcut-modal="settings"]';
-  const row=settings+' div[class*="_row"]';
-  const input='input[spellcheck="false"][autocomplete="off"][maxlength="200"]';
-  assert.ok(patched.includes('DSHA_FONT_FAMILY_ROW_V1'));
-  // 0.2.2 的 Input 原语把 <input> 包在 span[class*="_wrap"] 内（240px 也在 wrapper 上），
-  // 所以「裸 input」与「wrapper 内 input」两种宿主形态都要覆盖。
-  assert.ok(patched.includes(row+':has(> '+input+')'));
-  assert.ok(patched.includes(row+':has(> span[class*="_wrap"] > '+input+')'));
-  assert.ok(patched.includes(row+':has(> '+input+') > div[class*="_rowText"]'));
-  assert.ok(patched.includes(row+':has(> span[class*="_wrap"] > '+input+') > div[class*="_rowText"]'));
-  assert.ok(patched.includes(row+':has(> '+input+') > input'));
-  assert.ok(patched.includes(row+':has(> span[class*="_wrap"] > '+input+') > span[class*="_wrap"]'));
-  assert.ok(patched.includes('@media (max-width: 1023px) and (pointer: coarse) {'));
-  // 单层 :has：仓库踩过“嵌套 :has 整条失效”的坑；字号行没有 input 也不会命中。
-  const start=patched.indexOf('/* DSHA_FONT_FAMILY_ROW_V1');
-  assert.ok(start>=0,'字体行补丁标记缺失');
-  const media=patched.indexOf('@media (max-width: 1023px) and (pointer: coarse) {',start);
-  assert.ok(media>start,'字体行 media 块缺失');
-  let depth=0,end=-1;
-  for(let i=patched.indexOf('{',media);i<patched.length;i++){
-    if(patched[i]==='{')depth++;
-    else if(patched[i]==='}'){depth--;if(depth===0){end=i;break;}}
-  }
-  assert.ok(end>media,'字体行 media 块大括号不配平');
-  const block=patched.slice(start,end+1);
-  assert.ok(block.length>500);
-  assert.ok(!block.includes('data-shortcut-modal="shortcuts"'));
-  for(const line of block.split('\n'))if(line.includes(':has('))
-    assert.equal((line.match(/:has\(/g)||[]).length,1,'同一选择器只允许单层 :has: '+line.trim());
+test('C 基线只保留齿轮几何让位，上游 3.3.1 的旧 :has 连接条判据被替换',()=>{
+  const patched=applyMobileClientPatches(upstreamSource());
+  assert.ok(patched.includes('DSHA_GEAR_FIT_V1'));
+  assert.ok(patched.includes('data-mobile-nav-quick-fit="0"'));
+  assert.match(patched,/const keep = trigger !== null && trigger\.getAttribute\('aria-expanded'\) === 'true' && gearVisible;/);
+  assert.equal(patched.includes('triggerRow"]:has('),false,'旧连接条 :has 守卫不得残留');
+});
+test('C 基线删除的旧 UI/行为补丁不得重放，上游自己的流程保持原字节',()=>{
+  const patched=applyMobileClientPatches(upstreamSource());
+  for(const stale of ['DSHA_SESSION_INPUT_V4','DSHA_FONT_FAMILY_ROW_V1','DSHA_WIDE_TOUCH_ROW_ACTIONS_V1',
+    'DSHA_BACKDROP_PRESS_V1','var(--dsha-mobile-visible-vh, 100vh)'])
+    assert.equal(patched.includes(stale),false,stale);
+  // 手机搜索仍按上游策略隐藏；会话打开仍走上游自己的 DSHA synthetic detail=0 流程。
+  assert.ok(patched.includes('[class*="_searchRow"]'));
+  assert.ok(patched.includes("// DSHA detail=0 follows the host's keyboard/programmatic open path."));
+});
+test('安全区变量只包一层，不生成嵌套 var',()=>{
+  const patched=applyMobileClientPatches(upstreamSource());
+  assert.ok(patched.includes('var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px))'));
+  assert.equal(patched.includes('var(--dsha-safe-area-inset-top, var(--dsha-safe-area-inset-top'),false);
+});
+test('文件传输与多语言补丁仍在，部署产物逐字节一致',()=>{
+  const patched=applyMobileClientPatches(upstreamSource());
+  assert.ok(patched.includes('mobileNavLocales'));
+  assert.ok(patched.includes('DSHA_MOBILE_LOCALES_V1'));
+  assert.ok(patched.includes('DSHAFileTransfer') || patched.includes('FileDeliveryActions'));
   assert.equal(readFileSync(asset,'utf8'),patched);
 });
 test('3.3.1 上游视口函数保持原字节，不复活已撤回的帧合并试验',()=>{
@@ -55,7 +49,7 @@ test('3.3.1 上游视口函数保持原字节，不复活已撤回的帧合并�
   assert.equal(viewport(patched),viewport(source));
   assert.ok(patched.includes('interactive-widget=resizes-content'));
 });
-test('3.3.1 已吸收的宽屏触屏档不再重放本地补丁，规则与手机壳名单一致',()=>{
+test('3.3.1 已接管的宽屏触屏档不重放，规则与手机壳名单一致',()=>{
   const source=upstreamSource();
   const patched=applyMobileClientPatches(Buffer.from(source));
   assert.equal(patched.includes('DSHA_WIDE_TOUCH_ROW_ACTIONS_V1'),false,'上游已接管，不得重放旧补丁');
@@ -75,24 +69,6 @@ test('3.3.1 已吸收的宽屏触屏档不再重放本地补丁，规则与手�
   const labels=text=>[...text.matchAll(/aria-label="([^"]+)"/g)].map(m=>m[1]).sort();
   const phone=/\[data-mobile-nav="frame"\] \[class\*="sessionRow"\] \[class\*="_rowActions"\] :is\(([\s\S]*?)\) \{/.exec(source);
   assert.ok(phone,'手机壳 #154 规则缺失');
-  // 两档共用宿主 zh/en 字典：名单必须逐字一致，换语言时同时静默失效。
   assert.deepEqual(labels(hide[1]),labels(phone[1]),'宽屏触屏档名单必须与手机壳一致');
   assert.equal(labels(hide[1]).length,8);
-});
-test('3.3.1 已吸收或失效的本地补丁不重放，DSHA 自有差异仍在',()=>{
-  const patched=applyMobileClientPatches(upstreamSource());
-  // 0.2.2 的定向首轮焦点守卫已由上游带上；DSHA 只保留「手机档不收搜索行」。
-  assert.equal(patched.includes('[class*="_searchRow"]'),false,'手机搜索行不应再被隐藏');
-  assert.ok(patched.includes('DSHA 保留手机搜索'));
-  // 3.3.1 的整页遮罩是 div，通用 :active 染色不会落到它上面，旧的遮罩补丁删除。
-  assert.equal(patched.includes('DSHA_BACKDROP_PRESS_V1'),false);
-  assert.equal(patched.includes('triggerRow"]:has('),false,'旧连接条 :has 守卫应被替换');
-  // DSHA 自有契约：齿轮几何让位、可见带、会话输入 V4、多语言字典。
-  assert.ok(patched.includes('data-mobile-nav-quick-fit="0"'));
-  assert.ok(patched.includes('DSHA_GEAR_FIT_V1'));
-  assert.ok(patched.includes('dsha-mobile-visible-vh'));
-  assert.ok(patched.includes('DSHA_SESSION_INPUT_V4'));
-  assert.ok(patched.includes('mobileNavLocales'));
-  assert.ok(patched.includes('var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px))'));
-  assert.equal(patched.includes('var(--dsha-safe-area-inset-top, var(--dsha-safe-area-inset-top'),false,'安全区变量不得重复嵌套');
 });

@@ -41,120 +41,14 @@ export function applyMobileClientPatches(bytes) {
     if (source.split(before).length !== 2) throw new Error('补丁锚点缺失或不唯一: ' + before.slice(0, 100));
     source = source.replace(before, after);
   };
-  const replaceRange = (startAnchor, endAnchor, after) => {
-    const start = source.indexOf(startAnchor), end = source.indexOf(endAnchor, start + startAnchor.length);
-    if (start < 0 || end < 0 || source.split(startAnchor).length !== 2 || source.split(endAnchor).length !== 2)
-      throw new Error('补丁模块范围缺失或不唯一: ' + startAnchor);
-    source = source.slice(0, start) + after + source.slice(end);
-  };
-  // 3.3.1（上游 main 4e71eb67，适配宿主 0.2.2）保留 viewport-meta 的可见视口变量与
-  // interactive-widget=resizes-content；上游未恢复按帧合并的视口试验，这里也不带回。
-  // 按实际鼠标/touch/pen 事件分流；不能把用户点击伪造成键盘 detail=0。
-  replaceRange('            // DSHA detail=0 follows the host\'s keyboard/programmatic open path.',
-    '            // A touch row-tap owns the close (pointerup or the navigation observer);',
-    '            // DSHA_SESSION_INPUT_V4：保留原始点击，实际打开仍由 dsha-session-open 关闭抽屉。\n');
-  // 0.2.2 的快捷键弹层仍按 ≤767px 收搜索行；DSHA 保留手机搜索（首次自动聚焦由
-  // 0.2.2 的定向守卫拦下，只隐藏 CSS 而不删除宿主 React 节点）。
-  replace(`  @media (max-width: 767px) {
-    [aria-modal="true"][data-shortcut-modal="shortcuts"] [class*="_searchRow"] {
-      display: none !important;
-    }
-  }`,
-    '  /* DSHA 保留手机搜索；首次自动聚焦由 0.2.2 的定向守卫拦下，不删除宿主 React 节点。 */');
-  // Documentation-only: V4 opens valid touch/pen/mouse clicks through the host;
-  // keep the owned-row exemption and close on the actual open event, not pointerup.
-  replace('        // DSHA_SESSION_INTERACTION_V1：宿主把「单击=选中、双击=打开」拆成了两步\n'
-    + '        // （data-dsha-session-select 标记 + dsha-session-open 事件）。上游的\n'
-    + '        // 「点行即关抽屉」会在第一次单击就把抽屉收掉，双击永远到不了。\n'
-    + '        // 这些行改由 dsha-session-open 事件关闭（见下方 document 监听）。',
-    '        // DSHA_SESSION_INTERACTION_V4：有效的 touch/pen/mouse 单击由宿主打开会话。\n'
-    + '        // data-dsha-session-select 标记的行等待真实 dsha-session-open 事件关闭抽屉。\n'
-    + '        // 不在 pointerup 提前收起，避免吞掉浏览器随后派发的原始 click。\n'
-    + '        // 关闭依据是宿主已经打开会话的事实（见下方 document 监听）。');
-  replace('        /** Swallow the host\'s title double-click rename: on touch a double *tap*\n'
-    + '         *  means "open the session" (DSHA\'s own two-tap detection sits on the row\'s\n'
-    + '         *  click handler), and letting the browser\'s `dblclick` reach the title would\n'
-    + '         *  open the host\'s rename dialog on that same gesture. Capture phase on',
-    '        /** Swallow the host\'s title double-click rename: repeated touch taps already\n'
-    + '         *  use the host\'s normal session-open path. Letting the browser\'s `dblclick`\n'
-    + '         *  reach the title would also open the rename dialog on that gesture.\n'
-    + '         *  Keep the original click handling unchanged. Capture phase on');
-  replace('        // DSHA 宿主在「真正打开会话」时才派发 dsha-session-open（单击只选中），\n'
-    + '        // 所以抽屉的关闭挂在这个事实上，而不是挂在点击上。',
-    '        // DSHA V4 有效单击打开会话后派发 dsha-session-open；\n'
-    + '        // 抽屉只在打开事实到达时关闭，保留原始 click 与行标记豁免。');
-  // 3.3.1 的整页遮罩是 div（不是 button），0.2.2 之后通用 :active inset 染色不再落到
-  // 遮罩上；旧的 DSHA_BACKDROP_PRESS_V1 没有可修的对象，已随本次同步删除。
-  // 宽屏触屏档收起归档/置顶已由上游 3.3.1 自带（712999a / PR #257，规则落在
-  // (min-width: 1024px) and (pointer: coarse) 档，名单与手机壳一致），不再重放。
-  //
-  // 0.2.2 起手机档设置弹层交回宿主官方全屏；DSHA 只给快捷键弹层按可见带收口。
-  // 原生已消费 IME/systemBars，这里只读 DSHA 发布的实际浏览器视口（viewport-meta）。
-  const css = `
-  /* DSHA 可见区域边界：原生已消费 IME/systemBars，只读浏览器实际视口。 */
-  [aria-modal="true"][data-shortcut-modal="shortcuts"] {
-    top: calc(env(safe-area-inset-top, 0px) + 12px + var(--dsha-mobile-viewport-top, 0px)) !important;
-    max-height: max(1px, calc(var(--dsha-mobile-visible-vh, 100vh) - 24px - env(safe-area-inset-top, 0px))) !important;
-    min-height: 0 !important;
-    box-sizing: border-box;
-    overflow-y: auto;
-    transition: none;
-  }
-  [aria-modal="true"][data-shortcut-modal="shortcuts"] > :first-child {
-    min-height: 0;
-    max-height: 100%;
-  }
-
-  /* @patch
-     id: font-family-row-wrap-rc5
-     for: dsh-client-ui-theme 0.2.2-rc.1 的 FontFamilyRow（FontSizeRow.module.css 的
-          .bVCLcG_row / .bVCLcG_rowText，加 primitives Input 的 .vnGTiq_field）
-     why: 宿主的 .row 是不换行 flex、.field 固定 flex:0 240px；手机设置弹层内容宽约 340px，
-          标题+说明列因此被压成约 1 字/行、弹层被纵向撑高。固定上游 3.3.1（4e71eb67）的
-          client 里仍没有任何 FontFamilyRow / rowText 选择器，暂无上游修复。
-     until: 上游给字体行手机档换行排版，或宿主把 .field 固定宽改成可收缩——届时删本块
-     test: tools/test-mobile-client-patches.mjs
-  */
-  /* DSHA_FONT_FAMILY_ROW_V1：0.2.2 的 Input 原语把 <input> 包在 span[class*="_wrap"] 里，
-     240px 与 spellcheck/autocomplete/maxlength 也落在 wrapper 内层，因此同时覆盖
-     「裸 input」与「wrapper 内 input」两种形态；只命中设置弹层里带 FontFamilyRow 那组
-     属性的输入框行，字号行是 stepper、没有 input，天然不命中。:has 保持单层。 */
-  @media (max-width: 1023px) and (pointer: coarse) {
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) {
-      flex-wrap: wrap !important;
-      row-gap: 8px !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) {
-      flex-wrap: wrap !important;
-      row-gap: 8px !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > div[class*="_rowText"],
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > div[class*="_rowText"] {
-      flex: 1 1 100% !important;
-      padding-right: 0 !important;
-    }
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > input,
-    [aria-modal="true"][data-shortcut-modal="settings"] div[class*="_row"]:has(> span[class*="_wrap"] > input[spellcheck="false"][autocomplete="off"][maxlength="200"]) > span[class*="_wrap"] {
-      flex: 1 1 100% !important;
-      width: 100% !important;
-      box-sizing: border-box;
-    }
-  }
-`;
-  // 3.3.1 构建剥了 CSS 注释，锚点改为规则本体；DSHA 覆盖紧跟在宿主规则之后。
-  const modalRule = `  [aria-modal="true"][data-shortcut-modal="shortcuts"] {
-    position: absolute !important;
-    left: 8px !important;
-    top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
-    width: calc(100vw - 16px) !important;
-    max-width: calc(100vw - 16px) !important;
-    max-height: min(760px, calc(var(--dsh-web-mobile-vh, 100dvh) - 24px - env(safe-area-inset-top, 0px))) !important;
-    transition: max-height .2s var(--ds-ease-out, ease-in-out);
-    transform: none !important;
-    border-radius: 14px !important;
-    animation: none !important;
-  }`;
-  replace(modalRule, modalRule + '\n' + css);
+  // build336（T101 重做，用户选 C）：以上游 3.3.1 为基座，client 只保留四类本地差异：
+  //   1) 宿主集成 DSHA_GEAR_FIT_V1：footer 齿轮按实测行宽让位（上游 3.3.1 仍是旧的
+  //      「连接条 :has() 存在性」判据，DSH 0.2.2 首连不渲染指示灯时会判错）；
+  //   2) 安全区：applyMobileSafeArea 把 env(safe-area-inset-*) 包成 DSHA 原生发布的变量；
+  //   3) 文件传输：applyFileTransferClient（原生 share / save-as / 下载记录与 32 MiB 限制）；
+  //   4) 多语言：applyMobileLocaleBundlePatch（zh-Hant/ru/ja/ko/ar/pt/la/fr + live-locale）。
+  // 会话输入 V4、手机搜索、快捷键弹层可见带、字体族行换行、遮罩按压染色按「完全追随上游」
+  // 删除；残留问题、上游覆盖情况与测试变更见 docs/web-mobile-patches.md 与 build336 记录。
   // DSHA_GEAR_FIT_V1（T61）：footer 齿轮的让位判据改成**只量几何**，不再读宿主
   // ConnectionIndicator 是否存在。DSH 0.2.2 首次连接不再渲染指示灯后，上游
   // `:has(> button[data-phase], > [role="status"])` 判据永远「放得下」，手机上这条

@@ -1,10 +1,12 @@
 # 内置移动插件 dsh-web-mobile 的 DSHA 本地补丁
 
-> **当前状态（build336 起）**：插件已同步到上游 3.3.1（适配宿主 0.2.2）并恢复默认启用；
-> 真机覆盖升级验收仍须在 build336 发布前补写，见[插件页](plugins.md)与
+> **当前状态（build336，T101 重做，用户选 C）**：以上游 3.3.1（适配宿主 0.2.2）为基座，
+> **完全追随上游**；只保留「宿主集成必需且上游不覆盖」的最小集（服务端鉴权 / 安全区 /
+> 齿轮几何让位）与两项用户可见能力（原生文件传输、多语言/live-locale）。会话输入 V4、手机
+> 搜索、快捷键弹层可见带、字体族行换行、遮罩按压染色已按上游优先策略删除；对应可信触摸
+> 回归（`test-mobile-backdrop-press`）与弹层行为回归（`test-mobile-modal-behavior`）随补丁
+> 退役一并删除。真机覆盖升级验收仍须在 build336 发布前补写，见[插件页](plugins.md)与
 > [build336 记录](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)。
-> 本页只记录当前仍在产物里的 DSHA 差异；上游已接管或对象已消失的旧补丁在对应小节标注为
-> 已摘除，不再重放。
 
 本文记录 [`tools/apply-mobile-client-patches.mjs`](../tools/apply-mobile-client-patches.mjs) 对固定上游
 `dsh-web-mobile` 3.3.1（[`4e71eb67de7dac9d8b2572757c81e47aa32a32fb`](https://github.com/mexiaosqwq/dsh-web-mobile/commit/4e71eb67de7dac9d8b2572757c81e47aa32a32fb)，
@@ -24,29 +26,39 @@
 - 上游删除了 `lib/file-transfer.js`；DSHA 的 `tools/mobile-server/index.js` 仍 import 它，因此该模块
   改列为「仅本地追加成员」，字节仍由 `tools/file-transfer/file-transfer.js` 核验。
 
-### 仍保留的 DSHA 差异
+### 仍保留的 DSHA 差异（C 基线 = 纯上游 + 以下五类）
 
-- `DSHA_SESSION_INPUT_V4`：触摸 / 笔 / 鼠标的有效单击交给宿主打开会话，抽屉由
-  `dsha-session-open` 关闭；不把用户点击伪造成 `detail=0`。
-- 手机档保留快捷键弹层搜索行（0.2.2 的首次自动聚焦由上游守卫拦下，只删 CSS 不删宿主节点）。
-- `DSHA 可见区域边界`：只剩快捷键弹层按 `--dsha-mobile-viewport-top` / `--dsha-mobile-visible-vh`
-  收口；0.2.2 的手机设置弹层已交回宿主官方全屏，旧的通用弹层选择器（0.2.1 DOM）删除。
-- `DSHA_FONT_FAMILY_ROW_V1`、`DSHA_GEAR_FIT_V1`（下方两节）。
-- 安全区变量（`--dsha-safe-area-inset-*`）：跳过上游已包好的一处，不再产生嵌套 `var(...)`。
-- 多语言字典（zh-Hant/ru/ja/ko/ar/pt/la/fr）与 live-locale 订阅；按 3.3.1 键集删除
-  `nav.close` 与 `fileShare.share`。
-- 文件传输、服务端模块与源码级 locale 补丁（`tools/mobile-server/`、`tools/file-transfer/`）。
+| 类别 | 具体差异 | 上游 3.3.1 是否覆盖 | 保留理由 | 回归 |
+|---|---|---|---|---|
+| 宿主集成 | `DSHA_GEAR_FIT_V1`：footer 齿轮按实测行宽让位（`dshaGearFits`，写 `data-mobile-nav-quick-fit`） | 否：上游仍是旧的 `:has(> button[data-phase], > [role="status"])` 存在性判据；DSH 0.2.2 首连不渲染指示灯时判错 | build324 白屏/侧栏重复事故的同类「依赖宿主节点存在」根因；本修复只看几何 | `tools/test-mobile-gear-contract.mjs`（6 项） |
+| 宿主集成 | 安全区变量：`env(safe-area-inset-*)` → `var(--dsha-safe-area-inset-*, env(...))`（跳过上游已包好的一处，不嵌套） | 部分：仅 frame 顶部用了 DSHA 变量，其余约 20 处仍是 `env()` | Android WebView 不向网页报告系统栏 inset；由原生发布实际值 | `tools/test-mobile-client-patches.mjs`（安全区单层包装） |
+| 安全 | `tools/mobile-server/{index,compress,delete-session}.js` 替换上游服务端入口 | 否：上游删除路由无 `connection.requestRejection`（仅同源校验）、压缩 patch 是进程级全局、删除生命周期无 AgentHandle 捕获 | 删除会话必须经宿主鉴权；压缩只作用于当前 webServer 端口；live-session 经公开句柄安全删除 | `tools/test-mobile-server-patches.mjs`、`test-mobile-auth/delete/streams`、`test-mobile-reasoning-defaults` |
+| 用户可见 | 原生文件传输：`lib/file-transfer.js`（上游 3.3.1 已删该成员）+ 客户端 `FileDeliveryActions` / `installNativeFileActions` + `/api/dsha/files/{prepare,release}` | 否：上游只剩浏览器分享/下载 | DSHA 原生「保存到 / 分享 / 下载记录 / 图片保存」通道；32 MiB 分享限制与失败回退 | `tools/test-mobile-file-delivery.mjs`（浏览器）、`test-mobile-reasoning-defaults`（服务端闭包） |
+| 用户可见 | 多语言/live-locale：`mobileNavLocales` 等 8 种附加语言（zh-Hant/ru/ja/ko/ar/pt/la/fr）与 drawer 按钮实时换语言 | 否：上游只注册 `zh`/`en` | DSHA 客户端支持 10 种语言；否则移动壳标签回退英文 | `tools/test-mobile-locales.mjs`、`test-mobile-locales-browser.mjs` |
 
-### 已摘除的旧补丁
+### 已摘除的旧补丁（build336 / C）
 
-- `DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`：上游 712999a（PR #257）已自带同一条名单，本地不再重放；
-  下方 2026-10-31 小节仅作历史记录。
-- `DSHA_BACKDROP_PRESS_V1`：3.3.1 的整页遮罩是 `div`，0.2.2 之后通用 `:active` inset 染色不会
-  落到它上面，补丁对象消失。
-- 0.2.1 DOM 的通用弹层可见区 CSS：手机档设置弹层已回到宿主官方全屏；保留旧选择器会误伤
-  宿主新弹层。
-- 旧的快捷键首次焦点守卫实现（`tools/mobile-shortcut-guard.js` / `mobile-focus-shadow.js`）不再
-  进入补丁链，上游 0.2.2 自带同义守卫；这两个文件当前无引用，清理另行处理。
+- `DSHA_SESSION_INPUT_V4`（会话行触摸单击 / 抽屉关闭语义）：上游 3.3.1 自带 DSHA 两段式
+  `data-dsha-session-select` + `dsha-session-open` 集成（synthetic `detail=0` 点击）；按
+  「完全追随上游」删除本地改写，行为回到上游实现。若真机发现单击失效需另立任务。
+- 手机快捷键弹层搜索行保留：上游按 ≤767px 隐藏搜索；按上游行为删除本地保留（手机端无搜索）。
+- 快捷键弹层可见带 CSS（`--dsha-mobile-visible-vh` / `--dsha-mobile-viewport-top` 覆盖）：随
+  搜索行一起删除；上游 `viewport-meta` 仍发布这些变量供其自身布局使用。
+- `DSHA_FONT_FAMILY_ROW_V1`（设置字体族行换行）：上游不覆盖，但按上游优先策略删除；保留原
+  记录见下方「2026-10-30」小节（已标注摘除）。
+- `DSHA_BACKDROP_PRESS_V1`（遮罩按压不发亮）：上游 3.3.1 遮罩是带 `role="button"` 的 `div`，
+  仍会命中通用 `:active` inset 染色；按上游优先策略删除，深色主题按压会恢复上游的亮闪。
+  `tools/test-mobile-backdrop-press.mjs` 随之退役（build336）。
+- 0.2.1 DOM 的通用弹层可见区 CSS、旧快捷键首次焦点守卫实现（`tools/mobile-shortcut-guard.js` /
+  `tools/mobile-focus-shadow.js`）：不再进入补丁链；上游 0.2.2 自带同义守卫。这两个文件当前
+  无引用，清理另行处理。
+- `DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`：上游 712999a（PR #257）已自带同一条名单（此前已摘除）。
+
+### C 相对纯上游多出的范围（一句话）
+
+纯上游 3.3.1 = 238 个上游文件；C 只多出：服务端 3 模块 + `lib/file-transfer.js`（DSHA 服务端闭包）、
+安全区变量包装、`DSHA_GEAR_FIT_V1`（CSS + JS）、多语言/live-locale 字典与源码补丁、文件传输
+客户端动作。共五处差异，全部有上方理由与回归；其余全部回到上游字节。
 
 ### 验证
 
@@ -56,12 +68,18 @@ node tools/test-mobile-client-patches.mjs
 node tools/test-mobile-update.mjs
 node tools/test-mobile-gear-contract.mjs
 node tools/test-mobile-locales.mjs
+node tools/test-mobile-server-patches.mjs
+node tools/test-mobile-server-streams.mjs
+node tools/test-mobile-reasoning-defaults.mjs
 python3 tools/generate-builtin-plugins.py --verify
 python3 tools/prepare-runtime-descriptor.py --write
 python3 tools/verify-runtime-descriptor-source.py
 ```
 
-## 2026-10-30：rc.5 设置弹层字体族行排版（`DSHA_FONT_FAMILY_ROW_V1`）
+## 2026-10-30：rc.5 设置弹层字体族行排版（`DSHA_FONT_FAMILY_ROW_V1`，build336 已摘除）
+
+> **已摘除（build336，C 基线）**：该补丁按「完全追随上游」删除；下方为历史记录。
+> 代价：手机设置弹层的字体族行仍是上游布局（长标题可能被压窄），属已接受的已知回归。
 
 ### 现象与根因
 

@@ -26,10 +26,10 @@ test('3.3.1 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () 
   assert.equal(packageJson.dshaUpstream.releaseCommit, '4e71eb67de7dac9d8b2572757c81e47aa32a32fb');
   assert.equal(packageJson.dshaUpstream.commit, packageJson.dshaUpstream.releaseCommit); // 上游把修好的 3.4.0 内容重编号为 3.3.1，标签指向同一提交
   for (const marker of [
-    'DSHA_SESSION_INPUT_V4',
-    'DSHA_FONT_FAMILY_ROW_V1',
     'DSHA_GEAR_FIT_V1',
     'mobileNavLocales',
+    'DSHAFileTransfer',
+    'var(--dsha-safe-area-inset-top, env(safe-area-inset-top, 0px))',
     '[data-dsha-session-select]',
     'dsha-preset-header-anchor',
     'data-mobile-nav="file-upload"',
@@ -60,11 +60,16 @@ test('3.3.1 固定上游 bundle 保留 DSHA 移动端入口与头部让位', () 
     'dsh_client_ui_primitives_1.IconPaperclipOutline16',
     'panel.getBoundingClientRect().left < window.innerWidth',
     'transform: scale(.66)',
-    // 3.2.2 代的 DSHA 本地补丁：上游 3.3.1 已接管或对象已消失，不得重放。
+    // 3.2.2 代的 DSHA 本地补丁：上游 3.3.1 已接管，或 build336 按「完全追随上游」删除。
     'DSHA_WIDE_TOUCH_ROW_ACTIONS_V1',
     'DSHA_BACKDROP_PRESS_V1',
-    '[class*="_searchRow"]',
+    'DSHA_SESSION_INPUT_V4',
+    'DSHA_FONT_FAMILY_ROW_V1',
+    'var(--dsha-mobile-visible-vh, 100vh)',
   ]) assert.equal(source.includes(stale), false, stale);
+  // 上游自己的手机搜索隐藏与会话打开流程保持原字节（C 基线不再接管）。
+  assert.ok(source.includes('[class*="_searchRow"]'));
+  assert.ok(source.includes("// DSHA detail=0 follows the host's keyboard/programmatic open path."));
   assert.equal(packageJson.peerDependencies['@deepseek-ai/dsh-client-runtime'], undefined);
   assert.ok(packageJson.peerDependencies['@deepseek-ai/dsh-client-ui-conversation'].includes('>=0.2.2-rc.1 <0.3.0-0'));
   // react 在宿主运行时树里没有实体：3.4.0/3.3.0 把它当必选 peer 会让依赖门槛判 missing，
