@@ -1,5 +1,15 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261107.0330-dsh0.2.2-rc.1 / build336（内置 dsh-web-mobile 同步上游 3.3.1：完全追随上游 + 宿主集成最小集 + 文件传输/多语言，恢复默认启用）
+
+- 内置 `dsh-web-mobile` 同步上游 3.3.1 并恢复默认启用（T101，`517078d2`）：按用户选定的 C 方案，以上游 3.3.1（`4e71eb67`，适配宿主 0.2.2）为基座、**完全追随上游**，只保留宿主集成必需的最小集。上游修整页白屏、顶栏开关被裁、文件键消失、页签叠字与文件面板标签条被顶栏盖住；固定 HEAD 而非 v3.3.0 / v3.4.0 标签（后两者 react 仍为必选 peer）。`lib/client.js` 摘要 `7f82fac2…`；内置注册表不再有 `defaultDisabled` 条目，全新安装与覆盖更新都默认启用，用户显式禁用仍然优先。
+- C 方案只比纯上游多五类宿主集成：齿轮几何让位 `DSHA_GEAR_FIT_V1`（上游按连接指示灯存在性判断，0.2.2 首连可能误判，改为实测几何）；安全区变量包装 `--dsha-safe-area-inset-*`（Android WebView 不报告系统栏 inset，跳过上游已包好的一处，不嵌套）；服务端三模块替换（删除会话走宿主鉴权 `connection.requestRejection`、压缩只作用当前 webServer 端口、live 会话经公开 AgentHandle 删除）；原生文件传输（`lib/file-transfer.js` + `/api/dsha/files/{prepare,release}`，保存到 / 分享 / 下载记录 / 图片保存，32 MiB 分享限制与失败回退）；多语言与 live-locale（8 种附加语言，移动壳标签不再回退英文）。
+- 删除陈旧本地补丁：`DSHA_SESSION_INPUT_V4`（会话行触摸单击 / 抽屉关闭改写）、手机快捷键弹层搜索行与可见带 CSS、`DSHA_FONT_FAMILY_ROW_V1` 字体族行换行、`DSHA_BACKDROP_PRESS_V1` 遮罩按压染色、宽屏触屏档收起规则（上游 PR #257 已接管）；`test-mobile-backdrop-press.mjs` 与 `test-mobile-modal-behavior.mjs` 随之退役，host-tests manifest 252→250 项。上游已接管项不重放。
+- 已知风险与接受项（真机未验证前不写通过）：335→336 首次覆盖安装待验证；验收项为主界面不白屏、侧栏与 footer 只有一个设置入口、`dsh-web-mobile` 默认启用、文件面板原生保存/分享/下载记录可用、10 语言标签正确、个人数据完好。按上游行为接受的回归：手机快捷键弹层无搜索、设置字体族行可能被压窄、深色主题按压遮罩会亮闪；会话行单击与抽屉关闭回到上游实现。
+- 版本与受管输入：版本码提升为 336（基于 build335）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。合并插件替换后按 `tools/prepare-runtime-descriptor.py --write` 重算 runtime-descriptor（runtimeId `5b502f71…`）；版本与文档改动不改变它；固定输入未重建，不新增受管运行时或插件。
+- 验证范围：`:app:testStandardDebugUnitTest`、`:app:lintStandardRelease`、宿主 contracts 整组 12 项、全树格式检查、`git diff --check`、文档链接、`check-ui-i18n`、`generate-changelog --check`、`test-terminal-home-i18n.py`、`test-ui-language-catalog.py`、`verify-runtime-descriptor-source`、`prepare-runtime-descriptor --check`、host-tests manifest、`generate-builtin-plugins --verify` 与 `test-mobile-*` 整组；结果以本机发布准备回执为准。未 push、未合并、未发布、未安装。
+- 十语种更新说明见 [build336 更新说明](docs/releases/build336-changes.zh.md)；详细补丁审计、五类宿主集成与回退见 [build336 内置插件同步记录](docs/releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)。
+
 ## 0.2.1-rc.5-20261107.0140-dsh0.2.2-rc.1 / build335（P0：build334 首次覆盖失败修复 + 恢复身份证据兜底 + 虚拟屏预览呼吸条 + 覆盖更新对话框 i18n）
 
 - trial 收尾对未退 guest 有界强杀（T103，`a5168f99`）：`manager.stop()` 返回非空时不再立即判 `TRIAL_PROCESS_UNCONFIRMED`。先有界等待本轮启动器 3 秒，再由 `WebProcessManager.forceStopTrialGuest` 按本轮记录、唯一 profile 与保存的出生身份连读复核后，只对本轮 guest 发 SIGKILL，随后重跑记录停止与全局无 Web 核验；仍无法确认才失败，并把脱敏详情写入可导出操作记录与记录目录（成功试用的收尾失败写 `failure.json`，恢复路径写 `recovery-stop.json`，已有失败详情不覆盖）。`TrialRecovery` 走同一顺序，一次 `recover-maintenance` 就能关闭停在 guest 未退的旧 trial；强制路径缺出生身份、PID 记录对不上或两次观察变化时 fail-closed，不按裸 PID / 名称扫描。维护页 `pendingTrial` 去掉 2 秒缓存，`onResume` 丢弃 `BackupTask` 的 UI 缓存，外部恢复完成后立即回到「上一版运行时待更新」。

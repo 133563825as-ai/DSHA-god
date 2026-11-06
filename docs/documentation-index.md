@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261107.0140-dsh0.2.2-rc.1` / build335 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版一次性叠加四项修复：trial 收尾对未退 guest 先有界强杀再复核（T103，`a5168f99`）；恢复按出生身份复核并在接回后补写身份证据（T100，`903974db`）；虚拟屏预览改为顶部蓝色呼吸条 + 三档 + 收起持久化（T96，`71010565`）；补 T91 覆盖更新对话框十语言文案并让 release host 子集覆盖（T102，`0331a00b`）。build334 真机结论为「333→334 首次覆盖失败（两台设备 `TRIAL_PROCESS_UNCONFIRMED`，事务 `c4299668…`）、二次维护后 334/READY 且数据完好」，记为首次失败、二次可用；本版按该结论修首次失败路径与恢复后状态，**build335 尚未真机验收**，验收项是单台 334→335 首次覆盖成功、维护完成进入网页、数据完好、READY。受管输入随 T103/T100/T96 重算 runtime-descriptor（runtimeId `2d456af3`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时 / 插件。宿主 contracts 整组、全量单测、lint、全树格式、host-tests manifest、文档链接、changelog 与源码整洁检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build335 更新说明](releases/build335-changes.zh.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
+当前源码：`0.2.1-rc.5-20261107.0330-dsh0.2.2-rc.1` / build336 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版只带一项内置插件更新：`dsh-web-mobile` 同步上游 3.3.1（`4e71eb67`，适配宿主 0.2.2）并按 C 方案完全追随上游，只保留宿主集成最小集（服务端鉴权 / 安全区 / 齿轮几何让位）、原生文件传输与多语言，恢复默认启用（T101，`517078d2`）；会话输入 V4、手机搜索、快捷键弹层可见带、字体族行换行、遮罩按压染色等陈旧 UI/行为补丁删除，上游已接管项不重放。受管输入随插件替换重算 runtime-descriptor（runtimeId `5b502f71`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时。**build336 尚未真机验收**，验收项是 335→336 首次覆盖成功、主界面不白屏、侧栏与 footer 只有一个设置入口、内置插件默认启用、原生文件传输与十语言正常、数据完好、READY。宿主 contracts 整组、全量单测、lint、全树格式、host-tests manifest、文档链接、changelog 与源码整洁检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build336 更新说明](releases/build336-changes.zh.md)；详细补丁审计与回退见 [build336 内置插件同步记录](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)。构建与发布范围以本轮 CI run 与 Release 回执为准。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 

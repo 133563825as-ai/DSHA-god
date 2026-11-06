@@ -133,10 +133,10 @@ public final class UpdateVersionPageTest {
       assertCurrentNotesShown(activity, shown);
       for (String language : UiLanguagePreference.LANGUAGES)
         bundledNotes(inLanguage(activity, language));
-      assertTrue(shown.contains("覆盖更新"));
-      assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
-      assertTrue(shown.contains("T103"));
-      assertTrue(shown.contains("版本码提升为 335"));
+      assertTrue(shown.contains("dsh-web-mobile"));
+      assertTrue(shown.contains("3.3.1"));
+      assertTrue(shown.contains("版本码提升为 336"));
+      assertFalse(shown.contains("版本码提升为 335"));
       assertFalse(shown.contains("版本码提升为 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("跨应用文件访问"));
@@ -330,10 +330,10 @@ public final class UpdateVersionPageTest {
           "English notes must resolve a localized body rather than the default Chinese resource",
           body(bundledNotes(inLanguage(controller.get(), "zh"))),
           englishBody);
-      assertTrue(shown.contains("overwrite"));
-      assertTrue(shown.contains("TRIAL_PROCESS_UNCONFIRMED"));
-      assertTrue(shown.contains("T103"));
-      assertTrue(shown.contains("Raises versionCode to 335"));
+      assertTrue(shown.contains("dsh-web-mobile"));
+      assertTrue(shown.contains("3.3.1"));
+      assertTrue(shown.contains("versionCode raised to 336"));
+      assertFalse(shown.contains("versionCode raised to 335"));
       assertFalse(shown.contains("Raises versionCode to 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("Cross-app file access"));
