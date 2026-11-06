@@ -29,13 +29,23 @@
 | Bridge contract | 3090 endpoints, authentication, `BRIDGE_PROTOCOL` feature detection, parameter parsing (per-name matching; empty ≠ absent), request/response bounds, LAN and ADB boundaries |
 | Resources and concurrency | Lock ordering, threads / coroutines, process and FD leaks, exit barriers, `RuntimeTasks` / maintenance locks, timeout misread as exit, duplicate submission on rotation / recreation |
 | Error handling and degradation | Originals retained on failure; UNKNOWN not treated as success; unknown actions not replayed; degradation does not exceed authority; failure text not misleading |
-| i18n and UI | Text through `messages.json` / `UiText`; Chinese and English aligned; length limits; no hard-coded UI literals; scrollable on short screens / large fonts / landscape |
+| i18n and UI | Text through `messages.json` / `UiText`; Chinese and English aligned; length limits; no hard-coded UI literals; scrollable on short screens / large fonts / landscape; state/data updates use animation or collapsed/dialog transitions, never long text jumps |
 | Test coverage | New behavior has unit or contract tests; failure and negative controls covered; tests registered in `tools/host-tests.manifest.json`; real artifacts exercised rather than hand-written functions only |
 | Repository invariants | Does it touch the locked invariants in [AGENTS.en.md](../../AGENTS.en.md); does it break over-the-top upgrade / maintenance gates / stop and birth identity / backup scope / documentation links |
 | Generated files and locks | `runtime-descriptor`, inputs, proofs, notices, fixed-input locks, test manifest, CHANGELOG recomputed by scripts and mutually consistent; fixed-input changes repacked / uploaded / locked per process |
 | Documentation consistency | Indexes and focused pages updated; version identity matches `app/build.gradle` / `ci/release-identity.json`; historical records not rewritten; both Chinese and English written |
 | Build and release | Package, signing, `versionCode`, minSdk, arm64, flavor preserved; no debug packages / uninstall-reinstall / data clearing; Release assets and digests match |
 | Scope and boundaries | No unrelated changes, formatting noise, historical-original rewrites, hand-edited generated files, or mixed commits that should be split; no test packages, local paths, or private material in the repository |
+
+## UI design baseline (2026-11-07, repository-wide)
+
+Explicit user requirement; applies to every UI/copy change and external review:
+
+1. **Lean buttons**: a UI button carries only the action, never a functional annotation or explanatory subtitle.
+2. **Top-level pages**: no long descriptive text; move necessary explanations to secondary pages, collapsed sections or dialogs.
+3. **Secondary pages**: collapse what can be collapsed; use dialogs where they fit; minimize default visible content.
+4. **State and data updates**: when UI information, data or state changes, present the change with UI animations/transitions (fade, motion, size and number transitions), never abrupt replacement; no long text dumps or whole-block refreshes. When animation does not fit, use default-collapsed sections or dialogs instead. Applies to loading/refresh, counters and state words, list item replacement, errors and results.
+5. **Review enforcement**: a new or modified UI that violates any item is sent back as P1; existing UI is audited and fixed under T112 and does not block unrelated PRs. Review against screenshots/layout/copy; "looks fine" is not acceptable.
 
 ## What a REQUEST_CHANGES review must contain
 
