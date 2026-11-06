@@ -3762,5 +3762,7 @@
   "m9025": "Masquer en arrière-plan",
   "m9026": "Masquer DSHA des applications récentes",
   "m9027": "Masqué des applications récentes ; la notification permanente et le service en arrière-plan ne changent pas.",
-  "m9028": "Réglage enregistré, mais le système n'a pas autorisé le masquage immédiat ; nouvelle tentative à la prochaine ouverture."
+  "m9028": "Réglage enregistré, mais le système n'a pas autorisé le masquage immédiat ; nouvelle tentative à la prochaine ouverture.",
+  "build335_ui_b8303dd168ef": "Abandonner le Web de la version précédente et forcer l’arrêt ?",
+  "build335_ui_e74a6f26bca8": "L’arrêt normal n’a pas confirmé la fin du Web de la version précédente. Cette fois, l’identité de naissance enregistrée a été vérifiée séparément pour l’ancien guest et son lanceur de conteneur ; l’arrêt forcé peut interrompre l’écriture de conversations ou de fichiers.\n\nLa confirmation termine d’abord le guest, puis l’ancien lanceur de cet enregistrement ; tout changement d’identité ou d’état du processus entraîne le refus de l’opération et aucun autre processus n’est arrêté. Annuler conserve l’état des processus et la barrière d’exécution."
 }

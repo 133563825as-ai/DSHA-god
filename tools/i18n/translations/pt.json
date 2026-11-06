@@ -3762,5 +3762,7 @@
   "m9025": "Ocultar em segundo plano",
   "m9026": "Ocultar o DSHA dos recentes",
   "m9027": "Ocultado dos recentes; a notificação permanente e o serviço em segundo plano não são afetados.",
-  "m9028": "Configuração salva, mas o sistema não permitiu ocultar agora; tentaremos novamente na próxima abertura."
+  "m9028": "Configuração salva, mas o sistema não permitiu ocultar agora; tentaremos novamente na próxima abertura.",
+  "build335_ui_b8303dd168ef": "Descartar o Web da versão anterior e forçar a parada?",
+  "build335_ui_e74a6f26bca8": "A parada normal não confirmou a saída do Web da versão anterior. Desta vez, a identidade de nascimento guardada foi verificada separadamente para o guest anterior e o respetivo lançador de contentor; forçar a parada pode interromper escritas em conversas ou arquivos.\n\nA confirmação termina primeiro o guest e depois o lançador antigo deste registo; qualquer alteração de identidade ou estado do processo rejeita a operação e não pára outros processos. Cancelar mantém o estado dos processos e a barreira de execução."
 }
