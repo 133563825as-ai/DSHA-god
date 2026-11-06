@@ -46,8 +46,8 @@ public final class WebSessionRestoreText {
     return switch (reason == null ? "" : reason) {
       case "IDENTITY_UNKNOWN" ->
           UiText.choose(
-              "原 Web 实例身份无法确认；为避免重复实例，本次没有启动。可查看诊断，或先正常停止后重试。",
-              "The previous Web instance cannot be identified. No new instance was started. Inspect diagnostics or stop it normally before retrying.");
+              "原 Web 实例身份无法确认；为避免重复实例，本次没有启动。可查看诊断了解核对阶段；点停止后，普通停止无法确认退出时会提示按身份核验强制结束。重启 App 会重新核对。",
+              "The previous Web instance cannot be identified, so no new instance was started. Inspect diagnostics for the check stage; tap Stop — if a normal stop cannot confirm exit, a verified forced stop is offered. Restarting the app rechecks.");
       case "AUTH_UNAVAILABLE" ->
           UiText.choose(
               "原 Web 实例仍然存活，但连接暂不可用；自动复核已结束。返回本页会再核对一次，也可查看诊断。",
