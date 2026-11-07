@@ -145,3 +145,7 @@ K5 **场景 1 已在单设备真机通过**（二轮诊断包 3d3866f7，2026-11
 | K5 场景 1 真机复测（二轮包） | 用户实测（设置→诊断可查 `WEB_PAGE_RESUME`） | **通过**：黄→绿消失；流式输出不再整页重载/长时间卡加载 |
 
 说明：一轮只改 JS/受管资产；二轮为诊断新增了 `WebPageDiagnosticText.resume`、`WebPageDiagnostics.resume`、native `WEB_PAGE_RESUME` 读取与 `ForegroundActivity.isAnotherActivityVisible`（均非 launcher 源，不改变 runtime launcher 身份；受管 `client.js` 变化已重算 descriptor）。构建日志见上表；二轮定向单测日志 `/root/.cache/dsha-gradle-logs/20261107T131850Z-webview-keepalive-v2-_app_testStandardDebugUnitTest_--tests__WebPageDiagnosticTex.log`。
+
+## 用户决定（2026-11-07）：其余场景声明为实验性
+
+用户明确：没有时间继续跑 K5 剩余场景，**把未执行场景（2/3/4/5/6/7/8/9/10/11/12/13 及第二设备/第二 WebView）声明为实验性，不阻塞 T110 合并**。已通过项：场景 1（应用内往返：不再整页重载/黄→绿，流式不丢，二轮包 3d3866f7 真机确认）；冷启动加载三态已观察。T110 合并前按版本线 rebase 到当前 main 并重算 runtime-descriptor。

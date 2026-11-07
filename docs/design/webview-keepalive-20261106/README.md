@@ -202,6 +202,8 @@ B-min 把 `Retained` 从 Activity 作用域提升到应用作用域，并把“�
 
 记录要求：每条场景保留设备型号/Android/WebView 版本、操作时间线、脱敏日志片段；未执行项不得写成通过。
 
+> 2026-11-07 用户决定：未执行场景（含 2/3/4/5/6/7/8/9/10/11/12/13、第二设备/第二 WebView）**声明为实验性，不阻塞 T110 合并**；已通过场景 1（应用内往返）；未执行项仍不得写成通过。
+
 ## 8. 后续任务
 
 - **K3 插件契约**：`__DSHA_NATIVE_LIFECYCLE__`、`dsha-browser-suspend/resume`、`documentToken`；`client.js` 的 lease/阅读位置/流恢复；旧插件握手失败则不保活。
