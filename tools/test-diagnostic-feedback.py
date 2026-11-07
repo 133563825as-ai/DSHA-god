@@ -61,13 +61,21 @@ public final class DiagnosticFeedbackProbe {
     static final int VISIBLE = 0, GONE = 8;
     boolean enabled = true;
     float alpha = 1f;
+    int visibility = VISIBLE;
     void setEnabled(boolean value) { enabled = value; }
     void setAlpha(float value) { alpha = value; }
-    void setVisibility(int value) {}
+    void setVisibility(int value) { visibility = value; }
+    int getVisibility() { return visibility; }
   }
   static final class TextView extends View {
     String text;
     void setText(String value) { text = value; }
+  }
+  // T114 第二批：DiagnosticActivity 的状态文本改用 UiMotion 过渡；宿主夹具补最小桩。
+  static final class UiMotion {
+    static void crossFadeText(TextView view, CharSequence text) { view.setText(text.toString()); }
+    static void flash(View view) {}
+    static void reveal(View view) { view.setAlpha(1f); }
   }
   static final class ResultList {
     void show(Object items) {}
