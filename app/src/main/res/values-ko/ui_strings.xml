@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"기기 명령 채널"</string>
     <string name="ui2_device_grants" formatted="false">"기기 권한"</string>
     <string name="ui2_diagnostics" formatted="false">"진단"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"구성요소, 저장소 및 서비스를 검사하고 민감한 정보를 가린 보고서를 생성합니다."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"런타임 검사 및 진단 로그"</string>
     <string name="ui2_display" formatted="false">"표시 및 시작"</string>
     <string name="ui2_dns" formatted="false">"DNS 정책"</string>

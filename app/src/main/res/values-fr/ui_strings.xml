@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"Canaux de l'appareil"</string>
     <string name="ui2_device_grants" formatted="false">"Autorisations appareil"</string>
     <string name="ui2_diagnostics" formatted="false">"Diagnostic"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"Examiner les composants, le stockage et les services, et générer un rapport expurgé."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Vérifications de l’environnement et journaux de diagnostic"</string>
     <string name="ui2_display" formatted="false">"Affichage et démarrage"</string>
     <string name="ui2_dns" formatted="false">"Politique DNS"</string>

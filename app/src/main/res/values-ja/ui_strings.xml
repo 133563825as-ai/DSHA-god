@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"端末コマンドの実行経路"</string>
     <string name="ui2_device_grants" formatted="false">"デバイスの権限"</string>
     <string name="ui2_diagnostics" formatted="false">"診断"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"コンポーネント、ストレージ、サービスを検査し、機密情報を除去したレポートを生成します。"</string>
     <string name="ui2_diagnostics_sub" formatted="false">"動作確認と診断ログ"</string>
     <string name="ui2_display" formatted="false">"表示と起動"</string>
     <string name="ui2_dns" formatted="false">"DNS の解決方針"</string>

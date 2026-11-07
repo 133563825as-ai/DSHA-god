@@ -131,7 +131,7 @@
     <string name="ui2_management">管理</string>
     <string name="ui2_rollback">兼容运行时回退</string>
     <string name="ui2_rollback_sub">通过隔离试运行后再切换</string>
-    <string name="ui2_diagnostics_intro">检查组件与环境。</string>
+    <string name="ui2_diagnostics_intro">检查组件、存储与服务，生成脱敏报告。</string>
 
 
     <string name="ui2_error_logs">错误日志</string>

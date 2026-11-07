@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"Canais do aparelho"</string>
     <string name="ui2_device_grants" formatted="false">"Permissões do aparelho"</string>
     <string name="ui2_diagnostics" formatted="false">"Diagnóstico"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"Inspecione componentes, armazenamento e serviços e gere um relatório com dados sensíveis ocultados."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Verificações de execução e registros de diagnóstico"</string>
     <string name="ui2_display" formatted="false">"Exibição e inicialização"</string>
     <string name="ui2_dns" formatted="false">"Política de DNS"</string>

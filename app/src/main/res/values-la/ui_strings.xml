@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"Canales mandatorum"</string>
     <string name="ui2_device_grants" formatted="false">"Facultates apparatus"</string>
     <string name="ui2_diagnostics" formatted="false">"Diagnosis"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"Partes, repositorium et ministeria inspice et relationem expurgatam genera."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Probationes ambitus et acta diagnostica"</string>
     <string name="ui2_display" formatted="false">"Ostensio et initium"</string>
     <string name="ui2_dns" formatted="false">"Regula DNS"</string>

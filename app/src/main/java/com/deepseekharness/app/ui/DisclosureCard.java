@@ -191,7 +191,7 @@ final class DisclosureCard {
       Context context = summary.getContext();
       CharSequence consequenceText =
           TextUtils.isEmpty(model.consequence) ? "" : model.consequence.toString().trim();
-      if (consequenceText.isEmpty()) {
+      if (TextUtils.isEmpty(consequenceText)) {
         consequence.setVisibility(View.GONE);
       } else {
         consequence.setText(consequenceText);
@@ -215,7 +215,8 @@ final class DisclosureCard {
         clearDetails();
         details.setVisibility(View.GONE);
       }
-      holder.setVisibility(expanded || !consequenceText.isEmpty() ? View.VISIBLE : View.GONE);
+      holder.setVisibility(
+          expanded || !TextUtils.isEmpty(consequenceText) ? View.VISIBLE : View.GONE);
     }
 
     void toggle() {

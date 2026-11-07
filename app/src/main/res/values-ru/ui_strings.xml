@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"Каналы команд устройства"</string>
     <string name="ui2_device_grants" formatted="false">"Разрешения устройства"</string>
     <string name="ui2_diagnostics" formatted="false">"Диагностика"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"Проверьте компоненты, хранилище и службы и создайте отчёт со скрытыми секретами."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Проверки среды и диагностические журналы"</string>
     <string name="ui2_display" formatted="false">"Отображение и запуск"</string>
     <string name="ui2_dns" formatted="false">"Политика DNS"</string>

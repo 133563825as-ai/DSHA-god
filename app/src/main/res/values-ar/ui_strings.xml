@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"قنوات أوامر الجهاز"</string>
     <string name="ui2_device_grants" formatted="false">"أذونات الجهاز"</string>
     <string name="ui2_diagnostics" formatted="false">"التشخيص"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"افحص المكوّنات والتخزين والخدمات وأنشئ تقريرًا محجوب البيانات الحساسة."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"فحوص بيئة التشغيل وسجلات التشخيص"</string>
     <string name="ui2_display" formatted="false">"العرض وبدء التشغيل"</string>
     <string name="ui2_dns" formatted="false">"سياسة DNS"</string>

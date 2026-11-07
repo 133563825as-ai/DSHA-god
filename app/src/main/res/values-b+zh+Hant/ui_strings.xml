@@ -95,6 +95,7 @@
     <string name="ui2_device_channels" formatted="false">"裝置執行通道"</string>
     <string name="ui2_device_grants" formatted="false">"裝置能力授權"</string>
     <string name="ui2_diagnostics" formatted="false">"自我檢查與診斷"</string>
+    <string name="ui2_diagnostics_intro" formatted="false">"檢查元件、儲存與服務，生成脫敏報告。"</string>
     <string name="ui2_diagnostics_sub" formatted="false">"執行狀態、錯誤記錄與記錄匯出"</string>
     <string name="ui2_display" formatted="false">"顯示與啟動"</string>
     <string name="ui2_dns" formatted="false">"DNS 解析策略"</string>
