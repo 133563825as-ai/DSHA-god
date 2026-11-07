@@ -144,7 +144,7 @@ public final class DeviceGrantsFragment extends Fragment {
       ((TextView) view.findViewById(R.id.screen_virtual_sub))
           .setText(
               com.deepseekharness.app.util.UiText.choose(
-                  "在独立屏幕里操作应用 · 需要已连接的设备通道",
+                  "独立屏幕操作 · 需已连接通道",
                   "Operate apps on a separate screen · needs a connected device channel"));
       view.findViewById(R.id.screen_virtual_row)
           .setOnClickListener(
@@ -1015,7 +1015,7 @@ public final class DeviceGrantsFragment extends Fragment {
       empty.setPadding(0, dp(8), 0, dp(8));
       empty.setText(
           com.deepseekharness.app.util.UiText.choose(
-              "还没有应用规则。添加后，这些应用按规则处理，其他应用仍询问。",
+              "暂无应用规则；其他应用仍会询问",
               "No app rules yet. Added apps follow their rule; other apps still ask."));
       list.addView(empty);
     }
@@ -1735,17 +1735,17 @@ public final class DeviceGrantsFragment extends Fragment {
     warning.setText(
         full
             ? com.deepseekharness.app.util.UiText.choose(
-                "严重风险：完全放宽后不按命令内容拦截。助手和插件可用 root 执行格式化、刷机、清除数据等不可逆操作，可能导致数据丢失或系统损坏。",
+                "完全放宽后不按命令拦截；可执行格式化、刷机、清除数据等不可逆操作，可能造成数据丢失或系统损坏。",
                 "Severe risk: fully relaxed mode does not inspect command content. The assistant and plugins can run irreversible root operations such as formatting, flashing or wiping data, which may cause data loss or system damage.")
             : com.deepseekharness.app.util.UiText.choose(
-                "高风险：放宽后助手和插件可用 root 执行白名单以外的任意命令；仍拦截格式化、刷机、清除数据等不可逆操作。",
+                "放宽后可用 root 执行白名单外命令；格式化、刷机、清除数据仍被拦截。",
                 "High risk: relaxed mode lets the assistant and plugins run root commands beyond the allowlist; irreversible operations such as formatting, flashing or wiping data stay blocked."));
     TextView scope = new TextView(ctx);
     scope.setTextSize(12);
     scope.setTextColor(ctx.getColor(R.color.shell_text_secondary));
     scope.setText(
         com.deepseekharness.app.util.UiText.choose(
-            "仅对 root 通道生效；Shizuku/ADB 仍按严格档。可随时改回严格。",
+            "仅对 root 通道；Shizuku/ADB 仍严格",
             "Applies to the root channel only; Shizuku/ADB stay strict. You can switch back to strict anytime."));
     android.widget.LinearLayout body = new android.widget.LinearLayout(ctx);
     body.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -1995,7 +1995,7 @@ public final class DeviceGrantsFragment extends Fragment {
                 } catch (RuntimeException missing) {
                   toast(
                       com.deepseekharness.app.util.UiText.choose(
-                          "请在系统设置中打开 DSHA 应用权限", "Open DSHA permissions in system settings"));
+                          "去设置", "Open DSHA permissions in system settings"));
                 }
               })
           .show();

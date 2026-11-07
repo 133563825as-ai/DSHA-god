@@ -192,7 +192,7 @@ final class FullPermissionControls implements AutoCloseable {
     scope.setTextColor(ctx.getColor(R.color.shell_text_secondary));
     scope.setText(
         UiText.choose(
-            "各项能力授权、拒绝和暂停仍然有效；可随时关闭。",
+            "各能力授权与暂停仍然有效",
             "Capability grants, denials and pauses still apply. You can turn it off anytime."));
     LinearLayout body = new LinearLayout(ctx);
     body.setOrientation(LinearLayout.VERTICAL);

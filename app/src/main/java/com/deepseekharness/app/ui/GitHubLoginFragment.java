@@ -418,8 +418,7 @@ public final class GitHubLoginFragment extends Fragment {
             ? UiText.format(
                 "将从本机 hosts.yml 删除账号 %s 的登录。只影响本机，不会撤销 GitHub 上的授权；如需撤销，请到 GitHub 设置中操作。",
                 current.hosts.login)
-            : UiText.text(
-                "将从本机 hosts.yml 删除 GitHub 登录。只影响本机，不会撤销 GitHub 上的授权；如需撤销，请到 GitHub 设置中操作。");
+            : UiText.text("删除本机登录记录；不影响 GitHub 授权");
     new DshaDialogBuilder(requireContext())
         .setTitle(UiText.text("退出 GitHub 登录？"))
         .setMessage(message)

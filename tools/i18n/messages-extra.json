@@ -1750,14 +1750,6 @@
     ]
   },
   {
-    "id": "x1970230",
-    "zh": "查看连接详情 ›",
-    "en": "Connection details ›",
-    "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/AdbPairActivity.java"
-    ]
-  },
-  {
     "id": "x1970231",
     "zh": "连接详情",
     "en": "Connection details",
@@ -2530,8 +2522,8 @@
   },
   {
     "id": "x1970333",
-    "zh": "启动 DSH 并等待就绪后显示本机地址。",
-    "en": "Start DSH and wait for its local URL.",
+    "zh": "启动就绪后显示本机地址",
+    "en": "The local address appears once started",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -3342,8 +3334,8 @@
   },
   {
     "id": "x1970434",
-    "zh": "先停止 Web、终端和写任务，在隔离服务中重置当前 web profile 的普通设置并读回，再事务提交与工作目录 .env。插件构成、对话和凭据保留；原配置可恢复。无法确认时保留原件并显示原因。",
-    "en": "Stop Web, terminals and writers. Reset ordinary settings of the web profile in an isolated service, read them back, then commit together with the workspace .env. Plugin composition, conversations and credentials are retained. Failures preserve originals and report the reason.",
+    "zh": "重置当前配置并读回。插件、对话与凭据保留；原配置可恢复，无法确认时保留原件。",
+    "en": "Reset and read back the current configuration. Plugins, conversations and credentials are kept; the original configuration can be restored, and originals are kept if unconfirmed.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java"
     ]
@@ -4395,8 +4387,8 @@
   },
   {
     "id": "x1970615",
-    "zh": "已安排：DSH 和终端停止后可执行，稍后刷新查看结果。",
-    "en": "Scheduled. DSH and terminals must be stopped. Refresh shortly to view the result.",
+    "zh": "已安排，稍后查看结果",
+    "en": "Scheduled; check the result later",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
     ]
@@ -9592,8 +9584,8 @@
   },
   {
     "id": "termhome0123",
-    "zh": "先前输入仍在发送或终端已关闭，尚未恢复输入。",
-    "en": "Earlier input is still being sent or the terminal is closed. Input remains paused.",
+    "zh": "输入仍在发送或终端已关闭",
+    "en": "Input is still sending or the terminal is closed",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/PtyTerminalFragment.java"
     ]
@@ -9904,8 +9896,8 @@
   },
   {
     "id": "x2090004",
-    "zh": "复制局域网链接",
-    "en": "Copy LAN link",
+    "zh": "复制链接",
+    "en": "Copy link",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -9960,24 +9952,24 @@
   },
   {
     "id": "uiv5a005",
-    "zh": "严重风险：完全放宽后不按命令内容拦截。助手和插件可用 root 执行格式化、刷机、清除数据等不可逆操作，可能导致数据丢失或系统损坏。",
-    "en": "Severe risk: fully relaxed mode does not inspect command content. The assistant and plugins can run irreversible root operations such as formatting, flashing or wiping data, which may cause data loss or system damage.",
+    "zh": "完全放宽后不按命令拦截；可执行格式化、刷机、清除数据等不可逆操作，可能造成数据丢失或系统损坏。",
+    "en": "Fully relaxed mode does not filter commands; formatting, flashing and data wiping become possible and may cause data loss or system damage.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
   },
   {
     "id": "uiv5a006",
-    "zh": "高风险：放宽后助手和插件可用 root 执行白名单以外的任意命令；仍拦截格式化、刷机、清除数据等不可逆操作。",
-    "en": "High risk: relaxed mode lets the assistant and plugins run root commands beyond the allowlist; irreversible operations such as formatting, flashing or wiping data stay blocked.",
+    "zh": "放宽后可用 root 执行白名单外命令；格式化、刷机、清除数据仍被拦截。",
+    "en": "Relaxed mode lets root run commands outside the whitelist; formatting, flashing and data wiping are still blocked.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
   },
   {
     "id": "uiv5a007",
-    "zh": "仅对 root 通道生效；Shizuku/ADB 仍按严格档。可随时改回严格。",
-    "en": "Applies to the root channel only; Shizuku/ADB stay strict. You can switch back to strict anytime.",
+    "zh": "仅对 root 通道；Shizuku/ADB 仍严格",
+    "en": "Root channel only; Shizuku/ADB stay strict",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
@@ -10144,8 +10136,8 @@
   },
   {
     "id": "uiv5a028",
-    "zh": "各项能力授权、拒绝和暂停仍然有效；可随时关闭。",
-    "en": "Capability grants, denials and pauses still apply. You can turn it off anytime.",
+    "zh": "各能力授权与暂停仍然有效",
+    "en": "Capability grants and pauses remain in effect",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/FullPermissionControls.java"
     ]
@@ -10168,8 +10160,8 @@
   },
   {
     "id": "uiv5a031",
-    "zh": "在独立屏幕里操作应用 · 需要已连接的设备通道",
-    "en": "Operate apps on a separate screen · needs a connected device channel",
+    "zh": "独立屏幕操作 · 需已连接通道",
+    "en": "Separate screen control · connected channel required",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
@@ -10305,8 +10297,8 @@
   },
   {
     "id": "uiv5a048",
-    "zh": "还没有应用规则。添加后，这些应用按规则处理，其他应用仍询问。",
-    "en": "No app rules yet. Added apps follow their rule; other apps still ask.",
+    "zh": "暂无应用规则；其他应用仍会询问",
+    "en": "No app rules; other apps still prompt",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
@@ -11827,14 +11819,6 @@
     "id": "cfg249a04",
     "zh": "已改",
     "en": "Changed",
-    "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
-    ]
-  },
-  {
-    "id": "cfg249a05",
-    "zh": "网页内核 System WebView",
-    "en": "Browser engine: System WebView",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
     ]

@@ -1015,7 +1015,7 @@ public final class PtyTerminalFragment extends Fragment
                     Toast.makeText(
                             requireContext(),
                             UiText.choose(
-                                "先前输入仍在发送或终端已关闭，尚未恢复输入。",
+                                "输入仍在发送或终端已关闭",
                                 "Earlier input is still being sent or the terminal is closed. Input remains paused."),
                             Toast.LENGTH_LONG)
                         .show();

@@ -153,8 +153,7 @@ public class LaunchFragment extends Fragment {
                 new com.deepseekharness.app.ui.DshaDialogBuilder(requireContext(), true)
                     .setTitle(com.deepseekharness.app.util.UiText.text("安全启动 Web？"))
                     .setMessage(
-                        com.deepseekharness.app.util.UiText.text(
-                            "停止当前启动，只加载官方基础界面。原插件开关、会话、模型和配置保留；普通重启后回到原配置。安全界面不加载移动插件等扩展。"))
+                        com.deepseekharness.app.util.UiText.text("安全模式：仅加载官方基础界面；插件、会话与配置保留。"))
                     .setNegativeButton(com.deepseekharness.app.util.UiText.text("取消"), null)
                     .setPositiveButton(
                         com.deepseekharness.app.util.UiText.text("安全启动"),
@@ -922,9 +921,7 @@ public class LaunchFragment extends Fragment {
                         || activity.isDestroyed()
                         || generation != controller.getWebGeneration()) return;
                     if (candidate == null) {
-                      status.setText(
-                          com.deepseekharness.app.util.UiText.text(
-                              "尚未确认 Web 退出；进程身份无法核验，保留运行屏障。请查看诊断后重试停止。"));
+                      status.setText(com.deepseekharness.app.util.UiText.text("停止未完成"));
                       return;
                     }
                     boolean previous =
@@ -937,9 +934,9 @@ public class LaunchFragment extends Fragment {
                         .setMessage(
                             previous
                                 ? com.deepseekharness.app.util.UiText.text(
-                                    "普通停止尚未确认上一版 Web 退出。本次已按保存的出生身份分别核验上一版 guest 与它的容器启动器；强制结束可能中断正在写入的对话或文件。\n\n确认后先结束 guest，再结束该记录对应的旧启动器；任一进程身份或状态变化都会拒绝执行，不会结束其他进程。取消会保留现场与运行屏障。")
+                                    "普通停止未确认上一版退出。强制结束可能中断写入。\n\n确认后先结束旧进程；身份变化会拒绝执行；取消会保留现场。")
                                 : com.deepseekharness.app.util.UiText.text(
-                                    "普通停止尚未确认 Web 退出。本次已核验进程属于 DSHA；强制结束可能中断正在写入的对话或文件。\n\n确认后只结束这次已核验的 Web 进程；身份或状态变化会拒绝执行。取消会保留现场与运行屏障。"))
+                                    "普通停止未确认退出。强制结束可能中断写入。\n\n确认后只结束已核验进程；取消会保留现场。"))
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(
                             com.deepseekharness.app.util.UiText.text("强制结束"),
@@ -1047,7 +1044,7 @@ public class LaunchFragment extends Fragment {
         UiText.format(
             UiText.choose("本机访问\n%s\n\n%s", "On this phone\n%s\n\n%s"),
             local.isEmpty()
-                ? UiText.choose("启动 DSH 并等待就绪后显示本机地址。", "Start DSH and wait for its local URL.")
+                ? UiText.choose("启动就绪后显示本机地址", "Start DSH and wait for its local URL.")
                 : local,
             lanStatusForDisplay(access)));
     if (accessLanButton != null)
@@ -1059,7 +1056,7 @@ public class LaunchFragment extends Fragment {
       boolean lanReady = access.state == LanAccessPresentation.State.READY;
       accessCopyButton.setText(
           lanReady
-              ? UiText.choose("复制局域网链接", "Copy LAN link")
+              ? UiText.choose("复制链接", "Copy LAN link")
               : UiText.choose("复制本机地址", "Copy local URL"));
       accessCopyButton.setEnabled(lanReady || !local.isEmpty());
     }

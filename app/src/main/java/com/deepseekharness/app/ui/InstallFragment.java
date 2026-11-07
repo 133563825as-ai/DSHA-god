@@ -732,9 +732,7 @@ public class InstallFragment extends Fragment {
               try {
                 // BackupTask 在发布任务前原子取得同一全局锁，旧弹窗也不能绕过互斥。
                 if (!(recovery ? maintenance.recoverMaintenance() : maintenance.rebuild())) {
-                  Toast.makeText(
-                          requireContext(), UiText.text("已有环境任务或未完成维护，请稍后重试"), Toast.LENGTH_LONG)
-                      .show();
+                  Toast.makeText(requireContext(), UiText.text("稍后重试"), Toast.LENGTH_LONG).show();
                   return;
                 }
                 startActivity(

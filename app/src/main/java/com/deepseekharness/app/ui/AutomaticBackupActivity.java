@@ -190,7 +190,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
           AutomaticBackups.request(this, true);
           state.setText(
               t(
-                  "已安排：DSH 和终端停止后可执行，稍后刷新查看结果。",
+                  "已安排，稍后查看结果",
                   "Scheduled. DSH and terminals must be stopped. Refresh shortly to view the result."));
         });
     page.button(page.footer, t("刷新备份记录", "Refresh backup records"), false, this::refresh);

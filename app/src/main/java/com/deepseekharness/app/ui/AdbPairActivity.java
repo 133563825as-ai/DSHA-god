@@ -111,7 +111,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     statusText.setMaxLines(3);
     statusText.setEllipsize(android.text.TextUtils.TruncateAt.END);
     TextView detail = new TextView(this);
-    detail.setText(com.deepseekharness.app.util.UiText.choose("查看连接详情 ›", "Connection details ›"));
+    detail.setText(com.deepseekharness.app.util.UiText.choose("连接详情", "Connection details ›"));
     detail.setTextSize(12);
     detail.setTextColor(getColor(com.deepseekharness.app.R.color.primary));
     detail.setGravity(Gravity.CENTER_VERTICAL);

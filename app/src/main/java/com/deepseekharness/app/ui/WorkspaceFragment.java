@@ -276,7 +276,7 @@ public class WorkspaceFragment extends Fragment {
         .setTitle(UiText.text("重置配置？"))
         .setMessage(
             UiText.choose(
-                "先停止 Web、终端和写任务，在隔离服务中重置当前 web profile 的普通设置并读回，再事务提交与工作目录 .env。插件构成、对话和凭据保留；原配置可恢复。无法确认时保留原件并显示原因。",
+                "重置当前配置并读回。插件、对话与凭据保留；原配置可恢复，无法确认时保留原件。",
                 "Stop Web, terminals and writers. Reset ordinary settings of the web profile in an isolated service, read them back, then commit together with the workspace .env. Plugin composition, conversations and credentials are retained. Failures preserve originals and report the reason."))
         .setPositiveButton(
             UiText.choose("保留原件并重置", "Retain originals and reset"),

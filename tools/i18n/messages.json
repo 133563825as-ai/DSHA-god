@@ -2710,8 +2710,8 @@
   },
   {
     "id": "m0331",
-    "zh": "停止当前启动，只加载官方基础界面。原插件开关、会话、模型和配置保留；普通重启后回到原配置。安全界面不加载移动插件等扩展。",
-    "en": "Stop the current startup and load only the official basic interface. Preserve plugin switches, conversations, models and settings. A normal restart restores your usual configuration. Safe mode does not load extensions such as the mobile plugin.",
+    "zh": "安全模式：仅加载官方基础界面；插件、会话与配置保留。",
+    "en": "Safe mode: only the official base UI loads; plugins, conversations and configuration are kept",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -3586,8 +3586,8 @@
   },
   {
     "id": "m0438",
-    "zh": "已有环境任务或未完成维护，请稍后重试",
-    "en": "An environment task or incomplete maintenance is pending. Try again later.",
+    "zh": "稍后重试",
+    "en": "Retry later",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/InstallFragment.java"
     ]
@@ -17832,8 +17832,8 @@
   },
   {
     "id": "stability_177c08bc9baa",
-    "zh": "将先停止写任务，再根据宿主日志恢复一致状态。无需旧 Python 或备份密码，原件将保留。",
-    "en": "Stop writers first, then restore consistency from the host journal. The old Python and backup password are not required. Originals are retained.",
+    "zh": "先停止写任务，再从原数据恢复一致状态。",
+    "en": "Stop write tasks first, then restore consistency from the original data",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/NativeDataActivity.java"
     ]
@@ -25492,8 +25492,8 @@
   },
   {
     "id": "build156_ui_d045a6d58749",
-    "zh": "尚未确认 Web 退出；进程身份无法核验，保留运行屏障。请查看诊断后重试停止。",
-    "en": "Web exit is unconfirmed and process identity cannot be verified. The execution barrier remains. Inspect diagnostics and retry stopping.",
+    "zh": "停止未完成",
+    "en": "Stop incomplete",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -25508,8 +25508,8 @@
   },
   {
     "id": "build156_ui_f150d6e93e4e",
-    "zh": "普通停止尚未确认 Web 退出。本次已核验进程属于 DSHA；强制结束可能中断正在写入的对话或文件。\n\n确认后只结束这次已核验的 Web 进程；身份或状态变化会拒绝执行。取消会保留现场与运行屏障。",
-    "en": "Normal stopping has not confirmed Web exit. This process was verified as belonging to DSHA. Force stopping may interrupt conversation or file writes.\n\nConfirmation applies only to this verified Web process. Identity or state changes reject the operation. Cancel keeps the process state and execution barrier.",
+    "zh": "普通停止未确认退出。强制结束可能中断写入。\n\n确认后只结束已核验进程；取消会保留现场。",
+    "en": "Normal stop did not confirm exit. Force stop may interrupt writes.\\n\\nConfirming ends only the verified process; cancelling keeps the current state.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]
@@ -30024,8 +30024,8 @@
   },
   {
     "id": "build162_usage_3697",
-    "zh": "请在系统设置中打开 DSHA 应用权限",
-    "en": "Open DSHA permissions in system settings",
+    "zh": "去设置",
+    "en": "Go to settings",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
@@ -30627,8 +30627,8 @@
   },
   {
     "id": "ghlog_53",
-    "zh": "将从本机 hosts.yml 删除 GitHub 登录。只影响本机，不会撤销 GitHub 上的授权；如需撤销，请到 GitHub 设置中操作。",
-    "en": "This removes the GitHub sign-in from the local hosts.yml. It only affects this device and does not revoke access on GitHub; revoke it in GitHub settings if needed.",
+    "zh": "删除本机登录记录；不影响 GitHub 授权",
+    "en": "Delete the local sign-in record; GitHub authorization is unaffected",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/GitHubLoginFragment.java"
     ]
@@ -30771,8 +30771,8 @@
   },
   {
     "id": "build335_ui_e74a6f26bca8",
-    "zh": "普通停止尚未确认上一版 Web 退出。本次已按保存的出生身份分别核验上一版 guest 与它的容器启动器；强制结束可能中断正在写入的对话或文件。\n\n确认后先结束 guest，再结束该记录对应的旧启动器；任一进程身份或状态变化都会拒绝执行，不会结束其他进程。取消会保留现场与运行屏障。",
-    "en": "Normal stopping has not confirmed the previous-build Web exit. The saved birth identity was verified separately for the previous guest and its container launcher; force stopping may interrupt ongoing conversation or file writes.\n\nConfirmation ends the guest first, then that record's old launcher; any process identity or state change rejects the operation and no other process is stopped. Cancel keeps the process state and execution barrier.",
+    "zh": "普通停止未确认上一版退出。强制结束可能中断写入。\n\n确认后先结束旧进程；身份变化会拒绝执行；取消会保留现场。",
+    "en": "Normal stop did not confirm the previous build exited. Force stop may interrupt writes.\\n\\nConfirming ends the old process first; identity changes are refused; cancelling keeps the current state.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
     ]

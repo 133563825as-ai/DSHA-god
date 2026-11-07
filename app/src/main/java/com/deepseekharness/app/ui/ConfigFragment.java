@@ -129,7 +129,7 @@ public class ConfigFragment extends Fragment {
     gecko.setChecked(c.isGeckoCore());
     // 网页内核目前只有 System WebView 一项，作为桌面布局行的副文案显示，不再给出单选下拉。
     ((TextView) v.findViewById(R.id.config_core_choice))
-        .setText(UiText.choose("网页内核 System WebView", "Browser engine: System WebView"));
+        .setText(UiText.choose("网页内核", "Browser engine: System WebView"));
     proroot.setChecked(c.isProroot());
     lan.setChecked(c.isLanMode());
     TextView lanPasswordStatus = v.findViewById(R.id.config_lan_password_status);

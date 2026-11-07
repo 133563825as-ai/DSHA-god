@@ -360,7 +360,7 @@ public final class NativeDataActivity extends AppCompatActivity {
         maintenance,
         t("恢复中断的数据提交", "Recover interrupted data commit"),
         t(
-            "将先停止写任务，再根据宿主日志恢复一致状态。无需旧 Python 或备份密码，原件将保留。",
+            "先停止写任务，再从原数据恢复一致状态。",
             "Stop writers first, then restore consistency from the host journal. The old Python and backup password are not required. Originals are retained."),
         R.drawable.ic_recovery_refresh,
         this::recoverPending);
@@ -383,7 +383,7 @@ public final class NativeDataActivity extends AppCompatActivity {
         .setTitle(t("恢复中断的数据提交", "Recover interrupted data commit"))
         .setMessage(
             t(
-                "将先停止写任务，再根据宿主日志恢复一致状态。无需旧 Python 或备份密码，原件将保留。",
+                "先停止写任务，再从原数据恢复一致状态。",
                 "Stop writers first, then restore consistency from the host journal. The old Python and backup password are not required. Originals are retained."))
         .setPositiveButton(
             t("继续", "Continue"),
