@@ -70,6 +70,33 @@
 - 包内核对：`assets/app-integration/client.js` SHA-256 = `5ef90deb…8b4143dd`（与工作树一致）；`assets/runtime-descriptor.json` runtimeId = `9a0c5f45…f4f4f4afe`。
 - 基线：`feat/webview-keepalive-v2` tip = 9ca5d238（build336 基线 + K2 + 本修复 + 本回执），**不含 build337 其它主线修复**；只用于 K5 场景 1 复测，不作为功能全集验收包。
 
+## 2026-11-07 真机复测（修复包 9ca5d238）——场景 1 仍失败
+
+- 结果：维护重建后首次进入 Web **无黄→绿**；但应用内往返（Web → 设置 / 终端 / 插件页 → 回 Web）返回时**仍有黄→绿**，且**流式输出完全重载 + 长时间卡加载**，与修复前同级别。首次进入没有 resume 事件，不能单独证明修复生效；返回路径仍触发全量重建。
+- 待区分（本轮新增诊断）：① 部署的 client 是否仍是旧版；② 探针 2s 超时是否只是长页面主线程繁忙；③ hidden 期间 socket 是否真被服务端心跳终止；④ 是否还有另一条全量 resync 路径。
+
+## 二轮修复与诊断包（提交 3d3866f7）
+
+- 复位条件：探针失败时若 Connection 仍为 `connected`，**不再强制 `reconnect()`**（避免长页面慢回包被误判成死 carrier 而重建整份 Remote 基线）；只有 Connection 已 `connecting` / `disconnected` 才保持原来的立即重置。真正的 dead-but-OPEN 交给服务端心跳（2s×2）或 socket close 的官方恢复。
+- 诊断（脱敏）：客户端每次 resume 写 `window.__DSHA_RESUME_DIAG__`（`impl=k5fix2`、`trigger`、`visibility`、`state`、`generation`、`probe`、`elapsedMs`、`reset`、`stateAfter`、`hiddenMs`）；native 在派发 resume 后 2.6s 读取并写 `WEB_PAGE_RESUME` 行；旧客户端/未部署时该行为 `probe=absent`。
+- native resume 事件带 `detail.foreground`（`ForegroundActivity.isAnotherActivityVisible`），用于区分应用内切换与整体退后台；诊断行有 `inApp`。
+- 新测试包：`/sdcard/Download/dsha-test-k5fix2-diag-3d3866f7-20261107.apk`
+  - bytes 327,899,929；SHA-256 `810cd6596c0a01fcc57b40c9da809854f94ac82ba41f20e730fc00d2275a1b61`
+  - `io.github.sunsetrne.dsha.test`，versionCode 336，debug 签名同上一个测试包；包内 `client.js` SHA-256 `268c48702fc790e249b3a82feee0a096c8fdc5e8380d5552f17f31befe6e4403`，descriptor runtimeId `60e9b7361dee832460822c7718f1e1a758580372beda90bcdaec555d2fbea26e`
+  - 基线仍为 build336 + K2 + 本轮修复，不含 build337 主线提交（与上一测试包 25463a86 的 base 不同；若诊断显示页面被重建而非 client reset，需在新 main 基线上另建测试包）
+- 门禁：JS `test-browser-stream-resume` **11/11**（探针超时仍 connected → 不 reset，随后 close 才恢复）；定向 Java `WebPageDiagnosticTextTest` / `BrowserPageKeeperTest` / `WebBackgroundPageLifecycleTest` **36 tests / 0 failures / 0 errors / 0 skipped**；`format-java-tree --check` exit 0；descriptor check/verify exit 0；`assembleStandardDebug -Pdsha.sunsetTest=true` exit 0（53s）。
+
+**复测与诊断抓取**：
+
+1. 安装新包并完成维护 / 运行时更新；
+2. 长流式会话中 Web → 设置 / 终端 / 插件 → 回 Web ≥3 次；
+3. 若仍出现黄→绿 / 整页重载：读取测试包诊断日志，搜索 `WEB_PAGE_RESUME`、`WEB_ENGINE`、`WEB_PAGE_DESTROY`、`WEB_KEEPALIVE_*`；
+   - `impl` 不是 `k5fix2` 或 `probe=absent` → 新 client 未部署，先解决部署 / 重建；
+   - `probe=timeout-kept` 且仍重载 → 探针外还有全量 resync 路径，或 socket 真死（看 `generation` / `generationAfter` 与随后的重连）；
+   - `probe=alive` 且仍重载 → 重载不来自本次探测分支；
+   - 有 `WEB_ENGINE` / `WEB_PAGE_DESTROY` → 页面 / 文档被重建，问题在 K2 / 生命周期或基线，而不是 client reset。
+4. 核对测试包 rootfs 的 `/root/dsha-app-integration/client.js` SHA-256 是否为 `268c4870…befe6e4403`（与 APK 包内一致）。
+
 ## 未执行（不得写成通过）
 
 - 场景 1 应用内往返已执行并判失败（见上）；修复后**待复测**，复测通过前不能记为通过。
@@ -82,7 +109,7 @@
 
 ## 结论
 
-K5 **未通过（场景 1 失败；其它场景未完成）**，T110 `55ef9d68` 暂不合并。场景 1 根因已定位并修复（提交 9ca5d238：客户端前台恢复先探测 carrier，避免同文档往返重建整份 Remote 基线；单测 11/11），修复候选测试包见上节。下一步：由用户在主会话按「待真机复测」步骤重跑场景 1/2，逐项记录设备/时间线/现象与日志；通过后再继续场景 5/7/10 并重新评估合并。**复测通过前不得把场景 1 写成通过，也不得合并 T110。**
+K5 **未通过（场景 1 仍失败；其它场景未完成）**，T110 `55ef9d68` 暂不合并。第一轮修复（9ca5d238）经真机复测：维护重建后首次进入无黄→绿，但应用内往返仍整页重载 + 长时间卡加载。二轮（3d3866f7）已把复位条件收紧为「探针失败且 Connection 已非 connected」，并加入 `WEB_PAGE_RESUME` 脱敏诊断与新的诊断测试包。下一步：按「复测与诊断抓取」安装新包重跑场景 1/2，用 `WEB_PAGE_RESUME` 区分「新 client 未部署 / 探针超时 / socket 真死 / 另一条 resync 路径 / 文档重建」；通过后再继续场景 5/7/10 并重新评估合并。**复测通过前不得把场景 1 写成通过，也不得合并 T110。**
 
 ## 门禁回执（本修复）
 
@@ -102,7 +129,8 @@ K5 **未通过（场景 1 失败；其它场景未完成）**，T110 `55ef9d68` 
 | UI i18n | `python3 tools/check-ui-i18n.py` | 0 · newFindings 0 |
 | CHANGELOG | `python3 tools/generate-changelog.py --check` | 0 |
 | 文档链接 | `python3 tools/check-document-links.py` | 0（文档最终提交前重跑） |
-| 定向 Java 单测 | `dsha-gradle :app:testStandardDebugUnitTest --tests '*BrowserPageKeeperTest' --tests '*WebBackgroundPageLifecycleTest' --tests '*WebPageDiagnosticTextTest'` | 0 · 34 tests / 0 failures / 0 errors / 0 skipped |
-| 测试包构建 | `dsha-gradle :app:assembleStandardDebug -Pdsha.sunsetTest=true` | 0 · BUILD SUCCESSFUL in 55s |
+| 定向 Java 单测（二轮后） | `dsha-gradle :app:testStandardDebugUnitTest --tests '*WebPageDiagnosticTextTest' --tests '*BrowserPageKeeperTest' --tests '*WebBackgroundPageLifecycleTest'` | 0 · 36 tests / 0 failures / 0 errors / 0 skipped |
+| 测试包构建（一轮） | `dsha-gradle :app:assembleStandardDebug -Pdsha.sunsetTest=true` | 0 · BUILD SUCCESSFUL in 55s（`k5fix-20261107T1256Z.log`） |
+| 测试包构建（二轮） | 同上 | 0 · BUILD SUCCESSFUL in 53s（`k5fix2-build-20261107T1320Z.log`） |
 
-说明：本修复不改 Java 源码；定向 Java 单测用于确认 K2 既有覆盖未回归。构建日志 `/root/.cache/dsha-gradle-logs/k5fix-20261107T1256Z.log`，单测日志 `/root/.cache/dsha-gradle-logs/k5fix-tests-20261107.log`。
+说明：一轮只改 JS/受管资产；二轮为诊断新增了 `WebPageDiagnosticText.resume`、`WebPageDiagnostics.resume`、native `WEB_PAGE_RESUME` 读取与 `ForegroundActivity.isAnotherActivityVisible`（均非 launcher 源，不改变 runtime launcher 身份；受管 `client.js` 变化已重算 descriptor）。构建日志见上表；二轮定向单测日志 `/root/.cache/dsha-gradle-logs/20261107T131850Z-webview-keepalive-v2-_app_testStandardDebugUnitTest_--tests__WebPageDiagnosticTex.log`。
