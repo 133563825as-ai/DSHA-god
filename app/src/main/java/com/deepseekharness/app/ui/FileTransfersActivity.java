@@ -725,6 +725,7 @@ public final class FileTransfersActivity extends AppCompatActivity
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, dp(160), 0, 0);
         detailContent.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        UiMotion.reveal(detailContent);
       }
       return;
     }
@@ -744,7 +745,11 @@ public final class FileTransfersActivity extends AppCompatActivity
       detailContent.removeAllViews();
       detail = new TransferDetailView(this, this, task, detailWide());
       detailContent.addView(detail.root, new LinearLayout.LayoutParams(-1, -2));
-      if (!sameTask) detailScroll.scrollTo(0, 0);
+      if (!sameTask) {
+        detailScroll.scrollTo(0, 0);
+        // 双栏首次进入某条详情：整块 150ms 淡入；同任务进度刷新走 refresh，不重建也不闪（审计 E-08）。
+        UiMotion.reveal(detailContent);
+      }
     } else detail.refresh(task);
   }
 

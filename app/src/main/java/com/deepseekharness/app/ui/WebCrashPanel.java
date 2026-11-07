@@ -47,6 +47,12 @@ final class WebCrashPanel {
   private String technical = "";
   private boolean detailsOpen;
 
+  /** 上一次渲染的状态行内容键；相同就不重建列表（避免错误态反复 show 时闪动）。 */
+  private String renderedRows = "";
+
+  /** 上一次渲染的图标资源；只在档位变化时高亮一次。 */
+  private int renderedIcon = -1;
+
   WebCrashPanel(
       View root, TextView title, TextView detail, IntFunction<View> find, Listener listener) {
     this.root = root;
@@ -98,20 +104,21 @@ final class WebCrashPanel {
     boolean useOverride =
         kind == WebCrashReport.Kind.GENERIC || kind == WebCrashReport.Kind.INVALID_ADDRESS;
     if (title != null)
-      title.setText(useOverride && titleOverride != null ? titleOverride : copy[0]);
+      UiMotion.crossFadeText(title, useOverride && titleOverride != null ? titleOverride : copy[0]);
     if (detail != null)
-      detail.setText(UiText.raw(useOverride && detailOverride != null ? detailOverride : copy[1]));
+      UiMotion.crossFadeText(
+          detail, UiText.raw(useOverride && detailOverride != null ? detailOverride : copy[1]));
     tone(spec.tone, icon(kind));
     Button primary = (Button) find.apply(R.id.web_retry);
     if (primary != null) {
-      primary.setText(actionLabel(spec.primary));
+      UiMotion.crossFadeText(primary, actionLabel(spec.primary));
       primary.setEnabled(spec.primary != WebCrashReport.Action.WAIT);
     }
     Button secondary = (Button) find.apply(R.id.web_error_secondary);
-    if (secondary != null) secondary.setText(actionLabel(spec.secondary));
+    if (secondary != null) UiMotion.crossFadeText(secondary, actionLabel(spec.secondary));
     renderRows(WebCrashReport.rows(kind, facts == null ? new WebCrashReport.Facts() : facts));
     TextView tech = text(R.id.web_error_details_text);
-    if (tech != null) tech.setText(UiText.raw(technical));
+    if (tech != null) UiMotion.crossFadeText(tech, UiText.raw(technical));
     boolean browserUsable = browserAvailable && !spec.serviceDown;
     View browser = find.apply(R.id.web_error_browser);
     if (browser != null) {
@@ -205,8 +212,11 @@ final class WebCrashPanel {
     if (badge != null) badge.setBackgroundTintList(ColorStateList.valueOf(context.getColor(soft)));
     ImageView icon = (ImageView) find.apply(R.id.web_error_icon);
     if (icon != null) {
+      boolean changed = renderedIcon != iconRes;
+      renderedIcon = iconRes;
       icon.setImageResource(iconRes);
       icon.setImageTintList(ColorStateList.valueOf(context.getColor(color)));
+      if (changed) UiMotion.flash(icon);
     }
   }
 
@@ -214,6 +224,10 @@ final class WebCrashPanel {
     View host = find.apply(R.id.web_error_state);
     if (!(host instanceof LinearLayout)) return;
     LinearLayout list = (LinearLayout) host;
+    // 行内容没变就保留原视图：错误态可能被连续 show（鉴权刷新重试），整表重建会闪。
+    String rowsKey = rows.toString();
+    if (rowsKey.equals(renderedRows)) return;
+    renderedRows = rowsKey;
     list.removeAllViews();
     String[] names = new String[rows.size()];
     float keyWidth = 0;
@@ -271,6 +285,7 @@ final class WebCrashPanel {
       }
       list.addView(item, new LinearLayout.LayoutParams(-1, -2));
     }
+    UiMotion.reveal(list);
   }
 
   /** 宽窄三档：窄屏单列；≥600dp 单列限宽、按钮并排；≥900dp 左右两栏。 */

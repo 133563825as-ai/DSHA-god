@@ -1565,6 +1565,8 @@
     "app/src/test/java/com/deepseekharness/app/ui/StartupRecoveryLayoutTest.java",
     "app/src/main/java/com/deepseekharness/app/ui/RecoveryRepairSheet.java",
     "app/src/test/java/com/deepseekharness/app/ui/RecoveryActivityTest.java",
-    "app/src/test/java/com/deepseekharness/app/ui/RecoveryRepairSheetTest.java"
+    "app/src/test/java/com/deepseekharness/app/ui/RecoveryRepairSheetTest.java",
+    "app/src/main/java/com/deepseekharness/app/util/NativeResultParts.java",
+    "app/src/test/java/com/deepseekharness/app/util/NativeResultPartsTest.java"
   ]
 }
