@@ -82,4 +82,4 @@ ADB 配对密钥目录 `.dsh/adbkeys` 按本机状态处理：备份与导出不
 
 ## 交付与验证限度
 
-正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）。构建不缺省发布口令，不替换为其它证书。build338 的 CI 只证明该 commit 在托管 runner 上的编译、门禁、单测、签名与发布流程；软件测试、APK/ELF/签名核验和手机覆盖安装是不同证据。发布准备的本地范围为本机宿主 contracts 整组、全树格式检查、全量单测、lint 与 assemble，以及本机刚修复的 test-diagnostic-feedback（见 [build338 更新说明](releases/build338-changes.zh.md)）；真机结论待用户按当次记录核对后补写，未预写通过，不能继承旧报告的通过范围。
+正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）。构建不缺省发布口令，不替换为其它证书。build339 的 CI 只证明该 commit 在托管 runner 上的编译、门禁、单测、签名与发布流程；软件测试、APK/ELF/签名核验和手机覆盖安装是不同证据。发布准备的本地范围为本机宿主 contracts 整组、全树格式检查、定向单测、`test-vscreen-help` 与 `test-diagnostic-feedback`，全量单测与 lint 由主会话在合并树执行（见 [build339 更新说明](releases/build339-changes.zh.md)）；真机结论待用户按当次记录核对后补写，未预写通过，不能继承旧报告的通过范围。
