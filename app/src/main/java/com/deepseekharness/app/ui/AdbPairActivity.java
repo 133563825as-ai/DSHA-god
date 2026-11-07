@@ -42,7 +42,9 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     model.status.observe(
         this,
         text -> {
-          statusText.setText(text == null ? "" : text.split("\n\n", 2)[0]);
+          // 状态行淡入（审计 C-08）；忙碌时按钮保留动作「开始配对」（XML 默认文案），
+          // 只禁用并用状态行说明进度，不再把动作标签换成状态句（审计 C-07）。
+          UiMotion.crossFadeText(statusText, text == null ? "" : text.split("\n\n", 2)[0]);
           hostEt.setEnabled(!model.busy);
           portEt.setEnabled(!model.busy);
           if (!model.busy && !portEt.hasFocus()) portEt.setText(model.pairPort);
@@ -51,10 +53,6 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
           autoBtn.setEnabled(!model.busy);
           manualBtn.setEnabled(!model.busy);
           codeEt.setEnabled(!model.busy);
-          startBtn.setText(
-              model.busy
-                  ? com.deepseekharness.app.util.UiText.text("正在处理，请等待结果…")
-                  : com.deepseekharness.app.util.UiText.text("开始配对"));
           if (!codeEt.getText().toString().equals(model.code))
             codeEt.setText(com.deepseekharness.app.util.UiText.raw(model.code));
         });

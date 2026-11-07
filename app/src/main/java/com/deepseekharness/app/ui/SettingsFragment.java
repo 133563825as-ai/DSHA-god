@@ -108,7 +108,9 @@ public class SettingsFragment extends Fragment {
     eco.setChecked(config.isEcoMode());
     java.util.function.Consumer<Boolean> describe =
         enabled ->
-            powerHint.setText(
+            // 开关切换时副标题换句走 150ms 淡入（审计 A-05），不再瞬切。
+            UiMotion.crossFadeText(
+                powerHint,
                 enabled
                     ? com.deepseekharness.app.util.UiText.text("熄屏空闲 1 分钟后减少保活；有任务时继续运行。")
                     : com.deepseekharness.app.util.UiText.text("持续保持运行，适合长时间任务。"));

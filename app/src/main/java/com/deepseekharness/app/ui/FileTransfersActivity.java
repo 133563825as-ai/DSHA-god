@@ -1248,9 +1248,13 @@ public final class FileTransfersActivity extends AppCompatActivity
   }
 
   private void showNotice(String message, boolean bad) {
-    notice.setText(message);
-    tintNotice(bad);
+    // 结果条出现用 150ms 淡入，避免直接盖住列表顶部（审计 E-09）。
+    boolean wasHidden = noticeBox.getVisibility() != View.VISIBLE;
+    boolean changed = !message.contentEquals(notice.getText());
     noticeBox.setVisibility(View.VISIBLE);
+    if (changed) UiMotion.crossFadeText(notice, message);
+    tintNotice(bad);
+    if (wasHidden) UiMotion.reveal(noticeBox);
     notice.announceForAccessibility(message);
   }
 

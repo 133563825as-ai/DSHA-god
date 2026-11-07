@@ -884,7 +884,10 @@ public class PluginFragment extends Fragment {
     input.catalogError = catalogError;
     var view = com.deepseekharness.app.util.PluginHeaderStrip.project(input);
     View strip = find(R.id.pluginStatusStrip);
+    boolean stripWasHidden = strip.getVisibility() != View.VISIBLE;
     strip.setVisibility(view.visible ? View.VISIBLE : View.GONE);
+    // 状态条出现淡入一次；条内文字只在真正变化时淡入（下载进度回调很密，审计 A-04）。
+    if (view.visible && stripWasHidden) UiMotion.reveal(strip);
     int tone =
         switch (view.tone) {
           case ACCENT -> R.color.shell_accent;
@@ -927,7 +930,8 @@ public class PluginFragment extends Fragment {
           });
     find(R.id.pluginCount).setVisibility(view.showCount ? View.VISIBLE : View.GONE);
     TextView status = find(R.id.statusText);
-    status.setText(com.deepseekharness.app.util.UiStateText.render(current.message));
+    UiMotion.crossFadeText(
+        status, com.deepseekharness.app.util.UiStateText.render(current.message));
     status.setClickable(input.hasMessage);
     android.graphics.drawable.Drawable chevron = null;
     if (view.chevron) {

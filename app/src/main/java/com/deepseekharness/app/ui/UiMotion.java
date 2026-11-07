@@ -214,6 +214,22 @@ public final class UiMotion {
     return out.toString();
   }
 
+  /** 文字颜色 120ms 过渡（错误 / 正常状态切换）；系统关闭动画时直接落值。 */
+  static void crossFadeTextColor(TextView view, int color) {
+    if (view == null) return;
+    int from = view.getCurrentTextColor();
+    if (from == color) return;
+    if (!animationsEnabled(view.getContext())) {
+      view.setTextColor(color);
+      return;
+    }
+    ValueAnimator animator = ValueAnimator.ofArgb(from, color);
+    animator.setDuration(120L);
+    animator.setInterpolator(STANDARD);
+    animator.addUpdateListener(running -> view.setTextColor((int) running.getAnimatedValue()));
+    animator.start();
+  }
+
   /**
    * 变化高亮：从 55% 透明度淡到全显（150ms），用于段位 / 小标记，不移动布局。
    */
