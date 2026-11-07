@@ -244,7 +244,7 @@ public class InstallFragment extends Fragment {
               requireContext(),
               BackupTask.get(requireContext()).pendingMaintenance()
                   ? UiText.text("请先恢复中断维护，再检查或修复环境")
-                  : UiText.text("无法开始安装任务，请稍后重试或先完成正在进行的环境任务"),
+                  : UiText.text("无法开始安装，请稍后重试"),
               Toast.LENGTH_LONG)
           .show();
     render();

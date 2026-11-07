@@ -2,11 +2,11 @@
 <resources>
     <string name="about_close_button" formatted="false">"Закрыть"</string>
     <string name="about_community" formatted="false">"Сообщество QQ"</string>
-    <string name="about_tagline" formatted="false">"DeepSeek Harness для Android"</string>
+    <string name="about_tagline" formatted="false">"Запускатор DSHA для Android"</string>
     <string name="adb_pairing_service_label" formatted="false">"Сопряжение ADB по Wi-Fi"</string>
-    <string name="alpha_no_seccomp" formatted="false">"Отключить ускорение seccomp в proot"</string>
-    <string name="alpha_static_loader" formatted="false">"Использовать статический загрузчик proroot"</string>
-    <string name="build190_auto_port" formatted="false">"Назначать порт Web автоматически (рекомендуется)"</string>
+    <string name="alpha_no_seccomp" formatted="false">"Отключить ускорение seccomp"</string>
+    <string name="alpha_static_loader" formatted="false">"Статический загрузчик (proroot)"</string>
+    <string name="build190_auto_port" formatted="false">"Назначать порт автоматически"</string>
     <string name="build190_restore_port_drafts" formatted="false">"Вернуть черновики"</string>
     <string name="computer_use_title" formatted="false">"Управление экраном"</string>
     <string name="copy_text" formatted="false">"Копировать"</string>
@@ -14,22 +14,22 @@
     <string name="device_open_access" formatted="false">"Доступ к файлам"</string>
     <string name="diag248_copy" formatted="false">"Копировать отчёт"</string>
     <string name="diag248_copy_sub" formatted="false">"Обезличенный текст для отзыва"</string>
-    <string name="diag248_empty" formatted="false">"Результатов пока нет. Проверка только читает локальное состояние и не меняет среду."</string>
+    <string name="diag248_empty" formatted="false">"Результатов нет; проверка только читает локальное состояние"</string>
     <string name="diag248_export" formatted="false">"Экспорт диагностики"</string>
-    <string name="diag248_export_sub" formatted="false">"Пакет журналов; шаги по желанию"</string>
+    <string name="diag248_export_sub" formatted="false">"Структурированный пакет журналов"</string>
     <string name="diag248_feedback" formatted="false">"Отзыв"</string>
-    <string name="diag248_idle_sub" formatted="false">"Проверка компонентов, хранилища и служб с обезличенным отчётом"</string>
+    <string name="diag248_idle_sub" formatted="false">"Проверить компоненты и среду"</string>
     <string name="diag248_idle_title" formatted="false">"Не проверено"</string>
     <string name="diag248_plugins" formatted="false">"Менеджер плагинов"</string>
     <string name="diag248_plugins_sub" formatted="false">"Сбой запуска из-за плагинов"</string>
-    <string name="diag248_repair_sub" formatted="false">"Заново подготовить сертификаты, Python, npm и pnpm"</string>
+    <string name="diag248_repair_sub" formatted="false">"Переустановить сертификаты и компоненты среды"</string>
     <string name="diag248_start" formatted="false">"Проверить"</string>
     <string name="diag248_status" formatted="false">"Состояние"</string>
     <string name="diag248_tools" formatted="false">"Инструменты"</string>
     <string name="dns_auto" formatted="false">"Авто (рекомендуется)"</string>
     <string name="dns_ipv4" formatted="false">"Совместимость с IPv4 DNS"</string>
     <string name="dns_native" formatted="false">"Двойной стек"</string>
-    <string name="nh_sub" formatted="false">"Обрыв в фоне, устаревший DNS и выход в сеть; только запись, без исправления"</string>
+    <string name="nh_sub" formatted="false">"Сетевые сбои только записываются, не исправляются"</string>
     <string name="nh_title" formatted="false">"Состояние сети"</string>
     <string name="paste_text" formatted="false">"Вставить"</string>
     <string name="phone_assistant" formatted="false">"Плавающий помощник"</string>
@@ -70,7 +70,7 @@
     <string name="ui2_about" formatted="false">"О DSHA"</string>
     <string name="ui2_about_sub" formatted="false">"Версия, лицензии, отзывы"</string>
     <string name="ui2_adb" formatted="false">"Сопряжение ADB по Wi-Fi"</string>
-    <string name="ui2_adb_intro" formatted="false">"Получите код сопряжения в разделе беспроводной отладки для подключения этого устройства."</string>
+    <string name="ui2_adb_intro" formatted="false">"Получите код сопряжения в беспроводной отладке"</string>
     <string name="ui2_address" formatted="false">"Адреса доступа"</string>
     <string name="ui2_address_sub" formatted="false">"Локальные адреса и адреса LAN"</string>
     <string name="ui2_app_version" formatted="false">"Версия приложения"</string>
@@ -87,7 +87,7 @@
     <string name="ui2_component5" formatted="false">"DeepSeek Harness"</string>
     <string name="ui2_component6" formatted="false">"Проверки запуска и среды"</string>
     <string name="ui2_component_hint" formatted="false">"Результаты и варианты ремонта"</string>
-    <string name="ui2_config_sub" formatted="false">"Настраивайте модели и ключи API в Web UI. Изменения порта и среды вступают в силу при следующем запуске."</string>
+    <string name="ui2_config_sub" formatted="false">"Порт и режим запуска применятся при следующем запуске"</string>
     <string name="ui2_connection" formatted="false">"Состояние подключения"</string>
     <string name="ui2_data_ops" formatted="false">"Копия и восстановление"</string>
     <string name="ui2_data_sub" formatted="false">"Экспорт, восстановление и обмен файлами."</string>
@@ -95,7 +95,6 @@
     <string name="ui2_device_channels" formatted="false">"Каналы команд устройства"</string>
     <string name="ui2_device_grants" formatted="false">"Разрешения устройства"</string>
     <string name="ui2_diagnostics" formatted="false">"Диагностика"</string>
-    <string name="ui2_diagnostics_intro" formatted="false">"Проверьте компоненты, хранилище и службы и создайте отчёт со скрытыми секретами."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Проверки среды и диагностические журналы"</string>
     <string name="ui2_display" formatted="false">"Отображение и запуск"</string>
     <string name="ui2_dns" formatted="false">"Политика DNS"</string>
@@ -135,7 +134,7 @@
     <string name="ui2_overlay_sub" formatted="false">"Содержимое, прозрачность и время показа"</string>
     <string name="ui2_plugin_link" formatted="false">"Репозиторий или URL"</string>
     <string name="ui2_port" formatted="false">"Активный веб-порт"</string>
-    <string name="ui2_port_hint" formatted="false">"Если порт занят, сохранить предпочтительный и использовать доступный."</string>
+    <string name="ui2_port_hint" formatted="false">"Если порт занят, автоматически использовать свободный"</string>
     <string name="ui2_port_preferred" formatted="false">"Предпочтительный веб-порт"</string>
     <string name="ui2_recovery_tools" formatted="false">"Восстановление среды и данных"</string>
     <string name="ui2_repair_parts" formatted="false">"Восстановить компоненты"</string>
@@ -187,7 +186,7 @@
     <string name="ui_adb_code_label" formatted="false">"Код сопряжения (6 цифр)"</string>
     <string name="ui_adb_host_label" formatted="false">"Адрес (пусто = автопоиск)"</string>
     <string name="ui_adb_port_label" formatted="false">"Порт (пусто = автопоиск)"</string>
-    <string name="ui_lan_unencrypted" formatted="false">"Для доступа по локальной сети используется HTTP без шифрования трафика. Используйте доверенные сети и передавайте ссылки подключения только доверенным устройствам."</string>
+    <string name="ui_lan_unencrypted" formatted="false">"Трафик локальной сети не шифруется; только доверенные сети и устройства"</string>
     <string name="ui_language_title" formatted="false">"Язык"</string>
     <string name="ui_m0001" formatted="false">"Скачать обновление"</string>
     <string name="ui_m0002" formatted="false">"Сохранить настройки"</string>
@@ -209,7 +208,7 @@
     <string name="ui_m0024" formatted="false">"Введите команду и нажмите Enter"</string>
     <string name="ui_m0025" formatted="false">"Журнал пока пуст."</string>
     <string name="ui_m0026" formatted="false">"Сопряжение и порты"</string>
-    <string name="ui_m0030" formatted="false">"ADB выключен. Оставьте его выключенным, если не используете беспроводную отладку."</string>
+    <string name="ui_m0030" formatted="false">"Оставьте выключенным, если не используете беспроводную отладку"</string>
     <string name="ui_m0031" formatted="false">"Сопряжение ADB по Wi-Fi"</string>
     <string name="ui_m0039" formatted="false">"Shizuku не авторизован"</string>
     <string name="ui_m0046" formatted="false">"Скачать журналы"</string>
@@ -228,18 +227,18 @@
     <string name="ui_m0079" formatted="false">"Отменить операцию"</string>
     <string name="ui_m0080" formatted="false">"Сохранить как"</string>
     <string name="ui_m0081" formatted="false">"Только мои плагины"</string>
-    <string name="ui_m0084" formatted="false">"Если фоновое подключение обрывается, разрешите DSHA работать в фоне и ослабьте ограничения батареи. Устройство всё равно может приостановить приложение. Перед повторным подключением включите беспроводную отладку и нажмите «Проверить подключение»."</string>
+    <string name="ui_m0084" formatted="false">"Проверяйте в фоне при обрыве; перед восстановлением включите беспроводную отладку"</string>
     <string name="ui_m0089" formatted="false">"Обновления при запуске"</string>
     <string name="ui_m0090" formatted="false">"Включить доступ к устройству через ADB (по умолчанию выключен)"</string>
     <string name="ui_m0094" formatted="false">"Посмотреть выпуски в браузере"</string>
     <string name="ui_m0095" formatted="false">"Открыть в браузере"</string>
     <string name="ui_m0102" formatted="false">"Копировать"</string>
     <string name="ui_m0103" formatted="false">"Копировать отчёт"</string>
-    <string name="ui_m0104" formatted="false">"Безопасный режим: восстановить ранее включённые сторонние плагины"</string>
+    <string name="ui_m0104" formatted="false">"Безопасный режим: восстановить сторонние плагины"</string>
     <string name="ui_m0106" formatted="false">"Установить плагин"</string>
     <string name="ui_m0107" formatted="false">"Установить обновление"</string>
     <string name="ui_m0109" formatted="false">"Экспорт отчёта"</string>
-    <string name="ui_m0118" formatted="false">"Принудительно использовать встроенный Gecko, если системный браузер показывает пустую страницу или несовместим. Иначе приложение автоматически выберет подходящий движок. Сохраните и заново откройте переписку для применения."</string>
+    <string name="ui_m0118" formatted="false">"Встроенный веб-движок; можно попробовать при проблемах совместимости"</string>
     <string name="ui_m0121" formatted="false">"Показывать ответы ИИ поверх"</string>
     <string name="ui_m0125" formatted="false">"Открыть менеджер Shizuku"</string>
     <string name="ui_m0126" formatted="false">"Данные и бэкапы"</string>
@@ -250,7 +249,7 @@
     <string name="ui_m0137" formatted="false">"URL плагина или имя пакета npm"</string>
     <string name="ui_m0138" formatted="false">"Поиск по названию или описанию"</string>
     <string name="ui_m0142" formatted="false">"Новый терминал"</string>
-    <string name="ui_m0145" formatted="false">"Нет терминалов\nНажмите «Новый», чтобы открыть терминал"</string>
+    <string name="ui_m0145" formatted="false">"Терминалов нет\nНажмите «Создать», чтобы открыть"</string>
     <string name="ui_m0146" formatted="false">"Ещё"</string>
     <string name="ui_m0158" formatted="false">"Найти плагины"</string>
     <string name="ui_m0159" formatted="false">"Найти плагины"</string>

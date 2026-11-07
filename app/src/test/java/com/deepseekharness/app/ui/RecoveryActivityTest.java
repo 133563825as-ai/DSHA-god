@@ -74,7 +74,7 @@ public final class RecoveryActivityTest {
     assertFalse("临时 Key 默认收起", shown(key));
     assertFalse("诊断与工具默认收起", shown(findButton(root, "查看原生诊断")));
 
-    findButton(root, "临时 API Key（可选，仅本次应急会话使用）").performClick();
+    findButton(root, "临时 API Key（仅本次会话）").performClick();
     assertTrue(shown(key));
     findButton(root, "收起").performClick();
     assertFalse(shown(key));

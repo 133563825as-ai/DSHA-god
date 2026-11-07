@@ -315,9 +315,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
               .setDataAndType(uri, logs.savedMimeType())
               .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION));
     } catch (RuntimeException error) {
-      Toast.makeText(
-              this, UiText.text("无法打开日志，可在文件管理器的 Download/DSHA 中查看，或重新下载"), Toast.LENGTH_LONG)
-          .show();
+      Toast.makeText(this, UiText.text("无法打开日志，请用文件管理器查看"), Toast.LENGTH_LONG).show();
     }
   }
 
@@ -502,7 +500,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
       logExporter.launch(com.deepseekharness.app.core.ErrorLogRepository.filename());
     } catch (RuntimeException error) {
       pendingLogExport = null;
-      Toast.makeText(this, UiText.text("无法打开文件管理器，请尝试下载到默认目录"), Toast.LENGTH_LONG).show();
+      Toast.makeText(this, UiText.text("无法打开文件管理器，请下载到默认目录"), Toast.LENGTH_LONG).show();
     }
   }
 
@@ -514,7 +512,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
                   .format(new java.util.Date())
               + ".txt");
     } catch (RuntimeException error) {
-      Toast.makeText(this, UiText.text("无法打开保存位置，请使用复制报告或检查系统文件管理器"), Toast.LENGTH_LONG).show();
+      Toast.makeText(this, UiText.text("无法打开保存位置，请复制报告"), Toast.LENGTH_LONG).show();
     }
   }
 

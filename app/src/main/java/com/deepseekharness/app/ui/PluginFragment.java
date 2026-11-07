@@ -131,8 +131,7 @@ public class PluginFragment extends Fragment {
               return;
             }
             if (!"content".equals(uri.getScheme()) && !"file".equals(uri.getScheme())) {
-              repository.selectionMessage(
-                  com.deepseekharness.app.util.UiText.text("文件管理器返回的地址无法读取，请改用系统文件选择器。"));
+              repository.selectionMessage(com.deepseekharness.app.util.UiText.text("地址无法读取，请改选文件"));
               return;
             }
             if ("file".equals(uri.getScheme())
@@ -156,7 +155,7 @@ public class PluginFragment extends Fragment {
             if (allowed && selected != null) repository.importArchive(selected);
             else
               repository.selectionMessage(
-                  com.deepseekharness.app.util.UiText.text("未获得文件读取权限，请改用系统文件选择器导入。"));
+                  com.deepseekharness.app.util.UiText.text("无文件权限，请改用系统选择器"));
           });
   private final ActivityResultLauncher<String> exportPicker =
       registerForActivityResult(
@@ -586,9 +585,7 @@ public class PluginFragment extends Fragment {
       valid = true;
     } catch (IllegalArgumentException error) {
       linkHint.setText(
-          empty
-              ? com.deepseekharness.app.util.UiText.text("支持仓库、分支/子目录、Release 下载和压缩包直链")
-              : error.getMessage());
+          empty ? com.deepseekharness.app.util.UiText.text("支持仓库、分支与压缩包") : error.getMessage());
     }
     // 识别结果着色：空为说明，可识别为好色，不可识别为提醒色；只表达解析结论，不代表已下载。
     int tone = empty ? R.color.shell_text_muted : valid ? R.color.shell_good : R.color.shell_warn;
@@ -702,7 +699,7 @@ public class PluginFragment extends Fragment {
       if (keyboard != null) keyboard.hideSoftInputFromWindow(focus.getWindowToken(), 0);
       focus.clearFocus();
     }
-    repository.selectionMessage(com.deepseekharness.app.util.UiText.text("请选择 ZIP / TAR.GZ 插件包。"));
+    repository.selectionMessage(com.deepseekharness.app.util.UiText.text("请选择插件包"));
     try {
       importPicker.launch(PluginFilePicker.intent(requireContext(), alternative));
     } catch (android.content.ActivityNotFoundException error) {
@@ -710,8 +707,7 @@ public class PluginFragment extends Fragment {
         chooseImport(true);
         return;
       }
-      repository.selectionMessage(
-          com.deepseekharness.app.util.UiText.text("未找到可用的文件选择器，请启用系统「文件」应用后重试。"));
+      repository.selectionMessage(com.deepseekharness.app.util.UiText.text("请启用系统文件应用后重试"));
       toast(com.deepseekharness.app.util.UiText.text("没有可用的文件选择器"));
     } catch (RuntimeException error) {
       repository.selectionMessage(
@@ -1827,11 +1823,11 @@ public class PluginFragment extends Fragment {
   private String descriptionText(PluginRepository.Item item) {
     if (item.dynamic)
       return item.description.isEmpty()
-          ? com.deepseekharness.app.util.UiText.text("临时插件请在对应 Web 会话的 Cordis 插件管理中删除。")
+          ? com.deepseekharness.app.util.UiText.text("临时插件请在对应会话中删除")
           : com.deepseekharness.app.util.UiText.format(
               "%s\n\n临时插件请在对应 Web 会话的 Cordis 插件管理中删除。", item.description);
     if (!item.metadataError.isEmpty())
-      return com.deepseekharness.app.util.UiText.text("插件元数据无法读取；可删除加载入口，原件保留在数据页。");
+      return com.deepseekharness.app.util.UiText.text("元数据读取失败；可删除入口");
     if (item.description.isEmpty()) return "";
     return item.builtin
         ? com.deepseekharness.app.util.UiStateText.render(item.description)

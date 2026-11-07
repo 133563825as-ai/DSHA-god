@@ -124,7 +124,7 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         TransferUi.text(
             this,
             t(
-                "这里只显示进度。需要取消或处理时，请进入对应页面操作。",
+                "仅显示进度；操作请进对应页面",
                 "This page only shows progress. Open the related page to cancel or resolve a task."),
             12.5f,
             R.color.shell_text_muted,
@@ -301,7 +301,7 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         TransferUi.text(
             this,
             t(
-                "终端、插件、备份与环境维护开始后会显示在这里。",
+                "任务开始后在此显示",
                 "Terminals, plugins, backups and maintenance appear here while they run."),
             13,
             R.color.shell_text_secondary,

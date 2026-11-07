@@ -111,9 +111,7 @@ public final class RecoveryActivity extends AppCompatActivity {
     temporaryKeyToggle =
         page.button(
             startCard,
-            t(
-                "临时 API Key（可选，仅本次应急会话使用）",
-                "Temporary API key (optional, this emergency session only)"),
+            t("临时 API Key（仅本次会话）", "Temporary API key (optional, this emergency session only)"),
             false,
             this::toggleTemporaryKey);
     temporaryKeyBox = page.column();
@@ -131,7 +129,7 @@ public final class RecoveryActivity extends AppCompatActivity {
     TextView keyNote =
         page.text(
             t(
-                "需要更换临时密钥时，请先停止应急 DSH，再填写并重新启动。",
+                "更换密钥前请先停止服务",
                 "To change the temporary key, stop emergency DSH, enter the key, then start it again."),
             14,
             R.color.text_secondary);
@@ -198,9 +196,7 @@ public final class RecoveryActivity extends AppCompatActivity {
     temporaryKeyToggle.setText(
         temporaryKeyOpen
             ? t("收起", "Collapse")
-            : t(
-                "临时 API Key（可选，仅本次应急会话使用）",
-                "Temporary API key (optional, this emergency session only)"));
+            : t("临时 API Key（仅本次会话）", "Temporary API key (optional, this emergency session only)"));
     if (temporaryKeyOpen) UiMotion.reveal(temporaryKeyBox);
   }
 
@@ -453,7 +449,7 @@ public final class RecoveryActivity extends AppCompatActivity {
       proposals.addView(
           page.text(
               t(
-                  "应急 DSH 提出方案后在此查看和确认。尚未确认的提案不会修改正式数据。",
+                  "提案在此确认；未确认不修改数据",
                   "Review and confirm proposals here after emergency DSH creates them. Unconfirmed proposals do not change regular data."),
               14,
               R.color.text_secondary));

@@ -114,7 +114,7 @@ public final class NativeDataActivity extends AppCompatActivity {
               pending.clear();
               status.setText(
                   t(
-                      "应用在选择保存位置期间重新启动，请重新发起导出。",
+                      "应用已重启，请重新发起导出",
                       "The app restarted while choosing a destination. Start the export again."));
               return;
             }
@@ -300,7 +300,7 @@ public final class NativeDataActivity extends AppCompatActivity {
         actions,
         t("导出应用数据", "Export application data"),
         t(
-            "将停止 Web、终端和写入任务后建立快照，导出无需密码的 tar.gz 备份。",
+            "会先停止任务并建立快照",
             "Web, terminals and write tasks stop before the snapshot. The tar.gz backup needs no password."),
         R.drawable.ic_ui_export,
         () -> {
@@ -311,7 +311,7 @@ public final class NativeDataActivity extends AppCompatActivity {
           actions,
           t("只读救援导出", "Read-only rescue export"),
           t(
-              "救援不会停止当前写入，结果将标明尽力救援或部分数据。不能据此删除原件。导出为无需密码的 tar.gz。",
+              "救援不停止写入，结果可能不完整；不能据此删除原件",
               "Rescue does not stop current writers. The result is best-effort or partial and cannot justify deleting originals. The tar.gz export needs no password."),
           R.drawable.ic_recovery_shield,
           () -> {
@@ -349,7 +349,7 @@ public final class NativeDataActivity extends AppCompatActivity {
         retained,
         t("保留副本与旧树", "Retained copies and old trees"),
         t(
-            "查看保留副本、旧环境和插件原件；检查与恢复分别处理。",
+            "查看保留副本与旧环境",
             "Browse retained copies, old environments, and original plugins. Inspection and restoration are separate actions."),
         R.drawable.ic_recovery_database,
         () -> startActivity(new android.content.Intent(this, RetainedDataActivity.class)));
@@ -491,7 +491,7 @@ public final class NativeDataActivity extends AppCompatActivity {
         page.text(
             projects.isEmpty()
                 ? t(
-                    "项目文件需单独选择目录；不会扫描整部手机。",
+                    "项目文件需单独选目录",
                     "Choose project folders explicitly; the app does not scan the whole device.")
                 : com.deepseekharness.app.util.UiText.format("已选择项目目录：%s", projects.size()),
             13,
@@ -512,7 +512,7 @@ public final class NativeDataActivity extends AppCompatActivity {
     TextView warning =
         page.text(
             t(
-                "导出文件不加密，拿到文件的人都能读取其中的 API Key。",
+                "导出文件不加密，拿到文件者可读取 API Key",
                 "The export is not encrypted; anyone with the file can read the API key."),
             12,
             R.color.shell_warn);
@@ -633,7 +633,7 @@ public final class NativeDataActivity extends AppCompatActivity {
     TextView hint =
         page.text(
             t(
-                "此备份无需输入密码。先在私有目录验证内容和实际范围，确认前不会覆盖当前数据。",
+                "无需密码；验证后才覆盖数据",
                 "No password entry is required. Contents and actual scope are verified privately before you confirm any change."),
             13,
             R.color.shell_text_secondary);
@@ -654,10 +654,10 @@ public final class NativeDataActivity extends AppCompatActivity {
         page.text(
             pending.restoreNeedsOriginal
                 ? t(
-                    "这是以前用密码加密的备份，需要原密码才能读取。先在私有目录验证，确认前不会覆盖当前数据。",
+                    "旧备份需要原密码；确认前不会覆盖数据",
                     "This older backup was encrypted and needs its original password to be read. Verification uses private staging and does not overwrite current data before confirmation.")
                 : t(
-                    "此备份无需输入密码。先在私有目录验证内容和实际范围，确认前不会覆盖当前数据。",
+                    "无需密码；验证后才覆盖数据",
                     "No password entry is required. Contents and actual scope are verified privately before you confirm any change."),
             13,
             R.color.shell_text_secondary);
@@ -685,7 +685,7 @@ public final class NativeDataActivity extends AppCompatActivity {
     scopeGroup(stepTarget);
     includeRestoreKey = new CheckBox(this);
     includeRestoreKey.setText(
-        t("恢复原生 API Key（默认保留本机凭据）", "Restore native API key (keep local credentials by default)"));
+        t("恢复原生 API Key", "Restore native API key (keep local credentials by default)"));
     includeRestoreKey.setTextColor(getColor(R.color.shell_text));
     includeRestoreKey.setMinimumHeight(dp(48));
     stepTarget.addView(includeRestoreKey);
@@ -1201,10 +1201,10 @@ public final class NativeDataActivity extends AppCompatActivity {
     String message =
         rescue
             ? t(
-                "救援不会停止当前写入，结果将标明尽力救援或部分数据。不能据此删除原件。导出为无需密码的 tar.gz。",
+                "救援不停止写入，结果可能不完整；不能据此删除原件",
                 "Rescue does not stop current writers. The result is best-effort or partial and cannot justify deleting originals. The tar.gz export needs no password.")
             : t(
-                "将停止 Web、终端和写入任务后建立快照，导出无需密码的 tar.gz 备份。",
+                "会先停止任务并建立快照",
                 "Web, terminals and write tasks stop before the snapshot. The tar.gz backup needs no password.");
     new DshaDialogBuilder(this, true)
         .setTitle(rescue ? t("救援导出", "Rescue export") : t("数据导出", "Data export"))

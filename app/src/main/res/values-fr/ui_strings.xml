@@ -2,11 +2,11 @@
 <resources>
     <string name="about_close_button" formatted="false">"Fermer"</string>
     <string name="about_community" formatted="false">"Communauté QQ"</string>
-    <string name="about_tagline" formatted="false">"DeepSeek Harness pour Android"</string>
+    <string name="about_tagline" formatted="false">"Lanceur DSHA pour Android"</string>
     <string name="adb_pairing_service_label" formatted="false">"Association ADB sans fil"</string>
-    <string name="alpha_no_seccomp" formatted="false">"Désactiver l'accélération seccomp de proot"</string>
-    <string name="alpha_static_loader" formatted="false">"Utiliser le chargeur statique proroot"</string>
-    <string name="build190_auto_port" formatted="false">"Attribuer le port Web automatiquement (recommandé)"</string>
+    <string name="alpha_no_seccomp" formatted="false">"Désactiver l’accélération seccomp"</string>
+    <string name="alpha_static_loader" formatted="false">"Chargeur statique (proroot)"</string>
+    <string name="build190_auto_port" formatted="false">"Attribuer le port automatiquement"</string>
     <string name="build190_restore_port_drafts" formatted="false">"Restaurer les brouillons"</string>
     <string name="computer_use_title" formatted="false">"Contrôle de l’écran"</string>
     <string name="copy_text" formatted="false">"Copier"</string>
@@ -14,22 +14,22 @@
     <string name="device_open_access" formatted="false">"Accès aux fichiers"</string>
     <string name="diag248_copy" formatted="false">"Copier le rapport"</string>
     <string name="diag248_copy_sub" formatted="false">"Texte expurgé pour un retour"</string>
-    <string name="diag248_empty" formatted="false">"Aucun résultat. Les contrôles lisent seulement l’état local et ne modifient pas l’environnement."</string>
+    <string name="diag248_empty" formatted="false">"Pas encore de résultats ; les vérifications lisent seulement l’état local"</string>
     <string name="diag248_export" formatted="false">"Exporter les diagnostics"</string>
-    <string name="diag248_export_sub" formatted="false">"Paquet de journaux structuré ; étapes facultatives"</string>
+    <string name="diag248_export_sub" formatted="false">"Paquet de journaux structuré"</string>
     <string name="diag248_feedback" formatted="false">"Retour"</string>
-    <string name="diag248_idle_sub" formatted="false">"Contrôler composants, stockage et services, et créer un rapport expurgé"</string>
+    <string name="diag248_idle_sub" formatted="false">"Vérifier les composants et l’environnement"</string>
     <string name="diag248_idle_title" formatted="false">"Non vérifié"</string>
     <string name="diag248_plugins" formatted="false">"Gestionnaire de plugins"</string>
     <string name="diag248_plugins_sub" formatted="false">"Démarrage bloqué par plugin"</string>
-    <string name="diag248_repair_sub" formatted="false">"Préparer à nouveau certificats, Python, npm et pnpm"</string>
+    <string name="diag248_repair_sub" formatted="false">"Réinstaller les certificats et composants d’exécution"</string>
     <string name="diag248_start" formatted="false">"Examiner"</string>
     <string name="diag248_status" formatted="false">"État"</string>
     <string name="diag248_tools" formatted="false">"Outils"</string>
     <string name="dns_auto" formatted="false">"Auto (recommandé)"</string>
     <string name="dns_ipv4" formatted="false">"Compatibilité DNS IPv4"</string>
     <string name="dns_native" formatted="false">"Résolution double pile"</string>
-    <string name="nh_sub" formatted="false">"Détecte coupures en arrière-plan, DNS périmé et sortie ; enregistre sans réparer"</string>
+    <string name="nh_sub" formatted="false">"Les incidents réseau sont enregistrés, pas réparés"</string>
     <string name="nh_title" formatted="false">"Santé du réseau"</string>
     <string name="paste_text" formatted="false">"Coller"</string>
     <string name="phone_assistant" formatted="false">"Assistant flottant"</string>
@@ -70,7 +70,7 @@
     <string name="ui2_about" formatted="false">"À propos de DSHA"</string>
     <string name="ui2_about_sub" formatted="false">"Version, licences et avis"</string>
     <string name="ui2_adb" formatted="false">"Association ADB sans fil"</string>
-    <string name="ui2_adb_intro" formatted="false">"Récupérez le code d’association dans Débogage sans fil pour connecter cet appareil."</string>
+    <string name="ui2_adb_intro" formatted="false">"Obtenez le code d’association depuis le débogage sans fil"</string>
     <string name="ui2_address" formatted="false">"Adresses d’accès"</string>
     <string name="ui2_address_sub" formatted="false">"Adresses locales et LAN"</string>
     <string name="ui2_app_version" formatted="false">"Version de l’application"</string>
@@ -87,7 +87,7 @@
     <string name="ui2_component5" formatted="false">"DeepSeek Harness"</string>
     <string name="ui2_component6" formatted="false">"Démarrage et exécution"</string>
     <string name="ui2_component_hint" formatted="false">"Résultats et réparations"</string>
-    <string name="ui2_config_sub" formatted="false">"Configurez les modèles et clés API dans l’interface Web. Les changements de port et d’environnement s’appliquent au prochain démarrage."</string>
+    <string name="ui2_config_sub" formatted="false">"Le port et le mode d’exécution s’appliquent au prochain démarrage"</string>
     <string name="ui2_connection" formatted="false">"État de la connexion"</string>
     <string name="ui2_data_ops" formatted="false">"Sauvegarde/restauration"</string>
     <string name="ui2_data_sub" formatted="false">"Exports, récupération et partage de fichiers."</string>
@@ -95,7 +95,6 @@
     <string name="ui2_device_channels" formatted="false">"Canaux de l'appareil"</string>
     <string name="ui2_device_grants" formatted="false">"Autorisations appareil"</string>
     <string name="ui2_diagnostics" formatted="false">"Diagnostic"</string>
-    <string name="ui2_diagnostics_intro" formatted="false">"Examiner les composants, le stockage et les services, et générer un rapport expurgé."</string>
     <string name="ui2_diagnostics_sub" formatted="false">"Vérifications de l’environnement et journaux de diagnostic"</string>
     <string name="ui2_display" formatted="false">"Affichage et démarrage"</string>
     <string name="ui2_dns" formatted="false">"Politique DNS"</string>
@@ -135,7 +134,7 @@
     <string name="ui2_overlay_sub" formatted="false">"Contenu, opacité et durée d’affichage"</string>
     <string name="ui2_plugin_link" formatted="false">"Dépôt ou URL"</string>
     <string name="ui2_port" formatted="false">"Port Web actif"</string>
-    <string name="ui2_port_hint" formatted="false">"S’il est occupé, conserver le port préféré et en utiliser un disponible."</string>
+    <string name="ui2_port_hint" formatted="false">"Basculer automatiquement vers un port disponible s’il est occupé"</string>
     <string name="ui2_port_preferred" formatted="false">"Port Web préféré"</string>
     <string name="ui2_recovery_tools" formatted="false">"Réparer environnement et données"</string>
     <string name="ui2_repair_parts" formatted="false">"Réparer les composants"</string>
@@ -187,7 +186,7 @@
     <string name="ui_adb_code_label" formatted="false">"Code d'association (6 chiffres)"</string>
     <string name="ui_adb_host_label" formatted="false">"Adresse (vide = détection auto)"</string>
     <string name="ui_adb_port_label" formatted="false">"Port (vide = détection auto)"</string>
-    <string name="ui_lan_unencrypted" formatted="false">"L'accès au réseau local utilise HTTP sans chiffrement du trafic. Utilisez des réseaux de confiance et partagez les liens de connexion uniquement avec des appareils de confiance."</string>
+    <string name="ui_lan_unencrypted" formatted="false">"Le trafic réseau local n’est pas chiffré ; réseaux et appareils de confiance uniquement"</string>
     <string name="ui_language_title" formatted="false">"Langue"</string>
     <string name="ui_m0001" formatted="false">"Mettre à jour"</string>
     <string name="ui_m0002" formatted="false">"Enregistrer les réglages"</string>
@@ -209,7 +208,7 @@
     <string name="ui_m0024" formatted="false">"Entrez la commande, puis Entrée"</string>
     <string name="ui_m0025" formatted="false">"Aucun journal pour le moment."</string>
     <string name="ui_m0026" formatted="false">"Association et ports"</string>
-    <string name="ui_m0030" formatted="false">"ADB est désactivé. Laissez-le désactivé si vous n'utilisez pas le débogage sans fil."</string>
+    <string name="ui_m0030" formatted="false">"Laissez désactivé si vous n’utilisez pas le débogage sans fil"</string>
     <string name="ui_m0031" formatted="false">"Association ADB sans fil"</string>
     <string name="ui_m0039" formatted="false">"Shizuku n'est pas autorisé"</string>
     <string name="ui_m0046" formatted="false">"Télécharger les journaux"</string>
@@ -228,18 +227,18 @@
     <string name="ui_m0079" formatted="false">"Annuler l'opération"</string>
     <string name="ui_m0080" formatted="false">"Enregistrer sous"</string>
     <string name="ui_m0081" formatted="false">"Uniquement mes plugins"</string>
-    <string name="ui_m0084" formatted="false">"Si la connexion est interrompue en arrière-plan, autorisez DSHA à fonctionner en arrière-plan et réduisez les restrictions de batterie. Votre appareil peut néanmoins le suspendre. Avant de vous reconnecter, activez le débogage sans fil, puis appuyez sur Vérifier la connexion."</string>
+    <string name="ui_m0084" formatted="false">"Continuez à vérifier en arrière-plan ; activez le débogage sans fil avant de rétablir"</string>
     <string name="ui_m0089" formatted="false">"MAJ au démarrage"</string>
     <string name="ui_m0090" formatted="false">"Activer l'accès ADB à l'appareil (désactivé par défaut)"</string>
     <string name="ui_m0094" formatted="false">"Voir les versions"</string>
     <string name="ui_m0095" formatted="false">"Ouvrir dans le navigateur"</string>
     <string name="ui_m0102" formatted="false">"Copier"</string>
     <string name="ui_m0103" formatted="false">"Copier le rapport"</string>
-    <string name="ui_m0104" formatted="false">"Mode sécurisé : restaurer les plugins tiers précédemment activés"</string>
+    <string name="ui_m0104" formatted="false">"Mode sans échec : restaurer les plugins tiers"</string>
     <string name="ui_m0106" formatted="false">"Installer un plugin"</string>
     <string name="ui_m0107" formatted="false">"Installer la mise à jour"</string>
     <string name="ui_m0109" formatted="false">"Exporter le rapport"</string>
-    <string name="ui_m0118" formatted="false">"Forcez l'utilisation du navigateur Gecko intégré si le navigateur système affiche une page vide ou est incompatible. Sinon, l'application choisit automatiquement un moteur compatible. Enregistrez et rouvrez la conversation pour appliquer la modification."</string>
+    <string name="ui_m0118" formatted="false">"Moteur web intégré ; à essayer en cas de problème de compatibilité"</string>
     <string name="ui_m0121" formatted="false">"Afficher l'IA en superposition"</string>
     <string name="ui_m0125" formatted="false">"Ouvrir le gestionnaire Shizuku"</string>
     <string name="ui_m0126" formatted="false">"Données et sauvegarde"</string>
@@ -250,7 +249,7 @@
     <string name="ui_m0137" formatted="false">"URL du plugin ou nom du paquet npm"</string>
     <string name="ui_m0138" formatted="false">"Rechercher des plugins"</string>
     <string name="ui_m0142" formatted="false">"Nouveau terminal"</string>
-    <string name="ui_m0145" formatted="false">"Aucun terminal\nAppuyez sur Nouveau pour ouvrir un terminal"</string>
+    <string name="ui_m0145" formatted="false">"Aucun terminal\nTouchez Nouveau pour en ouvrir un"</string>
     <string name="ui_m0146" formatted="false">"Plus"</string>
     <string name="ui_m0158" formatted="false">"Détecter les plugins"</string>
     <string name="ui_m0159" formatted="false">"Détecter les plugins"</string>

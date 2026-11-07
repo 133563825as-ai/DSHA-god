@@ -60,8 +60,7 @@ public final class PluginInstallActivity extends AppCompatActivity {
     if (!HarnessController.get(this).isEnvironmentReady()) {
       status.setText(
           com.deepseekharness.app.util.UiText.choose(
-              "请先完成 DSHA 首次初始化，完成后会继续安装插件",
-              "Complete DSHA setup first; plugin installation will resume afterward"));
+              "请先完成首次初始化", "Complete DSHA setup first; plugin installation will resume afterward"));
       install.setText(com.deepseekharness.app.util.UiText.text("初始化 DSHA"));
     } else if (saved == null) inspect();
     else renderOperation();

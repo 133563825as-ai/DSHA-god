@@ -577,7 +577,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
               ? com.deepseekharness.app.util.WebCrashReport.Kind.STARTING
               : com.deepseekharness.app.util.WebCrashReport.Kind.GENERIC,
           com.deepseekharness.app.util.UiText.text("暂时无法进入对话"),
-          com.deepseekharness.app.util.UiText.text("Web 尚未就绪，请返回启动页查看服务状态"),
+          com.deepseekharness.app.util.UiText.text("Web 未就绪，请回启动页"),
           "loadSession: currentWebIdentity() == null",
           null);
       return;
@@ -968,8 +968,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       showError(
           com.deepseekharness.app.util.WebCrashReport.Kind.WEBVIEW_INIT,
           com.deepseekharness.app.util.UiText.text("系统 WebView 无法启动"),
-          com.deepseekharness.app.util.UiText.text(
-              "请更新或启用 Android System WebView / Chrome，也可以使用系统浏览器进入对话。"),
+          com.deepseekharness.app.util.UiText.text("请更新系统 WebView 后重试"),
           "createWebView: " + e.getClass().getName(),
           null);
     }
@@ -1193,7 +1192,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
                 showError(
                     com.deepseekharness.app.util.WebCrashReport.Kind.WEBVIEW_OUTDATED,
                     com.deepseekharness.app.util.UiText.text("系统 WebView 需要更新"),
-                    com.deepseekharness.app.util.UiText.text("网页能力检查未返回有效结果，请更新内核后重试。"),
+                    com.deepseekharness.app.util.UiText.text("能力检查失败，请更新内核"),
                     "capability check: invalid result",
                     null);
             }
@@ -1281,8 +1280,8 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
             : com.deepseekharness.app.util.WebCrashReport.Kind.RENDER_RECLAIMED,
         com.deepseekharness.app.util.UiText.text("网页渲染进程已退出"),
         detail.didCrash()
-            ? com.deepseekharness.app.util.UiText.text("系统 WebView 发生异常，点击重试可重新打开；持续出现时请更新内核。")
-            : com.deepseekharness.app.util.UiText.text("系统可能因内存不足回收了网页，点击重试可重新打开。"),
+            ? com.deepseekharness.app.util.UiText.text("WebView 异常，请重试")
+            : com.deepseekharness.app.util.UiText.text("网页被系统回收，请重试"),
         "onRenderProcessGone(didCrash=" + detail.didCrash() + ")",
         null);
   }

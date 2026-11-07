@@ -2,11 +2,11 @@
 <resources>
     <string name="about_close_button" formatted="false">"閉じる"</string>
     <string name="about_community" formatted="false">"QQ コミュニティ"</string>
-    <string name="about_tagline" formatted="false">"DeepSeek Harness Android ランチャー"</string>
+    <string name="about_tagline" formatted="false">"DSHA Android ランチャー"</string>
     <string name="adb_pairing_service_label" formatted="false">"ADB のワイヤレス ペア設定"</string>
-    <string name="alpha_no_seccomp" formatted="false">"proot の seccomp アクセラレーションを無効化"</string>
-    <string name="alpha_static_loader" formatted="false">"proroot の静的ローダーを使用"</string>
-    <string name="build190_auto_port" formatted="false">"Web ポートを自動割り当て（推奨）"</string>
+    <string name="alpha_no_seccomp" formatted="false">"seccomp 高速化を無効にする"</string>
+    <string name="alpha_static_loader" formatted="false">"静的ローダー（proroot）"</string>
+    <string name="build190_auto_port" formatted="false">"ポートを自動割り当て"</string>
     <string name="build190_restore_port_drafts" formatted="false">"以前のポートの下書きを復元"</string>
     <string name="computer_use_title" formatted="false">"画面操作"</string>
     <string name="copy_text" formatted="false">"コピー"</string>
@@ -14,22 +14,22 @@
     <string name="device_open_access" formatted="false">"ファイルへのアクセス権を管理"</string>
     <string name="diag248_copy" formatted="false">"診断レポートをコピー"</string>
     <string name="diag248_copy_sub" formatted="false">"マスク済みテキスト。フィードバックに貼り付け可能"</string>
-    <string name="diag248_empty" formatted="false">"まだ結果はありません。チェックは本機の状態を読み取るだけで、環境は変更しません。"</string>
+    <string name="diag248_empty" formatted="false">"結果はまだありません。確認は端末の状態を読むだけです"</string>
     <string name="diag248_export" formatted="false">"診断情報をエクスポート"</string>
-    <string name="diag248_export_sub" formatted="false">"構造化ログパッケージ。再現手順を添付可能"</string>
+    <string name="diag248_export_sub" formatted="false">"構造化ログパッケージ"</string>
     <string name="diag248_feedback" formatted="false">"フィードバック"</string>
-    <string name="diag248_idle_sub" formatted="false">"コンポーネント・ストレージ・サービスを確認し、マスク済みレポートを作成"</string>
+    <string name="diag248_idle_sub" formatted="false">"コンポーネントと環境を確認"</string>
     <string name="diag248_idle_title" formatted="false">"未確認"</string>
     <string name="diag248_plugins" formatted="false">"プラグインマネージャー"</string>
     <string name="diag248_plugins_sub" formatted="false">"プラグインによる起動の問題を調べる"</string>
-    <string name="diag248_repair_sub" formatted="false">"証明書・Python・npm・pnpm を再準備"</string>
+    <string name="diag248_repair_sub" formatted="false">"証明書と実行コンポーネントを再インストール"</string>
     <string name="diag248_start" formatted="false">"検査"</string>
     <string name="diag248_status" formatted="false">"状態"</string>
     <string name="diag248_tools" formatted="false">"ツール"</string>
     <string name="dns_auto" formatted="false">"自動互換モード（推奨）"</string>
     <string name="dns_ipv4" formatted="false">"IPv4 DNS 互換モード"</string>
     <string name="dns_native" formatted="false">"ネイティブのデュアルスタック名前解決"</string>
-    <string name="nh_sub" formatted="false">"バックグラウンド切断・DNS 期限切れ・外部接続を検出。記録のみで修復しません"</string>
+    <string name="nh_sub" formatted="false">"ネットワーク異常は記録のみで修復しません"</string>
     <string name="nh_title" formatted="false">"ネットワーク診断"</string>
     <string name="paste_text" formatted="false">"貼り付け"</string>
     <string name="phone_assistant" formatted="false">"フローティングアシスタント"</string>
@@ -70,7 +70,7 @@
     <string name="ui2_about" formatted="false">"DSHA について"</string>
     <string name="ui2_about_sub" formatted="false">"バージョン、ライセンス、フィードバック"</string>
     <string name="ui2_adb" formatted="false">"ADB のワイヤレス ペア設定"</string>
-    <string name="ui2_adb_intro" formatted="false">"システムのワイヤレスデバッグからペア設定コードを取得し、この端末に接続します。"</string>
+    <string name="ui2_adb_intro" formatted="false">"システムのワイヤレスデバッグからペア設定コードを取得します"</string>
     <string name="ui2_address" formatted="false">"アクセスアドレス"</string>
     <string name="ui2_address_sub" formatted="false">"端末内と LAN のアドレスを表示"</string>
     <string name="ui2_app_version" formatted="false">"アプリのバージョン"</string>
@@ -87,7 +87,7 @@
     <string name="ui2_component5" formatted="false">"DeepSeek Harness"</string>
     <string name="ui2_component6" formatted="false">"起動と実行環境の検査"</string>
     <string name="ui2_component_hint" formatted="false">"検査結果と修復オプションを確認"</string>
-    <string name="ui2_config_sub" formatted="false">"モデルと API キーは Web UI で設定します。ポートと実行設定の変更は次回の起動時に適用されます。"</string>
+    <string name="ui2_config_sub" formatted="false">"ポートと実行方式は次回起動時に反映されます"</string>
     <string name="ui2_connection" formatted="false">"接続状態"</string>
     <string name="ui2_data_ops" formatted="false">"バックアップと復元"</string>
     <string name="ui2_data_sub" formatted="false">"エクスポート、復元、ファイル共有。"</string>
@@ -95,7 +95,6 @@
     <string name="ui2_device_channels" formatted="false">"端末コマンドの実行経路"</string>
     <string name="ui2_device_grants" formatted="false">"デバイスの権限"</string>
     <string name="ui2_diagnostics" formatted="false">"診断"</string>
-    <string name="ui2_diagnostics_intro" formatted="false">"コンポーネント、ストレージ、サービスを検査し、機密情報を除去したレポートを生成します。"</string>
     <string name="ui2_diagnostics_sub" formatted="false">"動作確認と診断ログ"</string>
     <string name="ui2_display" formatted="false">"表示と起動"</string>
     <string name="ui2_dns" formatted="false">"DNS の解決方針"</string>
@@ -135,7 +134,7 @@
     <string name="ui2_overlay_sub" formatted="false">"表示内容、不透明度、表示時間"</string>
     <string name="ui2_plugin_link" formatted="false">"リポジトリまたはダウンロード URL"</string>
     <string name="ui2_port" formatted="false">"使用中の Web ポート"</string>
-    <string name="ui2_port_hint" formatted="false">"使用中の場合は優先ポートの設定を保持し、空いているポートを使用します。"</string>
+    <string name="ui2_port_hint" formatted="false">"ポートが使用中のときは空きポートを自動で使います"</string>
     <string name="ui2_port_preferred" formatted="false">"優先 Web ポート"</string>
     <string name="ui2_recovery_tools" formatted="false">"環境とデータの復旧"</string>
     <string name="ui2_repair_parts" formatted="false">"コンポーネントを修復"</string>
@@ -187,7 +186,7 @@
     <string name="ui_adb_code_label" formatted="false">"ペアリングコード（6 桁）"</string>
     <string name="ui_adb_host_label" formatted="false">"端末のアドレス（空欄で自動検出）"</string>
     <string name="ui_adb_port_label" formatted="false">"ペアリングポート（空欄で自動検出）"</string>
-    <string name="ui_lan_unencrypted" formatted="false">"LAN 接続には HTTP を使用し、通信は暗号化されません。信頼できるネットワークを使用し、接続リンクは信頼できる端末にのみ共有してください。"</string>
+    <string name="ui_lan_unencrypted" formatted="false">"ローカルネットワークの通信は暗号化されません。信頼できるネットワークと端末のみで使用してください"</string>
     <string name="ui_language_title" formatted="false">"言語"</string>
     <string name="ui_m0001" formatted="false">"更新をダウンロード"</string>
     <string name="ui_m0002" formatted="false">"設定を保存"</string>
@@ -209,7 +208,7 @@
     <string name="ui_m0024" formatted="false">"コマンドを入力し、Enter キーで実行"</string>
     <string name="ui_m0025" formatted="false">"ログはまだありません。"</string>
     <string name="ui_m0026" formatted="false">"ペア設定とポートについて"</string>
-    <string name="ui_m0030" formatted="false">"ADB はオフです。ワイヤレス デバッグを使わない場合は、オフのままにしてください。"</string>
+    <string name="ui_m0030" formatted="false">"ワイヤレスデバッグを使わない場合はオフのままにしてください"</string>
     <string name="ui_m0031" formatted="false">"ADB のワイヤレス ペア設定"</string>
     <string name="ui_m0039" formatted="false">"Shizuku は許可されていません"</string>
     <string name="ui_m0046" formatted="false">"ログをダウンロード"</string>
@@ -228,18 +227,18 @@
     <string name="ui_m0079" formatted="false">"操作をキャンセル"</string>
     <string name="ui_m0080" formatted="false">"名前を付けて保存"</string>
     <string name="ui_m0081" formatted="false">"自分で追加したプラグインのみ"</string>
-    <string name="ui_m0084" formatted="false">"バックグラウンドで切断される場合は、DSHA のバックグラウンド実行を許可し、バッテリー制限を緩和してください。それでもデバイス側で停止されることがあります。再接続する前に「ワイヤレス デバッグ」をオンにして、「接続を確認」をタップしてください。"</string>
+    <string name="ui_m0084" formatted="false">"バックグラウンドで切断されたときも確認を続けます。復旧前にワイヤレスデバッグをオンにしてください"</string>
     <string name="ui_m0089" formatted="false">"起動時に更新を確認"</string>
     <string name="ui_m0090" formatted="false">"ADB デバイスアクセスを有効化（既定ではオフ）"</string>
     <string name="ui_m0094" formatted="false">"ブラウザーでリリースを表示"</string>
     <string name="ui_m0095" formatted="false">"ブラウザーで開く"</string>
     <string name="ui_m0102" formatted="false">"コピー"</string>
     <string name="ui_m0103" formatted="false">"レポートをコピー"</string>
-    <string name="ui_m0104" formatted="false">"セーフモード：以前有効だったサードパーティープラグインを復元"</string>
+    <string name="ui_m0104" formatted="false">"セーフモード：サードパーティ製プラグインを復元"</string>
     <string name="ui_m0106" formatted="false">"プラグインをインストール"</string>
     <string name="ui_m0107" formatted="false">"更新をインストール"</string>
     <string name="ui_m0109" formatted="false">"レポートをエクスポート"</string>
-    <string name="ui_m0118" formatted="false">"システムブラウザーが白い画面になる場合や互換性がない場合に、内蔵 Gecko を強制的に使用します。オフの場合は、アプリが互換性のあるエンジンを自動で選択します。保存後、会話を開き直すと適用されます。"</string>
+    <string name="ui_m0118" formatted="false">"内蔵ウェブエンジン。互換性の問題時に試せます"</string>
     <string name="ui_m0121" formatted="false">"AI の出力をオーバーレイ表示"</string>
     <string name="ui_m0125" formatted="false">"Shizuku 管理アプリを開く"</string>
     <string name="ui_m0126" formatted="false">"バックアップとデータを開く"</string>
@@ -250,7 +249,7 @@
     <string name="ui_m0137" formatted="false">"プラグインの URL または npm パッケージ名"</string>
     <string name="ui_m0138" formatted="false">"プラグイン名や説明を検索"</string>
     <string name="ui_m0142" formatted="false">"新しいターミナル"</string>
-    <string name="ui_m0145" formatted="false">"ターミナルがありません\n「新規」をタップして開いてください"</string>
+    <string name="ui_m0145" formatted="false">"ターミナルはありません\n「新規」をタップして開きます"</string>
     <string name="ui_m0146" formatted="false">"その他"</string>
     <string name="ui_m0158" formatted="false">"インストール済みプラグインを検出"</string>
     <string name="ui_m0159" formatted="false">"プラグインを検出"</string>

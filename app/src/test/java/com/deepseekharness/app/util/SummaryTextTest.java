@@ -7,10 +7,10 @@ import org.junit.Test;
 public class SummaryTextTest {
   @Test
   public void chineseTextKeepsFirstSentenceAndFlagsRemainder() {
-    SummaryText.Split split = SummaryText.split("模型和 API Key 在 Web UI 中配置。这里的端口与运行方式在下次启动生效。");
+    SummaryText.Split split = SummaryText.split("端口与运行方式下次启动生效");
     assertEquals("模型和 API Key 在 Web UI 中配置。", split.summary);
     assertTrue(split.hasMore);
-    assertEquals("模型和 API Key 在 Web UI 中配置。这里的端口与运行方式在下次启动生效。", split.full);
+    assertEquals("端口与运行方式下次启动生效", split.full);
   }
 
   @Test

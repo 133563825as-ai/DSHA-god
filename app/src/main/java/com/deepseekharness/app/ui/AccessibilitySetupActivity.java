@@ -31,7 +31,7 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
             withServiceName(
                 this,
                 t(
-                    "点下方按钮 → 已下载的应用 / 服务 →「%s」→ 开启「使用服务」，确认系统提示。",
+                    "按下方步骤开启「%s」",
                     "Tap below → Downloaded apps / services → “%s” → Enable the service, then confirm the system prompt.")),
             13,
             R.color.text_secondary));
@@ -114,14 +114,10 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
     boolean allowed = DshaAccessibilityService.enabled(this);
     status.setText(
         connected
-            ? t(
-                "已连接，可以在对话中使用 Computer Use。",
-                "Connected. Computer Use is available in conversations.")
+            ? t("已连接", "Connected. Computer Use is available in conversations.")
             : allowed
-                ? t(
-                    "开关已开启，正在等待系统连接；可重新开关服务。",
-                    "Enabled, waiting for the system to connect. Try toggling the service.")
-                : t("尚未开启，请完成第 1 步。", "Not enabled. Complete step 1."));
+                ? t("等待连接", "Enabled, waiting for the system to connect. Try toggling the service.")
+                : t("尚未开启", "Not enabled. Complete step 1."));
     enable.setText(
         connected
             ? t("查看或关闭系统授权", "Review or disable access")

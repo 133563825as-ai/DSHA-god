@@ -550,10 +550,7 @@ final class WebCrashPanel {
               "The engine lacks features this page needs. Update it, or open in a browser for now.")
         };
       case WEBVIEW_INIT:
-        return new String[] {
-          UiText.text("系统 WebView 无法启动"),
-          UiText.text("请更新或启用 Android System WebView / Chrome，也可以使用系统浏览器进入对话。")
-        };
+        return new String[] {UiText.text("系统 WebView 无法启动"), UiText.text("请更新系统 WebView 后重试")};
       case INVALID_ADDRESS:
         return new String[] {UiText.text("对话地址无效"), UiText.text("请返回启动页，重新进入对话。")};
       default:

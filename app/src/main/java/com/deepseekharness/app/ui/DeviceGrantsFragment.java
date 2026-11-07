@@ -181,9 +181,7 @@ public final class DeviceGrantsFragment extends Fragment {
             return;
           }
           if (!RootShell.present()) {
-            toast(
-                com.deepseekharness.app.util.UiText.text(
-                    "未找到 su；请确认手机已 root，且 root 管理器允许 DSHA 使用"));
+            toast(com.deepseekharness.app.util.UiText.text("未找到 su，请检查 root 授权"));
             return;
           }
           verify(
@@ -1958,8 +1956,7 @@ public final class DeviceGrantsFragment extends Fragment {
     smsStatus.setText(
         allowed
             ? com.deepseekharness.app.util.UiText.text("已预授权 · 关闭可撤销")
-            : com.deepseekharness.app.util.UiText.choose(
-                "已关闭 · 查询会被阻止", "Off · queries are blocked"));
+            : com.deepseekharness.app.util.UiText.choose("已关闭", "Off · queries are blocked"));
     smsStatus.setTextColor(
         requireContext().getColor(allowed ? R.color.primary : R.color.text_muted));
   }
@@ -2299,16 +2296,14 @@ public final class DeviceGrantsFragment extends Fragment {
     if (connected && paused) {
       status.setText(
           com.deepseekharness.app.util.UiText.choose(
-              "已暂停：助手暂时不能读屏和操作", "Paused: the assistant cannot observe or act for now"));
+              "已暂停：助手不能读屏和操作", "Paused: the assistant cannot observe or act for now"));
     } else if (enabled) {
       status.setText(
           connected
               ? com.deepseekharness.app.util.UiText.choose(
-                  "已连接，可以在对话中使用 Computer Use。",
-                  "Connected. Computer Use is available in conversations.")
+                  "已连接", "Connected. Computer Use is available in conversations.")
               : com.deepseekharness.app.util.UiText.choose(
-                  "开关已开启，正在等待系统连接；可重新开关服务。",
-                  "Enabled, waiting for the system to connect. Try toggling the service."));
+                  "等待连接", "Enabled, waiting for the system to connect. Try toggling the service."));
     } else if ("NO".equals(st)) {
       status.setText(com.deepseekharness.app.util.UiText.choose("未开启", "Not set up"));
     } else {

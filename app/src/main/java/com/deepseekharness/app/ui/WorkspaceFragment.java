@@ -79,16 +79,14 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_auto,
         R.drawable.ic_recovery_clock,
         UiText.text("自动备份"),
-        UiText.choose(
-            "备份时机 · 本机保留最近 3 份已验证副本",
-            "Schedule · keeps the latest 3 verified copies on this device"),
+        UiText.choose("备份时机与保留策略", "Schedule · keeps the latest 3 verified copies on this device"),
         () -> open(AutomaticBackupActivity.class));
     entry(
         v,
         R.id.workspace_export,
         R.drawable.ic_ui_export,
         UiText.choose("自定义导出", "Custom export"),
-        UiText.choose("选择范围 · 项目目录 · 是否包含 API Key", "Choose scope · project folders · API key"),
+        UiText.choose("选择备份范围", "Choose scope · project folders · API key"),
         () -> openData("export"));
     entry(
         v,
@@ -129,7 +127,7 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_guide,
         R.drawable.ic_entry_book,
         UiText.text("储存指南"),
-        UiText.text("数据位置 · 导出备份 · 恢复与清理"),
+        UiText.text("数据位置与备份"),
         () -> open(StorageHelpActivity.class));
     entry(
         v,
@@ -146,8 +144,7 @@ public class WorkspaceFragment extends Fragment {
         R.drawable.ic_recovery_wrench,
         getString(R.string.ui2_recovery_tools),
         UiText.choose(
-            "只读救援导出 · 恢复中断提交 · 回退运行时",
-            "Read-only rescue export · interrupted commits · runtime rollback"),
+            "救援、恢复与回退", "Read-only rescue export · interrupted commits · runtime rollback"),
         () -> open(NativeDataActivity.class));
     entry(
         v,
@@ -305,10 +302,7 @@ public class WorkspaceFragment extends Fragment {
   }
 
   private void taskRejected() {
-    toast(
-        task.pendingMaintenance()
-            ? UiText.text("请先点「恢复中断维护」，原环境尚未确认。")
-            : UiText.text("已有数据任务进行中，请等待或处理恢复预览。"));
+    toast(task.pendingMaintenance() ? UiText.text("请先恢复中断维护") : UiText.text("已有任务进行中，请稍后重试"));
   }
 
   // ===================== 渲染 =====================

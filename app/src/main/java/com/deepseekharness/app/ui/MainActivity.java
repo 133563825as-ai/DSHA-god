@@ -103,8 +103,7 @@ public class MainActivity extends AppCompatActivity {
             else
               android.widget.Toast.makeText(
                       this,
-                      com.deepseekharness.app.util.UiText.text(
-                          "未允许局域网访问；本机对话仍可使用，LAN / 无线 ADB 需在系统权限设置中开启"),
+                      com.deepseekharness.app.util.UiText.text("局域网未授权，本机对话不受影响"),
                       android.widget.Toast.LENGTH_LONG)
                   .show();
           });

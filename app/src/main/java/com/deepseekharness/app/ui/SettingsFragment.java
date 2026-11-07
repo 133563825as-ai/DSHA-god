@@ -112,7 +112,7 @@ public class SettingsFragment extends Fragment {
             UiMotion.crossFadeText(
                 powerHint,
                 enabled
-                    ? com.deepseekharness.app.util.UiText.text("熄屏空闲 1 分钟后减少保活；有任务时继续运行。")
+                    ? com.deepseekharness.app.util.UiText.text("熄屏 1 分钟后减少保活")
                     : com.deepseekharness.app.util.UiText.text("持续保持运行，适合长时间任务。"));
     describe.accept(config.isEcoMode());
     eco.setOnCheckedChangeListener(
@@ -152,7 +152,7 @@ public class SettingsFragment extends Fragment {
           if (!BrowserTasks.applyRecentsPreference(requireContext()))
             android.widget.Toast.makeText(
                     requireContext(),
-                    com.deepseekharness.app.util.UiText.text("设置已保存，但系统未允许立即隐藏；下次打开应用时重试"),
+                    com.deepseekharness.app.util.UiText.text("已保存，隐藏将在下次生效"),
                     android.widget.Toast.LENGTH_LONG)
                 .show();
         });

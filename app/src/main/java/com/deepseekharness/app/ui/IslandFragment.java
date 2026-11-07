@@ -67,10 +67,7 @@ public class IslandFragment extends Fragment {
     config = HarnessController.get(requireContext()).config();
 
     InfoHint.bind(
-        root.findViewById(R.id.island_intro),
-        UiText.text("任务状态上岛"),
-        UiText.text(
-            "任务运行时把当前阶段显示在状态栏胶囊上；在 DSHA 页面里时不显示。结束后保留 8 秒显示「完成 / 已停止」，展开通知可看工具、轮次与耗时。只使用 Android 16 的公开实时活动接口，不需要 root 或额外授权；任何环节失败都退回普通通知。"));
+        root.findViewById(R.id.island_intro), UiText.text("任务状态上岛"), UiText.text("任务阶段显示在状态栏胶囊"));
     setText(R.id.island_label_state, "当前状态");
     setText(R.id.island_label_behavior, "行为");
     setText(R.id.island_label_order, "上岛顺序");
@@ -151,22 +148,22 @@ public class IslandFragment extends Fragment {
     switch (status) {
       case ALLOWED -> {
         title = UiText.text("已允许");
-        sub = UiText.text("回到桌面后，运行中的任务会显示在状态栏胶囊上。");
+        sub = UiText.text("回桌面后显示任务胶囊");
         dot = R.color.shell_good;
       }
       case DENIED -> {
         title = UiText.text("实时活动已关闭");
-        sub = UiText.text("系统支持，但本应用未被允许；现在只显示普通通知。");
+        sub = UiText.text("未获系统允许，仅显示通知");
         dot = R.color.shell_warn;
       }
       case UNSUPPORTED -> {
         title = UiText.text("当前系统不支持");
-        sub = UiText.text("需要 Android 16 及以上；任务只显示普通通知。");
+        sub = UiText.text("需要 Android 16 及以上");
         dot = R.color.shell_text_muted;
       }
       default -> {
         title = UiText.text("系统支持，开关状态查不到");
-        sub = UiText.text("这一版 Android 16 没有查询接口，DSHA 仍会尝试上岛。任务时没看到胶囊，就到系统设置打开「实时活动」。");
+        sub = UiText.text("系统未提供查询接口，仍会尝试显示");
         dot = R.color.shell_warn;
       }
     }
@@ -309,7 +306,7 @@ public class IslandFragment extends Fragment {
     if (preview.empty()) {
       capsule.setVisibility(View.GONE);
       notice.setVisibility(View.GONE);
-      String idle = UiText.text("现在没有运行中的任务。任务开始后，这里显示回到桌面时的样子。");
+      String idle = UiText.text("暂无运行任务");
       note.setText(idle);
       container.setContentDescription(join(caption, idle));
       return;

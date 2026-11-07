@@ -287,8 +287,7 @@ final class PermissionChannelCard {
               true,
               v -> {
                 if (!RootShell.present()) {
-                  PermissionActions.toast(
-                      activity, UiText.text("未找到 su；请确认手机已 root，且 root 管理器允许 DSHA 使用"));
+                  PermissionActions.toast(activity, UiText.text("未找到 su，请检查 root 授权"));
                   return;
                 }
                 PermissionActions.verify(
@@ -320,9 +319,9 @@ final class PermissionChannelCard {
       if ("reconnecting".equals(bridge)) return UiText.format("正在重连无线调试…%s", "");
       if ("connected".equals(bridge))
         return UiText.choose("连接已验证 · ADB 通道可用", "Connection verified · ADB channel available");
-      return UiText.text("尚未配对：点下方「ADB 无线配对」，配对后还会验证连接。");
+      return UiText.text("尚未配对");
     } catch (RuntimeException unknown) {
-      return UiText.text("尚未配对：点下方「ADB 无线配对」，配对后还会验证连接。");
+      return UiText.text("尚未配对");
     }
   }
 

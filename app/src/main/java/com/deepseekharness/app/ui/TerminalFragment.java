@@ -345,10 +345,7 @@ public class TerminalFragment extends Fragment implements TerminalPane {
     if (active.session.submit(command)) {
       inputEdit.setText("");
       saveDraft();
-    } else
-      Toast.makeText(
-              requireContext(), UiText.text("命令未发送：请检查长度（最多 16K 字符）及空字符，输入已保留"), Toast.LENGTH_LONG)
-          .show();
+    } else Toast.makeText(requireContext(), UiText.text("未发送：命令过长或含空字符"), Toast.LENGTH_LONG).show();
   }
 
   private void confirmRestart() {

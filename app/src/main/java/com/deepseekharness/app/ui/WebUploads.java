@@ -209,8 +209,7 @@ public final class WebUploads {
       } catch (FileNotFoundException missing) {
         // Provider 异常可能含 URI、文件名或路径；诊断只保存固定事件。
         android.util.Log.w("DSHA", "WEB_UPLOAD_SOURCE_UNAVAILABLE attempts=2");
-        throw new IOException(
-            com.deepseekharness.app.util.UiText.text("所选文件暂不可读取，可能已移动、删除或尚未就绪，请重新选择"));
+        throw new IOException(com.deepseekharness.app.util.UiText.text("文件暂不可读，请重新选择"));
       }
     }
 

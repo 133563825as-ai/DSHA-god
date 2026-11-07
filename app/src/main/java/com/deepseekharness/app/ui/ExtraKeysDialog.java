@@ -131,7 +131,7 @@ final class ExtraKeysDialog {
           TextView hint =
               page.text(
                   UiText.choose(
-                      "此行暂无按键，保存后该行在终端中隐藏。",
+                      "此行无按键；保存后隐藏",
                       "No keys in this row yet; it stays hidden in the terminal after saving."),
                   11,
                   R.color.text_muted);

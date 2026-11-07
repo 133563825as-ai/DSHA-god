@@ -61,11 +61,7 @@ public final class GitHubLoginFragment extends Fragment {
       @NonNull LayoutInflater inflater,
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
-    ui =
-        new CardPage(
-            requireContext(),
-            UiText.text("GitHub 登录"),
-            UiText.text("管理容器内 GitHub CLI 的登录；本页不读取或显示 token。"));
+    ui = new CardPage(requireContext(), UiText.text("GitHub 登录"), UiText.text("管理 GitHub CLI 登录"));
     ui.label(UiText.text("当前账号"));
     LinearLayout account = ui.card();
     statusValue = kv(account, UiText.text("状态"));
@@ -97,16 +93,11 @@ public final class GitHubLoginFragment extends Fragment {
     ui.entry(
         more,
         UiText.text("在终端核对作用域"),
-        UiText.text("运行 gh auth status，查看 token 的实际作用域；需要网络。"),
+        UiText.text("查看登录状态与权限范围"),
         R.drawable.ic_ui_link,
         this::openStatusTerminal);
 
-    TextView policy =
-        ui.text(
-            UiText.text(
-                "gh 把 token 明文保存在容器 hosts.yml；本页不读取、不显示 token，也不会写入日志、备份或导出。网页与插件在容器内仍可能读取该文件。"),
-            11,
-            R.color.shell_text_muted);
+    TextView policy = ui.text(UiText.text("登录凭据存于容器，网页与插件可能读取"), 11, R.color.shell_text_muted);
     policy.setLineSpacing(ui.dp(2), 1);
     policy.setPadding(0, ui.dp(4), 0, ui.dp(8));
     // 行内只留存储位置这一句；本页不读、不写日志、网页与插件仍可读等边界收进 ⓘ。
@@ -199,9 +190,7 @@ public final class GitHubLoginFragment extends Fragment {
                 : UiText.text("未登录"));
     scopesValue.setText(scopesText(current, hosts));
     credentialValue.setText(
-        hosts.credentialStored
-            ? UiText.text("hosts.yml 已保存（不显示内容）")
-            : UiText.text("hosts.yml 未保存（可能来自环境变量或钥匙串）"));
+        hosts.credentialStored ? UiText.text("登录记录已保存（内容不显示）") : UiText.text("登录记录未保存（可能来自环境变量）"));
     protocolValue.setText(
         hosts.gitProtocol.isEmpty() ? UiText.text("未记录") : UiText.raw(hosts.gitProtocol));
     sourceValue.setText(
@@ -212,7 +201,7 @@ public final class GitHubLoginFragment extends Fragment {
         current.managed == GhManagedInstall.State.AVAILABLE
             ? UiText.raw("v" + GhManagedInstall.VERSION)
             : UiText.text("—"));
-    managedHint.setText(UiText.text("缺失时首次运行 gh 会按固定版本自举；也可重装环境重新注入。"));
+    managedHint.setText(UiText.text("缺失时会在首次运行自动补齐"));
     managedHint.setVisibility(
         current.managed == GhManagedInstall.State.MISSING
                 || current.managed == GhManagedInstall.State.SIZE_MISMATCH
@@ -258,7 +247,7 @@ public final class GitHubLoginFragment extends Fragment {
           value = UiText.text("token 已失效，需要重新登录");
           break;
         case TLS_CA_FAILURE:
-          value = UiText.text("TLS 证书校验失败（CA 路径失效）");
+          value = UiText.text("证书校验失败");
           break;
         case NETWORK_ERROR:
           value = UiText.text("网络不可用");
@@ -289,7 +278,7 @@ public final class GitHubLoginFragment extends Fragment {
       return UiText.raw(String.join(", ", probe.scopes));
     if (!hosts.scopes.isEmpty()) return UiText.raw(String.join(", ", hosts.scopes));
     if (probe != null && probe.state != GhAuthProbe.State.VALID) return UiText.text("未取得（在线校验未通过）");
-    return UiText.text("hosts.yml 未记录作用域（gh 不写入）");
+    return UiText.text("登录记录未含权限范围");
   }
 
   private String stateText(GitHubLogin.Snapshot current) {
@@ -297,13 +286,13 @@ public final class GitHubLoginFragment extends Fragment {
     if (loading) return UiText.text("正在读取…");
     switch (current.problem) {
       case HOSTS_READ_FAILED:
-        return UiText.text("无法读取 hosts.yml");
+        return UiText.text("无法读取登录记录");
       case HOSTS_TOO_LARGE:
-        return UiText.text("hosts.yml 超过大小上限");
+        return UiText.text("登录记录超过大小上限");
       case HOSTS_NOT_REGULAR:
-        return UiText.text("hosts.yml 不是普通文件");
+        return UiText.text("登录记录不是普通文件");
       case HOSTS_MALFORMED:
-        return UiText.text("hosts.yml 结构无法识别");
+        return UiText.text("登录记录结构无法识别");
       default:
         break;
     }
@@ -311,13 +300,13 @@ public final class GitHubLoginFragment extends Fragment {
       case LOGGED_IN:
         return UiText.text("已登录");
       case CREDENTIAL_MISSING:
-        return UiText.text("已登录，但 hosts.yml 未保存 token");
+        return UiText.text("已登录，但登录记录未保存");
       case ACCOUNT_UNKNOWN:
         return UiText.text("已保存 token，但无法确定账号");
       case OTHER_HOSTS_ONLY:
         return UiText.text("只有其他 GitHub 主机登录");
       case MALFORMED:
-        return UiText.text("hosts.yml 结构无法识别");
+        return UiText.text("登录记录结构无法识别");
       default:
         return UiText.text("未登录");
     }
@@ -372,7 +361,7 @@ public final class GitHubLoginFragment extends Fragment {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null) return;
     if (!current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     String command = refresh ? GhAuthCommands.refresh() : GhAuthCommands.login();
@@ -403,7 +392,7 @@ public final class GitHubLoginFragment extends Fragment {
   private void openStatusTerminal() {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null || !current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     openTerminal(GhAuthCommands.statusGuestArgv(), UiText.text("GitHub 状态"));
@@ -421,7 +410,7 @@ public final class GitHubLoginFragment extends Fragment {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null || !GhLoginState.canLogout(current.login)) return;
     if (!current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     String message =
@@ -467,7 +456,7 @@ public final class GitHubLoginFragment extends Fragment {
   private void showLogoutFailure(GitHubLogin.LogoutResult result) {
     String message =
         result.problem == GitHubLogin.Problem.ENV_NOT_READY
-            ? UiText.text("运行环境未就绪，请先在「安装」页完成安装")
+            ? UiText.text("环境未就绪，请先安装")
             : result.detail == null || result.detail.isEmpty()
                 ? UiText.text("退出失败")
                 : UiText.format("退出失败：%s", result.detail);

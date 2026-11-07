@@ -308,7 +308,7 @@ public class LaunchFragment extends Fragment {
     if (url.isEmpty()) {
       if (getView() != null) {
         ((TextView) getView().findViewById(R.id.launch_status))
-            .setText(com.deepseekharness.app.util.UiText.text("先点「启动」，等鉴权链接就绪后再进入"));
+            .setText(com.deepseekharness.app.util.UiText.text("请先启动"));
       }
       return;
     }
@@ -316,7 +316,7 @@ public class LaunchFragment extends Fragment {
     enteringWeb = true;
     webEntryFailure = false;
     ((TextView) root.findViewById(R.id.launch_status))
-        .setText(com.deepseekharness.app.util.UiText.choose("正在打开 Web…", "Opening Web…"));
+        .setText(com.deepseekharness.app.util.UiText.choose("打开中…", "Opening Web…"));
     refreshRunState();
     try {
       if (getView() != root || !isResumed() || activity.isFinishing() || activity.isDestroyed()) {
@@ -324,7 +324,7 @@ public class LaunchFragment extends Fragment {
         return;
       }
       if (generation != webEntryGeneration() || !url.equals(webEntryUrl())) {
-        finishWebEntry(root, com.deepseekharness.app.util.UiText.text("Web 状态已变化，请等待就绪后重新进入"));
+        finishWebEntry(root, com.deepseekharness.app.util.UiText.text("状态已变化，请稍后重试"));
         return;
       }
       // The browser owns the token -> cookie -> HTTP 200 verification. Doing it here
@@ -536,7 +536,7 @@ public class LaunchFragment extends Fragment {
       UiMotion.crossFadeText(
           runState,
           enteringWeb
-              ? com.deepseekharness.app.util.UiText.choose("正在打开 Web…", "Opening Web…")
+              ? com.deepseekharness.app.util.UiText.choose("打开中…", "Opening Web…")
               : restoring
                   ? com.deepseekharness.app.core.WebSessionRestoreText.progress(
                       restore.reason(), restore.attempts())
@@ -556,7 +556,7 @@ public class LaunchFragment extends Fragment {
                                                   "DSH 已就绪，可进入"))
                                           + (controller.isWebCompatibilityFallback()
                                               ? com.deepseekharness.app.util.UiText.text(
-                                                  " · 已兼容切换 proot")
+                                                  " · 已切换到兼容模式")
                                               : "")
                                       : controller.isUserStopped()
                                           ? getString(R.string.ui2_stopped)
@@ -619,8 +619,7 @@ public class LaunchFragment extends Fragment {
                 trace.issues.isEmpty()
                     ? timing
                     : com.deepseekharness.app.util.UiText.format(
-                        "%s\n%s",
-                        timing, com.deepseekharness.app.util.UiText.text("检测到插件或配置异常，可查看恢复选项。")));
+                        "%s\n%s", timing, com.deepseekharness.app.util.UiText.text("配置异常")));
       } else if (!startStatusMessage.isEmpty() && !stopping && !enteringWeb)
         ((TextView) root.findViewById(R.id.launch_status))
             .setText(com.deepseekharness.app.util.UiStateText.render(startStatusMessage));
@@ -654,7 +653,7 @@ public class LaunchFragment extends Fragment {
       Button stop = root.findViewById(R.id.launch_stop);
       if (stop != null) stop.setEnabled(!stopping);
       if (needsRecovery) {
-        runState.setText(com.deepseekharness.app.util.UiText.text("环境需要恢复"));
+        runState.setText(com.deepseekharness.app.util.UiText.text("需要恢复"));
         if (start != null) start.setEnabled(false);
         if (restart != null) restart.setEnabled(false);
         root.findViewById(R.id.launch_safe).setEnabled(false);
@@ -680,7 +679,7 @@ public class LaunchFragment extends Fragment {
         if (state != null)
           state.setText(
               com.deepseekharness.app.util.UiText.choose(
-                  "运行状态暂时无法读取，请查看操作记录", "Run state unavailable. See operation history."));
+                  "状态异常", "Run state unavailable. See operation history."));
       }
     }
   }

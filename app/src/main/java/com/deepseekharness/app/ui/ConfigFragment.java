@@ -743,7 +743,7 @@ public class ConfigFragment extends Fragment {
               Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
               Uri.parse("package:" + requireContext().getPackageName())));
     } catch (Exception e) {
-      toast(com.deepseekharness.app.util.UiText.text("未取得悬浮窗权限，请到系统设置 → 应用 → DSHA → 悬浮窗中允许"));
+      toast(com.deepseekharness.app.util.UiText.text("请授予悬浮窗权限"));
     }
   }
 

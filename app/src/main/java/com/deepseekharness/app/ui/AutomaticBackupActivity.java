@@ -275,7 +275,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                         copies.addView(
                             page.text(
                                 t(
-                                    "还没有自动备份。到达所选时间后，在 DSH 停止且没有终端任务时创建第一份。",
+                                    "还没有自动备份",
                                     "No automatic backup yet. The first copy is created when due, with DSH and terminals stopped."),
                                 12,
                                 R.color.text_muted));

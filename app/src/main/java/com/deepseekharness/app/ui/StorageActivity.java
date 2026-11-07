@@ -117,7 +117,7 @@ public final class StorageActivity extends AppCompatActivity {
                               ? UiText.format(
                                   "已释放 %s", com.deepseekharness.app.util.Fmt.bytes(reclaimed))
                               : t(
-                                  "已完成统计。清理只移除可再生缓存和已核验的多余运行时副本，个人数据与备份保留。",
+                                  "统计完成；清理只删可再生缓存",
                                   "Sizes updated. Cleanup removes only reproducible caches and verified excess runtime copies. Personal data and backups are retained."));
                       done();
                     });

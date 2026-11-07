@@ -154,7 +154,7 @@ public class ExtractActivity extends AppCompatActivity {
     // 只读救援导出：不停止写入、不进入受限主界面，也不写就绪标记；后端在维护待恢复时仍允许 rescue。
     rescue = findViewById(R.id.extract_rescue);
     rescue.setText(UiText.text("导出可读副本"));
-    rescue.setContentDescription(UiText.text("只读救援导出可读取的数据，不停止写入、不修改原件"));
+    rescue.setContentDescription(UiText.text("只读导出，不停止写入"));
     rescue.setOnClickListener(
         v ->
             startActivity(
@@ -326,7 +326,7 @@ public class ExtractActivity extends AppCompatActivity {
         DeployTaskSheet.summary(mode),
         view.visible() && view.mode != DeployStages.Mode.GENERIC
             ? DeployTaskSheet.description(view.mode, false)
-            : UiText.text("相同基础环境只更新 dsh 与内置插件，个人数据保持原位；基础环境变更时先保护数据再重建。验证失败可恢复原环境。"));
+            : UiText.text("更新不移动个人数据；失败可恢复"));
   }
 
   private void renderStages(DeployStages.View view) {
@@ -377,7 +377,7 @@ public class ExtractActivity extends AppCompatActivity {
                           com.deepseekharness.app.util.UiStateText.render(s.lastStage), 240),
                   com.deepseekharness.app.util.MaintenanceErrorText.render(s.detail))
               + "\n\n"
-              + UiText.text("任务未完成。请按上方原因处理后重试；本页不会自动覆盖环境。");
+              + UiText.text("任务未完成，请处理后重试");
       message += supportHint();
       warn = false;
     } else if (incomplete) {

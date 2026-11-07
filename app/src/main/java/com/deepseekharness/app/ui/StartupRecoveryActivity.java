@@ -671,7 +671,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     if (!controller.isEnvironmentReady()) {
       status(
           t(
-              "运行环境尚未就绪，可先修复配置或导出数据，再进入安装与修复。",
+              "环境未就绪，可先修复或导出数据",
               "The runtime is not ready. Repair configuration or export data, then open installation and repair."));
       return;
     }
@@ -723,7 +723,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
           attempts,
           controller.startupDiagnostics().historyError().isEmpty()
               ? t(
-                  "还没有启动记录。下一次启动会自动记录。",
+                  "还没有启动记录；下次启动自动记录",
                   "No startup records yet. The next start will be recorded automatically.")
               : t("启动记录暂不可用：", "Startup records are currently unavailable: ")
                   + controller.startupDiagnostics().historyError());
@@ -819,7 +819,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
       layout.note(
           layout.snapshots,
           t(
-              "还没有快照。下一次无错误的启动会自动保存。",
+              "还没有快照；下次启动自动保存",
               "No snapshots yet. The next error-free start saves one automatically."));
     renderPlugins(kind, taskBusy);
   }
@@ -863,7 +863,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
       layout.note(
           layout.plugins,
           t(
-                  "插件清单暂不可读；可先恢复或新建配置。\n",
+                  "插件清单暂不可读；可恢复或新建配置",
                   "Cannot read the plugin list. Restore or create configuration first.\n")
               + readable(contents.optString("pluginError")));
   }
