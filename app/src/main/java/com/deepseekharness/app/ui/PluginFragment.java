@@ -1823,7 +1823,7 @@ public class PluginFragment extends Fragment {
   private String descriptionText(PluginRepository.Item item) {
     if (item.dynamic)
       return item.description.isEmpty()
-          ? com.deepseekharness.app.util.UiText.text("临时插件请在对应会话中删除")
+          ? com.deepseekharness.app.util.UiText.text("临时插件请在对应 Web 会话的 Cordis 插件管理中删除。")
           : com.deepseekharness.app.util.UiText.format(
               "%s\n\n临时插件请在对应 Web 会话的 Cordis 插件管理中删除。", item.description);
     if (!item.metadataError.isEmpty())

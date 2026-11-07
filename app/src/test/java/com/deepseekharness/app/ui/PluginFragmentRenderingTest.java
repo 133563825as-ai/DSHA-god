@@ -180,7 +180,7 @@ public final class PluginFragmentRenderingTest {
                 .put("deletable", true)
                 .put("metadataError", "PLUGIN_METADATA_UNREADABLE"));
     mount(state(catalog(List.of(damaged)), List.of(), false, "", -1));
-    assertTrue(text(rowAt(1).findViewById(R.id.pluginDesc)).contains("metadata cannot be read"));
+    assertTrue(text(rowAt(1).findViewById(R.id.pluginDesc)).contains("Metadata read failed"));
     assertTrue(rowStatus(1).contains("Plugin metadata unavailable"));
     assertEquals(View.VISIBLE, rowAt(1).findViewById(R.id.pluginDelete).getVisibility());
   }
