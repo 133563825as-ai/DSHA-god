@@ -88,8 +88,7 @@ public final class StorageHelpActivity extends AppCompatActivity {
     paragraph(
         erase, "会删除应用私有目录中的对话、附件、插件、配置、API Key、本机备份和 Ubuntu 环境。下次打开需要重新解压和设置。卸载应用也会删除这些私有数据。");
     paragraph(
-        erase,
-        "本机副本会随私有数据一起删除，不能依赖它救回数据。只有事先存到应用外且可读的导出文件，才可在重新初始化后手动导入其中的数据范围。未导出的私有数据，应用无法恢复。");
+        erase, "本机副本会随私有数据一起删除，不能依赖它救回数据。只有事先存到应用外且可读的导出文件，才可在重新初始化后手动导入其中的数据范围。未导出的私有数据，应用无法恢复。");
 
     LinearLayout growth = section("为什么占用会增长");
     paragraph(
