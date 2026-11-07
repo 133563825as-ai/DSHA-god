@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261107.1900-dsh0.2.2-rc.1` / build337 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版修复 build336 正式包实体屏手机任务接口 409（T115：内置 `dsh-status-overlay` 不再调用 0.2.2-rc.1 已移除的 `SessionController.inspect`，改用 `controller.state` + `controller.events`）、Web 终端 `pty.fork` 缺失（T116：启动预加载 node-pty，避免 sharp 先加载互串原生导出）、UI 长文本第一批（T114：12 处 P1 默认可见长文收为 1–2 行摘要 + InfoHint）与隐藏后台最近任务重放（T111）；并合并 T109 切片 1 原生文案统一、启动状态条十语与 CI/文档修复（UI 基准线 v2–v5、T112 审计为 docs-only）。内置 `dsh-web-mobile` 保持上游 3.3.1 且默认启用不变。受管输入随 T115/T116 重算 runtime-descriptor（runtimeId `da08b4cb`），版本与文档改动不改变它；不改 fixed-inputs，不新增受管运行时。**T110 页面保活不在本版**、K5 未验收；**build337 尚未真机验收**，验收项是 336→337 首次覆盖成功、手机任务工具可 begin、Web 终端可打开、隐藏后台按开关生效、数据完整、READY。宿主 contracts 整组、全量单测、host-tests fast/runtime、全树格式与文档检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build337 更新说明](releases/build337-changes.zh.md)。
+当前源码：`0.2.1-rc.5-20261108.0030-dsh0.2.2-rc.1` / build338 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版合入 T110 页面保活 K0–K2（应用内往返不再重走「黄→绿」、不整页重渲染；K5 场景 1 真机通过，其余场景按用户决定声明为实验性、不阻塞合并）、实体屏遮挡判定修复（`bfe82527`：顺序无关的贴边裁切，非完整边缘系统 / 厂商窗不再整窗拒绝）、T88 虚拟屏 status 补下一步（`850875bf`：无 Core → `CREATE_FIRST`、待清理 → `ASK_USER_TO_CLOSE`）与 UI 第二批（T114 余量、错误与复合状态 ⑬、安装/诊断/维护过渡）；内置 `dsh-web-mobile` 保持上游 3.3.1 且默认启用不变。受管输入随 T110 / T88（含遮挡修复）按合并树重算 runtime-descriptor（runtimeId `a77aa93f`），版本与文档改动不改变它；fixed-inputs 保持冻结（使用锁定 20261105e），不新增受管运行时。**build338 尚未真机验收**，验收项是 337→338 首次覆盖成功、应用内往返不重连/不整页重渲染、流式输出继续、停止/维护/换代正确退役、数据完整、READY。宿主 contracts 整组、全量单测、遮挡与虚拟屏定向单测、`test-diagnostic-feedback`、lint 与 assemble、全树格式与文档检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build338 更新说明](releases/build338-changes.zh.md)。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
