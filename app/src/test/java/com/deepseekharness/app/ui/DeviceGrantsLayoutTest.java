@@ -146,12 +146,15 @@ public final class DeviceGrantsLayoutTest {
     assertSame(page, header.getParent());
     assertSame(page, scroll.getParent());
     assertTrue(header.getBottom() <= scroll.getTop());
-    // 头部 = 胶囊流式区 + 固定在行尾的页面说明 ⓘ。
+    // 头部 = 胶囊流式区 + 常显的页面说明（不再挂 ⓘ）。
     assertEquals(2, ((ViewGroup) header).getChildCount());
     ViewGroup pills = page.findViewById(R.id.grants_pills);
     assertTrue(pills instanceof PluginFlowRow);
     assertEquals(4, pills.getChildCount());
-    assertTrue(((ViewGroup) header).getChildAt(1) instanceof ImageButton);
+    assertTrue(((ViewGroup) header).getChildAt(1) instanceof TextView);
+    assertEquals(
+        page.getContext().getString(R.string.ui2_grants_sub),
+        ((TextView) ((ViewGroup) header).getChildAt(1)).getText().toString());
     assertSummaryPillsFit(pills, "zh");
 
     assertEquals(
@@ -214,8 +217,9 @@ public final class DeviceGrantsLayoutTest {
     int channels = page.findViewById(R.id.grants_section_channels).getHeight();
     int screen = page.findViewById(R.id.grants_section_screen).getHeight();
     assertTrue("channels too tall: " + channels, channels <= 460);
-    // T96 的虚拟屏预览档位行并入屏幕卡：实测 464，预算按一行余量放宽到 470。
-    assertTrue("screen too tall: " + screen, screen <= 470);
+    // T96 的虚拟屏预览档位行并入屏幕卡；T120 起确认方式说明改折叠卡，收起态多保留一行
+    // 安全后果（实测 504），预算按一行余量放宽到 520。
+    assertTrue("screen too tall: " + screen, screen <= 520);
   }
 
   @Test
@@ -306,10 +310,46 @@ public final class DeviceGrantsLayoutTest {
     assertEquals(0, content.indexOfChild(header));
     assertSame(scroll, content.getParent());
     assertEquals(2, ((ViewGroup) header).getChildCount());
+    assertTrue(((ViewGroup) header).getChildAt(1) instanceof TextView);
     List<String> overflow = new ArrayList<>();
     collectOverflow(page, 0, 360, overflow);
     assertTrue("horizontal overflow: " + overflow, overflow.isEmpty());
     assertSummaryPillsFit((ViewGroup) page.findViewById(R.id.grants_pills), "short");
+  }
+
+  /** 全部文件访问改为折叠披露：收起只有状态词与一行后果；展开才出现完整范围与系统设置入口。 */
+  @Test
+  public void allFilesRowIsCollapsedDisclosure() {
+    View page = start(360);
+    TextView status = page.findViewById(R.id.config_all_files_status);
+    assertEquals("未开启", status.getText().toString());
+    assertFalse(page.findViewById(R.id.config_all_files).isClickable());
+    assertEquals(View.GONE, page.findViewById(R.id.config_all_files_chevron).getVisibility());
+    assertFalse(DisclosureCard.expanded(status));
+    assertNull(findText(page, "未开启：仅能访问应用私有目录；去系统设置开启后可访问全部文件"));
+    status.performClick();
+    assertTrue(DisclosureCard.expanded(status));
+    assertNotNull("展开后才给出系统设置动作", findText(page, "去系统设置"));
+  }
+
+  /** 屏幕确认方式：收起态保留一行安全后果；「全部允许」放宽档位默认展开完整规则。 */
+  @Test
+  public void screenPolicyDisclosureKeepsConsequenceAndExpandsWhenRelaxed() {
+    View page = start(360);
+    TextView status = page.findViewById(R.id.screen_policy_status);
+    assertTrue(status.isClickable());
+    assertFalse(DisclosureCard.expanded(status));
+    assertNotNull(findText(page, "仅控制 DSHA 确认，不授予系统权限"));
+  }
+
+  private static String findText(View view, String target) {
+    if (view instanceof TextView text && target.contentEquals(text.getText())) return target;
+    if (view instanceof ViewGroup group)
+      for (int i = 0; i < group.getChildCount(); i++) {
+        String found = findText(group.getChildAt(i), target);
+        if (found != null) return found;
+      }
+    return null;
   }
 
   /**

@@ -38,6 +38,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
   }
 
   private Model model;
+  private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
   private LinearLayout rows;
   private TextView report, pageStatus;
   private LinearLayout chips;
@@ -62,14 +63,14 @@ public final class RetainedDataActivity extends AppCompatActivity {
             this,
             t("保留副本与旧环境", "Retained copies and old environments"),
             t("只读副本与旧环境", "Read-only copies"));
-    // 摘要进页首，完整说明点开 ⓘ（审计 D-06）。
-    InfoHint.bind(
-        shell.subtitle,
-        t("保留副本与旧环境", "Retained copies and old environments"),
-        t("只读副本与旧环境", "Read-only copies"),
+    // 摘要进页首，完整说明展开后创建（替代 ⓘ，审计 D-06）。
+    DisclosureCard.Model disclosureModel = new DisclosureCard.Model();
+    disclosureModel.key = "retained-subtitle";
+    disclosureModel.detail =
         t(
             "原件保持只读。记录中的成功状态不是本次重新验证；检查、导出与恢复分别处理。未知或受损原件继续保留。",
-            "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained."));
+            "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained.");
+    DisclosureCard.bind(shell.subtitle, disclosureModel, disclosure, null);
     UiNavigation.addHeader(
         this, shell.root, t("保留副本与旧环境", "Retained copies and old environments"), this::finish);
     LinearLayout body = shell.content;

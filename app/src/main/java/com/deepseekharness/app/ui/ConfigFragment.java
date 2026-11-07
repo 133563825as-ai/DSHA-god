@@ -50,6 +50,9 @@ public class ConfigFragment extends Fragment {
   private boolean renderingEntryTarget;
   private View root;
   private ConfigDraft savedDraft;
+  private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+  private final DisclosureCard.Model pageDisclosure = new DisclosureCard.Model();
+  private final DisclosureCard.Model entryDisclosure = new DisclosureCard.Model();
   private static final java.util.concurrent.atomic.AtomicBoolean savingLanPassword =
       new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -167,8 +170,20 @@ public class ConfigFragment extends Fragment {
 
     v.findViewById(R.id.config_repo_link).setOnClickListener(x -> openRepo(ctx));
 
-    // 方案 A：多句说明行内只留第一句，完整内容点 ⓘ 查看；文案仍是原有已翻译资源。
-    InfoHint.attach(v.findViewById(R.id.config_page_hint), getString(R.string.ui2_runtime_config));
+    // 多句说明行内只留第一句，完整内容展开后才创建（替代 ⓘ）；文案仍是原有已翻译资源。
+    TextView pageHint = v.findViewById(R.id.config_page_hint);
+    com.deepseekharness.app.util.SummaryText.Split pageSplit =
+        com.deepseekharness.app.util.SummaryText.split(getString(R.string.ui2_runtime_config));
+    pageHint.setText(pageSplit.summary);
+    pageDisclosure.key = "config-page";
+    pageDisclosure.detail = pageSplit.full;
+    // 说明行嵌在水平标签行里：详情容器插到该行之后的竖向列容器。
+    DisclosureCard.bind(
+        pageHint,
+        pageDisclosure,
+        disclosure,
+        null,
+        (android.view.View) pageHint.getParent().getParent());
 
     // 标题列点按与开关等价；无障碍焦点落在开关上，读出标题与副文案。
     bindRowToggle(v, R.id.config_automatic_port_text, automaticPort);
@@ -625,17 +640,17 @@ public class ConfigFragment extends Fragment {
     entryWeb.setText(
         com.deepseekharness.app.util.UiText.choose("从桌面图标直接进入 Web", "Open Web from the app icon"));
     TextView entryHint = root.findViewById(R.id.config_entry_web_hint);
-    entryHint.setText(
+    String entryDetail =
         com.deepseekharness.app.util.UiText.choose(
             "开启后点击桌面图标或常驻通知先显示加载页，Web 就绪即进入；在 Web 里返回到底会回到桌面。应用被系统回收后，离开前停在 Web 就回到 Web。环境需要维护或启动失败时仍进入主界面。也可在 Web 的「设置 → 启动目标」中修改；禁用 dsh-launch-target 插件不会改变这里的选择。",
-            "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice."));
-    // 行内只留行为摘要；系统回收、维护例外与插件说明挂 ⓘ。
-    InfoHint.bind(
-        entryHint,
-        entryWeb.getText(),
+            "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice.");
+    // 行内只留行为摘要；系统回收、维护例外与插件说明展开后再创建。
+    entryHint.setText(
         com.deepseekharness.app.util.UiText.choose(
-            "开启后从图标直接进入 Web，返回回到桌面", "Open Web straight from the icon; Back returns to home"),
-        entryHint.getText());
+            "开启后从图标直接进入 Web，返回回到桌面", "Open Web straight from the icon; Back returns to home"));
+    entryDisclosure.key = "config-entry";
+    entryDisclosure.detail = entryDetail;
+    DisclosureCard.bind(entryHint, entryDisclosure, disclosure, null);
     entryWeb.setOnCheckedChangeListener(
         (button, enabled) -> {
           if (renderingEntryTarget) return;

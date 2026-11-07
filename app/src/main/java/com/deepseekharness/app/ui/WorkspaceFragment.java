@@ -23,6 +23,7 @@ import com.deepseekharness.app.backup.OneClickBackup;
 import com.deepseekharness.app.core.HarnessController;
 import com.deepseekharness.app.util.BackupHealth;
 import com.deepseekharness.app.util.BackupTaskState;
+import com.deepseekharness.app.util.SummaryText;
 import com.deepseekharness.app.util.UiText;
 
 /**
@@ -38,6 +39,10 @@ public class WorkspaceFragment extends Fragment {
   private com.deepseekharness.app.core.BackupTask task;
   private AlertDialog previewDialog;
   private OneClickBackup oneClick;
+
+  /** 状态卡展开状态：旋转/返回后保留，用户折叠后不再被异常默认展开覆盖。 */
+  private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
   private final androidx.activity.result.ActivityResultLauncher<android.net.Uri> backupDirectory =
       registerForActivityResult(
           new androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
@@ -55,6 +60,8 @@ public class WorkspaceFragment extends Fragment {
     controller = HarnessController.get(requireContext());
     task = com.deepseekharness.app.core.BackupTask.get(requireContext());
     oneClick = new androidx.lifecycle.ViewModelProvider(this).get(OneClickBackup.class);
+    if (savedInstanceState != null)
+      disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 
     // ---- 状态卡 ----
     label(v, R.id.workspace_stat_manual_label, UiText.choose("最近手动备份", "Last manual backup"));
@@ -387,11 +394,26 @@ public class WorkspaceFragment extends Fragment {
     if (level != BackupHealth.Level.RUNNING && !nativeStatus.isEmpty())
       detail = detail + "\n\n" + nativeStatus;
 
-    // 卡内只留一句结论；保存路径 / 原生任务详情（多行）收进 ⓘ，随状态淡入（审计 E-04）。
+    // 卡内收起为一句结论 + 一行后果；保存路径 / 原生任务详情（多行）展开后才创建（B1/B4）。
     TextView heroTitle = view.findViewById(R.id.workspace_hero_title);
     TextView heroDetail = view.findViewById(R.id.workspace_backup_status);
+    heroDetail.setTextIsSelectable(false);
     UiMotion.crossFadeText(heroTitle, title);
-    InfoHint.bind(heroDetail, title, detail);
+    SummaryText.Split split = SummaryText.split(detail);
+    UiMotion.crossFadeText(heroDetail, split.summary);
+    DisclosureCard.Model model = new DisclosureCard.Model();
+    model.key = "backup-status";
+    model.detail = detail;
+    model.consequence = split.hasMore ? split.full.substring(split.summary.length()).trim() : "";
+    model.consequenceTone =
+        level == BackupHealth.Level.FAILED || level == BackupHealth.Level.STALE
+            ? R.color.shell_warn
+            : R.color.shell_text_secondary;
+    model.defaultExpanded =
+        level == BackupHealth.Level.FAILED
+            || level == BackupHealth.Level.STALE
+            || level == BackupHealth.Level.NEVER;
+    DisclosureCard.bind(heroDetail, model, disclosure, null);
     tintHero(view, level, icon);
     view.findViewById(R.id.workspace_hero_progress)
         .setVisibility(level == BackupHealth.Level.RUNNING ? View.VISIBLE : View.GONE);
@@ -553,6 +575,12 @@ public class WorkspaceFragment extends Fragment {
 
   private static void label(View root, int id, CharSequence value) {
     ((TextView) root.findViewById(id)).setText(value);
+  }
+
+  @Override
+  public void onSaveInstanceState(@NonNull Bundle outState) {
+    super.onSaveInstanceState(outState);
+    disclosure.save(outState, "disclosure");
   }
 
   @Override

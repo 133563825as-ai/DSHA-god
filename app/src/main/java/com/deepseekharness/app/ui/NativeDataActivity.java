@@ -66,9 +66,11 @@ public final class NativeDataActivity extends AppCompatActivity {
 
   private TextView status, project;
 
-  /** 结果卡三段（审计 E-02）：结论、计数/字节、错误（错误默认 1 行 + ⓘ）。 */
+  /** 结果卡三段（审计 E-02）：结论、计数/字节、错误（错误收起为一句，展开看原因与下一步）。 */
   private TextView resultConclusion, resultMeta, resultError;
 
+  private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+  private final DisclosureCard.Model failureDisclosure = new DisclosureCard.Model();
   private Button cancelOperation;
   private List<BackupSource> projects;
   private EditText password;
@@ -1461,8 +1463,11 @@ public final class NativeDataActivity extends AppCompatActivity {
     boolean wasHidden = statusCard.getVisibility() != View.VISIBLE;
     UiMotion.crossFadeText(resultConclusion, conclusion);
     UiMotion.crossFadeTimerText(resultMeta, meta);
-    InfoHint.bind(
-        resultError, UiText.text("失败"), problems.isEmpty() ? "" : UiText.text("失败"), problems);
+    boolean hasProblems = !problems.isEmpty();
+    resultError.setText(hasProblems ? UiText.text("失败") : "");
+    failureDisclosure.key = "result-error";
+    failureDisclosure.detail = problems;
+    DisclosureCard.bind(resultError, failureDisclosure, disclosure, null);
     if (wasHidden) UiMotion.reveal(statusCard);
   }
 
@@ -1471,7 +1476,8 @@ public final class NativeDataActivity extends AppCompatActivity {
     status.setText("");
     resultConclusion.setText("");
     resultMeta.setText("");
-    InfoHint.bind(resultError, null, "");
+    failureDisclosure.detail = "";
+    DisclosureCard.bind(resultError, failureDisclosure, disclosure, null);
   }
 
   /** 结果卡可见性：任一字段非空即显示；各字段只在自身非空时占位。 */
