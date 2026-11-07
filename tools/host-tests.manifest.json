@@ -3410,6 +3410,28 @@
       "args": [],
       "timeoutSeconds": 60,
       "environment": {}
+    },
+    {
+      "reason": "模拟器 rootfs 软链规则负控：相对/根内绝对链接放行，逃出 guest 根、目标缺失、成环、指回宿主路径一律拒绝。纯逻辑，无 tar 依赖。",
+      "path": "tools/test-emulator-rootfs-links.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {}
+    },
+    {
+      "reason": "模拟器资产校验负控：receipt 缺失、目标不匹配、成员集不符、字节被改、目录里混入 ARM ELF 五种情况必须分别拒绝。临时目录夹具，无外部输入。",
+      "path": "tools/test-emulator-verify-assets.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {}
     }
   ]
 }
