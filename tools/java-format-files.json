@@ -1558,6 +1558,9 @@
     "app/src/main/java/com/deepseekharness/app/util/WebPageDiagnosticText.java",
     "app/src/test/java/com/deepseekharness/app/ui/BrowserPageKeeperTest.java",
     "app/src/test/java/com/deepseekharness/app/util/WebPageDiagnosticTextTest.java",
-    "app/src/test/java/com/deepseekharness/app/ui/StartupRecoveryLayoutTest.java"
+    "app/src/test/java/com/deepseekharness/app/ui/StartupRecoveryLayoutTest.java",
+    "app/src/main/java/com/deepseekharness/app/ui/RecoveryRepairSheet.java",
+    "app/src/test/java/com/deepseekharness/app/ui/RecoveryActivityTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/RecoveryRepairSheetTest.java"
   ]
 }

@@ -169,23 +169,35 @@ final class CardPage {
   }
 
   Button button(LinearLayout parent, String title, boolean primary, Runnable action) {
+    Button button = button(context, parent, title, primary, action);
+    if (primary) primaryButtons.add(button);
+    return button;
+  }
+
+  /** 对话框等不使用卡片页脚的容器复用同一套按钮样式；只有卡片页脚需要登记主按钮。 */
+  static Button button(
+      Context context, LinearLayout parent, String title, boolean primary, Runnable action) {
     var button = new androidx.appcompat.widget.AppCompatButton(context);
     button.setText(title);
     button.setTextSize(14);
     button.setAllCaps(false);
     button.setTypeface(null, android.graphics.Typeface.BOLD);
     button.setIncludeFontPadding(false);
-    button.setMinHeight(dp(primary ? 52 : 46));
-    button.setMinimumHeight(dp(primary ? 52 : 46));
+    int height = dp(context, primary ? 52 : 46);
+    button.setMinHeight(height);
+    button.setMinimumHeight(height);
     button.setMinWidth(0);
     button.setBackgroundResource(primary ? R.drawable.bg_btn_primary : R.drawable.bg_btn);
     button.setTextColor(
         context.getColorStateList(primary ? R.color.button_primary_text : R.color.button_text));
     button.setOnClickListener(v -> action.run());
-    if (primary) primaryButtons.add(button);
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-    p.topMargin = dp(10);
+    p.topMargin = dp(context, 10);
     parent.addView(button, p);
     return button;
+  }
+
+  private static int dp(Context context, int value) {
+    return Math.round(value * context.getResources().getDisplayMetrics().density);
   }
 }
