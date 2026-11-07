@@ -341,6 +341,18 @@ proroot 中 Git 源码 prepare 调用原生 Go 工具时，可能遇到内核可
 
 DSHA 不再对当前 0.2.2-rc.1 file-upload 模块套用该窄生命周期补丁；当前启动链以受管 runtime 版本和 `runtime-patches.json` 的 retired 记录为准。保留live重复注册拒绝、旧disposer围栏、真实上传接收与session回执检查，不重播上传、不删旧附件或工作区内容。专项已完成原CLI（不含目录补丁）重复错误负控，以及只加载附件补丁的两轮workspace停启applied、raw/typed上传实际字节落盘读回、冷进程同Session上传/列表保留；鉴权、foreignOrigin、415/400及未知Session拒绝仍保留。真实Cordis/Commands/LocalAttachmentStore核对live重复、旧disposer、owner退休与同Session回执，入口为[test-file-upload-resolver-lifecycle.mjs](../tools/test-file-upload-resolver-lifecycle.mjs)。这不是目录+附件组合或最终共享运行时/APK通过；软件范围不扩大为所有附件端到端、账号/模型或真机矩阵，最终组合门禁由负责人另跑。
 
+### 5.8 运行时升级后的用户插件版本不匹配
+
+APK 覆盖更新替换的是受管运行时与随包内置插件登记，不重写用户 profile 的第三方插件清单或 `node_modules`；用户安装的插件必须与升级后的 DSH 版本兼容。DSH 在加载前做兼容性预检：插件自带 `engines.dsh` 时按它判定，否则要求所有 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 的 `peerDependencies` 范围满足当前运行时。不满足的 bundle 被跳过，命中的条目被逐条禁用（stderr 的 `skipping profile bundle …` / `disabling profile plugin …`）；这是 fail-safe，不会让 Web 带着不兼容代码启动，也不会自动删除或改写用户插件。
+
+常见两态：用户插件仍是旧 DSH 版本（如 `0.2.1-rc.5` 的 subagent 链与 `0.2.2-rc.1` 的精确 peer 不匹配）；或 profile 已声明新版本、但 pnpm 安装未完成（清单新、`node_modules` 旧）。两种状态都按“先核对实际解析版本，再重装”处理：用插件管理把受影响插件重装/更新到与当前 DSH 兼容的版本（走受管 pnpm 与既有安装事务，失败会回切），重启 Web 后确认启动页不再出现该插件的跳过/禁用行。不要手工改 profile 的 `package.json`、`node_modules` 或 `pnpm-lock.yaml` 绕过预检。确需运行与当前运行时版本不匹配的插件时，只能使用 profile 的 `compatibility.json` 精确版本豁免（exact `package@version` ↔ exact DSH 版本，须显式确认风险）；豁免只表示用户接受风险，不改变插件代码的兼容性。
+
+升级路径不自动写用户 profile：能改用户 profile 的入口仍受既有事务与原生确认约束（插件安装事务、`profile-settings` 修复）。启动日志的“配置检查/已加载插件”报告实际解析版本，不能拿清单声明代替加载证据。2026-11-06 的 build333 现场即：更新前旧 profile 解析到 `0.2.1-rc.5` 的 subagent 依赖并被跳过；更新完成后的启动日志里配置与已加载插件均已是 `0.2.2-rc.1`，本次调查未发现打包或升级路径缺陷。
+
+启动日志里同一插件出现多次“正在加载插件/插件加载完成”不等于模块被重复导入：[startup-observer.cjs](../app/src/main/assets/startup-observer.cjs)按 cordis 的每个 entry 记录一行，同一个 bundle 可以插入 group 与多个子项（例如 terminal 包的 group 加四个子项），因此会有多行同名日志；同一解析目标的模块经 Node ESM 缓存只求值一次，插件实例按 entry 设计。[StartupTrace.java](../app/src/main/java/com/deepseekharness/app/util/StartupTrace.java)还会丢弃与上一行渲染完全相同的相邻行，所以日志行数不是事件计数；判定“重复加载”要看启动页结构化证据与实际加载结果，而不是数行数。
+
+本次调查还核对了 `TypeError: … reading 'getJsStatus'`：该名字不在 0.2.1-rc.5 与 0.2.2-rc.1 两棵锁定运行时树、当前仓库或随包内置插件中，更像客户端插件与运行时版本错配、或旧客户端缓存造成的调用方错误，而不是 DSH 运行时接口缺失。profile 版本一致并重启后不再出现；若再复现，先记录当时加载的客户端插件版本与浏览器控制台堆栈，再按具体插件定位。
+
 ## 六、配置与凭据
 
 [ConfigStore](../app/src/main/java/com/deepseekharness/app/core/ConfigStore.java)保存宿主设置，`CredentialRead`表达原生凭据读取结果。
