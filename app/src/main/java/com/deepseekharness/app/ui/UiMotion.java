@@ -264,6 +264,52 @@ public final class UiMotion {
   }
 
   /**
+   * 收起折叠详情（120ms 淡出）后再交给调用方移除内容；系统关闭动画时直接执行。
+   *
+   * <p>先淡出、结束回写透明度再移除：阻断重新渲染时残留半透明或空容器。
+   */
+  static void conceal(View view, Runnable after) {
+    if (view == null) {
+      if (after != null) after.run();
+      return;
+    }
+    view.animate().cancel();
+    if (!animationsEnabled(view.getContext())) {
+      view.setAlpha(1f);
+      view.setTranslationY(0f);
+      if (after != null) after.run();
+      return;
+    }
+    view.animate()
+        .alpha(0f)
+        .setDuration(120L)
+        .setInterpolator(STANDARD)
+        .withEndAction(
+            () -> {
+              view.setAlpha(1f);
+              view.setTranslationY(0f);
+              if (after != null) after.run();
+            })
+        .start();
+  }
+
+  /** 折叠箭头 0↔90°（120ms）；系统关闭动画时直接落位，不残留中间角度。 */
+  static void rotateChevron(
+      Context context, android.graphics.drawable.RotateDrawable chevron, boolean expanded) {
+    if (chevron == null) return;
+    int target = expanded ? 10000 : 0;
+    if (!animationsEnabled(context)) {
+      chevron.setLevel(target);
+      return;
+    }
+    ValueAnimator animator = ValueAnimator.ofInt(chevron.getLevel(), target);
+    animator.setDuration(120L);
+    animator.setInterpolator(STANDARD);
+    animator.addUpdateListener(running -> chevron.setLevel((int) running.getAnimatedValue()));
+    animator.start();
+  }
+
+  /**
    * 按下轻微缩放；返回 false 不吞触摸，点击与无障碍仍由原控件处理。
    *
    * <p>只给没有自定义 OnTouchListener 的按钮使用，避免覆盖业务手势。
