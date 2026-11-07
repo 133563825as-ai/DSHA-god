@@ -193,6 +193,28 @@ Core 消费观察后复位；不能把同一 `frameSeq` 当作可无限连点的
 - 输入结果区分接受、拒绝和未知；命令超时不等于业务未执行。
 - Unicode 由无障碍输入路径处理；不能承诺 shell `input text` 支持所有文字与编辑行为。
 
+### 6.1 助手文本写入的密码焦点守卫（T97）
+
+`/app/vscreen/type` 的纯 ASCII 快路径由宿主直接转发 `input -d <displayId> text`，不经过无障碍
+`set_text`/`editor` 的密码检查。因此助手写文本前，宿主会只读当前显示的 `FOCUS_INPUT` 焦点并做一次策略判定
+（[VirtualScreenTextInputPolicy][text-policy]、`VirtualScreenPasswordProbe`）：
+
+| 宿主证据 | 决策 | 回复 |
+|---|---|---|
+| 焦点编辑框是密码框 | 硬拒绝，不发送 | `PASSWORD_INPUT_UNAVAILABLE`、`state=NOT_SENT`、`nextAction=REPORT_TO_USER` |
+| 焦点编辑框可编辑、启用、非密码 | 允许 | 正常结果 |
+| 无障碍在线但目标窗口/焦点读不出来 | fail-closed，不发送 | `PASSWORD_FOCUS_UNVERIFIED`、`state=NOT_SENT`、`retryable=true`、`nextAction=SEE_AGAIN` |
+| 无障碍未连接 | 保持纯 ASCII 能力，但标注未检查 | 成功结果带 `passwordFocusChecked=false` |
+
+「无障碍未连接时保留输入」是产品文档化的降级模式：该模式下没有语义证据通道，回复不能声称已保护。
+探测时窗口身份要与授权目标复核；目标已变返回未发送的 `SCREEN_TARGET_CHANGED`。
+
+同一条硬边界覆盖其他助手写文本路径：非 ASCII `type` 的语义路径与 `node` 的 `set_text` 也在无障碍层拒绝密码节点；
+`editor` 的 get/edit/submit 原本已拒绝。原生「节点操作」面板是用户本人输入，走独立租约，不受助手守卫影响。
+
+限制：这是宿主侧最佳努力检查，不是内核沙箱；检查与 Core 注入之间存在时间窗，自定义控件不暴露
+`isPassword()` 时只能按不可读处理；无障碍关闭时保护降级；同 UID 的插件/终端可以绕开受管入口（见安全模型）。
+
 ## 7. 三种显式语义操作
 
 ### 7.1 DSH tree / node / editor
@@ -202,6 +224,7 @@ Core 消费观察后复位；不能把同一 `frameSeq` 当作可无限连点的
 node 操作重新核对显示、窗口、包、树期限，并刷新目标节点；取出即从 map 移除。
 语义节点不要求像素 `frameSeq` 相等，因此不会因纯光标闪动而必然失效。
 这并不豁免目标身份、当前授权、可用服务和节点能力校验。
+助手 `node` 的 `set_text` 与 `editor` 一样拒绝 password 节点（`PASSWORD_INPUT_UNAVAILABLE`），不提供「仍然允许」。
 editor 路径另有编辑器身份及 get/edit/submit 参数，不能拿 nodeId 冒充 editorId。
 Canvas、隐藏内容、不完整 WebView 语义树可能没有可用节点；不能据此猜中心点自动点击。
 
@@ -258,6 +281,7 @@ Agent preset、会话权限与宿主全局能力是不同配置层；一个设�
 它只有一个原生确认槽，不在 broker 锁内执行平台操作、回调或 I/O。
 [ScreenConfirmationPolicy][screen-policy] 支持全部手动、按应用规则、全部允许。
 全部允许只减少 DSHA 的确认步骤，不能增加 Android 权限、产生节点或豁免目标检查。
+密码焦点的硬拒绝与确认策略正交：即使选择全部允许，助手也不能把文本写进密码框（§6.1）。
 本机规则持久化与本轮 [ScreenSessionGrant][screen-grant] 分开，授权不能从备份导入生效。
 
 `HttpShellService.screenPolicyChanged()` 撤销请求及观察；全局同意变化会撤销各能力域。
@@ -408,6 +432,7 @@ Standard 的 minSdk 为 30，但满足版本并不证明某个 ROM 的隐藏 API
 [preview-view]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewView.java
 [preview-gate]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewInputGate.java
 [policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPolicy.java
+[text-policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenTextInputPolicy.java
 [input]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenInput.java
 [observed-control]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenObservedControl.java
 [anchor-proof]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenAnchorProof.java

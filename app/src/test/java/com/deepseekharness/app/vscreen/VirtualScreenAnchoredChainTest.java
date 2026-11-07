@@ -175,7 +175,7 @@ public final class VirtualScreenAnchoredChainTest {
                             DISPLAY,
                             (argv, timeout) -> {
                               injected.incrementAndGet();
-                              return VirtualScreenInputResult.REJECTED;
+                              return VirtualScreenInputResult.ACCEPTED;
                             }));
                 display.frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                 display.frame.eraseColor(0xff123456);
@@ -642,6 +642,43 @@ public final class VirtualScreenAnchoredChainTest {
       assertTrue(f.broker.authorized(f.lastRequest));
       f.drain();
       assertEquals(0, f.display.observations.allocatedBytes());
+    }
+  }
+
+  @Test
+  public void asciiTypeWithUnreadableFocusFailsClosedBeforeAnyInjection() throws Exception {
+    try (Fixture f = new Fixture()) {
+      JSONObject seen = f.see();
+      assertTrue(seen.toString(), seen.optBoolean("ok"));
+      var body = f.body();
+      body.put("text", "123456");
+      JSONObject typed =
+          f.call("/app/vscreen/type", body, VscreenTargetEvidence.Observation.PIXEL, 0);
+      assertFalse(typed.toString(), typed.optBoolean("ok"));
+      assertEquals("PASSWORD_FOCUS_UNVERIFIED", typed.getString("error"));
+      assertEquals("NOT_SENT", typed.getString("state"));
+      assertTrue(typed.getBoolean("retryable"));
+      assertEquals("SEE_AGAIN", typed.getString("nextAction"));
+      assertEquals("FOCUS_UNREADABLE", typed.getString("focusEvidence"));
+      assertEquals(0, f.injected.get());
+    }
+  }
+
+  @Test
+  public void asciiTypeWithoutAccessibilityKeepsWorkingButMarksPasswordFocusUnchecked()
+      throws Exception {
+    try (Fixture f = new Fixture()) {
+      JSONObject seen = f.see();
+      assertTrue(seen.toString(), seen.optBoolean("ok"));
+      connection().disconnect(f.service);
+      var body = f.body();
+      body.put("text", "hello");
+      JSONObject typed =
+          f.call("/app/vscreen/type", body, VscreenTargetEvidence.Observation.PIXEL, 0);
+      assertTrue(typed.toString(), typed.optBoolean("ok"));
+      assertFalse(typed.getBoolean("passwordFocusChecked"));
+      assertEquals("ACCESSIBILITY_UNAVAILABLE", typed.getString("passwordFocusEvidence"));
+      assertEquals(1, f.injected.get());
     }
   }
 }

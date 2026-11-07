@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.DshaApp;
 import com.deepseekharness.app.util.VirtualScreenObservationHint;
+import com.deepseekharness.app.util.VirtualScreenTextInputPolicy;
 import com.deepseekharness.app.util.Ids;
 import com.deepseekharness.app.util.OneShotLaunchAuthority;
 import com.deepseekharness.app.util.ScreenActionResult;
@@ -1533,8 +1534,23 @@ public final class VirtualScreenManager {
           Snapshot session = snapshot(gen, scope);
           if (session == null) return missingSnapshot(gen);
           String query = "generation=" + encode(gen) + "&frameSeq=" + seq;
-          if (text.matches("[\\x20-\\x7e]+"))
-            return perform(session, "/vscreen/type", query + "&text=" + encode(text), false);
+          boolean plainAscii = text.matches("[\\x20-\\x7e]+");
+          boolean[] unchecked = {false};
+          if (plainAscii) {
+            JSONObject rejected = passwordPreflight(scope, unchecked);
+            if (rejected != null) return rejected;
+            JSONObject sent =
+                perform(session, "/vscreen/type", query + "&text=" + encode(text), false);
+            // 无障碍未连接时纯 ASCII 输入仍然可用（文档化的降级模式），但不能让调用方误以为密码焦点已被检查。
+            if (unchecked[0] && sent.optBoolean("ok")) {
+              try {
+                sent.put("passwordFocusChecked", false)
+                    .put("passwordFocusEvidence", "ACCESSIBILITY_UNAVAILABLE");
+              } catch (Exception ignored) {
+              }
+            }
+            return sent;
+          }
           if (!com.deepseekharness.app.DshaAccessibilityService.isConnected())
             return failure("ACCESSIBILITY_REQUIRED_FOR_UNICODE");
           JSONObject check = perform(session, "/vscreen/check", query, false);
@@ -1555,6 +1571,45 @@ public final class VirtualScreenManager {
                   ScreenActionResult.TARGET_CHANGED_AFTER_EXECUTION,
                   "SCREEN_TARGET_CHANGED");
         });
+  }
+
+  /**
+   * 助手纯 ASCII 文本写入前的密码焦点预检（T97 安全切的一部分）。
+   *
+   * <p>{@code /app/vscreen/type} 的 ASCII 快路径直接让 Core 执行 {@code input -d <displayId> text}，不经过无障碍
+   * 的 {@code set_text}/{@code editor} 密码检查；因此必须在派发前读一次宿主焦点。返回 {@code null} 表示可以发送
+   * （{@code unchecked[0]} 记录「无障碍未连接、没有证据通道」）；返回 JSON 表示本机拒绝，动作未派发。
+   *
+   * <p>原生面板（{@code scope.request == null}）不经过这里：那是用户本人在虚拟屏里输入，不属于助手动作；
+   * 语义写入路径（非 ASCII、editor、node set_text）在无障碍层自己检查密码焦点。
+   */
+  private static JSONObject passwordPreflight(
+      VirtualScreenRequestScope scope, boolean[] unchecked) {
+    if (scope == null || scope.request == null) return null;
+    int display =
+        scope.request.target instanceof VscreenTargetEvidence evidence ? evidence.displayId : -1;
+    VirtualScreenPasswordProbe.Evidence probe = VirtualScreenPasswordProbe.read(display);
+    if (probe.targetChanged) return notSent("SCREEN_TARGET_CHANGED");
+    VirtualScreenTextInputPolicy.Decision decision =
+        VirtualScreenTextInputPolicy.decide(probe.focus);
+    if (decision == VirtualScreenTextInputPolicy.Decision.BLOCK_PASSWORD
+        || decision == VirtualScreenTextInputPolicy.Decision.BLOCK_UNVERIFIED) {
+      JSONObject value = notSent(VirtualScreenTextInputPolicy.code(decision));
+      try {
+        value
+            .put("nextAction", VirtualScreenTextInputPolicy.nextAction(decision))
+            .put("retryable", VirtualScreenTextInputPolicy.retryable(decision))
+            .put("passwordFocusChecked", true)
+            .put("focusEvidence", VirtualScreenTextInputPolicy.evidenceName(probe.focus))
+            .put("windowDiagnostic", probe.windowDiagnostic);
+        if (decision == VirtualScreenTextInputPolicy.Decision.BLOCK_PASSWORD)
+          value.put("sensitive", "PASSWORD");
+      } catch (Exception ignored) {
+      }
+      return value;
+    }
+    if (decision == VirtualScreenTextInputPolicy.Decision.ALLOW_UNVERIFIED) unchecked[0] = true;
+    return null;
   }
 
   private static final class ClosedSession {

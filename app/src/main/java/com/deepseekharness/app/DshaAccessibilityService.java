@@ -347,6 +347,19 @@ public class DshaAccessibilityService extends AccessibilityService {
       target = root.root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
       if (target == null || !target.isEditable() || !target.isEnabled())
         return com.deepseekharness.app.screen.ScreenReply.refused("VIRTUAL_INPUT_NOT_FOCUSED");
+      // 与 editor/set_text 同一条硬边界：语义 type 也不能把文字写进密码框（T97）。
+      if (target.isPassword()) {
+        org.json.JSONObject refused =
+            com.deepseekharness.app.screen.ScreenReply.refused("PASSWORD_INPUT_UNAVAILABLE");
+        try {
+          refused
+              .put("nextAction", "REPORT_TO_USER")
+              .put("retryable", false)
+              .put("sensitive", "PASSWORD");
+        } catch (org.json.JSONException ignored) {
+        }
+        return refused;
+      }
       if (text == null || text.length() > 16000)
         return com.deepseekharness.app.screen.ScreenReply.refused("TEXT_LIMIT");
       android.os.Bundle args = new android.os.Bundle();
