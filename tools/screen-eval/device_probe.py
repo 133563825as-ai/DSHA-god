@@ -176,7 +176,8 @@ def main(argv: list[str]) -> int:
             }
 
         compact_text = ""
-        for name, extra in (("sense", {}), ("senseGeom", {"geom": "1"})):
+        # 探针固定要全量编码：连续读数默认回增量，第二次的 encodedState 可能只有变化行。
+        for name, extra in (("sense", {"full": "1"}), ("senseGeom", {"geom": "1", "full": "1"})):
             t0 = time.monotonic()
             sense = parse(call(args.base, "/app/sense/state", dict(identity, **extra)))
             wall = round((time.monotonic() - t0) * 1000)
@@ -186,6 +187,7 @@ def main(argv: list[str]) -> int:
                 "error": sense.get("error"),
                 "wallMs": wall,
                 "format": sense.get("format"),
+                "mode": sense.get("mode"),
                 "actionCredential": sense.get("actionCredential"),
                 "readOnlyPreview": sense.get("readOnlyPreview"),
                 "elements": sense.get("elements"),

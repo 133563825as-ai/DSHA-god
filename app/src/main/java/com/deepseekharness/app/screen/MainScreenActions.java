@@ -40,7 +40,22 @@ public final class MainScreenActions {
           "SCREEN_REQUEST_CANCELLED",
           "INVALID_TEXT",
           "TEXT_LIMIT");
+
+  /** 动作未执行、但值得直接补一份新树的拒绝码：新树能让调用方用新凭据重试，而不是重放旧凭据。 */
+  private static final java.util.Set<String> REFUSALS_WORTH_A_FRESH_TREE =
+      java.util.Set.of(
+          "STALE_NODE",
+          "FRAME_NOT_OBSERVED",
+          "STALE_FRAME",
+          "EDITOR_CHANGED",
+          "NODE_NOT_FOUND",
+          "INPUT_NOT_FOCUSED");
+
+  /** 动作后观察要给读树留的最小预算；请求截止前不足时宁可只回动作回执，也不把回执拖成超时。 */
+  private static final long OBSERVATION_READ_RESERVE_MILLIS = 1_000L;
+
   private final ScreenConnectionEpoch<DshaAccessibilityService> connection;
+  private final com.deepseekharness.app.util.ScreenEventPulse events;
   private final ScreenRequestExecutor requests = new ScreenRequestExecutor();
   private final ScreenObservationLedger observations =
       new ScreenObservationLedger(SystemClock::elapsedRealtime);
@@ -55,7 +70,14 @@ public final class MainScreenActions {
       new ScreenActionExecutor(captures, observations, nodes);
 
   public MainScreenActions(ScreenConnectionEpoch<DshaAccessibilityService> connection) {
+    this(connection, null);
+  }
+
+  public MainScreenActions(
+      ScreenConnectionEpoch<DshaAccessibilityService> connection,
+      com.deepseekharness.app.util.ScreenEventPulse events) {
     this.connection = connection;
+    this.events = events;
   }
 
   /** HTTP pre-authorization metadata only. No root, image or authority escapes the worker. */
@@ -285,6 +307,15 @@ public final class MainScreenActions {
             || operation.equals("tree")
             || operation.equals("screenshot");
     boolean mutating = !observing;
+    // 动作即观察：调用方显式要求时，动作成功后在同一次请求里等界面稳定并生成新树；旧调用方不传
+    // observe，行为与本改动前完全一致（动作回执、租约清理、请求预算都不变）。
+    boolean observeAfterAction = mutating && events != null && flag(args, "observe");
+    long dispatchAt = -1L;
+    boolean keepFreshTree = false;
+    if (observeAfterAction) {
+      events.beginWatch();
+      dispatchAt = SystemClock.elapsedRealtime();
+    }
     try {
       if (!mutating && !context.claimDispatch())
         return ScreenReply.refused("CAPABILITY_NOT_AUTHORIZED");
@@ -303,14 +334,119 @@ public final class MainScreenActions {
             context,
             args.optString("format", "path"),
             args.optInt("maxImageBytes", 16 * 1024 * 1024));
-      return actions.execute(context, operation, args);
+      JSONObject reply = actions.execute(context, operation, args);
+      if (observeAfterAction) keepFreshTree = attachObservation(context, reply, dispatchAt);
+      return reply;
     } finally {
+      if (observeAfterAction) events.endWatch();
       if (mutating) {
         observations.clear();
-        nodes.clear();
+        // 新观察的节点租约必须比这一次动作活得久，下一次 android_node 才能直接用；其余情况仍
+        // 和以前一样立刻清空。新树由 reader.read 的 begin 重新签发，旧租约已经全部作废。
+        if (!keepFreshTree) nodes.clear();
         senseStates.clearOwner(context.ownerIdentity());
       }
     }
+  }
+
+  /**
+   * 动作回执里附一份动作后生成的新观察。只有已验证完成（COMPLETED）或凭据失效（NOT_SENT）的动作才附；
+   * 像素坐标动作不返回截图，坐标凭据仍必须单独走 /app/ui/screenshot。观察失败只写
+   * {@code observationUnavailable}，绝不改写动作状态，也不把 UNKNOWN 变成成功。
+   */
+  private boolean attachObservation(
+      ScreenRequestContext context, JSONObject reply, long dispatchAt) {
+    boolean completed = "COMPLETED".equals(reply.optString("state"));
+    if (!completed && !refusedForFreshCredentials(reply)) return false;
+    try {
+      if (completed) {
+        if (context.request() == null) return false;
+        long now = SystemClock.elapsedRealtime();
+        long deadline =
+            Math.min(
+                dispatchAt + com.deepseekharness.app.util.ScreenSettlePolicy.DEFAULT.totalMillis(),
+                context.request().deadlineElapsedRealtimeMillis - OBSERVATION_READ_RESERVE_MILLIS);
+        if (deadline <= now) {
+          reply.put("observationUnavailable", "SCREEN_OBSERVATION_DEADLINE");
+          reply.put("nextAction", "OBSERVE_A_FRESH_SCREEN");
+          return false;
+        }
+        var outcome =
+            events.await(
+                dispatchAt,
+                context.target().packageName,
+                context.target().windowId,
+                deadline,
+                com.deepseekharness.app.util.ScreenSettlePolicy.DEFAULT,
+                context::current);
+        reply.put("settle", settle(outcome));
+        if (!context.current()) return false;
+      }
+      // 读屏会重新签发 treeId 与全部 nodeId；同一目标窗口、同一任务代次才可能成功。
+      JSONObject tree = reader.read(context, nodes);
+      JSONObject observation =
+          new JSONObject()
+              .put("kind", "dsha-screen-after-action-v1")
+              .put("treeId", tree.optString("treeId"))
+              .put("text", tree.optString("text"))
+              .put("nodes", tree.optJSONArray("nodes"))
+              .put("visited", tree.optInt("visited"))
+              .put("serviceEpoch", tree.optLong("serviceEpoch"))
+              .put("target", tree.optJSONObject("target"))
+              .put("coordinateAuthorization", "SCREENSHOT_OBSERVATION_REQUIRED")
+              .put("screenshotAvailable", false)
+              .put(
+                  "note",
+                  completed
+                      ? "动作后的新树：treeId/nodeId 是这份新树的一次性租约，可直接继续操作；坐标操作仍须单独 /app/ui/screenshot。"
+                      : "动作未执行：这是当前屏的新树，可直接用新 treeId/nodeId 重试；不要重放旧凭据。");
+      if (!completed) observation.put("staleObservation", true);
+      reply.put("observation", observation);
+      return true;
+    } catch (Throwable unavailable) {
+      // 观察失败不能把动作回执改成失败；调用方按 nextAction 重新观察即可。
+      try {
+        reply.put("observationUnavailable", observationFailureCode(unavailable));
+        reply.put("nextAction", "OBSERVE_A_FRESH_SCREEN");
+        reply.put("automaticRetry", false);
+      } catch (Throwable ignored) {
+        // 回执本身就是 JSONObject，这里不可能失败；失败也不能影响原动作结果。
+      }
+      return false;
+    }
+  }
+
+  private static boolean refusedForFreshCredentials(JSONObject reply) {
+    if (!"NOT_SENT".equals(reply.optString("state"))) return false;
+    String code = reply.optString("error", reply.optString("code"));
+    return REFUSALS_WORTH_A_FRESH_TREE.contains(code);
+  }
+
+  private static JSONObject settle(com.deepseekharness.app.util.ScreenSettlePolicy.Outcome outcome)
+      throws org.json.JSONException {
+    return new JSONObject()
+        .put("settled", outcome.settled())
+        .put("timedOut", outcome.timedOut())
+        .put("sawEvent", outcome.sawEvent())
+        .put("firstEventMs", outcome.firstEventMs())
+        .put("quietMs", outcome.quietMs())
+        .put("totalMs", outcome.totalMs())
+        .put("events", outcome.events())
+        .put(
+            "firstEventBudgetMs",
+            com.deepseekharness.app.util.ScreenSettlePolicy.DEFAULT.firstEventMillis())
+        .put("quietBudgetMs", com.deepseekharness.app.util.ScreenSettlePolicy.DEFAULT.quietMillis())
+        .put("totalBudgetMs", com.deepseekharness.app.util.ScreenSettlePolicy.DEFAULT.totalMillis())
+        .put("source", "accessibility-event");
+  }
+
+  private static String observationFailureCode(Throwable failure) {
+    if (failure == null) return "SCREEN_OBSERVATION_UNAVAILABLE";
+    if (failure instanceof DshaAccessibilityService.TargetChangedException)
+      return "SCREEN_TARGET_CHANGED";
+    String message = failure.getMessage();
+    if (message != null && message.matches("[A-Z][A-Z0-9_]{0,64}")) return message;
+    return "SCREEN_OBSERVATION_UNAVAILABLE";
   }
 
   private JSONObject screenshot(ScreenRequestContext context, String format, int maxImageBytes)
