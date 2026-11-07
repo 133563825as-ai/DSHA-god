@@ -17,7 +17,7 @@ async function until(check) {
   while (!check()) { if (Date.now()>deadline) throw Error('stream fixture deadline'); await wait(5); }
 }
 
-function fixture({holdRpc=false}={}) {
+function fixture({holdRpc=false,probeUnavailable=false,generatedProbe=false}={}) {
   const window = new EventTarget(), document = new EventTarget(), modules = new Map(), disposers = [];
   Object.assign(document,{hidden:false,baseURI:'http://127.0.0.1:3080/'});
   window.navigator = {onLine:true};
@@ -64,13 +64,17 @@ function fixture({holdRpc=false}={}) {
   modules.get('@deepseek-ai/dsh-client-connection').installConnection(ctx,{location:{hostname:'127.0.0.1'}});
   modules.get('@deepseek-ai/dsh-api-gateway').apply(ctx);
   const connection=ctx.get('connection'), remote=ctx.get('remote'), observations=[], failures=[];
+  if(generatedProbe)remote.session={control:signal=>remote.openRemoteStream('session.control',{args:{}},signal)};
   const {RemoteSnapshotStream}=modules.get('@deepseek-ai/dsh-api-gateway');
   const stream=remote.$stream({name:'session-output',open:signal=>remote.openRemoteStream('fixture.session.output',{},signal),
     ended:()=>Error('unexpected session stream end')});
   const consumer=new RemoteSnapshotStream(stream,{name:'session-output',isSnapshot:value=>value.type==='snapshot',
     replace:value=>observations.push(value.text),update(){},failed:error=>failures.push(error)});
   consumer.start();
-  const stop=modules.get('dsh-app-integration').installStreamResume({connection});
+  const stop=modules.get('dsh-app-integration').installStreamResume({
+    connection,
+    get:name=>!probeUnavailable&&name==='remote'?remote:undefined
+  },40);
   return {document,window,sandbox,sockets,connection,remote,modules,observations,failures,hostText:value=>hostText=value,rpcCalls:()=>rpcCalls,
     baselines:(sessions,workspaces)=>{sessionBaseline={type:'baseline',sessions};workspaceBaseline={type:'baseline',value:{workspaces}};},
     acknowledge:()=>pendingRpc.shift()?.(),
@@ -92,6 +96,69 @@ test('foreground replaces a dead-but-OPEN carrier and rebaselines actual rc2 out
     assert.equal(original.readyState,3);assert.equal(f.sockets.length,2,'visibility/native events must coalesce');
     assert.ok(f.connection.generation.getSnapshot().id>generation);
     assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
+  } finally {await f.close();}
+});
+
+test('same-document in-app round trip keeps a live carrier and its rendered output',async()=>{
+  const f=fixture();
+  try {
+    await until(()=>f.observations.length===1);
+    const original=f.sockets[0], generation=f.connection.generation.getSnapshot().id;
+    // Web -> native page -> Web: the kept document receives the native resume
+    // signal while visible. The carrier answers the read-only probe, so the whole
+    // Remote baseline must not be rebuilt (K5 scenario 1 long streaming page).
+    f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await wait(200);
+    assert.equal(original.readyState,1);
+    assert.equal(f.sockets.length,1,'live carrier must not be replaced');
+    assert.equal(f.connection.generation.getSnapshot().id,generation);
+    assert.equal(f.connection.state.getSnapshot(),'connected');
+    assert.deepEqual(f.observations,['before-background']);
+    assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
+  } finally {await f.close();}
+});
+
+test('generated Session control probe answers without resetting a live carrier',async()=>{
+  const f=fixture({generatedProbe:true});
+  try {
+    await until(()=>f.observations.length===1);
+    const generation=f.connection.generation.getSnapshot().id;
+    f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await wait(200);
+    assert.equal(f.sockets.length,1,'generated control probe must not reset');
+    assert.equal(f.connection.generation.getSnapshot().id,generation);
+    assert.deepEqual(f.observations,['before-background']);
+    assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
+  } finally {await f.close();}
+});
+
+test('visibility hide/show on a live carrier keeps the same rendered baseline',async()=>{
+  const f=fixture();
+  try {
+    await until(()=>f.observations.length===1);
+    const original=f.sockets[0], generation=f.connection.generation.getSnapshot().id;
+    f.document.hidden=true;f.document.dispatchEvent(new Event('visibilitychange'));
+    f.hostText('finished-while-still-connected');
+    f.document.hidden=false;f.document.dispatchEvent(new Event('visibilitychange'));
+    await wait(200);
+    assert.equal(original.readyState,1);
+    assert.equal(f.sockets.length,1,'hidden/visible on a live carrier must not reset');
+    assert.equal(f.connection.generation.getSnapshot().id,generation);
+    assert.deepEqual(f.observations,['before-background']);
+    assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
+  } finally {await f.close();}
+});
+
+test('missing probe capability keeps the previous unconditional reset fallback',async()=>{
+  const f=fixture({probeUnavailable:true});
+  try {
+    await until(()=>f.observations.length===1);
+    const original=f.sockets[0], generation=f.connection.generation.getSnapshot().id;
+    f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await until(()=>f.sockets.length===2);
+    assert.equal(original.readyState,3);
+    assert.ok(f.connection.generation.getSnapshot().id>generation);
+    assert.equal(f.rpcCalls(),0);
   } finally {await f.close();}
 });
 

@@ -5,7 +5,7 @@
 - 基线：`origin/main` = `fe7f5e15`（build336 发布提交；本分支建立在 build336 上，不合并旧 build333 分支 `9deffea2`——仓库历史已改写）。
 - 范围：**K0 证据 + K1 keeper + K2 生命周期安全**；K3（插件契约）、K4（认证/首帧/内存策略）、K5（真机矩阵）不在本次实现范围。
 - 定位：**实验性、尽力适配**。只承诺“同一进程内 Activity 被系统回收时页面不变”；进程死亡/强杀/APK 更新仍然重载，靠文档恢复（方案 D）兜底；不承诺所有手机、平板、自由窗口或 OEM WebView 表现一致。
-- K5 真机验收**未执行**：安装测试包 `io.github.sunsetrne.dsha.test` 与真机操作必须由用户在主会话明确授权后另开步骤。
+- K5 真机：**部分执行**——T115/T116/T111 通过；场景 1（流式长页面应用内往返）判失败（整页重渲染 + 长时间加载）。根因是客户端前台恢复无条件重连，修复与复测步骤见 [K5 回执](k5-acceptance-20261107.md)；K5 通过前 T110 不合并。
 
 ## 0. 一句话结论
 
@@ -161,14 +161,14 @@ B-min 把 `Retained` 从 Activity 作用域提升到应用作用域，并把“�
 `HarnessService.java` 在 `app/src/main/assets/managed-runtime-inputs.json` 的 `launcherSources` 里，属于受管运行时身份的一部分。K2 修改它之后：
 
 - `tools/prepare-runtime-descriptor.py --write` 重算 `launcherInputs["HarnessService.java"]` 与 `runtimeId`；
-- 本分支的描述符差异只有这两项（`runtimeId` + `HarnessService.java` 摘要），其它 launcher/资产摘要不变；
+- 本分支的描述符差异：K2 的 `HarnessService.java` 摘要、K5 场景 1 修复的受管运行时输入 `app-integration/client.js` 摘要，以及 `runtimeId`；其它 launcher/资产摘要不变；
 - 后果：已装 build336 的运行时健康回执与 build337 的描述符不再相等，覆盖升级后会按既有“运行时不是当前候选”门禁重新验证/进入维护页。这是修改 launcher 源的既定代价，不是本功能额外引入的运行时替换。
 - 不放宽 `RuntimeDescriptor.latest()` / `healthy()` 的核验。
 
 ## 6. 已知限制与风险（必须如实声明）
 
 1. **进程死亡/强杀/APK 更新**：keeper 随进程消失，DOM/JS 堆不可恢复；仍走 `WebView.saveState` + 插件草稿/阅读位置恢复。不要把本方案写成“杀进程也不变”。
-2. **K5 真机未执行**：本分支只有代码 + Robolectric + 计划；Activity 系统回收、WebView detach/attach、renderer 回收时序、OEM WebView 差异、内存与 PiP/多窗口都必须在真机验证后才能宣称“已验收”。测试包安装与设备操作需用户明确授权。
+2. **K5 真机仅部分执行**：本分支有代码 + Robolectric + 场景 1 修复单测；场景 1 已判失败，修复后待真机复测（见 K5 回执）；Activity 系统回收、WebView detach/attach、renderer 回收时序、OEM WebView 差异、内存与 PiP/多窗口仍必须在真机验证后才能宣称“已验收”。测试包安装与设备操作需用户明确授权。
 3. **K3 插件契约未实现**：`client.js` 不知道“同一文档 suspend/resume”；保活页不会伪造 `pageshow/pagehide`，但旧插件在后台的草稿 lease/阅读位置行为未验证。K3 需要 `__DSHA_NATIVE_LIFECYCLE__` + `documentToken` + 握手降级。
 4. **K4 认证/首帧/内存未加固**：detached 页面复用旧 cookie；`onResume` 仍比较 `getWebAuthUrl()` 并重推语言/主题，但没有主动 auth lease 探测、detach 时 `pauseTimers()`、首帧遮罩或空闲超时。后台 JS/网络仍可能执行。
 5. **上传/下载/麦克风**：`Retained.dispose()` 沿用现有 `onCleared` 清理；detached 期间 `pendingPicker/uploadSession/blobDownload/microphone` 只做静态清理，`retained.blobDownload` 仍持有旧 Activity 的 `WebDownloads.model`（与既有配置变更路径一致，本分支未改），K4/K5 需真机验证。

@@ -579,25 +579,79 @@ window.__ModuleLoader__.load({id:'dsh-app-integration', factory: () => {
       window.removeEventListener('hashchange',routeChanged);
       document.removeEventListener('pointerdown',interact,true); document.removeEventListener('keydown',interact,true); };
   }
-  function installStreamResume(ctx) {
+  function installStreamResume(ctx, probeMs = 2000) {
     // Android can resume a document whose carrier still claims OPEN after its
     // background transport died. Use the official Connection reset so Remote
     // journal/snapshot consumers obtain a fresh baseline, never replay a prompt.
-    let alive = true, needsResume = document.hidden, timer = 0, lastReset = 0;
+    // A same-document in-app round trip (Web -> native page -> Web) keeps the
+    // physical carrier alive; resetting unconditionally there rebuilds every
+    // Remote stream and makes a long streaming session refetch and rerender its
+    // whole journal. Probe the current carrier on one read-only Session control
+    // stream first: only a carrier that answers nothing gets reset.
+    let alive = true, needsResume = document.hidden, timer = 0, lastReset = 0, probing;
+    let probeCancelled = false;
+    const probeSocket = async signal => {
+      const remote = typeof ctx.get === 'function' ? ctx.get('remote') : undefined;
+      const control = remote?.session?.control;
+      const open = typeof control === 'function'
+        ? (s) => control.call(remote.session, s)
+        : typeof remote?.openRemoteStream === 'function'
+          ? (s) => remote.openRemoteStream('session.control', { args: {} }, s)
+          : null;
+      if (open === null) return false;
+      let source;
+      try { source = open(signal); } catch { return false; }
+      const iterator = source?.[Symbol.asyncIterator]?.();
+      if (!iterator) return false;
+      try {
+        const first = await iterator.next();
+        return first !== undefined && first.done !== true;
+      } catch { return false; }
+      finally { try { await iterator.return?.(); } catch {} }
+    };
     const schedule = (native = false) => {
-      if (!alive || document.hidden || timer || (!native && !needsResume)) return;
+      if (!alive || document.hidden || timer || probing || (!native && !needsResume)) return;
       if (!needsResume && lastReset && Date.now() - lastReset < 250) return;
       timer = setTimeout(() => {
         timer = 0;
         if (!alive || document.hidden) return;
-        needsResume = false; lastReset = Date.now();
-        ctx.connection.reconnect();
+        // 已断开的 Connection 自己的重试可能被 Android 错过的 online 事件卡住；
+        // 保持原来的无条件重置，避免页面永久等待。
+        if (typeof ctx.connection.state?.getSnapshot === 'function'
+            && ctx.connection.state.getSnapshot() !== 'connected') {
+          needsResume = false; lastReset = Date.now(); ctx.connection.reconnect();
+          return;
+        }
+        const controller = new AbortController();
+        probeCancelled = false;
+        probing = controller;
+        const timeout = setTimeout(() => controller.abort(), probeMs);
+        const done = (healthy = false) => {
+          if (probing !== controller) return;
+          probing = undefined;
+          clearTimeout(timeout);
+          if (probeCancelled) {
+            probeCancelled = false;
+            if (document.hidden) { needsResume = true; return; }
+            // 探测期间页面又隐藏过一次：重新探测，不把被取消的探测当成死连接。
+            schedule(true);
+            return;
+          }
+          if (!alive) return;
+          if (document.hidden) { needsResume = true; return; }
+          needsResume = false;
+          if (healthy) return;
+          lastReset = Date.now();
+          ctx.connection.reconnect();
+        };
+        probeSocket(controller.signal).then(done, () => done(false));
       }, 50);
     };
     const changed = () => {
       if (document.hidden) {
         needsResume = true;
         if (timer) { clearTimeout(timer); timer = 0; }
+        if (probing) { probeCancelled = true; probing.abort(); }
       } else schedule();
     };
     const resumed = () => {
@@ -613,6 +667,7 @@ window.__ModuleLoader__.load({id:'dsh-app-integration', factory: () => {
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
+      if (probing) { probeCancelled = false; probing.abort(); }
       document.removeEventListener('visibilitychange', changed);
       window.removeEventListener('dsha-browser-resume', resumed);
       window.removeEventListener('pageshow', resumed);
