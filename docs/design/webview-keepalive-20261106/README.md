@@ -5,7 +5,7 @@
 - 基线：`origin/main` = `fe7f5e15`（build336 发布提交；本分支建立在 build336 上，不合并旧 build333 分支 `9deffea2`——仓库历史已改写）。
 - 范围：**K0 证据 + K1 keeper + K2 生命周期安全**；K3（插件契约）、K4（认证/首帧/内存策略）、K5（真机矩阵）不在本次实现范围。
 - 定位：**实验性、尽力适配**。只承诺“同一进程内 Activity 被系统回收时页面不变”；进程死亡/强杀/APK 更新仍然重载，靠文档恢复（方案 D）兜底；不承诺所有手机、平板、自由窗口或 OEM WebView 表现一致。
-- K5 真机：**部分执行**——T115/T116/T111 通过；场景 1（流式长页面应用内往返）判失败（整页重渲染 + 长时间加载）。根因是客户端前台恢复无条件重连，修复与复测步骤见 [K5 回执](k5-acceptance-20261107.md)；K5 通过前 T110 不合并。
+- K5 真机：**部分执行**——T115/T116/T111 通过；场景 1（流式长页面应用内往返）经两轮修复后**真机通过**（二轮诊断包 3d3866f7；黄→绿与整页重载/长加载均消失）。其余场景未执行；T110 合并范围由版本线决定。根因、修复与证据见 [K5 回执](k5-acceptance-20261107.md)。
 
 ## 0. 一句话结论
 
@@ -168,7 +168,7 @@ B-min 把 `Retained` 从 Activity 作用域提升到应用作用域，并把“�
 ## 6. 已知限制与风险（必须如实声明）
 
 1. **进程死亡/强杀/APK 更新**：keeper 随进程消失，DOM/JS 堆不可恢复；仍走 `WebView.saveState` + 插件草稿/阅读位置恢复。不要把本方案写成“杀进程也不变”。
-2. **K5 真机仅部分执行**：本分支有代码 + Robolectric + 场景 1 修复单测；场景 1 已判失败，修复后待真机复测（见 K5 回执）；Activity 系统回收、WebView detach/attach、renderer 回收时序、OEM WebView 差异、内存与 PiP/多窗口仍必须在真机验证后才能宣称“已验收”。测试包安装与设备操作需用户明确授权。
+2. **K5 真机仅部分执行**：本分支有代码 + Robolectric + 场景 1 修复单测；场景 1 已真机通过（二轮诊断包 3d3866f7，见 K5 回执）；Activity 系统回收、WebView detach/attach、renderer 回收时序、OEM WebView 差异、内存与 PiP/多窗口仍必须在真机验证后才能宣称“已验收”。测试包安装与设备操作需用户明确授权。
 3. **K3 插件契约未实现**：`client.js` 不知道“同一文档 suspend/resume”；保活页不会伪造 `pageshow/pagehide`，但旧插件在后台的草稿 lease/阅读位置行为未验证。K3 需要 `__DSHA_NATIVE_LIFECYCLE__` + `documentToken` + 握手降级。
 4. **K4 认证/首帧/内存未加固**：detached 页面复用旧 cookie；`onResume` 仍比较 `getWebAuthUrl()` 并重推语言/主题，但没有主动 auth lease 探测、detach 时 `pauseTimers()`、首帧遮罩或空闲超时。后台 JS/网络仍可能执行。
 5. **上传/下载/麦克风**：`Retained.dispose()` 沿用现有 `onCleared` 清理；detached 期间 `pendingPicker/uploadSession/blobDownload/microphone` 只做静态清理，`retained.blobDownload` 仍持有旧 Activity 的 `WebDownloads.model`（与既有配置变更路径一致，本分支未改），K4/K5 需真机验证。
@@ -176,7 +176,9 @@ B-min 把 `Retained` 从 Activity 作用域提升到应用作用域，并把“�
 7. **origin-restore 的极端竞态**：若 open() 时页面仍 attached、随后 Activity 又被系统回收，QUIESCE 没有可 finish 的 Activity，`awaitClosed` 会在 20 秒后安全失败（`RESTORE_PREVIEW_CLOSE_UNCONFIRMED`），不会并发迁移；K5 应覆盖。
 8. **已装运行时身份变化**：见 §5.2；覆盖升级会重新验证运行时，需要用户在真机验收时知悉。
 
-## 7. K5 真机验收计划（未执行，需用户授权）
+## 7. K5 真机验收计划（场景 1 已执行；其余需用户授权）
+
+> 场景 1 已于 2026-11-07 在 LENOVO TB321FU 通过（二轮诊断包 3d3866f7：黄→绿消失，流式输出不再整页重载/长时间卡加载）。下表其余场景仍未执行。
 
 前置：用户在主会话明确同意“安装 `io.github.sunsetrne.dsha.test` 测试包 + 真机操作”；不得安装正式包 `io.github.sunsetrne.dsha`（会结束整个 DSHA/会话）。
 
@@ -204,7 +206,7 @@ B-min 把 `Retained` 从 Activity 作用域提升到应用作用域，并把“�
 
 - **K3 插件契约**：`__DSHA_NATIVE_LIFECYCLE__`、`dsha-browser-suspend/resume`、`documentToken`；`client.js` 的 lease/阅读位置/流恢复；旧插件握手失败则不保活。
 - **K4 认证/首帧/内存**：detach 时 `pauseTimers()`、attach 首帧遮罩、auth lease 探测、空闲超时/内存预算/feature flag。
-- **K5**：按 §7 执行真机矩阵并归档回执；需要用户授权。
+- **K5**：场景 1 已通过；按 §7 继续其余场景并归档回执；需要用户授权。
 - **多窗口/PiP**：若后续产品允许，补 keeper 双宿主互斥/转交策略。
 
 ## 9. 参考
