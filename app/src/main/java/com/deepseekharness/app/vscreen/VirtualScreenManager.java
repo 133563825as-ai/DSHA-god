@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.DshaApp;
 import com.deepseekharness.app.util.VirtualScreenObservationHint;
+import com.deepseekharness.app.util.VirtualScreenDisplayPreset;
 import com.deepseekharness.app.util.VirtualScreenTextInputPolicy;
 import com.deepseekharness.app.util.Ids;
 import com.deepseekharness.app.util.OneShotLaunchAuthority;
@@ -721,12 +722,12 @@ public final class VirtualScreenManager {
     }
     if (lifecycleState.cleanupPending())
       return decorate(failure("VSCREEN_" + lifecycleState.name()));
-    int width = "landscape".equals(orientation) ? 1792 : 1008;
-    int height = "landscape".equals(orientation) ? 1008 : 1792;
+    VirtualScreenDisplayPreset.Preset preset = VirtualScreenDisplaySettings.preset(context);
+    // 只传白名单 id 与方向：Core 再按白名单解析一次，未知 id/超预算规格回退默认。
+    String createQuery = "preset=" + encode(preset.id) + "&orientation=" + encode(orientation);
     Snapshot existing = snapshot(null, scope);
     if (existing != null) {
-      JSONObject result =
-          perform(existing, "/vscreen/create", "width=" + width + "&height=" + height, true);
+      JSONObject result = perform(existing, "/vscreen/create", createQuery, true);
       if (result.optBoolean("ok")) visuals.present();
       return decorate(result);
     }
@@ -831,12 +832,7 @@ public final class VirtualScreenManager {
         cleanupLaunched(launched, selected.id());
         return decorate(failure("VSCREEN_START_CANCELLED"));
       }
-      JSONObject created =
-          requestAt(
-              launched.port,
-              launched.token,
-              "/vscreen/create",
-              "width=" + width + "&height=" + height);
+      JSONObject created = requestAt(launched.port, launched.token, "/vscreen/create", createQuery);
       recordCreateOutcome(created);
       boolean committed, live = scope.current();
       synchronized (LOCK) {
