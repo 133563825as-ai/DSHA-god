@@ -1945,5 +1945,12 @@
   "x1972002": "L'application cible a expiré : réessayez plus tard ou ouvrez-la d'abord en arrière-plan.",
   "x1972003": "Ce dossier n'accorde que l'écriture ; autorisez à nouveau en incluant la lecture.",
   "x1972004": "Ce dossier n'accorde que l'écriture et le système ne l'a pas libérée ; le nettoyage sera réessayé plus tard.",
-  "x1972005": "Voir les détails : "
+  "x1972005": "Voir les détails : ",
+  "x1972006": "Déploiement en cours",
+  "x1972007": "Échec du déploiement",
+  "x1972008": "À réparer",
+  "x1972009": "Exporter les fichiers de l’espace de travail",
+  "x1972010": "Voir et arrêter les tâches",
+  "x1972011": "Espace et nettoyage",
+  "x1972012": "Copies en lecture seule et anciens environnements"
 }

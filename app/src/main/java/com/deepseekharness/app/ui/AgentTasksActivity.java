@@ -31,13 +31,15 @@ public final class AgentTasksActivity extends AppCompatActivity {
   @Override
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
-    page =
-        new CardPage(
-            this,
-            UiText.choose("Agent 任务", "Agent tasks"),
-            UiText.choose(
-                "查看实际对话进度。停止只作用于对应任务。显示最多 32 个活动任务及最近 5 个结束状态。",
-                "View actual conversation progress. Stop affects only the selected task. Shows up to 32 active tasks and the 5 most recent ended states."));
+    page = new CardPage(this, UiText.choose("Agent 任务", "Agent tasks"), UiText.text("查看与停止任务"));
+    // 摘要进页首，完整说明点开 ⓘ（审计 D-06）。
+    InfoHint.bind(
+        page.subtitle,
+        UiText.choose("Agent 任务", "Agent tasks"),
+        UiText.text("查看与停止任务"),
+        UiText.choose(
+            "查看实际对话进度。停止只作用于对应任务。显示最多 32 个活动任务及最近 5 个结束状态。",
+            "View actual conversation progress. Stop affects only the selected task. Shows up to 32 active tasks and the 5 most recent ended states."));
     UiNavigation.addHeader(this, page.root, UiText.choose("Agent 任务", "Agent tasks"), this::finish);
     page.content.removeViewAt(0);
     tasks = page.content;

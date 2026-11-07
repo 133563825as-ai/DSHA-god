@@ -92,18 +92,22 @@ public final class PluginInstallActivity extends AppCompatActivity {
               "下载并解析插件包后自动安装、启用。\n\n%s",
               com.deepseekharness.app.util.SensitiveData.redact(request.url)));
     if (operation != null) {
-      status.setText(com.deepseekharness.app.util.UiStateText.render(operation.message));
+      // 状态与按钮标签变化走 150ms 淡入（审计 F-08）。
+      UiMotion.crossFadeText(
+          status, com.deepseekharness.app.util.UiStateText.render(operation.message));
       boolean installed =
           operation.phase == PluginOperationQueue.Phase.SUCCEEDED
               && operation.transactionId != null
               && !operation.transactionId.isEmpty();
       install.setEnabled(!operation.pending() && !installed);
-      install.setText(
+      UiMotion.crossFadeText(
+          install,
           com.deepseekharness.app.util.UiText.text(
               installed ? "安装完成" : operation.pending() ? "正在安装" : "解析链接 / 重试"));
     } else {
       if (operationId != null)
-        status.setText(
+        UiMotion.crossFadeText(
+            status,
             com.deepseekharness.app.util.UiText.choose(
                 "应用进程已重建；原任务结果未知，请先到插件管理核对。不会自动重放安装。",
                 "The app process was recreated. Verify the previous result in plugin management; installation will not replay automatically."));
