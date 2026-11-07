@@ -74,7 +74,13 @@ public final class ScreenSenseCodec {
   }
 
   public static String encodeDelta(ScreenSenseState previous, ScreenSenseState current) {
-    Delta delta = diff(previous, current);
+    return encodeDelta(diff(previous, current), current);
+  }
+
+  /** 已算好的差异直接编码，避免连续识屏时重复比较两棵树。 */
+  public static String encodeDelta(Delta delta, ScreenSenseState current) {
+    if (delta == null || current == null)
+      throw new IllegalArgumentException("SCREEN_SENSE_DIFF_INVALID");
     StringBuilder result =
         new StringBuilder()
             .append("D ")
