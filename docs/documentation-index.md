@@ -32,6 +32,7 @@
 | [跨应用文件访问（SAF）](design/cross-app-files-20261104/README.md) | 设备能力授权里的 SAF 授权簿、`/app/saf/*` 九个桥接端点、取消与超时、TOCTOU 固定身份、内置提示插件；已随本 PR 实现 |
 | [ADB 通道原生化设计（T42）](design/adb-native-20261103/README.md) | ADB 配对、私钥与客户端移到安卓壳，容器只经桥提交命令；含用户 Q1–Q9 决定与 E1–E4 取证，未实现 |
 | [GitHub 凭据原生化设计（T50）](design/github-credential-native.md) | 壳内 OAuth Device Flow 登录、token 存 Keystore、容器经桥按需取 access token；待确认，未实现 |
+| [物理屏两套观察路径设计（T107）](design/physical-screen-observation-20261107.md) | 无障碍动作 + 特权镜像读屏 + evdev 用户操作检测；A/B/C 对比、接口/授权/兼容/回退与 M1–M3 计划；未实现 |
 
 ## 用户操作与开发入口
 
