@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "runtimeId": "cce7fb4e500e3da6cda4cdb2dc300aacd28e2ff7dd59f6e09e4009dd739a9478",
+  "runtimeId": "038b4fed4931e62a33bbc7e72b78980c2bc657c2269a243ad1879818d25b7dd4",
   "baseVersion": "10",
   "dshVersion": "0.2.2-rc.1",
   "launcherContract": "DSHA_ARM64_V2",
@@ -456,7 +456,7 @@
     "vscreen/VirtualScreenCore.java": "ed0e85ff208cfab2d9a5134c6164c72aaf3cc6e9cc1b54143c95971a917bd455",
     "vscreen/VirtualScreenDisplaySession.java": "81d25793f2d566e8f19511a35da164d62cbd79d2e1e7f5b36928496e218560d1",
     "vscreen/VirtualScreenForeground.java": "c857599c52fd19423c718e042515503a19ff67d0aea1f79a8468ccfbe9390cfc",
-    "vscreen/VirtualScreenInput.java": "82d48d964f043aa18a27dbffeda3132761fb839c47efa9d20c00bf7dc04a147d",
+    "vscreen/VirtualScreenInput.java": "a41b67cf5c0bba0bc478a25e700d0d11737d74658fc872968d41ac85940a3ba7",
     "vscreen/VirtualScreenJournal.java": "6e0c6be2e08b2944c87cea65e02a89cccb3f838dbab911adc0fdcae2b9f3beb6",
     "vscreen/VirtualScreenLauncher.java": "136c1e79f9141c2223248c59255aede10af73fbc05e0ef85d17837678f4f6049",
     "vscreen/VirtualScreenManager.java": "9bf45bae76254d8e15b7734bf60eaa8dc8e0b35468adcabae0c5e54a6d44b954",
