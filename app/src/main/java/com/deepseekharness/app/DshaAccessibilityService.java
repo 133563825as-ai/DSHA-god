@@ -161,6 +161,11 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
+    // 动作等待只借事件判断“界面动过没有”，不读节点、不缓存内容；没有等待者时这里零成本返回。
+    if (event != null && SCREEN_EVENTS.watching())
+      SCREEN_EVENTS.record(
+          event.getWindowId(),
+          event.getPackageName() == null ? "" : event.getPackageName().toString());
     // 平时一律不读屏幕：没有用户主动开的窗口，这里立刻返回
     if (instance != this || !watching()) return;
     if (event == null) return;
@@ -269,8 +274,13 @@ public class DshaAccessibilityService extends AccessibilityService {
   private static volatile DshaAccessibilityService instance;
   private static final com.deepseekharness.app.util.ScreenConnectionEpoch<DshaAccessibilityService>
       CONNECTION = new com.deepseekharness.app.util.ScreenConnectionEpoch<>();
+
+  /** 动作等待期间的事件脉冲；没有等待者时不记录任何事件，不构成读屏缓存。 */
+  public static final com.deepseekharness.app.util.ScreenEventPulse SCREEN_EVENTS =
+      new com.deepseekharness.app.util.ScreenEventPulse(android.os.SystemClock::elapsedRealtime);
+
   private static final com.deepseekharness.app.screen.MainScreenActions MAIN_SCREEN =
-      new com.deepseekharness.app.screen.MainScreenActions(CONNECTION);
+      new com.deepseekharness.app.screen.MainScreenActions(CONNECTION, SCREEN_EVENTS);
 
   public static boolean connected() {
     return CONNECTION.snapshot() != null;
