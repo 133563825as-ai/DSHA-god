@@ -44,6 +44,10 @@ public class SettingsFragment extends Fragment {
 
   private boolean twoPane;
   private String selectedKey = DEFAULT_KEY;
+
+  /** 页脚「技术信息」的折叠状态；旋转/切页/返回后保留，用户折叠后不再被默认展开覆盖。 */
+  private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
 
@@ -75,6 +79,7 @@ public class SettingsFragment extends Fragment {
   public void onSaveInstanceState(@NonNull Bundle outState) {
     super.onSaveInstanceState(outState);
     outState.putString(STATE_SELECTED, selectedKey);
+    disclosure.save(outState, "disclosure");
   }
 
   @Nullable
@@ -85,6 +90,8 @@ public class SettingsFragment extends Fragment {
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_settings, container, false);
     selectable.clear();
+    if (savedInstanceState != null)
+      disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 
     LinearLayout tabs = v.findViewById(R.id.settings_tabs);
     int optionCount = TAB_OPTIONS.length;
@@ -169,6 +176,12 @@ public class SettingsFragment extends Fragment {
     }
     TextView ver = v.findViewById(R.id.settings_ver);
     ver.setText(com.deepseekharness.app.util.UiText.format("DSHA v%s · MIT 许可", version));
+    // 页脚技术信息：版本留在摘要上，包名与系统版本收进折叠区（不创建隐藏子视图）。
+    DisclosureCard.Model tech = new DisclosureCard.Model();
+    tech.key = "settings-tech";
+    tech.detail =
+        requireContext().getPackageName() + " · Android " + android.os.Build.VERSION.RELEASE;
+    DisclosureCard.bind(ver, tech, disclosure, null);
     TextView updateSub = v.findViewById(R.id.settings_update_sub);
     updateSub.setText(com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
 
@@ -208,8 +221,6 @@ public class SettingsFragment extends Fragment {
     View overlayRow = v.findViewById(R.id.settings_overlay);
     selectable.put(KEY_OVERLAY, overlayRow);
     overlayRow.setOnClickListener(x -> select(KEY_OVERLAY));
-    InfoHint.attach(
-        (TextView) v.findViewById(R.id.settings_page_hint), getString(R.string.ui2_settings));
     if (!twoPane) return v;
     return twoPaneShell(v, savedInstanceState);
   }

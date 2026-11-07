@@ -22,6 +22,7 @@ import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.HarnessController;
 import com.deepseekharness.app.util.LanAccessPresentation;
 import com.deepseekharness.app.util.LanAddressPolicy;
+import com.deepseekharness.app.util.SummaryText;
 import com.deepseekharness.app.util.UiText;
 import com.google.android.material.button.MaterialButton;
 
@@ -40,6 +41,12 @@ public class LaunchFragment extends Fragment {
   private ShellActivityTrack activityTrack;
   private androidx.appcompat.app.AlertDialog accessDialog;
   private android.animation.ObjectAnimator dotPulse;
+
+  /** 启动核对（异常默认展开）与页脚技术信息的折叠状态。 */
+  private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
+  private TextView techNote;
+  private DisclosureCard.Model techModel;
 
   /** 访问地址弹窗的自定义正文与三个横向按钮（关闭固定在最右）。 */
   private TextView accessBody;
@@ -107,6 +114,8 @@ public class LaunchFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_launch, container, false);
+    if (savedInstanceState != null)
+      disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 
     // v5 主页新增的语境、活动条与日志工具；原有 id 与业务 id 全部保留。
     activityTrack = v.findViewById(R.id.launch_activity);
@@ -211,6 +220,13 @@ public class LaunchFragment extends Fragment {
           refreshRunState();
         });
 
+    // 页尾「技术信息」：运行时与 dsh 版本不再占副标题，折叠后才展开（B3）。
+    techNote = new TextView(requireContext(), null, 0, R.style.ShellLaunchMeta);
+    techNote.setText(UiText.choose("技术信息", "Technical details"));
+    ((LinearLayout) v.findViewById(R.id.launch_sections))
+        .addView(techNote, new LinearLayout.LayoutParams(-1, -2));
+    techModel = new DisclosureCard.Model();
+    techModel.key = "launch-tech";
     return v;
   }
 
@@ -471,6 +487,12 @@ public class LaunchFragment extends Fragment {
   }
 
   @Override
+  public void onSaveInstanceState(@NonNull Bundle outState) {
+    super.onSaveInstanceState(outState);
+    disclosure.save(outState, "disclosure");
+  }
+
+  @Override
   public void onDestroyView() {
     startRequest.incrementAndGet();
     preparingStart = false;
@@ -486,6 +508,8 @@ public class LaunchFragment extends Fragment {
     launchLog = null;
     logPanel = null;
     activityTrack = null;
+    techNote = null;
+    techModel = null;
     if (dotPulse != null) {
       dotPulse.cancel();
       dotPulse = null;
@@ -566,24 +590,40 @@ public class LaunchFragment extends Fragment {
       boolean needsRecovery = environment.recovery;
       ((TextView) root.findViewById(R.id.launch_environment))
           .setText(environment.ready ? "READY" : "—");
-      // 副标题默认只有一句；恢复核对的完整结论与下一步收进 ⓘ（复用 InfoHint 的弹层）。
+      // 副标题只留一句；恢复核对的完整结论与下一步在折叠卡里展开（异常默认展开，B1/B4）。
       TextView subtitle = root.findViewById(R.id.launch_subtitle);
-      if (ready) {
-        InfoHint.bind(
-            subtitle,
-            null,
-            (controller.isWebCompatibilityFallback() ? "proot" : controller.proot().runtime().id())
-                + " · dsh "
-                + com.deepseekharness.app.util.Constants.DSH_VERSION);
-      } else if (!restore.notice().isEmpty()) {
-        InfoHint.bind(subtitle, null, restore.notice());
-      } else if (unresolved) {
-        InfoHint.bind(
-            subtitle,
-            null,
-            com.deepseekharness.app.core.WebSessionRestoreText.unresolved(restore.reason()));
+      String hint = getString(R.string.ui2_launch_hint);
+      String detail = "";
+      String key = "";
+      if (!ready && !restore.notice().isEmpty()) {
+        detail = restore.notice();
+        key = "restore";
+      } else if (!ready && unresolved) {
+        detail = com.deepseekharness.app.core.WebSessionRestoreText.unresolved(restore.reason());
+        key = "unresolved";
+      }
+      SummaryText.Split split = SummaryText.split(detail);
+      UiMotion.crossFadeText(subtitle, detail.isEmpty() ? hint : split.summary);
+      if (detail.isEmpty()) {
+        DisclosureCard.bind(subtitle, null, disclosure, null);
       } else {
-        InfoHint.bind(subtitle, null, getString(R.string.ui2_launch_hint));
+        DisclosureCard.Model model = new DisclosureCard.Model();
+        model.key = key;
+        model.detail = detail;
+        model.defaultExpanded = true;
+        DisclosureCard.bind(
+            subtitle, model, disclosure, null, root.findViewById(R.id.launch_activity));
+      }
+      if (techNote != null && techModel != null) {
+        techModel.detail =
+            (ready
+                    ? controller.isWebCompatibilityFallback()
+                        ? "proot"
+                        : controller.proot().runtime().id()
+                    : "—")
+                + " · dsh "
+                + com.deepseekharness.app.util.Constants.DSH_VERSION;
+        DisclosureCard.bind(techNote, techModel, disclosure, null);
       }
       // 语境小字 / 活动条 / 工作台状态只取真实状态；不根据等待时长推算阶段。
       renderStatusChrome(
