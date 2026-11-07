@@ -148,6 +148,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     boolean disposed;
     boolean ready;
     boolean needsStreamResume;
+    boolean inAppRoundTrip;
     String authUrl;
     final PreviewPageSession pageSession = new PreviewPageSession();
     final com.deepseekharness.app.util.PreviewNavigation navigation =
@@ -174,6 +175,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       authUrl = null;
       ready = false;
       needsStreamResume = false;
+      inAppRoundTrip = false;
       pageSession.clear();
       pageEvents = null;
       themeGate = null;
@@ -1843,6 +1845,9 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     if (retained != null) retained.routeRequestSent = null;
     if (!pictureInPictureActiveOrTransitioning() && webView != null) {
       retained.needsStreamResume = true;
+      // 应用内切换（Web → 原生页）与整体退到后台的 carrier 风险不同；诊断行据此区分。
+      retained.inAppRoundTrip =
+          com.deepseekharness.app.ForegroundActivity.isAnotherActivityVisible(this);
       webView.onPause();
     }
     super.onStop();
@@ -2024,7 +2029,38 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
         || !isCurrentPage(webView)
         || !WebPreviewPolicy.sameService(baseUrl, webView.getUrl())) return;
     retained.needsStreamResume = false;
-    webView.evaluateJavascript("window.dispatchEvent(new Event('dsha-browser-resume'));", null);
+    // foreground 只作为证据带给客户端/诊断：应用内切换时 carrier 通常仍可用，
+    // 客户端不再因为探针超时直接重建整份 Remote 基线。
+    webView.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('dsha-browser-resume',{detail:{foreground:"
+            + retained.inAppRoundTrip
+            + "}}));",
+        null);
+    webView.removeCallbacks(resumeDiagnostic);
+    webView.postDelayed(resumeDiagnostic, 2600);
+  }
+
+  private final Runnable resumeDiagnostic = this::readResumeDiagnostic;
+
+  /** resume 后读取客户端脱敏探测记录；旧客户端没有该全局时记录 probe=absent。 */
+  private void readResumeDiagnostic() {
+    WebView current = webView;
+    if (current == null
+        || retained == null
+        || !retained.ready
+        || !browserResumed
+        || !isCurrentPage(current)) return;
+    current.evaluateJavascript(
+        "(window.__DSHA_RESUME_DIAG__||null)",
+        value -> {
+          if (retained == null || !isCurrentPage(current)) return;
+          WebPageDiagnostics.resume(
+              WebPreviewActivity.this,
+              value,
+              retained.inAppRoundTrip,
+              retained.ready,
+              BrowserPageKeeper.generationOf(retained));
+        });
   }
 
   @Override

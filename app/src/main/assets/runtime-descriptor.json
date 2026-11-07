@@ -494,7 +494,7 @@
     "app-integration/activity.js": "8c33bfd8dbdf6b6ebc46825071a11d16b2f596cab26dca425e6d1f4bf000181f",
     "app-integration/browser-origin-restore.html": "ab208364c7d37d7504f5d36b17a319231530ddc16e25c16d922e19978a05d2cc",
     "app-integration/browser-origin-state.js": "69984dd34744160cf092f93b1b67e6bd96b191fd2352b486f7aa0af9ced17878",
-    "app-integration/client.js": "5ef90debc54b7d26046231ba27bcad832a158c0842daa8e9fe11b2278b4143dd",
+    "app-integration/client.js": "268c48702fc790e249b3a82feee0a096c8fdc5e8380d5552f17f31befe6e4403",
     "app-integration/cordis.patch.yml": "9ebf20f8521b2bf357dc568b8998d0d505be0dd7c0e941d74941ae9690300f09",
     "app-integration/index.js": "a8b14d4d82d7623e7f8049e1ebb624a91ef8b044865afbca0cf6c586326ac161",
     "app-integration/package.json": "9b958725f4029e8b830c39b6dd88b071f5c3ac2477b90ceb4ee038122fc36a00",

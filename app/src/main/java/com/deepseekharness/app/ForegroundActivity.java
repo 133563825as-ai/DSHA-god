@@ -28,6 +28,17 @@ public final class ForegroundActivity implements Application.ActivityLifecycleCa
         && host.getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED);
   }
 
+  /**
+   * 本应用是否仍有另一个界面处于前台（应用内切换），而不是整体退到后台。生命周期回调都在主线程。
+   *
+   * <p>WebPreviewActivity.onStop 用它区分“Web → 原生页”与“Home/切 App”：前者 physical carrier
+   * 通常仍可用，不应因为恢复而重建整份 Remote 基线。
+   */
+  public static boolean isAnotherActivityVisible(Activity activity) {
+    FragmentActivity current = CURRENT.current();
+    return current != null && current != activity;
+  }
+
   @Override
   public void onActivityResumed(Activity activity) {
     if (activity instanceof FragmentActivity) CURRENT.resumed((FragmentActivity) activity);

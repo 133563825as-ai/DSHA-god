@@ -56,11 +56,65 @@ public final class WebPageDiagnosticTextTest {
     String page = WebPageDiagnosticText.pageDestroy(hostile, false, false, 7);
     String keep = WebPageDiagnosticText.keepAlive("ATTACH", hostile, 7, true);
     String engine = WebPageDiagnosticText.engine(42, 7);
-    for (String line : new String[] {page, keep, engine}) {
+    String resume =
+        WebPageDiagnosticText.resume(
+            hostile, hostile, hostile, hostile, hostile, 1, false, hostile, 1, 1, 1, true, true, 7);
+    for (String line : new String[] {page, keep, engine, resume}) {
       assertFalse(line, line.contains("127.0.0.1"));
       assertFalse(line, line.contains("token"));
       assertFalse(line, line.contains("fixture"));
       assertFalse(line, line.contains("\n"));
     }
+  }
+
+  @Test
+  public void resumeLineKeepsWhitelistedProbeFactsAndClampsNumbers() {
+    assertEquals(
+        "impl=k5fix2 trigger=native visibility=visible state=connected probe=alive elapsedMs=42 reset=false stateAfter=connected generation=3 generationAfter=3 hiddenMs=1200 inApp=true ready=true page=7",
+        WebPageDiagnosticText.resume(
+            "k5fix2",
+            "native",
+            "visible",
+            "connected",
+            "alive",
+            42,
+            false,
+            "connected",
+            3,
+            3,
+            1200,
+            true,
+            true,
+            7));
+  }
+
+  @Test
+  public void resumeLineSanitizesClientStringsAndClampsRanges() {
+    String line =
+        WebPageDiagnosticText.resume(
+            "http://127.0.0.1:41821/?token=fixture",
+            "token=fixture",
+            "visible\nforged",
+            "connected",
+            "probe-with-very-long-name-x",
+            999999,
+            false,
+            "127.0.0.1",
+            -1,
+            2,
+            999999999,
+            false,
+            true,
+            7);
+    assertFalse(line, line.contains("127.0.0.1"));
+    assertFalse(line, line.contains("token"));
+    assertFalse(line, line.contains("fixture"));
+    assertTrue(line, line.contains("impl=unknown"));
+    assertTrue(line, line.contains("trigger=unknown"));
+    assertTrue(line, line.contains("visibility=unknown"));
+    assertTrue(line, line.contains("probe=unknown"));
+    assertTrue(line, line.contains("stateAfter=unknown"));
+    assertTrue(line, line.contains("elapsedMs=600000"));
+    assertTrue(line, line.contains("hiddenMs=86400000"));
   }
 }

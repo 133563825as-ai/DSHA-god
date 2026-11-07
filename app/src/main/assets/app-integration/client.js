@@ -587,9 +587,49 @@ window.__ModuleLoader__.load({id:'dsh-app-integration', factory: () => {
     // physical carrier alive; resetting unconditionally there rebuilds every
     // Remote stream and makes a long streaming session refetch and rerender its
     // whole journal. Probe the current carrier on one read-only Session control
-    // stream first: only a carrier that answers nothing gets reset.
+    // stream first. A failed probe alone no longer resets a Connection that still
+    // reports connected: a slow long page can delay the probe reply, and a real
+    // dead-but-OPEN carrier is ended by the server heartbeat (2s x2) or socket
+    // close, which drives the official recovery. Only an already non-connected
+    // Connection keeps the previous immediate reset.
     let alive = true, needsResume = document.hidden, timer = 0, lastReset = 0, probing;
-    let probeCancelled = false;
+    let probeCancelled = false, hiddenAt = document.hidden ? Date.now() : 0;
+    let resumeTrigger = 'unknown', resumeSeq = 0, nativeForeground = false;
+    const connectionState = () => {
+      try {
+        const value = ctx.connection.state?.getSnapshot?.();
+        return typeof value === 'string' ? value : 'unknown';
+      } catch { return 'unknown'; }
+    };
+    const connectionGeneration = () => {
+      try {
+        const value = ctx.connection.generation?.getSnapshot?.()?.id;
+        return Number.isSafeInteger(value) ? value : -1;
+      } catch { return -1; }
+    };
+    const recordDiagnostic = (phase, extra = {}) => {
+      const state = typeof extra.stateBefore === 'string' ? extra.stateBefore : connectionState();
+      const generation = Number.isSafeInteger(extra.generationBefore) ? extra.generationBefore : connectionGeneration();
+      const elapsed = Number.isFinite(extra.elapsedMs)
+        ? Math.min(600000, Math.max(-1, Math.round(extra.elapsedMs))) : -1;
+      window.__DSHA_RESUME_DIAG__ = {
+        seq: ++resumeSeq,
+        impl: 'k5fix2',
+        phase,
+        trigger: resumeTrigger,
+        foreground: nativeForeground,
+        visibility: document.hidden ? 'hidden' : 'visible',
+        online: window.navigator?.onLine !== false,
+        state,
+        probe: extra.probe || 'pending',
+        elapsedMs: elapsed,
+        reset: extra.reset === true,
+        stateAfter: extra.stateAfter || 'unknown',
+        generation,
+        generationAfter: Number.isSafeInteger(extra.generationAfter) ? extra.generationAfter : -1,
+        hiddenMs: hiddenAt ? Math.min(86400000, Date.now() - hiddenAt) : -1
+      };
+    };
     const probeSocket = async signal => {
       const remote = typeof ctx.get === 'function' ? ctx.get('remote') : undefined;
       const control = remote?.session?.control;
@@ -598,66 +638,113 @@ window.__ModuleLoader__.load({id:'dsh-app-integration', factory: () => {
         : typeof remote?.openRemoteStream === 'function'
           ? (s) => remote.openRemoteStream('session.control', { args: {} }, s)
           : null;
-      if (open === null) return false;
+      if (open === null) return 'unavailable';
       let source;
-      try { source = open(signal); } catch { return false; }
+      try { source = open(signal); } catch { return 'failed'; }
       const iterator = source?.[Symbol.asyncIterator]?.();
-      if (!iterator) return false;
+      if (!iterator) return 'failed';
       try {
         const first = await iterator.next();
-        return first !== undefined && first.done !== true;
-      } catch { return false; }
+        return first !== undefined && first.done !== true ? 'alive' : 'failed';
+      } catch {
+        return signal.aborted ? 'timeout' : 'failed';
+      }
       finally { try { await iterator.return?.(); } catch {} }
     };
     const schedule = (native = false) => {
       if (!alive || document.hidden || timer || probing || (!native && !needsResume)) return;
       if (!needsResume && lastReset && Date.now() - lastReset < 250) return;
+      resumeTrigger = native ? 'native' : 'visibility';
+      const stateBefore = connectionState();
+      const generationBefore = connectionGeneration();
+      recordDiagnostic('pending', { stateBefore, generationBefore });
       timer = setTimeout(() => {
         timer = 0;
         if (!alive || document.hidden) return;
         // 已断开的 Connection 自己的重试可能被 Android 错过的 online 事件卡住；
-        // 保持原来的无条件重置，避免页面永久等待。
-        if (typeof ctx.connection.state?.getSnapshot === 'function'
-            && ctx.connection.state.getSnapshot() !== 'connected') {
-          needsResume = false; lastReset = Date.now(); ctx.connection.reconnect();
+        // 保持原来的立即重置，避免页面永久等待。
+        const currentState = connectionState();
+        if (currentState === 'connecting' || currentState === 'disconnected') {
+          needsResume = false; lastReset = Date.now();
+          recordDiagnostic('done', {
+            stateBefore, probe: 'state-reset', reset: true, stateAfter: currentState,
+            generationBefore, generationAfter: connectionGeneration()
+          });
+          ctx.connection.reconnect();
           return;
         }
         const controller = new AbortController();
         probeCancelled = false;
         probing = controller;
+        const startedAt = Date.now();
         const timeout = setTimeout(() => controller.abort(), probeMs);
-        const done = (healthy = false) => {
+        const done = (probe = 'failed') => {
           if (probing !== controller) return;
           probing = undefined;
           clearTimeout(timeout);
+          const elapsedMs = Date.now() - startedAt;
           if (probeCancelled) {
             probeCancelled = false;
-            if (document.hidden) { needsResume = true; return; }
+            if (document.hidden) {
+              needsResume = true;
+              recordDiagnostic('done', { stateBefore, probe: 'cancelled', elapsedMs, generationBefore });
+              return;
+            }
             // 探测期间页面又隐藏过一次：重新探测，不把被取消的探测当成死连接。
+            recordDiagnostic('done', { stateBefore, probe: 'cancelled', elapsedMs, generationBefore });
             schedule(true);
             return;
           }
           if (!alive) return;
-          if (document.hidden) { needsResume = true; return; }
+          if (document.hidden) {
+            needsResume = true;
+            recordDiagnostic('done', { stateBefore, probe, elapsedMs, generationBefore });
+            return;
+          }
           needsResume = false;
-          if (healthy) return;
+          const stateAfter = connectionState();
+          if (probe === 'alive') {
+            recordDiagnostic('done', {
+              stateBefore, probe, elapsedMs, stateAfter,
+              generationBefore, generationAfter: connectionGeneration()
+            });
+            return;
+          }
+          if (stateAfter === 'connected') {
+            recordDiagnostic('done', {
+              stateBefore, probe: probe + '-kept', elapsedMs, stateAfter,
+              generationBefore, generationAfter: connectionGeneration()
+            });
+            return;
+          }
           lastReset = Date.now();
+          recordDiagnostic('done', {
+            stateBefore, probe: probe + '-reset', elapsedMs, stateAfter, reset: true,
+            generationBefore, generationAfter: connectionGeneration()
+          });
           ctx.connection.reconnect();
         };
-        probeSocket(controller.signal).then(done, () => done(false));
+        probeSocket(controller.signal).then(done, () => done('failed'));
       }, 50);
     };
     const changed = () => {
       if (document.hidden) {
+        hiddenAt = Date.now();
+        nativeForeground = false;
         needsResume = true;
         if (timer) { clearTimeout(timer); timer = 0; }
         if (probing) { probeCancelled = true; probing.abort(); }
       } else schedule();
     };
-    const resumed = () => {
+    const resumed = event => {
       if (!alive) return;
       // Activity may resume before Chromium publishes visibility. Retain the
       // native request even when the preceding hidden callback was lost.
+      if (event?.detail?.foreground === true) {
+        nativeForeground = true;
+        const current = window.__DSHA_RESUME_DIAG__;
+        if (current !== undefined) current.foreground = true;
+      }
       if (document.hidden) { needsResume = true; return; }
       schedule(true);
     };

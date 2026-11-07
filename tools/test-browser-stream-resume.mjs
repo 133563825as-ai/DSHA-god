@@ -81,7 +81,7 @@ function fixture({holdRpc=false,probeUnavailable=false,generatedProbe=false}={})
     stop,async close(){stop();await consumer.dispose();for(const dispose of disposers.reverse())await dispose?.();}};
 }
 
-test('foreground replaces a dead-but-OPEN carrier and rebaselines actual rc2 output without prompt replay',async()=>{
+test('dead-but-OPEN carrier waits for the official close instead of a probe-timeout reset',async()=>{
   const f=fixture();
   try {
     await until(()=>f.observations.length===1);
@@ -92,8 +92,18 @@ test('foreground replaces a dead-but-OPEN carrier and rebaselines actual rc2 out
     assert.deepEqual(f.observations,['before-background']);
     f.document.hidden=false;f.document.dispatchEvent(new Event('visibilitychange'));
     f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await wait(200);
+    assert.equal(original.readyState,1);
+    assert.equal(f.sockets.length,1,'a connected Connection must not be reset by a slow probe');
+    assert.equal(f.connection.generation.getSnapshot().id,generation);
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'timeout-kept');
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.reset,false);
+    assert.deepEqual(f.observations,['before-background']);
+    // The Host heartbeat terminates a carrier that stops answering pings; the
+    // official close path reconnects and rebaselines without a prompt replay.
+    original.close();
     await until(()=>f.observations.includes('finished-in-background'));
-    assert.equal(original.readyState,3);assert.equal(f.sockets.length,2,'visibility/native events must coalesce');
+    assert.equal(f.sockets.length,2);
     assert.ok(f.connection.generation.getSnapshot().id>generation);
     assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
   } finally {await f.close();}
@@ -149,14 +159,18 @@ test('visibility hide/show on a live carrier keeps the same rendered baseline',a
   } finally {await f.close();}
 });
 
-test('missing probe capability keeps the previous unconditional reset fallback',async()=>{
+test('missing probe capability leaves a connected carrier to the official close',async()=>{
   const f=fixture({probeUnavailable:true});
   try {
     await until(()=>f.observations.length===1);
     const original=f.sockets[0], generation=f.connection.generation.getSnapshot().id;
     f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await wait(200);
+    assert.equal(f.sockets.length,1,'unavailable probe must not reset a connected Connection');
+    assert.equal(f.connection.generation.getSnapshot().id,generation);
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'unavailable-kept');
+    original.close();
     await until(()=>f.sockets.length===2);
-    assert.equal(original.readyState,3);
     assert.ok(f.connection.generation.getSnapshot().id>generation);
     assert.equal(f.rpcCalls(),0);
   } finally {await f.close();}
@@ -189,6 +203,10 @@ test('native resume received while hidden remains pending until the later visibl
     f.document.hidden=true;f.window.dispatchEvent(new Event('dsha-browser-resume'));
     await wait(70);assert.equal(f.sockets.length,1);
     f.document.hidden=false;f.document.dispatchEvent(new Event('visibilitychange'));
+    await wait(200);
+    assert.equal(f.sockets.length,1,'visible probe timeout must not reset a connected carrier');
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'timeout-kept');
+    f.sockets[0].close();
     await until(()=>f.observations.includes('output-after-late-visible-callback'));
     assert.equal(f.sockets.length,2);assert.equal(f.rpcCalls(),0);assert.deepEqual(f.failures,[]);
   } finally {await f.close();}
@@ -222,6 +240,10 @@ test('Gecko native-port foreground message reaches the actual page Connection re
     f.sockets[0].dead=true;f.hostText('Gecko resumed output');
     receive({type:'unrelated'});await wait(60);assert.equal(f.sockets.length,1);
     receive({type:'browser-resume'});
+    await wait(200);
+    assert.equal(f.sockets.length,1,'probe timeout must not reset a connected carrier');
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'timeout-kept');
+    f.sockets[0].close();
     await until(()=>f.observations.includes('Gecko resumed output'));
     assert.equal(f.sockets.length,2);assert.equal(f.rpcCalls(),0);assert.deepEqual(sent,[]);
     const extension=JSON.parse(readFileSync('app/src/main/assets/web-integration/manifest.json','utf8'));
@@ -238,6 +260,10 @@ test('stream recovery preserves one pending unary admission and its later acknow
     await until(()=>f.rpcCalls()===1);
     f.sockets[0].dead=true;f.hostText('baseline-while-admission-is-pending');
     f.window.dispatchEvent(new Event('dsha-browser-resume'));
+    await wait(200);
+    assert.equal(f.sockets.length,1,'probe timeout must not reset a connected carrier');
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'timeout-kept');
+    f.sockets[0].close();
     await until(()=>f.observations.includes('baseline-while-admission-is-pending'));
     assert.equal(f.rpcCalls(),1);assert.equal(admission.signal.aborted,false);
     f.acknowledge();const result=await pending;
@@ -275,10 +301,14 @@ test('rc3 session and workspace streams rebaseline after foreground recovery and
     workspace=f.sandbox.workspaceFactory(remotes,{accept:{replaceBaseline:value=>baseline.workspace=value.workspaces},failed:error=>failed.push(error)});
     session.start();workspace.start();
     await until(()=>baseline.session?.[0]==='session-before' && baseline.workspace?.[0]==='workspace-before');
-    f.baselines(['session-resumed'],['workspace-resumed']);
     f.sockets[0].dead=true;
     f.document.hidden=true;f.document.dispatchEvent(new Event('visibilitychange'));
     f.document.hidden=false;f.document.dispatchEvent(new Event('visibilitychange'));
+    await wait(200);
+    assert.equal(f.sockets.length,1,'probe timeout must not reset a connected carrier');
+    assert.equal(f.window.__DSHA_RESUME_DIAG__.probe,'timeout-kept');
+    f.baselines(['session-resumed'],['workspace-resumed']);
+    f.sockets[0].close();
     await until(()=>baseline.session?.[0]==='session-resumed' && baseline.workspace?.[0]==='workspace-resumed');
     f.baselines(['session-after'],['workspace-after']);
     f.sockets.at(-1).close();
