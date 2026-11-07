@@ -26,9 +26,53 @@
   - 判定：这不是可接受的「仅重连」；按 §7 场景 1 判**失败**。A 口径（放宽为允许重连）不成立，T110 需修复（K2 路径或客户端重同步），修复后重跑场景 1/2。
 - 按 §7 场景 1 的「侧栏不重走黄→绿」断言，本项**判失败**；「无原生加载遮罩、草稿保留」部分通过。K5 不能判通过。
 
+## 场景 1 根因与修复（2026-11-07，修复提交 9ca5d238，待真机复测）
+
+**根因：不是 K2 keeper 缺口，也不是页面文档被重建；是客户端在「同一文档前台恢复」时无条件重置 Connection。**
+
+- 页面生命周期：这条往返走 `WebPreviewActivity.hideConversation()` → `BrowserTasks.nativeNavigation()`，只把 Web 宿主切到后台表现并让 Main 到前台，**没有 `finish()`**；K2 的 `onDestroy(isFinishing)` / 系统回收两条退役路径都不触发。正式包在不被系统回收时同样保留文档，所以「测试包与正式包都出现」不能证明 K2 失效。
+- 客户端：回到 Web 时原生 `resumePageStreams()` 派发 `dsha-browser-resume`；`app-integration/client.js` 的 `installStreamResume` 同时监听 `visibilitychange` / `dsha-browser-resume`，收到即无条件 `ctx.connection.reconnect()`。Connection 换代后网关按新基线重发所有 Remote 流（`session.control` 与当前会话的 journal / assistant 流），长会话重新拉取并重渲染整份历史 → 「黄→绿 + 流式输出完全重载 + 长时间加载」。草稿在 IndexedDB / localStorage，故保留；文档没换，故没有原生加载遮罩。
+- 这条无条件重置是既有兜底（用于「后台 carrier 已死但 WebSocket 仍报 OPEN」）；K1/K2 保活后，同一文档内的应用页往返不再需要它，反而制造了 K5 场景 1 的回归。
+
+**修复（最小、可回滚）**：`installStreamResume` 重置前先用一条只读 `session.control` 流探测当前物理 carrier：
+
+- 有任一帧返回 → 保留连接，不重建 Remote 基线（长页面不重渲染）；
+- 探测 2 秒无响应（死 carrier）→ 保持原有无条件重置；
+- Connection 已不是 `connected`（Android 漏掉 online 事件的后台等待）→ 保持原来立即重置；
+- `remote` / 探测端点不可用 → 退回原行为（不因探测能力缺失而卡死）。
+
+探测只读、不重放用户输入、不新增原生信号；每次应用内返回最多增加一条短命 Session 控制流（网关本就支持多客户端）。
+
+**证据**：
+
+| 项 | 结果 |
+|---|---|
+| `DSHA_TEST_RUNTIME=<本地 0.2.2-rc.1 raw 夹具> node tools/test-browser-stream-resume.mjs` | **11/11 通过**：新增「应用内往返保留活 carrier」「visibility 往返保留基线」「生成式 `session.control` 探测」「探测能力缺失回退」；原有死 carrier / 离线 / 隐藏期 pending / Gecko / 单次 admission / rc3 流全部保持通过 |
+| contracts（descriptor / builtin / runtime-tools / third-party / credential / semver / manifest / hygiene / i18n / changelog / document-links） | 全部 exit 0（逐项见下方「门禁回执」） |
+| `format-java-tree.py --check`（JDK17） | exit 0（1550 文件，0 need formatting） |
+| `prepare-runtime-descriptor.py --check` | exit 0；`app-integration/client.js` 摘要与 `runtimeId` 已更新 |
+
+**待真机复测（未验证，不得写成通过）**：
+
+1. 安装新测试包（`io.github.sunsetrne.dsha.test`），完成覆盖升级 / 运行时维护；
+2. 打开一个有**正在流式输出**的长会话，记住当前输出位置与输入草稿；
+3. 按场景 1 往返：Web → 设置 / 终端 / 插件页 → 回 Web，至少 3 次；
+4. 断言：无新 `WEB_ENGINE` / `WEB_PAGE_DESTROY`；连接状态不重走黄→绿；页面不整页重渲染、不长时间卡加载；流式输出继续追加；草稿 / 滚动保留；
+5. 若仍失败：抓 `WEB_ENGINE` / `WEB_PAGE_DESTROY` / `WEB_KEEPALIVE_*` 与时间线，区分「文档重载」还是「客户端仍重置」；同时记录是否出现探测超时（2 秒）后重连。
+
+## 修复候选测试包（2026-11-07）
+
+- 构建：`dsha-gradle :app:assembleStandardDebug -Pdsha.sunsetTest=true`，exit 0（BUILD SUCCESSFUL in 55s，日志 `/root/.cache/dsha-gradle-logs/k5fix-20261107T1256Z.log`）。
+- 设备路径：`/sdcard/Download/dsha-test-k5fix-9ca5d238-20261107.apk`
+- 本机构建产物：`app/build/outputs/apk/standard/debug/app-standard-debug.apk`
+- bytes：321,652,289；SHA-256：`e93393282e7aa489687efc355f36bc8ac0a8a5070405f51aac2953e385052f04`
+- 包名 `io.github.sunsetrne.dsha.test`；versionCode 336；versionName `0.2.1-rc.5-20261107.0330-dsh0.2.2-rc.1-SunsetTest`；debug 签名（证书 SHA-256 `790c7fb5…0ce76ba`，与上一测试包 `dsha-test-build337-k5-v2-20261107.apk` 相同，可直接覆盖升级）。
+- 包内核对：`assets/app-integration/client.js` SHA-256 = `5ef90deb…8b4143dd`（与工作树一致）；`assets/runtime-descriptor.json` runtimeId = `9a0c5f45…f4f4f4afe`。
+- 基线：`feat/webview-keepalive-v2` tip = 9ca5d238（build336 基线 + K2 + 本修复 + 本回执），**不含 build337 其它主线修复**；只用于 K5 场景 1 复测，不作为功能全集验收包。
+
 ## 未执行（不得写成通过）
 
-- 场景 1 应用内往返（Web → Main → 设置/终端/插件 → 回 Web）未执行。
+- 场景 1 应用内往返已执行并判失败（见上）；修复后**待复测**，复测通过前不能记为通过。
 - 场景 2 Home/切 App 30 秒/5 分钟/30 分钟未执行。
 - 场景 3 开发者选项「不保留活动」/系统回收 Activity 未执行。
 - 场景 4 进程死亡（最近任务划掉 / force-stop / OOM）未执行。
@@ -38,4 +82,27 @@
 
 ## 结论
 
-K5 **未通过（未完成，且已发现重上下文整页刷新）**，T110 `55ef9d68` 暂不合并。下一步：先补重上下文刷新的复现条件与原因（见「失败 / 观察项」），再按 §7 继续单设备可做场景（1/2/5/7/10），逐项记录设备/时间线/现象；完成后再更新本回执并重新评估合并。
+K5 **未通过（场景 1 失败；其它场景未完成）**，T110 `55ef9d68` 暂不合并。场景 1 根因已定位并修复（提交 9ca5d238：客户端前台恢复先探测 carrier，避免同文档往返重建整份 Remote 基线；单测 11/11），修复候选测试包见上节。下一步：由用户在主会话按「待真机复测」步骤重跑场景 1/2，逐项记录设备/时间线/现象与日志；通过后再继续场景 5/7/10 并重新评估合并。**复测通过前不得把场景 1 写成通过，也不得合并 T110。**
+
+## 门禁回执（本修复）
+
+| 检查 | 命令 | 退出码 / 结果 |
+|---|---|---|
+| JS 流恢复单测 | `DSHA_TEST_RUNTIME=<本地 0.2.2-rc.1 raw 夹具> node tools/test-browser-stream-resume.mjs` | 0 · 11/11 |
+| Java 格式 | `JAVA_HOME=<JDK17> python3 tools/format-java-tree.py --check` | 0 · 1550 文件，0 need formatting |
+| 运行时描述符 | `python3 tools/prepare-runtime-descriptor.py --check` | 0 |
+| 描述符源核验 | `python3 tools/verify-runtime-descriptor-source.py` | 0 · 202 assets / 472 launchers |
+| 内置插件 | `python3 tools/generate-builtin-plugins.py --verify` | 0 |
+| Runtime tools | `python3 tools/prepare-runtime-tools.py --check` | 0 |
+| 第三方声明 | `python3 tools/generate-third-party-notices.py --check`；`python3 tools/check-third-party-notices.py` | 0 / 0 |
+| 凭据路径 | `python3 tools/generate-credential-paths.py --check` | 0 |
+| SemVer 参考 | `python3 tools/prepare-semver-reference.py` | 0 |
+| Host 测试清单 | `python3 tools/run-host-tests.py --check-manifest` | 0 · 250 tests |
+| 源卫生 | `python3 tools/check-source-hygiene.py` | 0 |
+| UI i18n | `python3 tools/check-ui-i18n.py` | 0 · newFindings 0 |
+| CHANGELOG | `python3 tools/generate-changelog.py --check` | 0 |
+| 文档链接 | `python3 tools/check-document-links.py` | 0（文档最终提交前重跑） |
+| 定向 Java 单测 | `dsha-gradle :app:testStandardDebugUnitTest --tests '*BrowserPageKeeperTest' --tests '*WebBackgroundPageLifecycleTest' --tests '*WebPageDiagnosticTextTest'` | 0 · 34 tests / 0 failures / 0 errors / 0 skipped |
+| 测试包构建 | `dsha-gradle :app:assembleStandardDebug -Pdsha.sunsetTest=true` | 0 · BUILD SUCCESSFUL in 55s |
+
+说明：本修复不改 Java 源码；定向 Java 单测用于确认 K2 既有覆盖未回归。构建日志 `/root/.cache/dsha-gradle-logs/k5fix-20261107T1256Z.log`，单测日志 `/root/.cache/dsha-gradle-logs/k5fix-tests-20261107.log`。
