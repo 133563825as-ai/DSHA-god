@@ -49,7 +49,7 @@ flowchart LR
 
 ## 3. Creation and the managed handshake
 
-Native `start()` and `/app/vscreen/create` both reach the Manager's `startOrdered()`. It checks flavor, API, existing lifecycle and cleanup evidence first. An unresolved instance cannot be bypassed by creating another. The same Manager owns the current Core; callers should inspect `status` first and reuse an existing target. `VirtualScreenPolicy.phoneSize()` normalizes creation orientation. Do not infer virtual dimensions from the native screen size.
+Native `start()` and `/app/vscreen/create` both reach the Manager's `startOrdered()`. It checks flavor, API, existing lifecycle and cleanup evidence first. An unresolved instance cannot be bypassed by creating another. The same Manager owns the current Core; callers should inspect `status` first and reuse an existing target. `VirtualScreenPolicy.phoneSize()` normalizes creation orientation. Do not infer virtual dimensions from the native screen size. When the user explicitly picks a display size, the Manager passes only a whitelist preset id and the orientation to Core (see 3.1); requests without a preset keep going through `phoneSize()` at 320 dpi, so the default creation pixels do not change.
 
 ```mermaid
 sequenceDiagram
@@ -72,6 +72,21 @@ sequenceDiagram
 `VirtualScreenLauncher.launchCommand()` points only to the installed package and fixed Core class. Core `main()` checks the package name, installed-APK classpath, API and dynamic-port requirement. The `--launch` parent starts `--server` with `setsid`, reads bootstrap, confirms reachability and explicitly exits. Parent exit is not resident-Core exit; they have different roles. Core generates its secret and rejects putting it in a `--token` argument. The handshake carries port, secret and birth identity. A success word alone cannot establish startup.
 
 [VirtualScreenChannels][channels] normally checks Root, Shizuku and ADB availability in that order. On API 37 with ADB connected, code places ADB before Shizuku; Root remains first. Availability still requires the corresponding local authorization. The application cannot thereby grant itself Root or pairing permission. For ADB, see [AdbBridge][adb] and [AdbVirtualScreenStart][adb-start]. The Manager issues a one-time ticket bound to the command, epoch and deadline, through plan authorization and commit. It travels through a dedicated path and must not appear in logs, command lines or ordinary terminal commands. Unknown startup results retain their evidence. Starting again through another channel can also duplicate creation; timeout cannot establish that nothing ran.
+
+### 3.1 Display-size whitelist and observation budget
+
+The default stays `1008×1792 @320` (16:9, logical 504×896 dp), matching `phoneSize()` normalization in [VirtualScreenPolicy][policy]. The user explicitly picks a whitelist preset on the virtual-screen page (“Display size”); the Manager reads it through [VirtualScreenDisplaySettings][display-settings] and passes only `preset=<id>` plus `orientation` to Core, which revalidates the whitelist with [VirtualScreenDisplayPreset][display-preset].
+
+| Preset id | Pixels (portrait) | dpi | Logical dp | Ratio | Notes |
+|---|---|---:|---:|---|---|
+| `default` | 1008×1792 | 320 | 504×896 | 16:9 | Default, unchanged |
+| `compat-720` | 720×1600 | 320 | 360×800 | 20:9 | 360 dp compatibility baseline |
+
+Unknown ids, blank values and over-budget sizes fall back to the default; arbitrary sizes or dpi values are not accepted, so creation parameters do not become a new resource surface. A preset is created at its whitelist pixels and does **not** go through the legacy 16:9 + multiple-of-144 `phoneSize()` normalization; that path remains only for requests without a preset. The choice applies to the next create or rotate rebuild only. A running display is not silently resized, and Core generation, frame identity and input gates are unchanged.
+
+The observation budget shares one constant source with [VirtualScreenObservedPixels][observed-pixels]: at most two originals, 24 MiB total. The default is about 13.8 MiB for two copies and `compat-720` about 8.8 MiB. 1440×2560 takes about 28.1 MiB for two copies, exceeding the budget, so it is excluded from the whitelist; enabling it requires adjusting and re-accounting the budget first, not just adding a row. `VirtualScreenDisplayPresetTest` guards that every whitelist entry fits.
+
+**Device status**: target-app layout, IME behavior, screenshot size and multi-window behavior under `compat-720` are **not yet verified on a real device** and are not claimed as compatible. The default keeps the existing build baseline, whose device evidence covers only the default size.
 
 ## 4. Identity is more than a displayId
 
@@ -262,6 +277,8 @@ Test names in the table omit shared prefixes where applicable. They live in [vsc
 [preview-view]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewView.java
 [preview-gate]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewInputGate.java
 [policy]: ../../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPolicy.java
+[display-preset]: ../../app/src/main/java/com/deepseekharness/app/util/VirtualScreenDisplayPreset.java
+[display-settings]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenDisplaySettings.java
 [input]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenInput.java
 [observed-control]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenObservedControl.java
 [anchor-proof]: ../../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenAnchorProof.java

@@ -63,6 +63,8 @@ Core 不运行在 Ubuntu 的 DSH Node 进程中；Ubuntu 侧插件通过宿主 b
 先检查 flavor、API、已有生命周期和清理现场；有未决现场不能直接再建一个。
 同一 Manager 负责当前 Core；调用者应先 `status`，复用已经存在的目标。
 创建方向由 `VirtualScreenPolicy.phoneSize()` 规范化，不能拿原生屏幕尺寸猜虚拟尺寸。
+用户显式选择显示规格时，Manager 只把白名单预设 id 与方向交给 Core（见 3.1）；未携带预设的旧请求
+（既有测试与直接 Core 调用）继续走 `phoneSize()` 与 320 dpi，默认创建的像素尺寸不变。
 
 ```mermaid
 sequenceDiagram
@@ -96,6 +98,30 @@ ADB 路径见 [AdbBridge][adb] 与 [AdbVirtualScreenStart][adb-start]。
 Manager 签发与命令、epoch、期限绑定的一次性 ticket，经过 plan 授权和 commit。
 ticket 经专用路径传递，不应写进日志、命令行或一般终端命令。
 启动结果未知必须保留现场；换通道重新启动也可能重复创建，不能据超时推断未执行。
+
+### 3.1 显示规格白名单与观察预算
+
+默认规格保持 `1008×1792 @320`（16:9，逻辑 504×896 dp），与 [VirtualScreenPolicy][policy] 的
+`phoneSize()` 归一化结果一致。用户在虚拟识屏页的「显示规格」里显式选择白名单预设，Manager 经
+[VirtualScreenDisplaySettings][display-settings] 读取选择，创建/旋转时只向 Core 传 `preset=<id>` 与
+`orientation`；Core 用 [VirtualScreenDisplayPreset][display-preset] 再解析一次白名单。
+
+| 预设 id | 像素（竖屏） | dpi | 逻辑 dp | 比例 | 说明 |
+|---|---|---:|---:|---|---|
+| `default` | 1008×1792 | 320 | 504×896 | 16:9 | 默认，保持不变 |
+| `compat-720` | 720×1600 | 320 | 360×800 | 20:9 | 360 dp 兼容基线 |
+
+未知 id、空值与超出观察预算的规格都回退默认；不接受任意尺寸或 dpi，避免把创建参数变成新的资源面。
+预设按白名单原尺寸创建，不再经过 `phoneSize()` 的 16:9 + 144 倍数归一化 —— 后者只保留给不带预设的旧
+调用。选择只影响下一次创建或旋转重建，运行中的显示不会被悄悄改变，Core 的代次、帧身份与输入门不变。
+
+观察预算与 [VirtualScreenObservedPixels][observed-pixels] 共用同一常量来源：最多 2 份原图、合计
+24 MiB。默认两份约 13.8 MiB，`compat-720` 约 8.8 MiB；1440×2560 两份约 28.1 MiB，超过预算，因此不
+进入白名单；若要启用，必须先核算并调整预算，而不是只加一行预设。单测 `VirtualScreenDisplayPresetTest`
+守着白名单每一项都装得进预算。
+
+**真机状态**：`compat-720` 下的目标应用布局、输入法、截图尺寸与多窗口行为尚未在真机验证，不宣称兼容。
+默认规格沿用既有 build 基线（真机证据只覆盖默认规格）。
 
 ## 4. 身份不是一个 displayId
 
@@ -433,6 +459,8 @@ Standard 的 minSdk 为 30，但满足版本并不证明某个 ROM 的隐藏 API
 [preview-gate]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenPreviewInputGate.java
 [policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenPolicy.java
 [text-policy]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenTextInputPolicy.java
+[display-preset]: ../app/src/main/java/com/deepseekharness/app/util/VirtualScreenDisplayPreset.java
+[display-settings]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenDisplaySettings.java
 [input]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenInput.java
 [observed-control]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenObservedControl.java
 [anchor-proof]: ../app/src/main/java/com/deepseekharness/app/vscreen/VirtualScreenAnchorProof.java

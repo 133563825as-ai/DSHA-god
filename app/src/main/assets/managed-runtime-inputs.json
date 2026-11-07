@@ -793,6 +793,7 @@
     "util/VirtualScreenInputPolicy.java",
     "util/VirtualScreenInputResult.java",
     "util/VirtualScreenLifecycleState.java",
+    "util/VirtualScreenDisplayPreset.java",
     "util/VirtualScreenPolicy.java",
     "util/VirtualScreenRoutes.java",
     "util/VirtualScreenStroke.java",
