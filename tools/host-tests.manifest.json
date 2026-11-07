@@ -4,7 +4,9 @@
     {
       "path": "tools/test-sprout-host-jars.py",
       "stage": "fast",
-      "requires": ["python39"],
+      "requires": [
+        "python39"
+      ],
       "args": [],
       "timeoutSeconds": 120,
       "environment": {},
@@ -14,7 +16,10 @@
     {
       "path": "tools/test-previous-module-boundary.py",
       "stage": "fast",
-      "requires": ["python39", "jdk17"],
+      "requires": [
+        "python39",
+        "jdk17"
+      ],
       "args": [],
       "timeoutSeconds": 120,
       "environment": {},
@@ -24,7 +29,9 @@
     {
       "path": "tools/test-previous-runtime-fixture.py",
       "stage": "fast",
-      "requires": ["python39"],
+      "requires": [
+        "python39"
+      ],
       "args": [],
       "timeoutSeconds": 120,
       "environment": {},
@@ -3391,6 +3398,18 @@
       "timeoutSeconds": 60,
       "environment": {},
       "reason": "proroot git SIGSEGV guard: rc=139 and '[proroot] SIGSEGV' stderr fail loudly with empty stdout, one execution and no retry; normal rc=0 and ordinary failures keep their behavior; module API, CLI and process exit are exercised with a simulated git and no device."
+    },
+    {
+      "reason": "模拟器 linux-x64 平台包补齐的纯逻辑负控：锁定版本+integrity 必须来自 dsh-runtime 锁，tar 成员越界/链接拒绝，缓存损坏不复用。无下载、无联网。",
+      "path": "tools/test-emulator-platform-packages.py",
+      "stage": "fast",
+      "requires": [
+        "python39",
+        "raw"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {}
     }
   ]
 }
