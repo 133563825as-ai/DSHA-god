@@ -31,11 +31,15 @@ public final class StorageActivity extends AppCompatActivity {
     super.onCreate(saved);
     page =
         new CardPage(
-            this,
-            t("存储与文件", "Storage and files"),
-            t(
-                "完整 Linux 环境约占 1 GB。历史环境和回退副本另行保留；它们不等于聊天数据。以下为文件大小估算。",
-                "The full Linux environment uses about 1 GB. Older environments and rollback copies are retained separately from chats. Sizes below are estimates."));
+            this, t("存储与文件", "Storage and files"), t("空间占用与清理", "Storage usage and cleanup"));
+    // 摘要进页首，完整说明点开 ⓘ（审计 D-06）。
+    InfoHint.bind(
+        page.subtitle,
+        t("存储与文件", "Storage and files"),
+        t("空间占用与清理", "Storage usage and cleanup"),
+        t(
+            "完整 Linux 环境约占 1 GB。历史环境和回退副本另行保留；它们不等于聊天数据。以下为文件大小估算。",
+            "The full Linux environment uses about 1 GB. Older environments and rollback copies are retained separately from chats. Sizes below are estimates."));
     UiNavigation.addHeader(this, page.root, t("存储与文件", "Storage and files"), this::finish);
     var files = page.card();
     page.kv(
@@ -136,7 +140,8 @@ public final class StorageActivity extends AppCompatActivity {
   private void renderUsage(java.util.Map<String, StorageMaintenance.Size> sizes) {
     java.util.Map<String, Long> bytes = new java.util.LinkedHashMap<>();
     for (var entry : sizes.entrySet()) bytes.put(entry.getKey(), entry.getValue().bytes);
-    total.setText(
+    UiMotion.crossFadeText(
+        total,
         com.deepseekharness.app.util.Fmt.bytes(
             com.deepseekharness.app.util.StorageUsage.total(bytes)));
     usage.removeAllViews();
@@ -152,6 +157,7 @@ public final class StorageActivity extends AppCompatActivity {
       usage.addView(
           part, new LinearLayout.LayoutParams(0, -1, (float) Math.max(segment.fraction, 0.004)));
     }
+    UiMotion.reveal(usage);
     int other =
         segments.isEmpty() || segments.get(segments.size() - 1).key != null
             ? 0

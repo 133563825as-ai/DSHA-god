@@ -165,4 +165,13 @@ public final class UiMotionTest {
     UiMotion.flash(view);
     assertEquals(1f, view.getAlpha(), 0.001f);
   }
+
+  @Test
+  public void textColorTransitionFallsBackToStaticWhenAnimationsDisabled() {
+    animationScales(0f);
+    TextView view = view("状态");
+    int target = 0xFF112233;
+    UiMotion.crossFadeTextColor(view, target);
+    assertEquals(target, view.getCurrentTextColor());
+  }
 }

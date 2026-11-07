@@ -95,8 +95,9 @@ public final class EnvironmentNoticeBanner extends LinearLayout {
     this.kind = kind == null ? RecoveryBannerState.Kind.NONE : kind;
     boolean visible = this.kind != RecoveryBannerState.Kind.NONE;
     if (visible) {
-      if (!TextUtils.equals(title.getText(), titleText)) title.setText(titleText);
-      if (!TextUtils.equals(subtitle.getText(), detail)) subtitle.setText(detail);
+      // 标题/说明变化用 150ms 淡入，出现时整条淡入（审计 A-03），不再硬切顶部横幅。
+      UiMotion.crossFadeText(title, titleText);
+      UiMotion.crossFadeText(subtitle, detail);
       subtitle.setVisibility(TextUtils.isEmpty(detail) ? GONE : VISIBLE);
       CharSequence description =
           TextUtils.isEmpty(detail) ? titleText : TextUtils.concat(titleText, ", ", detail);
@@ -104,7 +105,9 @@ public final class EnvironmentNoticeBanner extends LinearLayout {
         setContentDescription(description);
     }
     int visibility = visible ? VISIBLE : GONE;
+    boolean wasHidden = getVisibility() != VISIBLE;
     if (getVisibility() != visibility) setVisibility(visibility);
+    if (visible && wasHidden) UiMotion.reveal(this);
     if (isAttachedToWindow()) style();
   }
 

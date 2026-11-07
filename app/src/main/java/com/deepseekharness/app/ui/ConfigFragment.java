@@ -522,12 +522,13 @@ public class ConfigFragment extends Fragment {
     TextView status = root.findViewById(R.id.config_save_status);
     View undo = root.findViewById(R.id.config_undo);
     if (error != null) {
-      status.setText(UiText.choose("端口无效，修正后才能保存", "Invalid port; fix it to save"));
-      status.setTextColor(requireContext().getColor(R.color.shell_bad));
+      // 错误态：文字与颜色都走 120–150ms 过渡，不再瞬切（审计 D-03）。
+      UiMotion.crossFadeTextColor(status, requireContext().getColor(R.color.shell_bad));
+      UiMotion.crossFadeText(status, UiText.choose("端口无效，修正后才能保存", "Invalid port; fix it to save"));
       undo.setVisibility(changes > 0 ? View.VISIBLE : View.GONE);
       return;
     }
-    status.setTextColor(requireContext().getColor(R.color.shell_text_secondary));
+    UiMotion.crossFadeTextColor(status, requireContext().getColor(R.color.shell_text_secondary));
     if (changes > 0) {
       android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder();
       String count = UiText.format("%d 项未保存", changes);
@@ -544,10 +545,10 @@ public class ConfigFragment extends Fragment {
           android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
       text.append("  ")
           .append(UiText.choose("端口与运行时需重启 Web", "Port and runtime apply after restarting Web"));
-      status.setText(text);
+      UiMotion.crossFadeText(status, text);
       undo.setVisibility(View.VISIBLE);
     } else {
-      status.setText(UiText.choose("配置已是最新", "Settings are up to date"));
+      UiMotion.crossFadeText(status, UiText.choose("配置已是最新", "Settings are up to date"));
       undo.setVisibility(View.GONE);
     }
   }

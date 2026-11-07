@@ -1342,7 +1342,7 @@ public class TerminalActivity extends AppCompatActivity implements TerminalPane.
     TerminalPane pane = pane();
     boolean pty = pane == null ? PtyTerminalFragment.preferred(this) : pane.isPty();
     var tab = pty ? owner.currentPty() : owner.currentSimple();
-    title.setText(tab == null ? UiText.text("暂无终端") : sessionDisplayName(pty, tab));
+    UiMotion.crossFadeText(title, tab == null ? UiText.text("暂无终端") : sessionDisplayName(pty, tab));
     String warning =
         previousProcess
             ? UiText.choose(
@@ -1361,8 +1361,11 @@ public class TerminalActivity extends AppCompatActivity implements TerminalPane.
           UiText.choose(
               "后台运行保护已丢失；会话未被自动结束，请查看会话状态。",
               "Background protection was lost. Sessions were not automatically ended; inspect their status.");
-    status.setText(warning);
+    // 警告行文本淡入；出现时整行淡入（审计 F-04），终端高频刷新下同文不重复动画。
+    boolean statusWasHidden = status.getVisibility() != View.VISIBLE;
     status.setVisibility(warning.isEmpty() ? View.GONE : View.VISIBLE);
+    UiMotion.crossFadeText(status, warning);
+    if (!warning.isEmpty() && statusWasHidden) UiMotion.reveal(status);
     if (sessionPanel != null && sessionPanel.getVisibility() == View.VISIBLE) renderSessions();
   }
 

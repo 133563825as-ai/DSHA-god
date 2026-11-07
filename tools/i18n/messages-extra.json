@@ -15793,5 +15793,61 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/StartupRecoveryLayout.java"
     ]
+  },
+  {
+    "id": "x1972006",
+    "zh": "部署中",
+    "en": "Deploying",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/OnboardingActivity.java"
+    ]
+  },
+  {
+    "id": "x1972007",
+    "zh": "部署失败",
+    "en": "Deploy failed",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/OnboardingActivity.java"
+    ]
+  },
+  {
+    "id": "x1972008",
+    "zh": "待修复",
+    "en": "Needs repair",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/OnboardingActivity.java"
+    ]
+  },
+  {
+    "id": "x1972009",
+    "zh": "导出工作区文件",
+    "en": "Export workspace files",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/WorkspaceFilesActivity.java"
+    ]
+  },
+  {
+    "id": "x1972010",
+    "zh": "查看与停止任务",
+    "en": "View and stop tasks",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AgentTasksActivity.java"
+    ]
+  },
+  {
+    "id": "x1972011",
+    "zh": "空间占用与清理",
+    "en": "Storage usage and cleanup",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/StorageActivity.java"
+    ]
+  },
+  {
+    "id": "x1972012",
+    "zh": "只读副本与旧环境",
+    "en": "Read-only copies",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RetainedDataActivity.java"
+    ]
   }
 ]

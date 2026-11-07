@@ -1945,5 +1945,12 @@
   "x1972002": "O app de destino atingiu o tempo limite: tente mais tarde ou abra-o em segundo plano primeiro.",
   "x1972003": "Esta pasta só concedeu gravação; autorize novamente permitindo leitura e gravação.",
   "x1972004": "Esta pasta só concedeu gravação e o sistema não liberou o acesso; a limpeza será tentada novamente depois.",
-  "x1972005": "Ver detalhes: "
+  "x1972005": "Ver detalhes: ",
+  "x1972006": "A implantar",
+  "x1972007": "Falha na implantação",
+  "x1972008": "Requer reparo",
+  "x1972009": "Exportar arquivos do espaço",
+  "x1972010": "Ver e parar tarefas",
+  "x1972011": "Espaço e limpeza",
+  "x1972012": "Cópias somente leitura e ambientes antigos"
 }

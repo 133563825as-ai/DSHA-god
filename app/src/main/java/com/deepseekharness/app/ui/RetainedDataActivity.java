@@ -61,9 +61,15 @@ public final class RetainedDataActivity extends AppCompatActivity {
         new CardPage(
             this,
             t("保留副本与旧环境", "Retained copies and old environments"),
-            t(
-                "原件保持只读。记录中的成功状态不是本次重新验证；检查、导出与恢复分别处理。未知或受损原件继续保留。",
-                "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained."));
+            t("只读副本与旧环境", "Read-only copies"));
+    // 摘要进页首，完整说明点开 ⓘ（审计 D-06）。
+    InfoHint.bind(
+        shell.subtitle,
+        t("保留副本与旧环境", "Retained copies and old environments"),
+        t("只读副本与旧环境", "Read-only copies"),
+        t(
+            "原件保持只读。记录中的成功状态不是本次重新验证；检查、导出与恢复分别处理。未知或受损原件继续保留。",
+            "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained."));
     UiNavigation.addHeader(
         this, shell.root, t("保留副本与旧环境", "Retained copies and old environments"), this::finish);
     LinearLayout body = shell.content;
@@ -290,7 +296,9 @@ public final class RetainedDataActivity extends AppCompatActivity {
   private void render(RetainedCatalogue.Page page) {
     rows.removeAllViews();
     long first = (long) model.page * page.size, last = first + page.entries.size();
-    pageStatus.setText(
+    // 分页状态行淡入；列表重建后整块淡入一次（审计 E-05）。
+    UiMotion.crossFadeText(
+        pageStatus,
         UiText.format(
             "已显示 %s–%s / %s 条 · 第 %s 页",
             page.total == 0 ? 0 : first + 1, last, page.total, model.page + 1));
@@ -358,6 +366,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
             model.page++;
             refresh();
           });
+    UiMotion.reveal(rows);
   }
 
   private void details(RetainedCatalogue.Entry entry) {

@@ -190,7 +190,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
             ? t("当前空闲，没有正在执行的原生任务", "Idle; no native tasks are running")
             : String.format(
                 java.util.Locale.ROOT, t("%d 项任务正在执行", "%d tasks running"), rows.size());
-    if (!count.contentEquals(summary.getText())) summary.setText(count);
+    // 计数行：数字变化直接落值（不闪），空闲/运行文案切换才淡入（审计 E-10）。
+    UiMotion.crossFadeTimerText(summary, count);
     taskList.setVisibility(rows.isEmpty() ? View.GONE : View.VISIBLE);
     emptyState.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
@@ -204,6 +205,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         if (i > 0) taskList.addView(TransferUi.divider(this, 68));
         taskList.addView(taskRow(rows.get(i)));
       }
+      // 新增/消失的行用既有列表首屏同一节奏淡入；不重排已有行。
+      UiMotion.staggerIn(taskList, 8);
       return;
     }
     // 同一批任务：只刷新时长与步骤文字，不重建行，保留焦点与读屏位置。
@@ -212,8 +215,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
       View child = taskList.getChildAt(i);
       if (!(child.getTag() instanceof TextView[] views)) continue;
       Task row = rows.get(index++);
-      if (!row.title.contentEquals(views[0].getText())) views[0].setText(row.title);
-      if (!row.meta.contentEquals(views[1].getText())) views[1].setText(row.meta);
+      UiMotion.crossFadeText(views[0], row.title);
+      UiMotion.crossFadeTimerText(views[1], row.meta);
       child.setContentDescription(row.title + ", " + row.meta);
     }
   }

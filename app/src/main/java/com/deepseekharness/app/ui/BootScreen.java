@@ -298,9 +298,8 @@ final class BootScreen {
   }
 
   void setStatus(String text) {
-    CharSequence current = hint.getText();
-    if (text == null || current != null && text.contentEquals(current)) return;
-    hint.setText(text);
+    // 同屏只换提示文字：150ms 淡入，避免与开场/退场动画叠加成硬切（审计 B-08）。
+    UiMotion.crossFadeText(hint, text == null ? "" : text);
   }
 
   /** 直启路径的退出口：始终可见，回到原生主界面。 */

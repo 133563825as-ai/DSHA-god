@@ -1443,10 +1443,17 @@ public final class SkillsFragment extends Fragment {
     statusRow.setBackground(shape);
     status.setTextColor(
         requireContext().getColor(cancelled ? R.color.shell_text_secondary : R.color.shell_text));
-    status.setText(resultText(result));
+    boolean wasHidden = statusRow.getVisibility() != View.VISIBLE;
+    statusRow.setVisibility(View.VISIBLE);
+    if (ok || cancelled) {
+      UiMotion.crossFadeText(status, resultText(result));
+    } else {
+      // 失败结果：结果条先给一句结论，完整原因/影响/下一步点开 ⓘ（审计 F-07 + 基准 ⑬）。
+      InfoHint.bindOnSurface(status, null, "", resultText(result));
+    }
     undoButton.setVisibility(
         "DISABLED".equals(code) || "TRASHED".equals(code) ? View.VISIBLE : View.GONE);
-    statusRow.setVisibility(View.VISIBLE);
+    if (wasHidden) UiMotion.reveal(statusRow);
   }
 
   @Nullable

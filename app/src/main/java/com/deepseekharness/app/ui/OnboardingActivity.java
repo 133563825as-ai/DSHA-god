@@ -1265,18 +1265,20 @@ public final class OnboardingActivity extends AppCompatActivity {
 
   private void buildFinish() {
     int state = finishState();
-    String title, lead;
+    String title, lead, detail;
     switch (state) {
       case F_RUNNING:
         title = UiText.choose("马上就好", "Almost there");
-        lead =
+        lead = UiText.text("部署中");
+        detail =
             UiText.choose(
                 "运行环境还在部署，完成后即可进入主界面并自动启动 Web。也可以先进入受限主界面查看配置和日志。",
                 "The runtime is still deploying. When it finishes you can open the home screen and Web starts automatically. You can also enter the limited interface to view settings and logs.");
         break;
       case F_READY:
         title = UiText.choose("准备就绪", "All set");
-        lead =
+        lead = UiText.text("已完成");
+        detail =
             UiText.choose(
                 "运行环境已部署并通过检查。进入主界面后会自动启动 Web。",
                 "The runtime is deployed and passed its checks. Web starts automatically on the home screen.");
@@ -1285,14 +1287,16 @@ public final class OnboardingActivity extends AppCompatActivity {
       case F_PENDING:
         title =
             state == F_PENDING ? deploy.label() : UiText.choose("部署未完成", "Deployment incomplete");
-        lead =
+        lead = UiText.text("部署失败");
+        detail =
             UiText.choose(
                 "部署没有完成，本页不会自动覆盖环境。请按下方原因处理后重试。",
                 "Deployment did not finish. This page will not overwrite the environment automatically. Fix the cause below, then retry.");
         break;
       case F_UNREADY:
         title = UiText.choose("需要处理环境", "The environment needs attention");
-        lead =
+        lead = UiText.text("待修复");
+        detail =
             UiText.choose(
                 "维护步骤已结束，但环境就绪检查未通过。已停止自动跳转，请查看原因或进入受限主界面。",
                 "Maintenance ended, but readiness checks did not pass. Automatic navigation stopped. Review the reason or enter the limited interface.");
@@ -1300,10 +1304,14 @@ public final class OnboardingActivity extends AppCompatActivity {
       default:
         title = UiText.choose("还未开始部署", "Deployment has not started");
         lead = UiText.choose("回到第 1 步开始部署。", "Go back to step 1 to start deployment.");
+        detail = "";
     }
     content.addView(kit.eyebrow(UiText.choose("第 4 步 · 完成", "Step 4 · Finish")));
     kit.add(content, kit.heading(title, false), 10);
-    kit.add(content, kit.lead(lead), 8);
+    // 首屏只留 ≤5 字状态词，原因/影响/下一步点开 ⓘ（审计 A-06 + 基准 ⑩⑬）。
+    TextView leadView = kit.lead(lead);
+    if (!detail.isEmpty()) InfoHint.bind(leadView, title, lead, detail);
+    kit.add(content, leadView, 8);
     kit.add(content, runtimeCard(state), 18);
     kit.add(content, grantsCard(), 12);
     buildFinishFooter(state);
