@@ -3127,6 +3127,7 @@
   "build156_ui_33fd3161f343": "백업 진행 중: %s · 항목 %s개",
   "build156_ui_8ffe7cb7a9dc": "네이티브 권한은 즉시 적용됩니다; %s",
   "build156_ui_29aaf75d8f8a": "%s · 단계 %s초 · 총 %s초\n%s",
+  "build337_ui_7663908fc896": "%s · 단계 %s초 · 총 %s초",
   "build156_ui_9e7973ee5cfe": "%s\n호환 엔진: Gecko 143",
   "build156_ui_2d1a1a4339c5": "터미널 시작 실패: %s",
   "build156_ui_d567c72699c9": "세션 종료됨(종료 코드 %s)",

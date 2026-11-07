@@ -3127,6 +3127,7 @@
   "build156_ui_33fd3161f343": "Backup em curso: %s · %s entradas",
   "build156_ui_8ffe7cb7a9dc": "A autorização nativa aplica-se de imediato; %s",
   "build156_ui_29aaf75d8f8a": "%s · Etapa %s segundos · Total %s segundos\n%s",
+  "build337_ui_7663908fc896": "%s · Etapa %s segundos · Total %s segundos",
   "build156_ui_9e7973ee5cfe": "%s\nMotor de compatibilidade: Gecko 143",
   "build156_ui_2d1a1a4339c5": "Falha ao iniciar o terminal: %s",
   "build156_ui_d567c72699c9": "Sessão terminada (código de saída %s)",

@@ -3127,6 +3127,7 @@
   "build156_ui_33fd3161f343": "Sauvegarde en cours : %s · %s entrées",
   "build156_ui_8ffe7cb7a9dc": "L’autorisation native s’applique immédiatement ; %s",
   "build156_ui_29aaf75d8f8a": "%s · Étape %s secondes · Total %s secondes\n%s",
+  "build337_ui_7663908fc896": "%s · Étape %s secondes · Total %s secondes",
   "build156_ui_9e7973ee5cfe": "%s\nMoteur de compatibilité : Gecko 143",
   "build156_ui_2d1a1a4339c5": "Le terminal n’a pas pu démarrer : %s",
   "build156_ui_d567c72699c9": "Session terminée (code de sortie %s)",

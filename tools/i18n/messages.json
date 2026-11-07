@@ -25329,6 +25329,15 @@
     "uiFormat": true
   },
   {
+    "id": "build337_ui_7663908fc896",
+    "zh": "%s · 本阶段 %s 秒 · 总计 %s 秒",
+    "en": "%s · Stage %s seconds · Total %s seconds",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ],
+    "uiFormat": true
+  },
+  {
     "id": "build156_ui_9e7973ee5cfe",
     "zh": "%s\n兼容内核 Gecko 143",
     "en": "%s\nCompatibility engine: Gecko 143",
