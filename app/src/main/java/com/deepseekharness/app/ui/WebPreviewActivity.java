@@ -536,7 +536,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       attachClients(webView);
       container.addView(webView, new FrameLayout.LayoutParams(-1, -1));
       WebFrameRate.apply(this, webView);
-      progress.setVisibility(retained.ready ? View.GONE : View.VISIBLE);
+      setProgressVisible(!retained.ready);
       if (!retained.ready) showPageBoot();
       continueInitialNavigation();
     } else {
@@ -598,7 +598,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     }
     pendingIdentity = expected;
     errorPanel.setVisibility(View.GONE);
-    progress.setVisibility(View.VISIBLE);
+    setProgressVisible(true);
     showPageBoot();
     previewAuth.refresh(
         (url, cookie, error) -> {
@@ -768,7 +768,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       downloads.model.cancel();
     }
     if (webView != null) webView.setEnabled(false);
-    progress.setVisibility(View.GONE);
+    setProgressVisible(false);
     hidePageBoot();
     findViewById(R.id.web_error_browser).setEnabled(false);
     com.deepseekharness.app.util.WebCrashReport.Kind kind =
@@ -894,7 +894,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     pageFailed = false;
     authRetried = !allowAuthRetry;
     errorPanel.setVisibility(View.GONE);
-    progress.setVisibility(View.VISIBLE);
+    setProgressVisible(true);
     try {
       WebView view = new WebView(new android.content.MutableContextWrapper(this));
       // WebView 首帧前默认画白底；改用最近一次网页背景色（无记录时宿主底色）。
@@ -1135,14 +1135,14 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       pageFailed = false;
       errorPanel.setVisibility(View.GONE);
       progress.setProgress(0);
-      progress.setVisibility(View.VISIBLE);
+      setProgressVisible(true);
     }
 
     @Override
     public void onPageFinished(WebView view, String url) {
       if (!isCurrentPage(view) || pageFailed) return;
       final long navigation = retained.pageNavigation;
-      progress.setVisibility(View.GONE);
+      setProgressVisible(false);
       hidePageBoot();
       if (!WebPreviewPolicy.sameService(baseUrl, url)) return;
       retained.ready = true;
@@ -1508,6 +1508,33 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     if (screen != null) screen.dismiss();
   }
 
+  /** 顶部进度条：出现淡入、消失 150ms 淡出，避免加载/错误切换时硬跳（审计 F-01）。 */
+  private void setProgressVisible(boolean visible) {
+    progress.animate().cancel();
+    if (visible) {
+      boolean wasHidden = progress.getVisibility() != View.VISIBLE;
+      progress.setVisibility(View.VISIBLE);
+      if (wasHidden) UiMotion.reveal(progress);
+      return;
+    }
+    if (UiMotion.animationsEnabled(this)) {
+      progress
+          .animate()
+          .alpha(0f)
+          .setDuration(150L)
+          .setInterpolator(UiMotion.standard())
+          .withEndAction(
+              () -> {
+                progress.setVisibility(View.GONE);
+                progress.setAlpha(1f);
+              })
+          .start();
+    } else {
+      progress.setVisibility(View.GONE);
+      progress.setAlpha(1f);
+    }
+  }
+
   private void showError(String title, String detail) {
     showError(
         com.deepseekharness.app.util.WebCrashReport.Kind.GENERIC, title, detail, detail, null);
@@ -1531,7 +1558,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     pageFailed = true;
     retained.ready = false;
     refreshPictureInPicture();
-    progress.setVisibility(View.GONE);
+    setProgressVisible(false);
     hidePageBoot();
     crashPanel()
         .show(

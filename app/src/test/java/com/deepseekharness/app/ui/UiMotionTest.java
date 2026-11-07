@@ -128,4 +128,41 @@ public final class UiMotionTest {
     Shadow.<ShadowLooper>extract(Looper.getMainLooper()).idleFor(Duration.ofMillis(300));
     assertEquals("2.5", view.getText().toString());
   }
+
+  @Test
+  public void timerTextWritesDigitsImmediatelyWithoutFading() {
+    TextView view = view("仅检查 · 总耗时 3 秒 · 当前阶段 1 秒");
+    UiMotion.crossFadeTimerText(view, "仅检查 · 总耗时 4 秒 · 当前阶段 2 秒");
+    // 只有数字变化：不淡入，避免每秒刷新变成呼吸闪烁。
+    assertEquals("仅检查 · 总耗时 4 秒 · 当前阶段 2 秒", view.getText().toString());
+    assertEquals(1f, view.getAlpha(), 0.001f);
+  }
+
+  @Test
+  public void timerTextFadesWhenWordingChanges() {
+    TextView view = view("仅检查 · 总耗时 3 秒");
+    UiMotion.crossFadeTimerText(view, "检查与按需修复 · 总耗时 3 秒");
+    assertEquals("检查与按需修复 · 总耗时 3 秒", view.getText().toString());
+    assertEquals(0f, view.getAlpha(), 0.001f);
+    Shadow.<ShadowLooper>extract(Looper.getMainLooper()).idleFor(Duration.ofMillis(300));
+    assertEquals(1f, view.getAlpha(), 0.001f);
+  }
+
+  @Test
+  public void revealFallsBackToFullyVisibleWhenAnimationsDisabled() {
+    animationScales(0f);
+    TextView view = view("内容");
+    view.setTranslationY(12f);
+    UiMotion.reveal(view);
+    assertEquals(1f, view.getAlpha(), 0.001f);
+    assertEquals(0f, view.getTranslationY(), 0.001f);
+  }
+
+  @Test
+  public void flashStaysOpaqueWhenAnimationsDisabled() {
+    animationScales(0f);
+    TextView view = view("段位");
+    UiMotion.flash(view);
+    assertEquals(1f, view.getAlpha(), 0.001f);
+  }
 }

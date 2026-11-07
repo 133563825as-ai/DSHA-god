@@ -393,8 +393,11 @@ public class WorkspaceFragment extends Fragment {
     if (level != BackupHealth.Level.RUNNING && !nativeStatus.isEmpty())
       detail = detail + "\n\n" + nativeStatus;
 
-    ((TextView) view.findViewById(R.id.workspace_hero_title)).setText(title);
-    ((TextView) view.findViewById(R.id.workspace_backup_status)).setText(detail);
+    // 卡内只留一句结论；保存路径 / 原生任务详情（多行）收进 ⓘ，随状态淡入（审计 E-04）。
+    TextView heroTitle = view.findViewById(R.id.workspace_hero_title);
+    TextView heroDetail = view.findViewById(R.id.workspace_backup_status);
+    UiMotion.crossFadeText(heroTitle, title);
+    InfoHint.bind(heroDetail, title, detail);
     tintHero(view, level, icon);
     view.findViewById(R.id.workspace_hero_progress)
         .setVisibility(level == BackupHealth.Level.RUNNING ? View.VISIBLE : View.GONE);

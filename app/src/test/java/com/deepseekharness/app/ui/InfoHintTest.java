@@ -6,6 +6,7 @@ import android.text.TextUtils;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import com.deepseekharness.app.DshaApp;
+import com.deepseekharness.app.R;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -106,5 +107,32 @@ public final class InfoHintTest {
     TextView view = view();
     InfoHint.bind(view, null, (CharSequence) null);
     assertEquals("", view.getText().toString());
+  }
+
+  @Test
+  public void bindOnSurfaceKeepsCallerBackgroundAndWidth() {
+    TextView view = view();
+    view.setBackgroundResource(R.drawable.bg_onb_hint_bad);
+    int padding = view.getPaddingLeft();
+    android.graphics.drawable.Drawable background = view.getBackground();
+    String full = "发生了什么：环境维护未完成。影响：原件已保留。下一步：恢复中断维护。";
+    InfoHint.bindOnSurface(view, "失败", "失败", full);
+    assertEquals("失败", view.getText().toString());
+    assertNotNull("首屏短结论仍带 ⓘ", view.getCompoundDrawablesRelative()[2]);
+    assertSame("错误条背景由调用方保留", background, view.getBackground());
+    assertEquals("内边距不被 ⓘ 改写", padding, view.getPaddingLeft());
+    assertEquals("错误条仍占满可用宽度", ViewGroup.LayoutParams.MATCH_PARENT, view.getLayoutParams().width);
+    assertTrue(view.isClickable());
+    assertTrue(view.getContentDescription().toString().contains("失败"));
+  }
+
+  @Test
+  public void bindOnSurfaceWithoutExtraTextClearsTapTarget() {
+    TextView view = view();
+    view.setBackgroundResource(R.drawable.bg_onb_hint_warn);
+    InfoHint.bindOnSurface(view, "失败", "失败", "失败");
+    assertEquals("失败", view.getText().toString());
+    assertNull(view.getCompoundDrawablesRelative()[2]);
+    assertFalse(view.isClickable());
   }
 }

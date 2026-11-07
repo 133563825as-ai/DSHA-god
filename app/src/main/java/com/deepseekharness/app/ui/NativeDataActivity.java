@@ -1379,14 +1379,18 @@ public final class NativeDataActivity extends AppCompatActivity {
       status.setText("");
       return;
     }
-    status.setText(
+    // 结果卡分段刷新：结论/错误文案变化才淡入，计数与字节数每秒变化时直接落值（审计 E-02）。
+    String resultLine =
         com.deepseekharness.app.util.UiText.format(
             "%s\n%s 项 · %s%s%s",
             resultText(value),
             value.entries,
             com.deepseekharness.app.util.Fmt.bytes(value.bytes),
             value.error.isEmpty() ? "" : "\n" + errorText(value.error),
-            projection.isEmpty() ? "" : "\n" + errorText(projection)));
+            projection.isEmpty() ? "" : "\n" + errorText(projection));
+    boolean wasEmpty = status.getText().length() == 0;
+    UiMotion.crossFadeTimerText(status, resultLine);
+    if (wasEmpty) UiMotion.reveal(statusCard);
   }
 
   private String resultText(NativeBackupJobs.State value) {

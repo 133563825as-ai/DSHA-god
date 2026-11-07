@@ -48,6 +48,10 @@ public final class DeviceGrantsFragment extends Fragment {
   private View[] pillDots;
   private TextView[] pillTitles, pillValues;
   private View[] pills;
+
+  /** 概览色点上一轮的颜色资源；0 表示尚未渲染，用于只给真正的档位变化做高亮。 */
+  private final int[] pillTone = new int[4];
+
   private int columns = 1;
   private MaterialSwitch externalDevice;
   private TextView externalDeviceStatus;
@@ -1343,6 +1347,7 @@ public final class DeviceGrantsFragment extends Fragment {
     TextView warning = page == null ? null : page.findViewById(R.id.device_root_policy_warning);
     if (warning == null) return;
     boolean relaxed = enabled && mode != DeviceShellPolicy.Mode.STRICT;
+    boolean wasHidden = warning.getVisibility() != View.VISIBLE;
     warning.setVisibility(relaxed ? View.VISIBLE : View.GONE);
     refreshSummary();
     if (!relaxed) return;
@@ -1356,7 +1361,9 @@ public final class DeviceGrantsFragment extends Fragment {
                 "高风险：已放宽。助手和插件可用 root 执行白名单以外的任意命令；仅拦截格式化、刷机、清除数据等不可逆操作。不用时请改回严格。",
                 "High risk: relaxed. The assistant and plugins can run root commands beyond the allowlist; only irreversible operations such as formatting, flashing or wiping data are blocked. Switch back to strict when not needed.");
     // 行内只留一句（含「严重风险 / 高风险」与后果），点按看完整原文；读屏直接读完整原文。
-    warning.setText(
+    // 档位切换时淡入新结论（审计 C-02）；从隐藏变为可见时整块淡入。
+    UiMotion.crossFadeText(
+        warning,
         full
             ? UiText.choose(
                 "严重风险：root 可执行任意命令，含格式化、刷机等不可逆操作",
@@ -1364,6 +1371,7 @@ public final class DeviceGrantsFragment extends Fragment {
             : UiText.choose(
                 "高风险：root 可执行白名单外命令，仅拦截不可逆操作",
                 "High risk: root can run commands beyond the allowlist"));
+    if (wasHidden) UiMotion.reveal(warning);
     warning.setTag(R.id.device_root_policy_warning, detail);
     warning.setContentDescription(detail);
   }
@@ -1549,9 +1557,13 @@ public final class DeviceGrantsFragment extends Fragment {
     for (int i = 0; i < items.length; i++) {
       String value = summaryText(items[i].label);
       pillTitles[i].setText(UiText.raw(titles[i]));
-      pillValues[i].setText(value);
+      UiMotion.crossFadeText(pillValues[i], value);
+      int tone = summaryTone(items[i].tone);
+      boolean toneChanged = pillTone[i] != tone;
+      pillTone[i] = tone;
       pillDots[i].setBackgroundTintList(
-          android.content.res.ColorStateList.valueOf(ctx.getColor(summaryTone(items[i].tone))));
+          android.content.res.ColorStateList.valueOf(ctx.getColor(tone)));
+      if (toneChanged) UiMotion.flash(pillDots[i]);
       pills[i].setContentDescription(UiText.format("%s: %s", titles[i], value));
     }
   }

@@ -15785,5 +15785,13 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
     ]
+  },
+  {
+    "id": "x1972005",
+    "zh": "查看说明：",
+    "en": "View details: ",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/StartupRecoveryLayout.java"
+    ]
   }
 ]

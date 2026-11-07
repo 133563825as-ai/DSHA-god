@@ -132,7 +132,10 @@ final class WebCrashPanel {
     int background = context.getColor(R.color.shell_bg);
     root.setBackgroundColor(kept ? (background & 0x00FFFFFF) | 0xE6000000 : background);
     if (root.getWidth() > 0) applyWidth(root.getWidth());
+    // 覆盖 WebView 前给 180ms 淡入 + 轻微上移，避免错误面板硬切覆盖页面（审计 F-01）。
+    boolean wasHidden = root.getVisibility() != View.VISIBLE;
     root.setVisibility(View.VISIBLE);
+    if (wasHidden) UiMotion.reveal(root);
   }
 
   WebCrashReport.Kind kind() {

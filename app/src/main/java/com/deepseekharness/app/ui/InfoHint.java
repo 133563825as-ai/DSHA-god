@@ -101,6 +101,36 @@ public final class InfoHint {
 
   private static void apply(
       TextView view, CharSequence title, String summary, String full, boolean hasMore) {
+    apply(view, title, summary, full, hasMore, false);
+  }
+
+  /**
+   * 已有语义色容器（错误条 / 状态卡）上的 ⓘ：保留调用方背景、内边距与对齐，只把默认可见文字
+   * 收成摘要并发 ⓘ。用于 UI 基准 ⑬——首屏只留短结论，三要素明细点开再看。
+   */
+  public static void bindOnSurface(
+      TextView view,
+      @Nullable CharSequence title,
+      @Nullable CharSequence summary,
+      @Nullable CharSequence full) {
+    if (view == null) return;
+    String fullText = full == null ? "" : full.toString().trim();
+    String summaryText = summary == null ? "" : summary.toString().trim();
+    if (summaryText.isEmpty()) {
+      SummaryText.Split split = SummaryText.split(fullText);
+      apply(view, title, split.summary, split.full, split.hasMore, true);
+      return;
+    }
+    apply(view, title, summaryText, fullText, fullText.length() > summaryText.length(), true);
+  }
+
+  private static void apply(
+      TextView view,
+      CharSequence title,
+      String summary,
+      String full,
+      boolean hasMore,
+      boolean keepSurface) {
     if (!hasMore) {
       restore(view);
       view.setText(summary);
@@ -116,15 +146,17 @@ public final class InfoHint {
     view.setMaxLines(2);
     view.setEllipsize(TextUtils.TruncateAt.END);
     view.setCompoundDrawablesRelative(null, null, icon(context, view), null);
-    ViewGroup.LayoutParams params = view.getLayoutParams();
-    if (params != null && params.width == ViewGroup.LayoutParams.MATCH_PARENT) {
-      params.width = ViewGroup.LayoutParams.WRAP_CONTENT;
-      view.setLayoutParams(params);
+    if (!keepSurface) {
+      ViewGroup.LayoutParams params = view.getLayoutParams();
+      if (params != null && params.width == ViewGroup.LayoutParams.MATCH_PARENT) {
+        params.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+        view.setLayoutParams(params);
+      }
+      view.setBackgroundResource(R.drawable.bg_action_plain);
+      view.setMinHeight(dp(context, 32));
+      view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
     }
     view.setCompoundDrawablePadding(dp(context, 6));
-    view.setBackgroundResource(R.drawable.bg_action_plain);
-    view.setMinHeight(dp(context, 32));
-    view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
     String tapHint = UiText.choose("（点按查看完整说明）", "(tap for details)");
     view.setContentDescription(UiText.format("%s %s", summary, tapHint));
     view.setOnClickListener(v -> show(context, v, title, full));

@@ -43,6 +43,10 @@ public class ExtractActivity extends AppCompatActivity {
   private boolean automaticDeclined;
   private boolean rebuildRequested;
   private String lastRender = "";
+
+  /** 阶段条/阶段列表上一轮的形态键；形态没变就不重建，避免每秒刷新闪动（审计 B-01）。 */
+  private String lastStageKey = "";
+
   private Boolean cachedReady;
   private long cachedReadyTaskId = -1;
   private BackupTaskState.Status cachedReadyStatus;
@@ -326,14 +330,28 @@ public class ExtractActivity extends AppCompatActivity {
   }
 
   private void renderStages(DeployStages.View view) {
-    segments.removeAllViews();
-    stages.removeAllViews();
     boolean show = view.visible() && view.total() > 0;
     stageCard.setVisibility(show ? View.VISIBLE : View.GONE);
     if (!show) return;
     stageLine.setText(DeployCard.line(view));
+    // 阶段集合与当前步都没变时只更新那一行文字：不重建整块列表，也不丢滚动位置。
+    String stageKey =
+        view.mode
+            + ":"
+            + view.phase
+            + ":"
+            + view.current
+            + ":"
+            + view.total()
+            + ":"
+            + UiText.language();
+    if (stageKey.equals(lastStageKey)) return;
+    lastStageKey = stageKey;
+    segments.removeAllViews();
+    stages.removeAllViews();
     segments.addView(kit.segmentBar(view));
     stages.addView(kit.stageList(view));
+    UiMotion.reveal(stageCard);
   }
 
   private void renderMessages(

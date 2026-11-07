@@ -19,7 +19,8 @@ import org.json.*;
 
 /**
  * Web 无法加载时仍可使用的原生恢复工作台（方案 A）。顶部状态卡只给一个结论（StartupRecoveryState），
- * 对症主操作在卡内；其余操作逐行说明效果，不可用时写明原因。所有写操作仍经 BackupTask 与既有确认。
+ * 对症主操作在卡内；其余操作每行只有动作，效果说明收进行尾 ⓘ，不可用时写明原因。所有写操作仍经
+ * BackupTask 与既有确认。
  */
 public final class StartupRecoveryActivity extends AppCompatActivity {
   private HarnessController controller;
@@ -229,10 +230,18 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
             + showAllAttempts;
     if (key.equals(renderedKey)) return;
     renderedKey = key;
+    int scrollY = layout.root.getScrollY();
     renderStatus(kind, failure, taskBusy, healthy, stage);
     renderActions(kind, failure, taskBusy, healthy);
     renderAttempts();
     renderSnapshots(kind, taskBusy);
+    // 列表整块重建时给 150ms 淡入并恢复滚动位置，避免状态刷新把页面顶回顶部（审计 B-04）。
+    UiMotion.reveal(layout.recovery);
+    UiMotion.reveal(layout.tools);
+    UiMotion.reveal(layout.attempts);
+    UiMotion.reveal(layout.snapshots);
+    if (layout.root.getScrollY() != scrollY)
+      layout.root.post(() -> layout.root.scrollTo(0, scrollY));
   }
 
   private String meta(Kind kind, StartupHistoryStore.Entry entry, String stage) {
@@ -339,14 +348,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     String why = blocked(act, kind, taskBusy, healthy);
     // 「回滚未完成的修复」只在确有待处理修复时出现，不再常驻。
     if (act.guard == Guard.PENDING_ONLY && kind != Kind.PENDING) return;
-    layout.action(
-        parent,
-        act.label,
-        why.isEmpty() ? act.effect : why,
-        !why.isEmpty(),
-        act.icon,
-        act.run,
-        true);
+    layout.action(parent, act.label, act.effect, why, !why.isEmpty(), act.icon, act.run, true);
   }
 
   // ---------------------------------------------------------------- 动作
@@ -843,10 +845,13 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
         if (BuiltinPlugins.internal(name)) continue;
         count++;
         // 行文字保持「名称 · 卸载」：StartupRecoveryAudit 按此查找可点行。
+        String note =
+            !why.isEmpty() ? why : name.equals(failing) ? t("本次启动报错", "Failed in this start") : "";
         layout.action(
             layout.plugins,
             name + " · " + t("卸载", "Remove"),
-            !why.isEmpty() ? why : name.equals(failing) ? t("本次启动报错", "Failed in this start") : "",
+            "",
+            note,
             !why.isEmpty(),
             0,
             () -> confirmUninstall(name),

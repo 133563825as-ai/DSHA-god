@@ -190,6 +190,64 @@ public final class UiMotion {
   }
 
   /**
+   * 计时 / 计数文本：只有数字变化时直接落值（每秒淡入会变成呼吸闪烁），文案骨架变化时才淡入。
+   */
+  static void crossFadeTimerText(TextView view, CharSequence text) {
+    if (view == null) return;
+    CharSequence next = text == null ? "" : text;
+    if (skeleton(view.getText()).equals(skeleton(next))) {
+      view.animate().cancel();
+      view.setText(next);
+      view.setAlpha(1f);
+      return;
+    }
+    crossFadeText(view, next);
+  }
+
+  private static String skeleton(CharSequence text) {
+    String value = text == null ? "" : text.toString();
+    StringBuilder out = new StringBuilder(value.length());
+    for (int index = 0; index < value.length(); index++) {
+      char c = value.charAt(index);
+      out.append(Character.isDigit(c) ? '#' : c);
+    }
+    return out.toString();
+  }
+
+  /**
+   * 变化高亮：从 55% 透明度淡到全显（150ms），用于段位 / 小标记，不移动布局。
+   */
+  static void flash(View view) {
+    if (view == null) return;
+    view.animate().cancel();
+    if (!animationsEnabled(view.getContext())) {
+      view.setAlpha(1f);
+      return;
+    }
+    view.setAlpha(0.55f);
+    view.animate().alpha(1f).setDuration(150L).setInterpolator(STANDARD).start();
+  }
+
+  /**
+   * 重建后的容器淡入（150ms）：整块列表/卡片替换时给出「内容已更新」的过渡，而不是硬跳。
+   *
+   * <p>只在调用方完成重建后调用；系统关闭动画时直接落为完全可见，不残留半透明。
+   */
+  static void reveal(View view) {
+    if (view == null) return;
+    view.animate().cancel();
+    if (!animationsEnabled(view.getContext())) {
+      view.setAlpha(1f);
+      view.setTranslationY(0f);
+      return;
+    }
+    float offset = 4f * view.getResources().getDisplayMetrics().density;
+    view.setAlpha(0f);
+    view.setTranslationY(offset);
+    view.animate().alpha(1f).translationY(0f).setDuration(150L).setInterpolator(STANDARD).start();
+  }
+
+  /**
    * 按下轻微缩放；返回 false 不吞触摸，点击与无障碍仍由原控件处理。
    *
    * <p>只给没有自定义 OnTouchListener 的按钮使用，避免覆盖业务手势。

@@ -12,8 +12,9 @@ import com.deepseekharness.app.util.UiText;
  * 恢复页的原生布局；静态展示可独立验收，不执行 Web 或修复操作。
  *
  * <p>2026-11-02 方案 A（docs/design/startup-recovery-20261102）：顶部状态卡只给一个结论和对症主操作，
- * 替代旧「进入原因」；颜色只表达结论（good/info/idle/warn/bad）。其后为插件、其它恢复操作（每行一句效果或不可用原因）、
- * 最近启动（手机默认 3 条可展开）、配置快照、数据与诊断。可用宽度 ≥700dp 时分左右两栏。
+ * 替代旧「进入原因」；颜色只表达结论（good/info/idle/warn/bad）。其后为插件、其它恢复操作（每行只有动作；
+ * 效果说明收进行尾 ⓘ，行内只留「不可用：原因」这类状态）、最近启动（手机默认 3 条可展开）、配置快照、数据与诊断。
+ * 可用宽度 ≥700dp 时分左右两栏。
  */
 final class StartupRecoveryLayout {
   final ScrollView root;
@@ -23,6 +24,9 @@ final class StartupRecoveryLayout {
   final boolean wide;
   private final Context context;
   private final LinearLayout left, right;
+
+  /** 行尾 ⓘ 的查找标记；禁用整行后用它把只读说明按钮重新启用。 */
+  private static final Object INFO = new Object();
 
   private static String t(String zh, String en) {
     return UiText.choose(zh, en);
@@ -119,6 +123,21 @@ final class StartupRecoveryLayout {
     button.setContentDescription(description);
     button.setOnClickListener(v -> click.run());
     return button;
+  }
+
+  /** 行尾 / 分组标题旁的 ⓘ：打开完整说明；说明文案沿用原有效果句，不新增翻译键。 */
+  private ImageButton infoButton(String title, String full) {
+    ImageButton info = new ImageButton(context);
+    info.setImageResource(R.drawable.ic_onb_info);
+    info.setImageTintList(
+        android.content.res.ColorStateList.valueOf(context.getColor(R.color.shell_accent)));
+    info.setBackgroundResource(R.drawable.bg_action_plain);
+    info.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    int pad = dp(7);
+    info.setPadding(pad, pad, pad, pad);
+    info.setContentDescription(t("查看说明：", "View details: ") + title);
+    info.setOnClickListener(v -> InfoHint.show(context, v, title, full));
+    return info;
   }
 
   private LinearLayout column() {
@@ -262,34 +281,51 @@ final class StartupRecoveryLayout {
     return button;
   }
 
-  /** 操作结果横幅：成功 / 失败 / 进行中各用语义色，不与读取错误共用一行灰字。 */
+  /** 操作结果横幅：成功 / 失败 / 进行中各用语义色；首次出现淡入，换文 150ms 淡入。 */
   void banner(Tone tone, String text) {
-    progress.setText(text);
-    progress.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+    String next = text == null ? "" : text;
     GradientDrawable shape = new GradientDrawable();
     shape.setCornerRadius(dp(12));
     shape.setColor(context.getColor(soft(tone)));
     progress.setBackground(shape);
+    if (next.isEmpty()) {
+      progress.animate().cancel();
+      progress.setVisibility(View.GONE);
+      progress.setAlpha(1f);
+      progress.setTranslationY(0f);
+      return;
+    }
+    boolean wasHidden = progress.getVisibility() != View.VISIBLE;
+    progress.setVisibility(View.VISIBLE);
+    if (wasHidden) {
+      progress.setText(next);
+      UiMotion.reveal(progress);
+    } else {
+      UiMotion.crossFadeText(progress, next);
+    }
   }
 
-  /** 分组：标题行（可追加摘要与右侧切换）+ 可选说明 + 细边框行容器。返回行容器；其父视图是整组外壳。 */
-  private LinearLayout group(LinearLayout column, String title, String subtitle) {
+  /** 分组：标题行（可带 ⓘ 说明与右侧切换）+ 细边框行容器。返回行容器；其父视图是整组外壳。 */
+  private LinearLayout group(LinearLayout column, String title, String hint) {
     LinearLayout section = column();
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
     params.topMargin = dp(16);
     column.addView(section, params);
     LinearLayout header = new LinearLayout(context);
     header.setGravity(Gravity.CENTER_VERTICAL);
-    header.setPadding(dp(4), 0, 0, dp(subtitle.isEmpty() ? 6 : 0));
+    header.setPadding(dp(4), 0, 0, dp(6));
     section.addView(header, new LinearLayout.LayoutParams(-1, -2));
     TextView label = label(header, title, 12, R.color.shell_text_secondary);
     ((LinearLayout.LayoutParams) label.getLayoutParams()).width = -2;
     label.setTypeface(null, android.graphics.Typeface.BOLD);
     label.setLetterSpacing(0.03f);
     label.setAccessibilityHeading(true);
-    if (!subtitle.isEmpty()) {
-      TextView note = label(section, subtitle, 11, R.color.shell_text_muted);
-      note.setPadding(dp(4), 0, dp(4), dp(6));
+    // 分组说明默认不铺在页面上：标题旁一个 ⓘ，完整说明点开再看（审计 B-06）。
+    if (!hint.isEmpty()) {
+      ImageButton info = infoButton(title, hint);
+      LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(28), dp(28));
+      ip.setMarginStart(dp(2));
+      header.addView(info, ip);
     }
     LinearLayout entries = column();
     entries.setBackgroundResource(R.drawable.bg_settings_group);
@@ -317,14 +353,18 @@ final class StartupRecoveryLayout {
   }
 
   View action(LinearLayout parent, String label, int resource, Runnable click, boolean chevron) {
-    return action(parent, label, "", false, resource, click, chevron);
+    return action(parent, label, "", "", false, resource, click, chevron);
   }
 
-  /** 操作行：图标 + 标题 + 一行效果说明；blocked 时说明改为「不可用：原因」（警示色）且行不可点。 */
+  /**
+   * 操作行：只放动作标题（UI 基准 ①）；效果说明收进行尾 ⓘ，行内只保留状态
+   * （「不可用：原因」或「本次启动报错」）。blocked 行置灰，但 ⓘ 仍可点读说明。
+   */
   View action(
       LinearLayout parent,
       String label,
-      String sub,
+      String effect,
+      String note,
       boolean blocked,
       int resource,
       Runnable click,
@@ -339,18 +379,36 @@ final class StartupRecoveryLayout {
           new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
       mark = box;
     }
+    boolean hasEffect = effect != null && !effect.isEmpty();
+    boolean hasNote = note != null && !note.isEmpty();
     LinearLayout text = column();
     TextView main = rowText(text, label, 14, 0);
-    if (!sub.isEmpty()) main.setTypeface(null, android.graphics.Typeface.BOLD);
-    String second = blocked ? t("不可用：", "Unavailable: ") + sub : sub;
-    if (!sub.isEmpty()) {
+    if (hasEffect || hasNote) main.setTypeface(null, android.graphics.Typeface.BOLD);
+    String second = "";
+    if (hasNote) {
+      second = blocked ? t("不可用：", "Unavailable: ") + note : note;
       TextView view =
           rowText(text, second, 12, blocked ? R.color.shell_warn : R.color.shell_text_muted);
       ((LinearLayout.LayoutParams) view.getLayoutParams()).topMargin = dp(3);
     }
-    String description = sub.isEmpty() ? label : label + UiText.text("，") + second;
-    View row = row(parent, description, mark, mark == null ? 0 : 30, text, click, chevron);
-    if (blocked) enabled(row, false);
+    String description = second.isEmpty() ? label : label + UiText.text("，") + second;
+    View row =
+        row(
+            parent,
+            description,
+            mark,
+            mark == null ? 0 : 30,
+            text,
+            click,
+            chevron,
+            hasEffect ? label : "",
+            hasEffect ? effect : "");
+    if (blocked) {
+      enabled(row, false);
+      // 效果说明是只读信息，不随动作一起禁用；否则禁用行就再也看不到「这行本来做什么」。
+      View info = row.findViewWithTag(INFO);
+      if (info != null) info.setEnabled(true);
+    }
     return row;
   }
 
@@ -409,6 +467,19 @@ final class StartupRecoveryLayout {
       View body,
       Runnable click,
       boolean chevron) {
+    return row(parent, description, mark, markDp, body, click, chevron, "", "");
+  }
+
+  private View row(
+      LinearLayout parent,
+      String description,
+      View mark,
+      int markDp,
+      View body,
+      Runnable click,
+      boolean chevron,
+      String infoLabel,
+      String infoEffect) {
     if (parent.getChildCount() > 0) {
       View line = new View(context);
       line.setBackgroundColor(context.getColor(R.color.shell_line));
@@ -433,6 +504,13 @@ final class StartupRecoveryLayout {
       row.addView(mark, mp);
     }
     row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
+    if (infoEffect != null && !infoEffect.isEmpty()) {
+      ImageButton info = infoButton(infoLabel, infoEffect);
+      info.setTag(INFO);
+      LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(32), dp(32));
+      ip.setMarginStart(dp(2));
+      row.addView(info, ip);
+    }
     if (chevron) {
       ImageView next = icon(R.drawable.ic_ui2_chevron, R.color.shell_text_muted);
       LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(dp(16), dp(16));

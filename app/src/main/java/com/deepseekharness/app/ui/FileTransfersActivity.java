@@ -800,7 +800,7 @@ public final class FileTransfersActivity extends AppCompatActivity
     title.announceForAccessibility(title.getText());
   }
 
-  /** 关闭二级页回到列表；列表视图一直存在，滚动位置自然保留。 */
+  /** 关闭二级页回到列表；列表视图一直存在，滚动位置自然保留。返回用 160ms 反向滑出（审计 E-08）。 */
   private void closeDetailPage() {
     String id = pageId;
     pageId = null;
@@ -808,11 +808,29 @@ public final class FileTransfersActivity extends AppCompatActivity
     detailKey = null;
     closePage.setEnabled(false);
     detailScroll.animate().cancel();
-    detailScroll.setAlpha(1f);
-    detailScroll.setTranslationX(0);
-    detailScroll.setVisibility(View.GONE);
+    if (UiMotion.animationsEnabled(this)) {
+      boolean rtl = detailScroll.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+      detailScroll
+          .animate()
+          .alpha(0f)
+          .translationX(dp(rtl ? -24 : 24))
+          .setDuration(160)
+          .setInterpolator(UiMotion.standard())
+          .withEndAction(
+              () -> {
+                detailScroll.setVisibility(View.GONE);
+                detailScroll.setAlpha(1f);
+                detailScroll.setTranslationX(0);
+                detailContent.removeAllViews();
+              })
+          .start();
+    } else {
+      detailScroll.setAlpha(1f);
+      detailScroll.setTranslationX(0);
+      detailScroll.setVisibility(View.GONE);
+      detailContent.removeAllViews();
+    }
     listScroll.setVisibility(View.VISIBLE);
-    detailContent.removeAllViews();
     renderHeader(engine.state().getValue());
     RowHolder holder = id == null ? null : rows.get(id);
     if (holder != null) holder.hit.requestFocus();

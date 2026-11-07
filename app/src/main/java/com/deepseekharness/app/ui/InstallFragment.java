@@ -96,6 +96,10 @@ public class InstallFragment extends Fragment {
 
   private InstallTask.Outcome lastOutcome;
   private boolean environmentReady;
+
+  /** 六段进度上一轮段位的 ordinal+1；0 表示尚未渲染，用于只给真正变化的段位做高亮。 */
+  private final int[] segmentState = new int[6];
+
   private final Runnable refresh =
       new Runnable() {
         @Override
@@ -349,7 +353,7 @@ public class InstallFragment extends Fragment {
       tone = OnboardingKit.Tone.GOOD;
       icon = R.drawable.ic_onb_check;
     }
-    ((TextView) view.findViewById(R.id.install_environment)).setText(title);
+    UiMotion.crossFadeText((TextView) view.findViewById(R.id.install_environment), title);
     FrameLayout orb = view.findViewById(R.id.install_orb);
     orb.setBackgroundResource(orbBackground(tone));
     ImageView orbIcon = view.findViewById(R.id.install_orb_icon);
@@ -358,35 +362,56 @@ public class InstallFragment extends Fragment {
         android.content.res.ColorStateList.valueOf(
             requireContext().getColor(OnboardingKit.toneColor(tone))));
 
-    ((TextView) view.findViewById(R.id.install_status))
-        .setText(
-            state.busy()
-                ? state.phase
-                : environmentBusy
-                    ? "环境任务进行中：" + MaintenanceCoordinator.activeEnvironmentDescription()
-                    : pending
-                        ? UiText.text("上次环境维护尚未完成，请先恢复原环境")
-                        : state.outcome == InstallTask.Outcome.IDLE
-                            ? UiText.text("检查环境，或按需修复缺项")
-                            : state.phase);
+    TextView status = view.findViewById(R.id.install_status);
+    UiMotion.crossFadeText(
+        status,
+        state.busy()
+            ? state.phase
+            : environmentBusy
+                ? "环境任务进行中：" + MaintenanceCoordinator.activeEnvironmentDescription()
+                : pending
+                    ? UiText.text("上次环境维护尚未完成，请先恢复原环境")
+                    : state.outcome == InstallTask.Outcome.IDLE
+                        ? UiText.text("检查环境，或按需修复缺项")
+                        : state.phase);
     TextView progress = view.findViewById(R.id.install_progress);
-    progress.setVisibility(state.outcome == InstallTask.Outcome.IDLE ? View.GONE : View.VISIBLE);
-    progress.setText(
-        UiText.format(
-            "%s · 总耗时 %s 秒%s%s",
-            (state.repair ? UiText.text("检查与按需修复") : UiText.text("仅检查")),
-            state.elapsedSeconds,
-            (state.busy() ? UiText.format(" · 当前阶段 %s 秒", state.stageSeconds) : ""),
-            (state.cancelRequested && state.busy()
-                ? (state.cancellable ? UiText.text("\n正在取消检查…") : UiText.text("\n等待当前修复到达安全点，随后停止"))
-                : "")));
+    boolean showProgress = state.outcome != InstallTask.Outcome.IDLE;
+    boolean progressWasHidden = progress.getVisibility() != View.VISIBLE;
+    progress.setVisibility(showProgress ? View.VISIBLE : View.GONE);
+    if (showProgress) {
+      String progressText =
+          UiText.format(
+              "%s · 总耗时 %s 秒%s%s",
+              (state.repair ? UiText.text("检查与按需修复") : UiText.text("仅检查")),
+              state.elapsedSeconds,
+              (state.busy() ? UiText.format(" · 当前阶段 %s 秒", state.stageSeconds) : ""),
+              (state.cancelRequested && state.busy()
+                  ? (state.cancellable
+                      ? UiText.text("\n正在取消检查…")
+                      : UiText.text("\n等待当前修复到达安全点，随后停止"))
+                  : ""));
+      if (progressWasHidden) {
+        progress.setText(progressText);
+        UiMotion.reveal(progress);
+      } else {
+        // 秒表每秒刷新只改数字：直接落值；阶段/结论变化才 150ms 淡入。
+        UiMotion.crossFadeTimerText(progress, progressText);
+      }
+    }
 
-    // 六段进度：只覆盖本次选择的步骤，未执行的保持灰色。
+    // 六段进度：只覆盖本次选择的步骤，未执行的保持灰色；段位变化用 150ms 高亮。
     ViewGroup meter = view.findViewById(R.id.install_meter);
     boolean touched = state.outcome != InstallTask.Outcome.IDLE;
     meter.setVisibility(touched ? View.VISIBLE : View.GONE);
-    for (int i = 0; i < meter.getChildCount() && i < state.steps.length; i++)
-      meter.getChildAt(i).setBackgroundResource(segment(state.steps[i]));
+    for (int i = 0; i < meter.getChildCount() && i < state.steps.length; i++) {
+      View segment = meter.getChildAt(i);
+      boolean changed = segmentState[i] != state.steps[i].ordinal() + 1;
+      segment.setBackgroundResource(segment(state.steps[i]));
+      if (changed) {
+        segmentState[i] = state.steps[i].ordinal() + 1;
+        if (touched) UiMotion.flash(segment);
+      }
+    }
 
     view.findViewById(R.id.install_btn)
         .setVisibility(state.busy() || pending ? View.GONE : View.VISIBLE);
@@ -406,8 +431,18 @@ public class InstallFragment extends Fragment {
             : state.cancellable ? UiText.text("取消检查") : UiText.text("安全停止后续修复"));
 
     TextView error = view.findViewById(R.id.install_error);
-    error.setVisibility(state.failure.isEmpty() ? View.GONE : View.VISIBLE);
-    error.setText(com.deepseekharness.app.util.MaintenanceErrorText.render(state.failure));
+    boolean showError = !state.failure.isEmpty();
+    boolean errorWasHidden = error.getVisibility() != View.VISIBLE;
+    error.setVisibility(showError ? View.VISIBLE : View.GONE);
+    if (showError) {
+      // UI 基准 ⑬：首屏只留短结论；发生了什么、影响/原因、下一步与错误码点开 ⓘ 看。
+      InfoHint.bindOnSurface(
+          error,
+          UiText.text("失败"),
+          UiText.text("失败"),
+          com.deepseekharness.app.util.MaintenanceErrorText.render(state.failure));
+      if (errorWasHidden) UiMotion.reveal(error);
+    }
   }
 
   private void renderSteps(View view, InstallTask.Snapshot state, boolean gated) {
