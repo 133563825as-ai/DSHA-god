@@ -1004,7 +1004,30 @@ public final class VirtualScreenManager {
   }
 
   private JSONObject status(VirtualScreenRequestScope scope) {
-    return decorate(request("/vscreen/status", "", scope));
+    return statusHint(decorate(request("/vscreen/status", "", scope)));
+  }
+
+  /**
+   * 独立 status 探测失败时补可行动提示（T88）：无 Core → CREATE_FIRST；待清理 → ASK_USER_TO_CLOSE。
+   * 复用 {@link com.deepseekharness.app.util.VirtualScreenObservationHint#statusNextAction}；原有
+   * error/state 字段保持不变，旧调用方仍可按 VSCREEN_NOT_RUNNING 判断。
+   */
+  private static JSONObject statusHint(JSONObject value) {
+    if (value == null || value.optBoolean("ok") || value.has("nextAction")) return value;
+    String error = value.optString("error", "VSCREEN_STATUS_UNAVAILABLE");
+    String next =
+        com.deepseekharness.app.util.VirtualScreenObservationHint.statusNextAction(
+            error, value.optBoolean("cleanupPending"));
+    try {
+      value.put("nextAction", next);
+      // 待清理须经用户同意后显式 close：重看或重试都不会改变结果。
+      value.put(
+          "retryable",
+          !com.deepseekharness.app.util.VirtualScreenObservationHint.ASK_USER_TO_CLOSE.equals(
+              next));
+    } catch (org.json.JSONException ignored) {
+    }
+    return value;
   }
 
   public JSONObject preview() {
