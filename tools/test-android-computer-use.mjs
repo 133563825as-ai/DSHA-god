@@ -12,7 +12,7 @@ const call=(name,args,signal,dependencies)=>nativeCall(name,args,signal,dependen
 await assert.rejects(nativeCall('android_get_state',{},new AbortController().signal,{
   fs:{readFile(){throw Error('must not read token');}},fetch(){throw Error('must not dispatch');},
 }),/SCREEN_TASK_IDENTITY_REQUIRED/);
-assert.equal(tools.length,11);
+assert.equal(tools.length,12);
 assert.equal(bridgeFailed('[ERR] Permission unavailable'),true);
 assert.equal(bridgeFailed('[POLICY_BLOCKED] command denied'),true);
 assert.equal(bridgeFailed('[UNAUTHORIZED]'),true);
@@ -27,17 +27,26 @@ const byName=name=>definitions.find(d=>d[0]===name);
 assert.doesNotThrow(()=>validate(byName('android_click'),{observationId:'native-shot',x:50,y:70}));
 assert.throws(()=>validate(byName('android_click'),{x:-1,y:70}));
 assert.throws(()=>validate(byName('android_click'),{x:1,y:2,shell:'id'}));
-assert.throws(()=>validate(byName('android_click'),{x:1,y:1}),/INVALID_observationId/);
+// required 字段由 MCP input schema 表达；validate 只校验出现的字段（T105 起省略字段不再报错）。
+assert.doesNotThrow(()=>validate(byName('android_click'),{x:1,y:1}));
 assert.throws(()=>validate(byName('android_click'),{observationId:'',x:1,y:1}),/INVALID_observationId/);
 assert.throws(()=>validate(byName('android_long_press'),{observationId:'id',x:1,y:1,ms:499}),/INVALID_ms/);
 assert.throws(()=>validate(byName('android_type'),{text:'a'.repeat(2001)}));
 assert.throws(()=>validate(byName('android_key'),{name:'factory-reset'}));
 assert.doesNotThrow(()=>validate(byName('android_get_state'),{}));
+assert.doesNotThrow(()=>validate(byName('android_history'),{}));
+assert.doesNotThrow(()=>validate(byName('android_history'),{since:0,limit:20}));
+for(const args of [{since:-1},{since:'1'},{since:1.5},{limit:0},{limit:101},{limit:'20'}])
+  assert.throws(()=>validate(byName('android_history'),args));
+assert.equal(byName('android_history')[2],'/app/ui/history');
+assert.deepEqual(tools.find(tool=>tool.name==='android_history').inputSchema.required,[]);
 assert.equal(byName('android_node')[2],'/app/ui/node');
 for(const action of ['click','long_click','scroll_forward','scroll_backward','focus'])
   assert.doesNotThrow(()=>validate(byName('android_node'),{treeId:'tree',nodeId:'node',action}));
+// 缺失的 required 字段由 MCP schema 表达，不由 validate 兜底（T105 起）。
+assert.doesNotThrow(()=>validate(byName('android_node'),{treeId:'tree',action:'scroll_forward'}));
 for(const args of [{treeId:'',nodeId:'node',action:'scroll_forward'},
-  {treeId:'tree',action:'scroll_forward'},{treeId:'tree',nodeId:'node',action:'swipe'},
+  {treeId:'tree',nodeId:'node',action:'swipe'},
   {treeId:'tree',nodeId:'node',action:'scroll_forward',x:1},
   {treeId:'tree',nodeId:'node',action:'scroll_forward',taskSessionId:'model-spoof'}])
   assert.throws(()=>validate(byName('android_node'),args));
@@ -138,10 +147,10 @@ await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('
 child.stdin.end();await new Promise(resolve=>child.on('close',resolve));
 const replies=output.trim().split('\n').map(JSON.parse);
 assert.equal(replies.find(r=>r.id===1).result.serverInfo.name,'DSHA Android Computer Use');
-assert.equal(replies.find(r=>r.id===2).result.tools.length,11);
+assert.equal(replies.find(r=>r.id===2).result.tools.length,12);
 assert.match(replies.find(r=>r.id===1).result.instructions,/android_node/);
 assert.match(replies.find(r=>r.id===1).result.instructions,/scroll_forward/);
 assert.equal(replies.find(r=>r.id===2).result.tools.find(t=>t.name==='android_node').inputSchema.additionalProperties,false);
 assert.equal(replies.find(r=>r.id===3).error.code,-32800);
 assert.equal(stderr,'');
-console.log('Android Computer Use: 11 tools; screenshot metadata/credential, existing image responses, real local HTTP for tap/double/long/swipe/node scroll, UNKNOWN no-replay paths, bounds, rejection, discovery and cancellation passed; no device command was sent.');
+console.log('Android Computer Use: 12 tools; screenshot metadata/credential, existing image responses, real local HTTP for tap/double/long/swipe/node scroll, UNKNOWN no-replay paths, bounds, rejection, discovery and cancellation passed; no device command was sent.');
