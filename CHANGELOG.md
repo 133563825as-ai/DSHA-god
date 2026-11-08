@@ -1,5 +1,18 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261108.0900-dsh0.2.2-rc.1 / build342（T120 Wave B：按压反馈 / 内联加载 / 数值滚动 / 卡片层级与徽标 / 单选卡与多选操作栏；纯 UI，33 项）
+
+- 按压反馈三变体（A1 / C1 / C2，`99c971d6c`）：可点行只补状态层（不改内容与布局），主按钮按下 0.985 缩放，大卡片圆角 18→22dp 形变；系统关闭动画时全部静态处理，禁用按钮不进入缩放手势。`UiMotion` 新增数值滚动、圆角形变与区域淡换基元。25 个页面接入：`OnboardingKit` / `CardPage` 共享按钮与行、`CardSheet` 页脚统一接入，25 个页面根视图 `attachButtons`（终端自定义触摸区与 WebView 排除）。
+- 内联加载按钮 `LoadingAction`（A2，`2d261ff4f`）：左侧 16dp 真实转圈、忙碌期锁定已测宽度、禁点并写 `stateDescription`，结束恢复原文案与宽度；重复 `start` 被拒绝、同步 `run()` 异常也恢复、系统关闭动画显示静态弧。一键备份在真实任务开始时内联转圈并锁宽；部署 / 维护忙碌态仍用独立进度区，不叠加假加载态。
+- 数值滚动与状态淡换（E5 / G4，`3bbae9e68`）：`RollingNumber` 记住上一值滚动到新值、单位随 formatter、关动画直接落值；`FadeSwap` 文字先写值再淡入、区域内容 90ms 淡出→重建→150ms 淡入、连续刷新只保留最后一次。存储页总量、工作台 / 自动备份 / 维护页头状态接入。
+- 卡片层级与状态徽标（H1 / H2，`055b400c4`）：elevated 主卡 / filled 分组 / outlined 次级三级卡片；分组统一 filled，`CardPage.card(Tier)` 显式选级；徽标（>99 显示 99+）与状态点只用 `shell_*` token，可在同一 View 换色复用。
+- 单选卡与多选操作栏（D1 / D2 / H3，`708206da3`）：`SelectableCard` 单选=2dp 描边+色调+勾选、多选=勾选框，紧凑格隐藏勾选防截断，读屏报 `radio` / `checkbox` checked；`SelectionActionBar` 已选数量徽标+动作、0 项收起计数但动作栏不跳位。接入语言选择格、虚拟屏预览档位、导出范围；保留副本与旧环境改多选底部操作栏。
+- 本版是 T120 Wave B（输入反馈与视觉基元）：纯 UI 改动，不改代码行为、不改受管输入、不新增受管运行时；runtimeId 保持 `2ae3f266…`，fixed-inputs 冻结沿用锁定的 20261105e；内置 `dsh-web-mobile` 保持上游 3.3.1 与默认启用不变。
+- 版本：版本码提升为 342（基于已发布的 build341 / `04f2ace84`）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。
+- **未验证 / 未验收**：Wave B 以定向组件单测与全量单测验证；真机视觉与朗读（TalkBack）、按压手感、内联加载、卡片层级、单选 / 多选在日夜、短屏、1.3 倍字体与 RTL 下的表现均未逐项执行。**build342 尚未真机验收**，验收项是 341→342 首次覆盖安装成功、数据完好、READY 与上述交互在真实设备上的表现；build338–build341 真机安装验收仍待用户。
+- 验证范围：发布身份与前置检查、宿主 contracts 整组、descriptor `2ae3f266` / 202 assets / 475 launchers、第三方声明、内置插件、凭据路径、semver、host manifest、源卫生、UI i18n、`generate-changelog --check`、文档链接、全树 Java 格式、`git diff --check`、`test-vscreen-help`、`test-diagnostic-feedback`；全量 `:app:testStandardDebugUnitTest`（先 `tools/prepare-test-runtime.py`，10 例 aarch64 Robolectric 环境基线失败如实记录）与 `:app:lintStandardRelease`；正式签名 assemble 不在本机执行（无发布 keystore）。结果以本机发布准备回执与本次 CI run 为准。
+- 十语种更新说明见 [build342 更新说明](docs/releases/build342-changes.zh.md)。
+
 ## 0.2.1-rc.5-20261108.0700-dsh0.2.2-rc.1 / build341（UI 文案第二波（T109，155 处十语）+ 折叠披露 DisclosureCard 替代 ⓘ（T120，四屏与数据/配置页 14 个披露点））
 
 - UI 文案第二波（T109，`bb4a5a0ef` 可见批 / `caa2cbec4` 弹窗批）：155 处表面与弹窗文案（可见 134 + 弹窗 19 + 2 条并入既有条目）改为短文案与状态词（≤5 字），十语同步；`hosts.yml`、web profile、`.env`、Cordis、proot、出生身份、容器启动器、Computer Use 等内部术语移出界面或改成用户语言（登录记录 / 进程 / 网页内核 / 已连接）。安全、权限与隐私文案只改术语并保留完整后果；6 条原列入「待布局承接」，其中 5 条在本版落位，`x1970412`（应急 DSH）留 build343；`x296plugin001` 位于 launcherInputs 钉住的 `core/PluginRepository.java`，本波不改。6 个历史字节钉文件的 CR 行尾规范化为 LF 并重算。
