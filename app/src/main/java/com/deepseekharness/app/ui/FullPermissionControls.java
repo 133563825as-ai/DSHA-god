@@ -256,15 +256,10 @@ final class FullPermissionControls implements AutoCloseable {
     String description =
         switch (snapshot.readState()) {
           case ON ->
-              UiText.choose(
-                  "已开启：免 DSHA 安全确认；各项能力授权保持独立",
-                  "On: skip DSHA confirmation; capability grants remain separate");
-          case OFF ->
-              UiText.choose("已关闭：按各项 DSHA 确认规则", "Off: follow individual DSHA confirmation rules");
+              UiText.choose("已开启", "On: skip DSHA confirmation; capability grants remain separate");
+          case OFF -> UiText.choose("已关闭", "Off");
           case UNCONFIGURED ->
-              UiText.choose(
-                  "已关闭（默认）：按各项 DSHA 确认规则",
-                  "Off (default): follow individual DSHA confirmation rules");
+              UiText.choose("已关闭（默认）", "Off (default): follow individual DSHA confirmation rules");
           case MALFORMED ->
               UiText.choose(
                   "本机确认设置记录损坏：未重置记录或恢复旧授权",
@@ -290,8 +285,8 @@ final class FullPermissionControls implements AutoCloseable {
     disclosureModel.key = "global-confirm";
     disclosureModel.detail =
         UiText.choose(
-            "开启后，已获准能力的操作不再弹出 DSHA 安全确认。\n\n关闭后恢复各项确认规则。此开关仅保存在本机，不随备份迁移。文件访问、Root、ADB、短信、定位、传感器和 Android 系统权限仍按各自授权设置生效，独立拒绝或暂停仍然有效。需要填写的业务内容、恢复范围和保存位置仍由你选择。",
-            "When on, authorized capabilities skip DSHA safety confirmations.\n\nTurning it off restores confirmation rules. This choice stays on this device and is excluded from backups. File access, Root, ADB, SMS, location, sensors and Android permissions keep their separate grants; explicit denial or pause remains effective. Business inputs, restore scope and save destinations still require your selection.");
+            "开启后，已获准能力的操作不再弹出 DSHA 安全确认；关闭后恢复。此开关仅保存在本机，不随备份迁移；各系统权限仍按各自授权独立生效。",
+            "When on, authorized capabilities skip DSHA safety confirmations; turning it off restores them. This choice stays on this device, is excluded from backups, and leaves each system permission on its own grant.");
     boolean on = snapshot.readState() == NativeConsentPolicy.ReadState.ON;
     disclosureModel.consequence =
         on
@@ -300,7 +295,8 @@ final class FullPermissionControls implements AutoCloseable {
             : UiText.choose(
                 "只影响 DSHA 确认，不改系统权限", "Affects DSHA confirmations only, not system permissions");
     disclosureModel.consequenceTone = on ? R.color.shell_warn : R.color.shell_text_muted;
-    disclosureModel.defaultExpanded = on;
+    // 默认收起：状态行已说明开关结果，长解释点状态行再展开。
+    disclosureModel.defaultExpanded = false;
     DisclosureCard.bind(status, disclosureModel, disclosure, disclosureToggled);
   }
 

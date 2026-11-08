@@ -179,6 +179,20 @@
         <item name="android:paddingBottom">12dp</item>
     </style>
 
+    <!-- 行内状态胶囊：标题同一行右侧，替代两行「标题+状态」，压缩行高。 -->
+    <style name="ShellStatusPill" parent="">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/shell_text_secondary</item>
+        <item name="android:background">@drawable/bg_grants_pill</item>
+        <item name="android:paddingStart">7dp</item>
+        <item name="android:paddingEnd">7dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
     <style name="ShellSwitch" parent="Widget.DSHA.Switch">
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/shell_text</item>

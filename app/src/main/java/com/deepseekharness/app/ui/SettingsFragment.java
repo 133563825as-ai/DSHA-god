@@ -25,13 +25,12 @@ import java.util.function.Supplier;
 public class SettingsFragment extends Fragment {
 
   private static final TabOption[] TAB_OPTIONS = {
-    new TabOption("安装", "安装与修复运行环境", InstallFragment::new, R.drawable.ic_ui2_box),
-    new TabOption("配置", "接口、显示与运行", ConfigFragment::new, R.drawable.ic_settings),
-    new TabOption("数据与备份", "备份恢复 · 文件共享", WorkspaceFragment::new, R.drawable.ic_ui2_folder),
-    new TabOption(
-        "设备能力授权", "Root · Shizuku · ADB · 权限", DeviceGrantsFragment::new, R.drawable.ic_ui_shield),
-    new TabOption("任务状态上岛", "状态栏胶囊 · 灵动岛 · 实时活动", IslandFragment::new, R.drawable.ic_ui2_box),
-    new TabOption("GitHub 登录", "账号 · 授权 · 登录状态", GitHubLoginFragment::new, R.drawable.ic_ui_link),
+    new TabOption("安装", "", InstallFragment::new, R.drawable.ic_ui2_box),
+    new TabOption("配置", "", ConfigFragment::new, R.drawable.ic_settings),
+    new TabOption("数据与备份", "", WorkspaceFragment::new, R.drawable.ic_ui2_folder),
+    new TabOption("设备能力授权", "", DeviceGrantsFragment::new, R.drawable.ic_ui_shield),
+    new TabOption("任务状态上岛", "", IslandFragment::new, R.drawable.ic_ui2_box),
+    new TabOption("GitHub 登录", "", GitHubLoginFragment::new, R.drawable.ic_ui_link),
   };
 
   private static final String STATE_SELECTED = "settings_selected";
@@ -120,26 +119,16 @@ public class SettingsFragment extends Fragment {
         v.findViewById(R.id.settings_eco);
     eco.setContentDescription(com.deepseekharness.app.util.UiText.text("省电模式"));
     eco.setChecked(config.isEcoMode());
-    java.util.function.Consumer<Boolean> describe =
-        enabled ->
-            // 开关切换时副标题换句走 150ms 淡入（审计 A-05），不再瞬切。
-            UiMotion.crossFadeText(
-                powerHint,
-                enabled
-                    ? com.deepseekharness.app.util.UiText.text("熄屏 1 分钟后减少保活")
-                    : com.deepseekharness.app.util.UiText.text("持续保持运行，适合长时间任务。"));
-    describe.accept(config.isEcoMode());
+    // 行高恒定：副标题不再随开关出现/消失，避免开关在行内上下漂移。
+    if (powerHint != null) powerHint.setVisibility(View.GONE);
     eco.setOnCheckedChangeListener(
         (button, checked) -> {
           config.setEcoMode(checked);
           com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
-          describe.accept(checked);
         });
 
     TextView keepTitle = v.findViewById(R.id.settings_keep_screen_on_title);
     keepTitle.setText(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
-    TextView keepHint = v.findViewById(R.id.settings_keep_screen_on_hint);
-    keepHint.setText(com.deepseekharness.app.util.UiText.text("不自动息屏；网页与终端适用"));
     com.google.android.material.materialswitch.MaterialSwitch keepOn =
         v.findViewById(R.id.settings_keep_screen_on_switch);
     keepOn.setContentDescription(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
@@ -154,8 +143,6 @@ public class SettingsFragment extends Fragment {
     // 隐藏后台：只改最近任务可见性，不动常驻通知、前台服务与 ADB 保活。
     TextView hiddenTitle = v.findViewById(R.id.settings_hidden_recents_title);
     hiddenTitle.setText(com.deepseekharness.app.util.UiText.text("隐藏后台"));
-    TextView hiddenHint = v.findViewById(R.id.settings_hidden_recents_hint);
-    hiddenHint.setText(com.deepseekharness.app.util.UiText.text("从最近任务中隐藏 DSHA"));
     com.google.android.material.materialswitch.MaterialSwitch hiddenSwitch =
         v.findViewById(R.id.settings_hidden_recents_switch);
     hiddenSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("隐藏后台"));
@@ -199,18 +186,11 @@ public class SettingsFragment extends Fragment {
     v.findViewById(R.id.settings_selftest).setOnClickListener(x -> runSelftest());
 
     // 语言入口：标题在中文界面下也带英文「Language」（只写「语言 · 简体中文」时，
-    // 非中文用户根本认不出这是语言开关）；摘要直接显示当前生效语言。
-    // 放在「常用设置」分组最前面，不用滚动就能看到。
+    // 非中文用户根本认不出这是语言开关）；右侧只显示当前生效语言，不常显「跟随系统」说明。
     String preference = config.getUiLanguagePreference();
-    boolean followSystem =
-        com.deepseekharness.app.util.UiLanguagePreference.followsSystem(preference);
     String effective = config.getUiLanguage();
-    // 摘要始终显示当前**生效**语言的名字：跟随系统时补上来由，用户一眼能看出实际结果。
     String currentLabel = com.deepseekharness.app.util.UiLanguagePreference.nativeName(effective);
-    String summary =
-        followSystem
-            ? com.deepseekharness.app.util.UiText.format("跟随系统 · %s", currentLabel)
-            : currentLabel;
+    String summary = currentLabel;
     LinearLayout appearance = v.findViewById(R.id.settings_appearance);
     TextView languageSummary = v.findViewById(R.id.settings_language);
     languageSummary.setText(summary);
@@ -267,14 +247,10 @@ public class SettingsFragment extends Fragment {
   private void renderThemeSummary(View root) {
     TextView sub = root.findViewById(R.id.settings_theme_sub);
     if (sub == null) return;
-    String preference = ThemeController.preference(requireContext());
     String dark = com.deepseekharness.app.util.UiText.text("深色");
     String light = com.deepseekharness.app.util.UiText.text("浅色");
-    String mode =
-        com.deepseekharness.app.util.UiThemePreference.SYSTEM.equals(preference)
-            ? com.deepseekharness.app.util.UiText.format(
-                "跟随系统 · %s", ThemeController.isDark(requireContext()) ? dark : light)
-            : com.deepseekharness.app.util.UiThemePreference.DARK.equals(preference) ? dark : light;
+    // 右侧只显示当前生效明暗，不常显「跟随系统」说明；偏好本身在主题页可见。
+    String mode = ThemeController.isDark(requireContext()) ? dark : light;
     String palette = ThemeController.palette(requireContext());
     // 标准色不重复写出，其余配色附在明暗后面。
     sub.setText(
@@ -461,7 +437,8 @@ public class SettingsFragment extends Fragment {
     sub.setLayoutParams(slp);
 
     body.addView(title);
-    body.addView(sub);
+    // 入口行只保留名称；状态摘要（主题/语言）与开关行以外的说明文案不再常显。
+    if (!opt.sub.isEmpty()) body.addView(sub);
 
     android.widget.ImageView icon = new android.widget.ImageView(requireContext());
     icon.setImageResource(opt.icon);
