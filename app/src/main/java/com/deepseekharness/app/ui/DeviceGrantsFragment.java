@@ -344,7 +344,7 @@ public final class DeviceGrantsFragment extends Fragment {
     String titleText =
         com.deepseekharness.app.util.UiText.choose("外接设备（实验性）", "External device (experimental)");
     title.setText(titleText);
-    title.setMaxLines(1);
+    title.setMaxLines(2);
     text.addView(title, new android.widget.LinearLayout.LayoutParams(-2, -2));
     bindLabelInfo(
         title,
@@ -354,12 +354,13 @@ public final class DeviceGrantsFragment extends Fragment {
             "Experimental, not yet device-verified. Authorize another phone (USB or wireless debugging); once bound it allows controlled debugging, reboot and confirmed installs. Flashing is read-only preflight only."),
         false);
     title.setMinHeight(0);
-    externalDeviceStatus = new TextView(ctx, null, 0, R.style.ShellStatusPill);
+    // 状态与标题叠成左列：开关先量，状态胶囊在剩余宽度内换行，长译文不会把开关挤出屏幕（T125）。
+    externalDeviceStatus = new TextView(ctx, null, 0, R.style.ShellChannelStatusPill);
     android.widget.LinearLayout.LayoutParams statusParams =
         new android.widget.LinearLayout.LayoutParams(-2, -2);
-    statusParams.setMarginStart(dp(6));
+    statusParams.topMargin = dp(3);
+    text.addView(externalDeviceStatus, statusParams);
     row.addView(text, new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
-    row.addView(externalDeviceStatus, statusParams);
     externalDevice = new MaterialSwitch(ctx);
     externalDevice.setContentDescription(
         com.deepseekharness.app.util.UiText.choose("允许外接设备能力", "Allow external-device access"));

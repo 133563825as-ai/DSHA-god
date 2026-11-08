@@ -193,6 +193,16 @@
         <item name="android:ellipsize">end</item>
     </style>
 
+    <!--
+      通道卡片的状态胶囊：放在标题下方的左列里，用剩余宽度自行换行，不省略（T125）。
+      行式通道先把「验证 / 配对 / 开关」按自身宽度量完，再把这个胶囊交给剩余宽度，长状态不会挤出按钮。
+    -->
+    <style name="ShellChannelStatusPill" parent="ShellStatusPill">
+        <item name="android:maxLines">6</item>
+        <item name="android:ellipsize">none</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+
     <style name="ShellSwitch" parent="Widget.DSHA.Switch">
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/shell_text</item>
