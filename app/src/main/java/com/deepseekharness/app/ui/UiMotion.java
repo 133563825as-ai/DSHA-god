@@ -309,6 +309,83 @@ public final class UiMotion {
     animator.start();
   }
 
+  /** 数值滚动（200ms）：同一 TextView 连点先取消旧动画；系统关闭动画时由调用方直接落值。 */
+  static void animateValue(
+      TextView view, float from, float to, java.util.function.Function<Float, String> render) {
+    if (view == null) return;
+    COUNTERS.computeIfPresent(
+        view,
+        (ignored, running) -> {
+          running.cancel();
+          return null;
+        });
+    ValueAnimator animator = ValueAnimator.ofFloat(from, to);
+    animator.setDuration(200L);
+    animator.setInterpolator(STANDARD);
+    animator.addUpdateListener(
+        running -> view.setText(render.apply((Float) running.getAnimatedValue())));
+    animator.addListener(
+        new android.animation.AnimatorListenerAdapter() {
+          @Override
+          public void onAnimationEnd(android.animation.Animator animation) {
+            if (COUNTERS.get(view) == animation) COUNTERS.remove(view);
+          }
+        });
+    COUNTERS.put(view, animator);
+    animator.start();
+  }
+
+  /** 卡片圆角形变（120ms）：只改背景圆角，不动布局与文字；系统关闭动画时直接落位。 */
+  static void cornerMorph(
+      View host, android.graphics.drawable.GradientDrawable shape, float targetPx) {
+    if (host == null || shape == null) return;
+    float from = shape.getCornerRadius();
+    if (!animationsEnabled(host.getContext()) || Math.abs(from - targetPx) < 0.5f) {
+      shape.setCornerRadius(targetPx);
+      return;
+    }
+    ValueAnimator animator = ValueAnimator.ofFloat(from, targetPx);
+    animator.setDuration(120L);
+    animator.setInterpolator(STANDARD);
+    animator.addUpdateListener(
+        running -> {
+          shape.setCornerRadius((Float) running.getAnimatedValue());
+          host.invalidate();
+        });
+    animator.start();
+  }
+
+  /**
+   * 同一区域内容替换（G4）：旧内容淡出 90ms，重建后新内容淡入 150ms；系统关闭动画时直接替换。
+   *
+   * <p>重建失败也保证透明度回写，不把区域留在半透明状态。
+   */
+  static void swapContent(ViewGroup host, Runnable rebuild) {
+    if (host == null || rebuild == null) {
+      if (rebuild != null) rebuild.run();
+      return;
+    }
+    host.animate().cancel();
+    if (!animationsEnabled(host.getContext())) {
+      rebuild.run();
+      host.setAlpha(1f);
+      return;
+    }
+    host.animate()
+        .alpha(0f)
+        .setDuration(90L)
+        .setInterpolator(STANDARD)
+        .withEndAction(
+            () -> {
+              try {
+                rebuild.run();
+              } finally {
+                reveal(host);
+              }
+            })
+        .start();
+  }
+
   /**
    * 按下轻微缩放；返回 false 不吞触摸，点击与无障碍仍由原控件处理。
    *
@@ -318,7 +395,7 @@ public final class UiMotion {
     if (view == null) return;
     view.setOnTouchListener(
         (target, event) -> {
-          if (!animationsEnabled(target.getContext())) return false;
+          if (!animationsEnabled(target.getContext()) || !target.isEnabled()) return false;
           switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN ->
                 target
