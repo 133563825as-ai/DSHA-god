@@ -2356,11 +2356,12 @@ public final class DeviceGrantsFragment extends Fragment {
             : UiText.choose(
                 "仅能访问应用私有目录；去系统设置开启后可访问全部文件",
                 "Only app-private storage; enable all files access in system settings");
+    View line = status.getParent() instanceof View parent ? parent : null;
     if (accordion == null) {
-      DisclosureCard.bind(status, allFilesModel, disclosure, null);
+      DisclosureCard.bind(status, allFilesModel, disclosure, null, line);
     } else {
       DisclosureCard.bind(
-          status, allFilesModel, accordion.state(), () -> accordion.onToggle("all-files"));
+          status, allFilesModel, accordion.state(), () -> accordion.onToggle("all-files"), line);
       accordion.register("all-files", () -> refreshAllFilesStatus(status));
     }
     try {

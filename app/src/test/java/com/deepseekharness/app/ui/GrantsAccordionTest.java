@@ -146,6 +146,15 @@ public final class GrantsAccordionTest {
   /** 摘要后面由 DisclosureCard 插入的详情容器第二格是详情本体。 */
   private static int detailVisibility(TextView summary) {
     if (!(summary.getParent() instanceof LinearLayout line)) return -1;
+    if (line.getOrientation() == LinearLayout.HORIZONTAL) {
+      // 状态胶囊与标题同一行时，详情容器由 DisclosureCard 插在这一行之后。
+      if (!(line.getParent() instanceof LinearLayout outer)) return -1;
+      int lineIndex = outer.indexOfChild(line);
+      if (lineIndex < 0 || lineIndex + 1 >= outer.getChildCount()) return -1;
+      if (!(outer.getChildAt(lineIndex + 1) instanceof LinearLayout holder)) return -1;
+      if (holder.getChildCount() < 2) return -1;
+      return holder.getChildAt(1).getVisibility();
+    }
     int index = line.indexOfChild(summary);
     if (index < 0 || index + 1 >= line.getChildCount()) return -1;
     if (!(line.getChildAt(index + 1) instanceof LinearLayout holder)) return -1;

@@ -146,15 +146,11 @@ public final class DeviceGrantsLayoutTest {
     assertSame(page, header.getParent());
     assertSame(page, scroll.getParent());
     assertTrue(header.getBottom() <= scroll.getTop());
-    // 头部 = 胶囊流式区 + 常显的页面说明（不再挂 ⓘ）。
-    assertEquals(2, ((ViewGroup) header).getChildCount());
+    // 头部只保留胶囊流式区；页面说明已删除。
+    assertEquals(1, ((ViewGroup) header).getChildCount());
     ViewGroup pills = page.findViewById(R.id.grants_pills);
     assertTrue(pills instanceof PluginFlowRow);
     assertEquals(4, pills.getChildCount());
-    assertTrue(((ViewGroup) header).getChildAt(1) instanceof TextView);
-    assertEquals(
-        page.getContext().getString(R.string.ui2_grants_sub),
-        ((TextView) ((ViewGroup) header).getChildAt(1)).getText().toString());
     assertSummaryPillsFit(pills, "zh");
 
     assertEquals(
@@ -200,13 +196,10 @@ public final class DeviceGrantsLayoutTest {
     View page = start(360);
     // 标题与状态叠成左侧两行，开关在同一行右侧。
     View rootSwitch = page.findViewById(R.id.config_root_shell);
+    assertSame(rootSwitch.getParent(), page.findViewById(R.id.device_root_title).getParent());
+    assertSame(rootSwitch.getParent(), page.findViewById(R.id.device_root_status).getParent());
     assertSame(
-        page.findViewById(R.id.device_root_title).getParent().getParent(), rootSwitch.getParent());
-    assertSame(
-        page.findViewById(R.id.device_root_title).getParent(),
-        page.findViewById(R.id.device_root_status).getParent());
-    assertSame(
-        page.findViewById(R.id.config_adb_title).getParent().getParent(),
+        page.findViewById(R.id.config_adb_title).getParent(),
         page.findViewById(R.id.config_adb_enable).getParent());
     assertSame(
         page.findViewById(R.id.config_a11y_status).getParent(),
@@ -309,8 +302,7 @@ public final class DeviceGrantsLayoutTest {
     assertSame(content, header.getParent());
     assertEquals(0, content.indexOfChild(header));
     assertSame(scroll, content.getParent());
-    assertEquals(2, ((ViewGroup) header).getChildCount());
-    assertTrue(((ViewGroup) header).getChildAt(1) instanceof TextView);
+    assertEquals(1, ((ViewGroup) header).getChildCount());
     List<String> overflow = new ArrayList<>();
     collectOverflow(page, 0, 360, overflow);
     assertTrue("horizontal overflow: " + overflow, overflow.isEmpty());
@@ -339,7 +331,12 @@ public final class DeviceGrantsLayoutTest {
     TextView status = page.findViewById(R.id.screen_policy_status);
     assertTrue(status.isClickable());
     assertFalse(DisclosureCard.expanded(status));
-    assertNotNull(findText(page, "仅控制 DSHA 确认，不授予系统权限"));
+    // 收起态不再常显安全说明；完整规则收进展开区。
+    assertNull(findText(page, "仅控制 DSHA 确认，不授予系统权限"));
+    status.performClick();
+    assertTrue(DisclosureCard.expanded(status));
+    assertNotNull(
+        findText(page, "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许包含敏感界面；自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。"));
   }
 
   private static String findText(View view, String target) {
