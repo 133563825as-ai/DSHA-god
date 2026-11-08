@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261108.0900-dsh0.2.2-rc.1` / build342 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为 T120 Wave B（输入反馈与视觉基元）：PressFeedback 三变体按压反馈（行状态层 / 主按钮 0.985 缩放 / 大卡片圆角 18→22dp）与 25 页按钮接入；LoadingAction 内联加载按钮（左侧 16dp 真实转圈、锁定已测宽度、无假进度；部署 / 维护忙碌态仍用独立进度区）；RollingNumber 存储总量数值滚动与 FadeSwap 工作台 / 自动备份 / 维护页状态淡换；H1 三级卡片（elevated 主卡 / filled 分组 / outlined 次级）与 H2 徽标（>99 显示 99+）与状态点；D1 单选卡（语言、虚拟屏预览档位、导出范围）与 D2 保留副本多选底部操作栏（SelectionActionBar，H3）；系统关闭动画时全部静态降级。本版不改代码行为与受管输入；runtimeId 保持 `2ae3f266`，fixed-inputs 冻结（使用锁定 20261105e）。**build342 尚未真机验收**，验收项是 341→342 首次覆盖安装成功、数据完整、READY，以及按压反馈 / 内联加载 / 卡片层级 / 单选与多选在日夜、短屏、1.3 倍字体与 TalkBack 下的表现；build338–341 真机验收仍待用户。宿主 contracts 整组、全量单测、定向单测、lint 与全树格式 / 文档检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build342 更新说明](releases/build342-changes.zh.md)。
+当前源码：`0.2.1-rc.5-20261108.1100-dsh0.2.2-rc.1` / build343 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版为 T121 Wave C（进度与列表）：DeterminateProgress 确定性进度（条 / 环、真实百分比只增不减、100 只由完成态写入、取消只发一次且取消后不再接受进度、终态停动画；总量未知走不确定态不伪造进度）；FiniteSkeleton 有限骨架（1–2s 上限、数据到即停、无无限 shimmer）；StaggerList 前 8 项仅首次错峰（按稳定键去重，滚动 / 重绘 / 翻页不重播）；CardTabs 卡内页签（未选 GONE、选中键可恢复）；GroupedList 分组吸顶折叠；Accordion 单开手风琴（沿用 DisclosureCard 后果行与读屏语义）；TechNote 页尾技术说明。接入面：恢复 / 备份进度与记录、诊断页签、设置分组、授权单开、启动 / 设置 / 配置技术说明。本版不改代码行为与受管输入；runtimeId 保持 `2ae3f266`，fixed-inputs 冻结（使用锁定 20261105e）。**build343 尚未真机验收**，验收项是 342→343 首次覆盖安装成功、数据完整、READY，以及进度 / 骨架 / 错峰 / 页签 / 折叠 / 技术说明在日夜、短屏、1.3 倍字体与 TalkBack 下的表现；build338–342 真机验收仍待用户。宿主 contracts 整组、全量单测、lint 与全树格式 / 文档检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build343 更新说明](releases/build343-changes.zh.md)。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
