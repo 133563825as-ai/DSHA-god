@@ -1,7 +1,7 @@
 # AGENTS.md
 
 
-> **当前状态**：`0.2.1-rc.5-20261108.1500-dsh0.2.2-rc.1` / build345 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
+> **当前状态**：`0.2.1-rc.5-20261109.0300-dsh0.2.2-rc.1` / build345 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
 > 主线分支 `main`；Android 11+（API 30）/ arm64；proot 默认、proroot 可选；内置 DSH 0.2.2-rc.1。
 > 上岛能力已并入正式包；旧 low/GeckoView 兼容线与独立上岛包已删除；签名使用 Mod 自有证书（见 BUILD.md）。
 

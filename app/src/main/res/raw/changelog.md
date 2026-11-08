@@ -1,4 +1,4 @@
-# DSHA 0.2.1-rc.5-20261108.1500-dsh0.2.2-rc.1 / build345
+# DSHA 0.2.1-rc.5-20261109.0300-dsh0.2.2-rc.1 / build345
 
 - 设置与设备能力授权精简（`0d0b9d359`）：设置页删除页顶标语与 6 个入口副标题，悬浮条 / 隐藏后台 / 版本更新 / 自检 / 关于的常显说明收起，主题与语言状态改行尾值；省电模式去掉随开关出现的动态副标题，行高恒定。设备能力授权页：设备执行通道与全局确认长说明默认折叠，重复的 Root 说明合并，删除页顶说明与多处常显解释；通道 / 系统权限 / 敏感能力 / 虚拟识屏状态统一为同行 `ShellStatusPill` 胶囊，外接设备状态短化为已关闭 / 未绑定 / 已绑定 / 未验证。开关保持 Material 胶囊形状，关闭态轨道先改近白底 + 细边（随后由 `90609c2c4` 换成 `trackTint` 方案）。
 - 管理文件访问权限修复（`ad9b93849`）：上一提交把状态改为同行胶囊后，`DisclosureCard` 只能把详情插到竖排父容器摘要之后，而胶囊父容器已成横向行，导致「管理文件访问权限」点击无法展开（真机与单测均复现）。布局新增 `config_all_files_line` 横向行、详情容器改插到该行之后，`DeviceGrantsLayoutTest` / `GrantsAccordionTest` 同步新契约并修复 CI Source checks；回归 `DeviceGrantsLayoutTest` / `DeviceGrantsScreenModeTest` / `GrantsAccordionTest` 全绿。

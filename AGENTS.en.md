@@ -1,7 +1,7 @@
 # AGENTS.md — English contributor and agent guide
 
 
-> **Status**: `0.2.1-rc.5-20261108.1500-dsh0.2.2-rc.1` / build345 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
+> **Status**: `0.2.1-rc.5-20261109.0300-dsh0.2.2-rc.1` / build345 / `io.github.sunsetrne.dsha` / DSH-A-Su / single Standard.
 > Main branch `main`; Android 11+ (API 30) / arm64; proot by default, proroot optional; bundled DSH 0.2.2-rc.1.
 > The island feature is folded into the regular package; the old low/GeckoView line and the separate island package are removed; signing uses the Mod-owned certificate (see BUILD.en.md).
 
