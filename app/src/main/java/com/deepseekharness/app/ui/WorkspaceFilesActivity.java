@@ -397,7 +397,7 @@ public final class WorkspaceFilesActivity extends AppCompatActivity {
             .setType(source.mime)
             .putExtra(Intent.EXTRA_TITLE, source.name);
     try {
-      savePicker.launch(picker);
+      RecentsPrivacyGuard.launch(savePicker, picker);
       render();
     } catch (RuntimeException unavailable) {
       model.pending = null;

@@ -1437,7 +1437,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
                 WebUploadChooser.onlyImages(params.getAcceptTypes()) ? params.createIntent() : null,
                 params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE,
                 params.getAcceptTypes());
-        pending.picker.launch(primary);
+        RecentsPrivacyGuard.launch(pending.picker, primary);
       } catch (RuntimeException e) {
         try {
           if (primary == null)
@@ -1446,7 +1446,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
                     null,
                     params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE,
                     params.getAcceptTypes());
-          pending.picker.launch(WebUploads.fallback(primary));
+          RecentsPrivacyGuard.launch(pending.picker, WebUploads.fallback(primary));
         } catch (RuntimeException ignored) {
           unregisterFilePicker(pending);
           retained.pendingPicker = null;

@@ -240,7 +240,7 @@ public final class SkillsFragment extends Fragment {
     importButton.setMinHeight(ui.dp(46));
     importButton.setMinimumHeight(ui.dp(46));
     importButton.setPadding(ui.dp(16), 0, ui.dp(16), 0);
-    importButton.setOnClickListener(v -> picker.launch(new String[] {"*/*"}));
+    importButton.setOnClickListener(v -> RecentsPrivacyGuard.launch(picker, new String[] {"*/*"}));
     LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(-2, ui.dp(46));
     importParams.setMarginStart(ui.dp(10));
     toolsRow.addView(importButton, importParams);
@@ -599,7 +599,7 @@ public final class SkillsFragment extends Fragment {
     empty.addView(sub);
     Button add = plainButton(ctx, t("导入技能", "Import SKILL.md"), true);
     add.setEnabled(!busy());
-    add.setOnClickListener(v -> picker.launch(new String[] {"*/*"}));
+    add.setOnClickListener(v -> RecentsPrivacyGuard.launch(picker, new String[] {"*/*"}));
     LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(-2, -2);
     addParams.topMargin = ui.dp(16);
     empty.addView(add, addParams);

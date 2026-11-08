@@ -409,7 +409,8 @@ public final class NativeDataActivity extends AppCompatActivity {
   }
 
   private void pickRestore() {
-    restorePicker.launch(
+    RecentsPrivacyGuard.launch(
+        restorePicker,
         new String[] {
           com.deepseekharness.app.util.BackupFileNames.MIME_TYPE,
           "application/octet-stream",
@@ -516,7 +517,10 @@ public final class NativeDataActivity extends AppCompatActivity {
     project.setPadding(0, dp(6), 0, 0);
     card.addView(project);
     page.button(
-        card, t("选择项目目录", "Choose project folder"), false, () -> projectPicker.launch(null));
+        card,
+        t("选择项目目录", "Choose project folder"),
+        false,
+        () -> RecentsPrivacyGuard.launch(projectPicker, null));
     CheckBox key = new CheckBox(this);
     key.setText(t("包含原生 API Key（默认不包含）", "Include native API key (excluded by default)"));
     key.setTextColor(getColor(R.color.shell_text));
@@ -1261,7 +1265,7 @@ public final class NativeDataActivity extends AppCompatActivity {
               pending.rescue = rescue;
               pending.filename = com.deepseekharness.app.util.BackupFileNames.portableName();
               pending.exportPrepared = true;
-              destination.launch(pending.filename);
+              RecentsPrivacyGuard.launch(destination, pending.filename);
             })
         .setNegativeButton(t("取消", "Cancel"), null)
         .show();
@@ -1282,7 +1286,7 @@ public final class NativeDataActivity extends AppCompatActivity {
       pending.clear();
       pending.reexportId = copy.id;
       pending.filename = com.deepseekharness.app.util.BackupFileNames.portableName();
-      destination.launch(pending.filename);
+      RecentsPrivacyGuard.launch(destination, pending.filename);
       return;
     }
     LinearLayout content = new LinearLayout(this);
@@ -1326,7 +1330,7 @@ public final class NativeDataActivity extends AppCompatActivity {
                       pending.filename =
                           com.deepseekharness.app.util.BackupFileNames.portableName();
                       dialog.dismiss();
-                      destination.launch(pending.filename);
+                      RecentsPrivacyGuard.launch(destination, pending.filename);
                     }));
     dialog.setOnDismissListener(ignored -> original.getText().clear());
     dialog.show();

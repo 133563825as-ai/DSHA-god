@@ -217,7 +217,8 @@ public final class SafAccessFragment extends Fragment {
 
   private void launch(ActivityResultLauncher<Uri> launcher, Context ctx) {
     try {
-      launcher.launch(null);
+      // 结果型外部选择器在途时不能结束 UI 任务（T124 严格模式守卫）。
+      RecentsPrivacyGuard.launch(launcher, null);
     } catch (RuntimeException missing) {
       toast(UiText.text("没有可用的文件选择器"));
     }

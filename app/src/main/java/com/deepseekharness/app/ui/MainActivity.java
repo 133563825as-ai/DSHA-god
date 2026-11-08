@@ -1253,7 +1253,8 @@ public class MainActivity extends AppCompatActivity {
   }
 
   public void pickBackupForRestore() {
-    legacyBackupPicker.launch(
+    RecentsPrivacyGuard.launch(
+        legacyBackupPicker,
         new String[] {
           com.deepseekharness.app.util.BackupFileNames.MIME_TYPE,
           "application/octet-stream",

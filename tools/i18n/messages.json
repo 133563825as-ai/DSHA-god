@@ -16670,6 +16670,30 @@
     ]
   },
   {
+    "id": "m9500",
+    "zh": "离开后从最近任务移除；当前卡片不显示页面内容",
+    "en": "Removed from Recents after you leave; the current card hides page content.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
+    ]
+  },
+  {
+    "id": "m9501",
+    "zh": "严格模式（实验）",
+    "en": "Strict mode (experimental)",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
+    ]
+  },
+  {
+    "id": "m9502",
+    "zh": "离开应用即结束界面，卡片不再保留；重新打开会重建页面",
+    "en": "Leaving the app ends the UI so the card is no longer kept; reopening rebuilds the page.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java"
+    ]
+  },
+  {
     "id": "startup_2068",
     "zh": "检查启动配置和插件清单",
     "en": "Checking startup configuration and plugin list",

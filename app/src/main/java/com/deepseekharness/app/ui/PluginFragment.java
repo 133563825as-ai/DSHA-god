@@ -703,7 +703,8 @@ public class PluginFragment extends Fragment {
     }
     repository.selectionMessage(com.deepseekharness.app.util.UiText.text("请选择插件包"));
     try {
-      importPicker.launch(PluginFilePicker.intent(requireContext(), alternative));
+      RecentsPrivacyGuard.launch(
+          importPicker, PluginFilePicker.intent(requireContext(), alternative));
     } catch (android.content.ActivityNotFoundException error) {
       if (!alternative) {
         chooseImport(true);
@@ -1065,7 +1066,7 @@ public class PluginFragment extends Fragment {
     String stamp =
         new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new java.util.Date());
     try {
-      exportPicker.launch(name + "-" + stamp + ".tar.gz");
+      RecentsPrivacyGuard.launch(exportPicker, name + "-" + stamp + ".tar.gz");
     } catch (Exception error) {
       pendingExports.clear();
       toast(com.deepseekharness.app.util.UiText.text("无法打开保存位置选择器"));

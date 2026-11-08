@@ -326,6 +326,7 @@ final class BrowserTasks {
       if (manager == null) return false;
       hideAll = new com.deepseekharness.app.core.ConfigStore(context).isHideFromRecents();
       List<ActivityManager.AppTask> appTasks = manager.getAppTasks();
+      if (appTasks.isEmpty()) return false;
       List<BrowserTaskPolicy.Task> choices = new ArrayList<>();
       for (ActivityManager.AppTask task : appTasks) {
         var info = task.getTaskInfo();
@@ -369,12 +370,54 @@ final class BrowserTasks {
       if (manager == null) return false;
       List<ActivityManager.AppTask> appTasks = manager.getAppTasks();
       boolean hide = new com.deepseekharness.app.core.ConfigStore(context).isHideFromRecents();
+      if (appTasks.isEmpty()) {
+        // 没有可重放的本应用任务时不能报告成功：设置页会提示、下次 Main 恢复再试。
+        com.deepseekharness.app.core.DiagnosticLog.record(
+            context, "RECENTS_HIDE_APPLY", "NO_APP_TASKS");
+        return false;
+      }
       for (ActivityManager.AppTask task : appTasks) task.setExcludeFromRecents(hide);
-      return hide || reconcileRecents(context, liveMainTask());
+      if (!hide) return reconcileRecents(context, liveMainTask());
+      return exclusionApplied(context, true);
     } catch (RuntimeException unavailable) {
       android.util.Log.w("DSHA", "TASK_RECENTS_HIDE: " + unavailable.getClass().getSimpleName());
       com.deepseekharness.app.core.DiagnosticLog.record(
           context, "RECENTS_HIDE_APPLY", unavailable.toString());
+      return false;
+    }
+  }
+
+  /**
+   * 重读任务列表，确认 root Intent 上的「排除出最近任务」标志已与期望一致。
+   *
+   * <p>{@code setExcludeFromRecents} 不抛异常也不代表系统真的改到了任务（例如 ROM 只改缓存或
+   * 返回空任务列表）；刷完立即回读，避免「标记成功但实际未生效」的假成功。
+   */
+  private static boolean exclusionApplied(Context context, boolean hide) {
+    boolean verified = false;
+    try {
+      ActivityManager manager =
+          (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+      List<ActivityManager.AppTask> appTasks = manager == null ? List.of() : manager.getAppTasks();
+      if (appTasks.isEmpty()) return false;
+      for (ActivityManager.AppTask task : appTasks) {
+        var info = task.getTaskInfo();
+        // 个别 ROM / 测试替身不提供 root Intent：标记不可核对，但不据此判失败。
+        if (info == null || info.baseIntent == null) continue;
+        boolean excluded =
+            (info.baseIntent.getFlags() & android.content.Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                != 0;
+        if (excluded != hide) {
+          com.deepseekharness.app.core.DiagnosticLog.record(
+              context, "RECENTS_HIDE_VERIFY", "FLAG_MISMATCH");
+          return false;
+        }
+        verified = true;
+      }
+      if (!verified) android.util.Log.d("DSHA", "TASK_RECENTS_VERIFY: no base intent to read");
+      return true;
+    } catch (RuntimeException unavailable) {
+      android.util.Log.w("DSHA", "TASK_RECENTS_VERIFY: " + unavailable.getClass().getSimpleName());
       return false;
     }
   }

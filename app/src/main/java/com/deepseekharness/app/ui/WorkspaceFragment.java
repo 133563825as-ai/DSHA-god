@@ -336,7 +336,7 @@ public class WorkspaceFragment extends Fragment {
 
   private void pickBackupDirectory() {
     if (isResumed() && oneClick != null && oneClick.claimDirectoryPicker())
-      backupDirectory.launch(null);
+      RecentsPrivacyGuard.launch(backupDirectory, null);
   }
 
   private void taskRejected() {

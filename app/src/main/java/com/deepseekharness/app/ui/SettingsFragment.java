@@ -158,13 +158,42 @@ public class SettingsFragment extends Fragment {
     // 隐藏后台：只改最近任务可见性，不动常驻通知、前台服务与 ADB 保活。
     TextView hiddenTitle = v.findViewById(R.id.settings_hidden_recents_title);
     hiddenTitle.setText(com.deepseekharness.app.util.UiText.text("隐藏后台"));
+    TextView hiddenHint = v.findViewById(R.id.settings_hidden_recents_hint);
+    hiddenHint.setText(com.deepseekharness.app.util.UiText.text("离开后从最近任务移除；系统保留当前卡片时不显示内容"));
     com.google.android.material.materialswitch.MaterialSwitch hiddenSwitch =
         v.findViewById(R.id.settings_hidden_recents_switch);
     hiddenSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("隐藏后台"));
     hiddenSwitch.setChecked(config.isHideFromRecents());
+
+    // 严格模式是「隐藏后台」的实验性子项：离开应用即结束 UI 任务，当前卡片也不再保留；
+    // dsh 进程、终端会话、ADB 保活与常驻通知都不受影响。放在父开关关闭时隐藏。
+    TextView strictTitle = v.findViewById(R.id.settings_hidden_recents_strict_title);
+    strictTitle.setText(com.deepseekharness.app.util.UiText.text("严格模式（实验）"));
+    TextView strictHint = v.findViewById(R.id.settings_hidden_recents_strict_hint);
+    strictHint.setText(com.deepseekharness.app.util.UiText.text("离开应用即结束界面，卡片不再保留；重新打开会重建页面"));
+    com.google.android.material.materialswitch.MaterialSwitch strictSwitch =
+        v.findViewById(R.id.settings_hidden_recents_strict_switch);
+    strictSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("严格模式（实验）"));
+    strictSwitch.setChecked(config.isHideRecentsStrict());
+    View strictRow = v.findViewById(R.id.settings_hidden_recents_strict);
+    View strictDivider = v.findViewById(R.id.settings_hidden_recents_strict_divider);
+    Runnable applyStrictVisibility =
+        () -> {
+          int visibility = config.isHideFromRecents() ? View.VISIBLE : View.GONE;
+          strictRow.setVisibility(visibility);
+          strictDivider.setVisibility(visibility);
+        };
+    applyStrictVisibility.run();
+    strictSwitch.setOnCheckedChangeListener(
+        (button, checked) -> config.setHideRecentsStrict(checked));
+    strictRow.setOnClickListener(x -> strictSwitch.toggle());
+
     hiddenSwitch.setOnCheckedChangeListener(
         (button, checked) -> {
           config.setHideFromRecents(checked);
+          // 截图遮挡跟随父开关立即重放；任务排除结果回读失败时提示下次生效。
+          RecentsPrivacyGuard.refreshAll();
+          applyStrictVisibility.run();
           if (!BrowserTasks.applyRecentsPreference(requireContext()))
             android.widget.Toast.makeText(
                     requireContext(),

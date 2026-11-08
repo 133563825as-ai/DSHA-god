@@ -6,7 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.Test;
 import org.w3c.dom.Element;
@@ -74,6 +77,53 @@ public class RecentsPreferenceContractTest {
     String settings = source("SettingsFragment");
     assertTrue(settings.contains("config.setHideFromRecents(checked);"));
     assertTrue(settings.contains(APPLY + "requireContext())"));
+  }
+
+  @Test
+  public void strictModeSwitchIsWiredAndOnlyShownUnderTheParentSwitch() throws Exception {
+    String settings = source("SettingsFragment");
+    assertTrue(settings.contains("settings_hidden_recents_strict_switch"));
+    assertTrue(settings.contains("config.setHideRecentsStrict(checked)"));
+    assertTrue("父开关切换后截图遮挡应立即重放", settings.contains("RecentsPrivacyGuard.refreshAll();"));
+    assertTrue("严格模式行必须跟随父开关显隐", settings.contains("strictRow.setVisibility(visibility);"));
+  }
+
+  @Test
+  public void screenshotGuardIsInstalledForEveryActivity() throws Exception {
+    String app =
+        Files.readString(
+            root().resolve("app/src/main/java/com/deepseekharness/app/DshaApp.java"),
+            StandardCharsets.UTF_8);
+    assertTrue(
+        "Application 级生命周期守卫必须安装",
+        app.contains("new com.deepseekharness.app.ui.RecentsPrivacyGuard()"));
+    String guard =
+        Files.readString(
+            root().resolve("app/src/main/java/com/deepseekharness/app/ui/RecentsPrivacyGuard.java"),
+            StandardCharsets.UTF_8);
+    assertTrue("开关开启时必须关闭最近任务截图", guard.contains("setRecentsScreenshotEnabled("));
+    assertTrue("严格模式必须结束 UI 任务", guard.contains("finishAndRemoveTask()"));
+    assertTrue("退回策略必须走纯逻辑", guard.contains("RecentsPrivacyPolicy.onAppBackground("));
+  }
+
+  @Test
+  public void documentPickersRouteThroughTheRecentsGuard() throws Exception {
+    // 文档选择器都有结果回调：严格模式必须在结果在途时跳过结束任务，否则选完文件的结果会丢。
+    Pattern picker =
+        Pattern.compile(
+            "ActivityResultContracts\\.(OpenDocument|CreateDocument|OpenDocumentTree|GetContent)\\b");
+    try (Stream<Path> files =
+        Files.list(root().resolve("app/src/main/java/com/deepseekharness/app/ui"))) {
+      List<Path> sources = files.filter(path -> path.toString().endsWith(".java")).toList();
+      assertFalse(sources.isEmpty());
+      for (Path path : sources) {
+        String text = Files.readString(path, StandardCharsets.UTF_8);
+        if (!picker.matcher(text).find()) continue;
+        assertTrue(
+            path.getFileName() + " 的文档选择器必须经 RecentsPrivacyGuard.launch 启动",
+            text.contains("RecentsPrivacyGuard.launch("));
+      }
+    }
   }
 
   @Test
