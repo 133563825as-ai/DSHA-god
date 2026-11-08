@@ -1957,5 +1957,16 @@
   "m9034": "Notas técnicas · DSHA v%s",
   "m9035": "Inicialização e restauração",
   "m9036": "Rede e plugins",
-  "m9037": "Modo de execução: %s · Porta: %s\nDNS: %s\nAs configurações ficam no armazenamento privado do app; a chave de API nativa não é exportada por padrão."
+  "m9037": "Modo de execução: %s · Porta: %s\nDNS: %s\nAs configurações ficam no armazenamento privado do app; a chave de API nativa não é exportada por padrão.",
+  "m9038": "Confirmação necessária antes de executar",
+  "m9039": "Mostrar ações",
+  "m9040": "Ações exibidas",
+  "m9041": "Arraste ou toque para fechar a gaveta",
+  "m9042": "Detalhes do backup",
+  "m9043": "ID",
+  "m9044": "Resumo",
+  "m9045": "Resultado",
+  "m9046": "A inspeção e a exportação verificam novamente a cópia privada; o original é mantido e os backups existentes não são substituídos.",
+  "m9047": "Ordenação atual",
+  "m9048": "Excluir após confirmação"
 }

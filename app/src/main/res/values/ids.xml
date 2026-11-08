@@ -17,4 +17,6 @@
     <item name="screen_mode_status" type="id" />
     <item name="vscreen_preview_strip" type="id" />
     <item name="vscreen_preview_panel" type="id" />
+    <!-- Wave D（F2）：行尾滑动动作条的读屏「显示操作」自定义动作。 -->
+    <item name="swipe_action_open" type="id" />
 </resources>

@@ -698,13 +698,36 @@ public final class PluginFragmentRenderingTest {
     AlertDialog dialog = (AlertDialog) ShadowDialog.getLatestDialog();
     assertNotNull(dialog);
     assertTrue(dialog.isShowing());
-    var choices = dialog.getListView();
-    View choice = choices.getAdapter().getView(mode.ordinal(), null, choices);
-    assertTrue(
-        choices.performItemClick(
-            choice, mode.ordinal(), choices.getAdapter().getItemId(mode.ordinal())));
+    // G1：排序入口改为底部抽屉，按文案点对应行（不再是单选 ListView）。
+    int[] labels = {
+      R.string.plugin_sort_az,
+      R.string.plugin_sort_za,
+      R.string.plugin_sort_enabled,
+      R.string.plugin_sort_updates
+    };
+    View title =
+        findText(
+            dialog.getWindow().getDecorView(),
+            page.requireContext().getString(labels[mode.ordinal()]));
+    assertNotNull("排序抽屉必须包含选项：" + mode, title);
+    // 文案在行内层叠容器里；点为整行（可点祖先）才是抽屉的选择动作。
+    View row = title;
+    while (row != null && !row.isClickable()) row = (View) row.getParent();
+    assertNotNull(row);
+    assertTrue(row.performClick());
     layout();
     assertFalse(dialog.isShowing());
+  }
+
+  private static View findText(View view, String expected) {
+    if (view instanceof TextView text && expected.contentEquals(text.getText())) return view;
+    if (view instanceof android.view.ViewGroup group) {
+      for (int index = 0; index < group.getChildCount(); index++) {
+        View found = findText(group.getChildAt(index), expected);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 
   private static String text(View view) {

@@ -1957,5 +1957,16 @@
   "m9034": "Notae technicae · DSHA v%s",
   "m9035": "Initium et restitutio",
   "m9036": "Rete et additamenta",
-  "m9037": "Modus currendi: %s · Portus: %s\nDNS: %s\nOptiones in spatio privato applicationis servantur; clavis API nativa ex more non exportatur."
+  "m9037": "Modus currendi: %s · Portus: %s\nDNS: %s\nOptiones in spatio privato applicationis servantur; clavis API nativa ex more non exportatur.",
+  "m9038": "Confirmatio ante executionem necessaria",
+  "m9039": "Actiones ostendere",
+  "m9040": "Actiones ostensae",
+  "m9041": "Trahe aut tange ut plicam claudas",
+  "m9042": "Singularia copiae",
+  "m9043": "ID",
+  "m9044": "Summarium",
+  "m9045": "Eventus",
+  "m9046": "Inspectio et exportatio copiam privatam iterum probant; originale servatur et copiae exstantes non obsidentur.",
+  "m9047": "Ordo praesens",
+  "m9048": "Post confirmationem dele"
 }
