@@ -1948,5 +1948,14 @@
   "x1972009": "Exporter les fichiers de l’espace de travail",
   "x1972010": "Voir et arrêter les tâches",
   "x1972011": "Espace et nettoyage",
-  "x1972012": "Copies en lecture seule et anciens environnements"
+  "x1972012": "Copies en lecture seule et anciens environnements",
+  "m9029": "Restauration annulée",
+  "m9030": "Annulation…",
+  "m9031": "En attente de la fin de la tâche en cours",
+  "m9032": "Non sélectionné",
+  "m9033": "Notes techniques",
+  "m9034": "Notes techniques · DSHA v%s",
+  "m9035": "Démarrage et restauration",
+  "m9036": "Réseau et plugins",
+  "m9037": "Mode d'exécution : %s · Port : %s\nDNS : %s\nLes réglages restent dans le stockage privé de l'application ; la clé API native n'est pas exportée par défaut."
 }

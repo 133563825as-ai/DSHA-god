@@ -1948,5 +1948,14 @@
   "x1972009": "Exportar arquivos do espaço",
   "x1972010": "Ver e parar tarefas",
   "x1972011": "Espaço e limpeza",
-  "x1972012": "Cópias somente leitura e ambientes antigos"
+  "x1972012": "Cópias somente leitura e ambientes antigos",
+  "m9029": "Restauração cancelada",
+  "m9030": "Cancelando…",
+  "m9031": "Aguardando o término da tarefa atual",
+  "m9032": "Não selecionado",
+  "m9033": "Notas técnicas",
+  "m9034": "Notas técnicas · DSHA v%s",
+  "m9035": "Inicialização e restauração",
+  "m9036": "Rede e plugins",
+  "m9037": "Modo de execução: %s · Porta: %s\nDNS: %s\nAs configurações ficam no armazenamento privado do app; a chave de API nativa não é exportada por padrão."
 }

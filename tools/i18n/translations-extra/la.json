@@ -1948,5 +1948,14 @@
   "x1972009": "Fasciculos operis exportare",
   "x1972010": "Munera videre et sistere",
   "x1972011": "Spatium et purgatio",
-  "x1972012": "Exemplaria sola legenda et ambitus veteres"
+  "x1972012": "Exemplaria sola legenda et ambitus veteres",
+  "m9029": "Restitutio revocata",
+  "m9030": "Revocatur…",
+  "m9031": "Exspectatur finis operis praesentis",
+  "m9032": "Non selectum",
+  "m9033": "Notae technicae",
+  "m9034": "Notae technicae · DSHA v%s",
+  "m9035": "Initium et restitutio",
+  "m9036": "Rete et additamenta",
+  "m9037": "Modus currendi: %s · Portus: %s\nDNS: %s\nOptiones in spatio privato applicationis servantur; clavis API nativa ex more non exportatur."
 }
