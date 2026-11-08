@@ -135,8 +135,8 @@ public final class UpdateVersionPageTest {
         bundledNotes(inLanguage(activity, language));
       assertTrue(shown.contains("dsh-web-mobile"));
       assertTrue(shown.contains("3.3.1"));
-      assertTrue(shown.contains("版本码提升为 344"));
-      assertFalse(shown.contains("版本码提升为 343"));
+      assertTrue(shown.contains("版本码提升为 345"));
+      assertFalse(shown.contains("版本码提升为 344"));
       assertFalse(shown.contains("版本码提升为 342"));
       assertFalse(shown.contains("版本码提升为 341"));
       assertFalse(shown.contains("版本码提升为 340"));
@@ -147,9 +147,10 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("版本码提升为 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("跨应用文件访问"));
-      assertTrue(shown.contains("T123"));
-      assertTrue(shown.contains("SwipeAction"));
-      assertTrue(shown.contains("BottomSheetCard"));
+      assertTrue(shown.contains("管理文件访问权限"));
+      assertTrue(shown.contains("DisclosureCard"));
+      assertTrue(shown.contains("ShellStatusPill"));
+      assertTrue(shown.contains("trackTint"));
       assertTrue(shown.contains("f65796a2"));
       assertFalse(shown.contains("DeterminateProgress"));
       assertFalse(shown.contains("FiniteSkeleton"));
@@ -166,7 +167,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("libmonochrome"));
       assertFalse(shown.contains("VSCREEN_SELF_LAUNCH_REFUSED"));
       assertFalse(shown.contains("版本码提升为 331"));
-      assertFalse(shown.contains("GitHub 登录"));
+      assertTrue(shown.contains("GitHub 登录"));
       assertFalse(shown.contains("受管 CA"));
       assertFalse(shown.contains("版本码提升为 330"));
       assertFalse(shown.contains("版本码提升为 329"));
@@ -349,8 +350,8 @@ public final class UpdateVersionPageTest {
           englishBody);
       assertTrue(shown.contains("dsh-web-mobile"));
       assertTrue(shown.contains("3.3.1"));
-      assertTrue(shown.contains("versionCode raised to 344"));
-      assertFalse(shown.contains("versionCode raised to 343"));
+      assertTrue(shown.contains("versionCode raised to 345"));
+      assertFalse(shown.contains("versionCode raised to 344"));
       assertFalse(shown.contains("versionCode raised to 342"));
       assertFalse(shown.contains("versionCode raised to 341"));
       assertFalse(shown.contains("versionCode raised to 340"));
@@ -361,9 +362,10 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("Raises versionCode to 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
       assertFalse(shown.contains("Cross-app file access"));
-      assertTrue(shown.contains("T123"));
-      assertTrue(shown.contains("SwipeAction"));
-      assertTrue(shown.contains("BottomSheetCard"));
+      assertTrue(shown.contains("Manage file access"));
+      assertTrue(shown.contains("DisclosureCard"));
+      assertTrue(shown.contains("ShellStatusPill"));
+      assertTrue(shown.contains("trackTint"));
       assertTrue(shown.contains("f65796a2"));
       assertFalse(shown.contains("DeterminateProgress"));
       assertFalse(shown.contains("FiniteSkeleton"));
@@ -380,7 +382,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("libmonochrome"));
       assertFalse(shown.contains("VSCREEN_SELF_LAUNCH_REFUSED"));
       assertFalse(shown.contains("Raises versionCode to 331"));
-      assertFalse(shown.contains("GitHub login"));
+      assertTrue(shown.contains("GitHub login"));
       assertFalse(shown.contains("managed CA"));
       assertFalse(shown.contains("Raises versionCode to 330"));
       assertFalse(shown.contains("Raises versionCode to 329"));

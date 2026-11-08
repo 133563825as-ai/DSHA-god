@@ -1,6 +1,6 @@
-# DSHA 0.2.1-rc.5-20261108.1300-dsh0.2.2-rc.1 / build344
+# DSHA 0.2.1-rc.5-20261108.1500-dsh0.2.2-rc.1 / build345
 
-- proot 執行根自鏡像綁定（T123）：`baseArgv()` 增加 `-b <canonical rootfs>:<canonical rootfs>`，修 `/proc/self/maps` 宿主路徑回讀（執行根以 `/data/user/0` 別名傳入、maps 卻是 `/data/data` 時 guest 會誤讀 `<rootfs>/data/data/...` 並 ENOENT）；canonical 由 `getCanonicalFile()` 解析、失敗回退傳入路徑；proroot v1.2.8 vendor 已綁，App 不重複綁定（升級需複核）。落在 launcher 源，受管執行環境 descriptor 由 `2ae3f266` 重算為 **`f65796a2`**；固定輸入未重建、未新增受管執行環境。新增 `ContainerRuntimeSelfMirrorTest`。**proot 真機核對未做**。
-- 左滑動作 `SwipeAction`（T122）：45% 門檻、超過動作列寬度 30% 阻尼、LTR 左 / RTL 右由純邏輯鏡像；滑動只露動作，破壞性動作只呼叫既有確認彈窗（二次確認），無回呼不可點，同屏只開一列，讀屏提供「顯示操作」。底部抽屜 `BottomSheetCard`：拖曳手柄 / 點擊 / 下拖 96dp 關閉、返回鍵先收、短屏 <480dp 全高正文捲動頁腳常駐、遮罩只關閉；系統關動畫直接落終態。接入備份記錄、外掛清單與外掛動作 / 排序抽屜，新增十語文案 11 條與 hygiene 位元組釘。
-- 版本與範圍：版本碼 344（基於已發佈 build343 / `4ba75ddd`）；DSHA `0.2.1-rc.5` / 內建 DSH `0.2.2-rc.1`。本版含一處受管執行環境更新（runtimeId `f65796a2…`），不改其餘程式行為；fixed-inputs 凍結（20261105e）；內建 `dsh-web-mobile` 不變。
-- **未驗證／未驗收**：真機手勢、短屏、RTL、TalkBack 與 proot 真機核對未做（切 proot 會重啟 Web 並中斷工作階段）。**build344 尚未真機驗收**（343→344 覆蓋、資料完好、READY 與上述行為待使用者）；build338–343 真機驗收仍待使用者。驗證範圍： contracts 整組、descriptor `f65796a2`、format 1625、i18n、hygiene、changelog、doc-links、全量單測（10 例 aarch64 基線）與 lint；正式簽章 assemble 本機不執行。
+- 設定與裝置能力授權精簡（`0d0b9d359`）：設定頁刪頁頂標語與入口副標題，主題 / 語言狀態改行尾值，省電模式行高恆定；裝置授權頁長說明預設折疊、Root 說明去重，通道 / 系統權限 / 敏感能力 / 虛擬識屏狀態改同行 `ShellStatusPill` 膠囊，外接裝置狀態短化為已關閉 / 未綁定 / 已綁定 / 未驗證。
+- 管理檔案存取權限修復（`ad9b93849` / `f94a95a14` / `90609c2c4`）：折疊詳情改插到橫向列之後，修「管理檔案存取權限」無法展開；`DisclosureCard` 收起時先脫離動作視圖，修第二次展開崩潰；管理檔案改回整列 / 膠囊直接開啟系統「所有檔案存取」頁；開關關閉態軌道改用 Material `trackTint` 近白底（`android:track` 被元件忽略），開態保持主題主色。
+- 資料與備份 / GitHub 登入瘦身（`f6274ab55` / `aec0ad5e9`）：hero 去掉摘要與展開重複、NEVER 不再預設展開或疊舊回執；GitHub 登入長值縮短不換行，引導彈窗改自訂內容（等寬可選命令、複製命令 / 授權連結、保留一鍵開啟終端）。
+- 版本與範圍：版本碼 345（基於已發佈 build344 / `e49f3b337`），DSHA `0.2.1-rc.5` / 內建 DSH `0.2.2-rc.1`；純 UI 修復與瘦身，runtimeId 保持 `f65796a2`、fixed-inputs 20261105e、`dsh-web-mobile` 3.3.1。**未驗證**：build344 / 345 正式包真機覆蓋驗收待使用者；本批以 SunsetTest 測試包驗證管理檔案直開系統頁、開關白底、登入彈窗複製（測試包證據）；其餘真機視覺 / RTL / TalkBack 未逐項執行。驗證範圍：contracts 整組、format、i18n、hygiene、changelog、doc-links、全量單測（10 例 aarch64 基線）與 lint；正式簽章 assemble 本機不執行。
