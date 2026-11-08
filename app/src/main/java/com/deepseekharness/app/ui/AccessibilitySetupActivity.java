@@ -68,6 +68,7 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
                     "Some devices use Settings → Additional settings → Accessibility → Downloaded services.\n\nOn Android 13+, if the system reports restricted settings, use the app-info menu to allow restricted settings, then return to Accessibility. Enable only for your trusted DSHA installation.\n\nIf disconnected after enabling, toggle the service off and on and allow DSHA to run in the background.")));
     page.footer.setVisibility(android.view.View.GONE);
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
   }
 
   static void openSettings(android.app.Activity activity) {

@@ -43,6 +43,9 @@ public class WorkspaceFragment extends Fragment {
   /** 状态卡展开状态：旋转/返回后保留，用户折叠后不再被异常默认展开覆盖。 */
   private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
 
+  private View autoDot;
+  private Button backupButton;
+
   private final androidx.activity.result.ActivityResultLauncher<android.net.Uri> backupDirectory =
       registerForActivityResult(
           new androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
@@ -71,11 +74,31 @@ public class WorkspaceFragment extends Fragment {
     ((Button) v.findViewById(R.id.workspace_restore)).setText(UiText.text("从备份恢复"));
     ((Button) v.findViewById(android.R.id.button2)).setText(UiText.text("取消备份"));
     v.findViewById(android.R.id.button2).setOnClickListener(x -> oneClick.cancel());
+    backupButton = v.findViewById(R.id.workspace_backup);
     v.findViewById(R.id.workspace_backup).setOnClickListener(x -> primaryAction());
     v.findViewById(R.id.workspace_restore).setOnClickListener(x -> secondaryAction());
     v.findViewById(R.id.workspace_stat_manual).setOnClickListener(x -> showHistory());
     v.findViewById(R.id.workspace_stat_auto)
         .setOnClickListener(x -> open(AutomaticBackupActivity.class));
+    // H1：状态卡是页面主卡（elevated）；自动备份状态在标签前加状态点（H2）。
+    CardTokens.tier(v.findViewById(R.id.workspace_hero), CardTokens.Tier.ELEVATED);
+    TextView autoLabel = v.findViewById(R.id.workspace_stat_auto_label);
+    if (autoLabel != null && autoLabel.getParent() instanceof LinearLayout autoParent) {
+      int index = autoParent.indexOfChild(autoLabel);
+      LinearLayout labelRow = new LinearLayout(requireContext());
+      labelRow.setOrientation(LinearLayout.HORIZONTAL);
+      labelRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+      autoDot = CardTokens.dot(requireContext(), CardTokens.Tone.ACCENT);
+      LinearLayout.LayoutParams dotParams =
+          new LinearLayout.LayoutParams(
+              Math.round(8 * getResources().getDisplayMetrics().density),
+              Math.round(8 * getResources().getDisplayMetrics().density));
+      dotParams.setMarginEnd(Math.round(5 * getResources().getDisplayMetrics().density));
+      labelRow.addView(autoDot, dotParams);
+      autoParent.removeView(autoLabel);
+      labelRow.addView(autoLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+      autoParent.addView(labelRow, index, new LinearLayout.LayoutParams(-1, -2));
+    }
     // 手机竖屏三格横排会把英文标签挤成多行；窄屏改为纵向堆叠。
     if (getResources().getConfiguration().screenWidthDp < 600) stackStats(v);
 
@@ -249,11 +272,19 @@ public class WorkspaceFragment extends Fragment {
         true,
         () -> {
           dialog.dismiss();
-          if (!oneClick.start())
+          if (!oneClick.start()) {
             toast(
                 UiText.choose(
                     "已有备份或保存位置选择正在进行。",
                     "A backup or destination selection is already in progress."));
+          } else if (backupButton != null) {
+            // A2：真实任务开始时才出现在线转圈，任务结束后由状态刷新恢复按钮。
+            main.post(
+                () -> {
+                  if (Boolean.TRUE.equals(oneClick.busy.getValue()))
+                    LoadingAction.start(backupButton);
+                });
+          }
         });
     page.button(page.footer, UiText.text("取消"), false, dialog::dismiss);
     CardSheet.show(dialog, requireContext());
@@ -330,6 +361,7 @@ public class WorkspaceFragment extends Fragment {
     long success = controller.config().getLastBackupSuccess();
     BackupTaskState.Snapshot s = task.snapshot();
     boolean nativeBusy = Boolean.TRUE.equals(oneClick.busy.getValue());
+    if (!nativeBusy) LoadingAction.stop(backupButton);
     boolean busy = task.busy() || nativeBusy;
     boolean pending = EnvironmentUiStatus.get(requireContext()).recovery;
     String nativeFailure = oneClick.failure.getValue();
@@ -398,9 +430,9 @@ public class WorkspaceFragment extends Fragment {
     TextView heroTitle = view.findViewById(R.id.workspace_hero_title);
     TextView heroDetail = view.findViewById(R.id.workspace_backup_status);
     heroDetail.setTextIsSelectable(false);
-    UiMotion.crossFadeText(heroTitle, title);
+    FadeSwap.text(heroTitle, title);
     SummaryText.Split split = SummaryText.split(detail);
-    UiMotion.crossFadeText(heroDetail, split.summary);
+    FadeSwap.text(heroDetail, split.summary);
     DisclosureCard.Model model = new DisclosureCard.Model();
     model.key = "backup-status";
     model.detail = detail;
@@ -428,6 +460,11 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_stat_manual_value,
         success == 0 ? UiText.choose("从未", "Never") : shortTime(success));
     label(view, R.id.workspace_stat_auto_value, automaticSummary());
+    CardTokens.setDotTone(
+        autoDot,
+        AutomaticBackups.enabled(requireContext())
+            ? CardTokens.Tone.GOOD
+            : CardTokens.Tone.NEUTRAL);
     entryValue(
         view,
         R.id.workspace_auto,

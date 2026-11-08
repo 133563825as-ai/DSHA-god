@@ -103,6 +103,7 @@ public final class OnboardingActivity extends AppCompatActivity {
     if (!config.isWelcomed() && !deployStarted()) step = WELCOME;
     getOnBackPressedDispatcher().addCallback(this, backStep);
     setContentView(buildShell());
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     panel = new PermissionPanel(this, goals, false);
     monitor = new DeployMonitor(this, this, view -> runOnUiThread(() -> onDeploy(view)));
     deploy = monitor.current();

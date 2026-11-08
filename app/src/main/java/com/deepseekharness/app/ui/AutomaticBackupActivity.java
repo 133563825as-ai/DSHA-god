@@ -42,7 +42,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
             value -> {
               if (state == null) return;
               if (value.busy)
-                UiMotion.crossFadeText(
+                FadeSwap.text(
                     state, UiText.format("备份任务进行中：%s · %s 项", stage(value.stage), value.entries));
               else refresh();
             });
@@ -195,13 +195,14 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
         });
     page.button(page.footer, t("刷新备份记录", "Refresh backup records"), false, this::refresh);
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     refresh();
   }
 
   private void refresh() {
     if (reading) return;
     reading = true;
-    UiMotion.crossFadeText(state, t("正在读取记录…", "Reading records…"));
+    FadeSwap.text(state, t("正在读取记录…", "Reading records…"));
     new Thread(
             () -> {
               try {
@@ -240,7 +241,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                                 + t(
                                     "数据已保存；部分插件依赖需在恢复预检中核对。",
                                     "Data saved; some plugin dependencies need review before restore.");
-                      UiMotion.crossFadeText(state, status);
+                      FadeSwap.text(state, status);
                       for (var copy : found.valid)
                         if (Boolean.TRUE.equals(copy.metadata.get("automatic"))) {
                           String title =
@@ -284,7 +285,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                 runOnUiThread(
                     () -> {
                       reading = false;
-                      UiMotion.crossFadeText(state, NativeBackupJobs.code(error));
+                      FadeSwap.text(state, NativeBackupJobs.code(error));
                     });
               }
             },

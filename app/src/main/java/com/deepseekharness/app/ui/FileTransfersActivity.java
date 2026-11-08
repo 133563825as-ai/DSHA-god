@@ -244,6 +244,7 @@ public final class FileTransfersActivity extends AppCompatActivity
     LinearLayout root = TransferUi.vertical(this);
     root.setBackgroundColor(getColor(R.color.shell_bg));
     setContentView(root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     LinearLayout header = TransferUi.horizontal(this);
     header.setMinimumHeight(dp(60));
     header.setPadding(dp(4), dp(2), dp(6), dp(2));

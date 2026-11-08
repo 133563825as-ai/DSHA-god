@@ -94,6 +94,7 @@ public final class StorageActivity extends AppCompatActivity {
                     .show());
     refresh = page.button(page.footer, t("重新统计", "Refresh sizes"), false, () -> load(false));
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     load(false);
   }
 
@@ -140,10 +141,7 @@ public final class StorageActivity extends AppCompatActivity {
   private void renderUsage(java.util.Map<String, StorageMaintenance.Size> sizes) {
     java.util.Map<String, Long> bytes = new java.util.LinkedHashMap<>();
     for (var entry : sizes.entrySet()) bytes.put(entry.getKey(), entry.getValue().bytes);
-    UiMotion.crossFadeText(
-        total,
-        com.deepseekharness.app.util.Fmt.bytes(
-            com.deepseekharness.app.util.StorageUsage.total(bytes)));
+    RollingNumber.bytes(total, com.deepseekharness.app.util.StorageUsage.total(bytes));
     usage.removeAllViews();
     while (rows.getChildCount() > 2) rows.removeViewAt(2);
     var segments = com.deepseekharness.app.util.StorageUsage.segments(bytes, PALETTE.length);

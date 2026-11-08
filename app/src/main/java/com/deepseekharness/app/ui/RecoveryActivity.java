@@ -53,6 +53,7 @@ public final class RecoveryActivity extends AppCompatActivity {
             "Start a separate, empty DSH when the regular environment fails. It can read affected files and send their contents to your model service to propose repairs. Confirm each write to regular data here.");
     page = new CardPage(this, title, summary);
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     // 首屏只留一行结论；可读取故障文件、外发模型与逐次确认写入的边界收进 ⓘ。
     InfoHint.bind(page.subtitle, title, summary, detail);
     repairSheet =

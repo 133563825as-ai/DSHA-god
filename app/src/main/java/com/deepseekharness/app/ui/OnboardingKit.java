@@ -233,6 +233,7 @@ final class OnboardingKit {
     b.setPadding(dp(18), dp(6), dp(18), dp(6));
     b.setStateListAnimator(null);
     if (action != null) b.setOnClickListener(action);
+    PressFeedback.attach(b, PressFeedback.Variant.BUTTON);
     return b;
   }
 

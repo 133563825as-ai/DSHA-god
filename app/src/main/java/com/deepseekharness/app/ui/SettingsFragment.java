@@ -89,6 +89,7 @@ public class SettingsFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_settings, container, false);
+    PressFeedback.attachButtons(v);
     selectable.clear();
     if (savedInstanceState != null)
       disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");

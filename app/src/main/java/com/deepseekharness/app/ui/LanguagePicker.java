@@ -153,78 +153,13 @@ final class LanguagePicker {
       String title,
       String subtitle,
       boolean selected) {
-    LinearLayout tile = new LinearLayout(ctx);
-    tile.setOrientation(LinearLayout.HORIZONTAL);
-    tile.setGravity(Gravity.CENTER_VERTICAL);
+    SelectableCard.Model model = new SelectableCard.Model();
+    model.title = UiText.raw(title);
+    model.subtitle = subtitle.isEmpty() ? null : UiText.raw(subtitle);
+    model.selected = selected;
+    View tile = SelectableCard.grid(ctx, model, null);
     tile.setMinimumHeight(dp.applyAsInt(compact ? 50 : 56));
-    int padH = dp.applyAsInt(compact ? 9 : 12), padV = dp.applyAsInt(compact ? 7 : 10);
-    tile.setPadding(padH, padV, padH, padV);
-    tile.setClickable(true);
-    tile.setFocusable(true);
-    tile.setForeground(ctx.getDrawable(R.drawable.bg_action_plain));
-    int accent = ctx.getColor(R.color.shell_accent);
-    GradientDrawable shape = new GradientDrawable();
-    shape.setCornerRadius(dp.applyAsInt(14));
-    shape.setColor(
-        selected
-            ? androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x1A)
-            : ctx.getColor(R.color.shell_surface));
-    shape.setStroke(
-        dp.applyAsInt(selected ? 2 : 1),
-        selected ? accent : ctx.getColor(R.color.shell_line_strong));
-    tile.setBackground(shape);
-    LinearLayout copy = new LinearLayout(ctx);
-    copy.setOrientation(LinearLayout.VERTICAL);
-    // 对勾放在标题行末尾，不占副标题宽度。
-    LinearLayout head = new LinearLayout(ctx);
-    head.setGravity(Gravity.CENTER_VERTICAL);
-    TextView name = new TextView(ctx);
-    name.setText(UiText.raw(title));
-    name.setTextSize(compact ? 14 : 15);
-    name.setTypeface(name.getTypeface(), android.graphics.Typeface.BOLD);
-    name.setTextColor(ctx.getColor(selected ? R.color.shell_accent : R.color.shell_text));
-    name.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
-    name.setIncludeFontPadding(false);
-    name.setSingleLine(true);
-    name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-    head.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
-    // 手机三列格子太窄（厂商字体常比 fontScale 更大），对勾会把「跟随系统」挤成「跟随…」；
-    // 紧凑格子只靠描边 + 底色表示选中（无障碍仍读 checked），宽格子才显示对勾。
-    if (selected && !compact) {
-      ImageView check = new ImageView(ctx);
-      check.setImageResource(R.drawable.ic_onb_check);
-      check.setColorFilter(accent);
-      check.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-      LinearLayout.LayoutParams checkParams =
-          new LinearLayout.LayoutParams(dp.applyAsInt(16), dp.applyAsInt(16));
-      checkParams.setMarginStart(dp.applyAsInt(4));
-      head.addView(check, checkParams);
-    }
-    copy.addView(head, new LinearLayout.LayoutParams(-1, -2));
-    if (!subtitle.isEmpty()) {
-      TextView sub = new TextView(ctx);
-      sub.setText(UiText.raw(subtitle));
-      sub.setTextSize(12);
-      sub.setTextColor(ctx.getColor(R.color.shell_text_muted));
-      sub.setMaxLines(2);
-      sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
-      LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-1, -2);
-      subParams.topMargin = dp.applyAsInt(4);
-      copy.addView(sub, subParams);
-    }
-    tile.addView(copy, new LinearLayout.LayoutParams(0, -2, 1f));
     tile.setContentDescription(UiText.raw(subtitle.isEmpty() ? title : title + ", " + subtitle));
-    tile.setAccessibilityDelegate(
-        new View.AccessibilityDelegate() {
-          @Override
-          public void onInitializeAccessibilityNodeInfo(
-              View host, android.view.accessibility.AccessibilityNodeInfo info) {
-            super.onInitializeAccessibilityNodeInfo(host, info);
-            info.setClassName(android.widget.RadioButton.class.getName());
-            info.setCheckable(true);
-            info.setChecked(selected);
-          }
-        });
     return tile;
   }
 }

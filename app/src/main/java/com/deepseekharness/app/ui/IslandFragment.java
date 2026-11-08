@@ -64,6 +64,7 @@ public class IslandFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     root = inflater.inflate(R.layout.fragment_island, container, false);
+    PressFeedback.attachButtons(root);
     config = HarnessController.get(requireContext()).config();
 
     InfoHint.bind(

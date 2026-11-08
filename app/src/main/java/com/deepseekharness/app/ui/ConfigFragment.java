@@ -63,6 +63,7 @@ public class ConfigFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_config, container, false);
+    PressFeedback.attachButtons(v);
     ConfigStore c = new ConfigStore(requireContext());
     Context ctx = requireContext();
     root = v;

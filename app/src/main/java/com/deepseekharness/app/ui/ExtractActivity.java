@@ -59,6 +59,7 @@ public class ExtractActivity extends AppCompatActivity {
   protected void onCreate(@Nullable Bundle saved) {
     super.onCreate(saved);
     setContentView(R.layout.activity_extract);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     controller = HarnessController.get(this);
     task = BackupTask.get(this);
     kit = new OnboardingKit(this);
@@ -298,7 +299,7 @@ public class ExtractActivity extends AppCompatActivity {
             : pending
                 ? UiText.text("上次维护未完成，请先恢复原环境")
                 : view.visible() ? view.label() : UiText.text("环境维护");
-    UiMotion.crossFadeText(status, statusText);
+    FadeSwap.text(status, statusText);
     OnboardingKit.Tone tone = OnboardingKit.tone(view.phase);
     pill.setVisibility(view.visible() ? View.VISIBLE : View.GONE);
     if (view.visible()) {

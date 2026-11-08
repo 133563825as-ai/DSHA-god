@@ -69,6 +69,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     }
     layout = new StartupRecoveryLayout(this, this::finish, () -> model.load());
     setContentView(layout.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     progress = layout.progress;
     layout.attemptsToggle.setOnClickListener(
         v -> {

@@ -113,6 +113,7 @@ public final class StorageHelpActivity extends AppCompatActivity {
     // 问答式：默认只展开第一组，其余点标题展开；内容与原说明逐字相同。
     for (int i = 1; i < sections.size(); i++) setExpanded(sections.get(i), false);
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
   }
 
   private final java.util.List<LinearLayout> sections = new java.util.ArrayList<>();

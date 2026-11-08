@@ -171,6 +171,7 @@ public class PluginFragment extends Fragment {
   public View onCreateView(
       @NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
     View list = inflater.inflate(R.layout.fragment_plugins, container, false);
+    PressFeedback.attachButtons(list);
     twoPane = SettingsPanes.twoPane(requireContext());
     detailPane = null;
     if (!twoPane) return list;

@@ -93,6 +93,7 @@ public final class DeviceGrantsFragment extends Fragment {
   @Override
   public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle saved) {
     View view = inflater.inflate(R.layout.fragment_device_grants, container, false);
+    PressFeedback.attachButtons(view);
     safExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
     Context ctx = requireContext();
     columns = 1;
@@ -498,24 +499,46 @@ public final class DeviceGrantsFragment extends Fragment {
         current == VirtualScreenPreviewPolicy.Mode.FULL
             ? 1
             : current == VirtualScreenPreviewPolicy.Mode.OFF ? 2 : 0;
-    new DshaDialogBuilder(ctx)
-        .setTitle(UiText.choose("虚拟屏预览", "Virtual screen preview"))
-        .setMessage(
-            UiText.choose(
-                "提示条只在顶部显示正在操作的应用；完整预览显示页内小窗；关闭后不再显示预览。收起后也在这里重新打开。",
-                "The strip only shows the app being operated at the top; full preview shows an in-page window; off hides previews. Reopen a collapsed preview here."))
-        .setSingleChoiceItems(
-            items,
-            selected,
-            (dialog, which) -> {
-              dialog.dismiss();
-              VirtualScreenPreviewSettings.setMode(ctx, modes[which]);
-              View page = getView();
-              if (page != null) renderVirtualPreviewMode(ctx, page);
-              com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx).foreground().refresh();
-            })
-        .setNegativeButton(UiText.choose("取消", "Cancel"), null)
-        .show();
+    android.widget.LinearLayout body = new android.widget.LinearLayout(ctx);
+    body.setOrientation(android.widget.LinearLayout.VERTICAL);
+    int pad = dp(18);
+    body.setPadding(pad, dp(4), pad, dp(4));
+    androidx.appcompat.app.AlertDialog[] holder = new androidx.appcompat.app.AlertDialog[1];
+    for (int i = 0; i < modes.length; i++) {
+      SelectableCard.Model model = new SelectableCard.Model();
+      model.title = items[i];
+      model.selected = i == selected;
+      final int which = i;
+      View card =
+          SelectableCard.single(
+              ctx,
+              model,
+              () -> {
+                if (holder[0] != null) holder[0].dismiss();
+                VirtualScreenPreviewSettings.setMode(ctx, modes[which]);
+                View page = getView();
+                if (page != null) renderVirtualPreviewMode(ctx, page);
+                com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
+                    .foreground()
+                    .refresh();
+              });
+      android.widget.LinearLayout.LayoutParams params =
+          new android.widget.LinearLayout.LayoutParams(-1, -2);
+      if (i > 0) params.topMargin = dp(6);
+      body.addView(card, params);
+    }
+    android.widget.ScrollView scroll = new android.widget.ScrollView(ctx);
+    scroll.addView(body);
+    holder[0] =
+        new DshaDialogBuilder(ctx)
+            .setTitle(UiText.choose("虚拟屏预览", "Virtual screen preview"))
+            .setMessage(
+                UiText.choose(
+                    "提示条只在顶部显示正在操作的应用；完整预览显示页内小窗；关闭后不再显示预览。收起后也在这里重新打开。",
+                    "The strip only shows the app being operated at the top; full preview shows an in-page window; off hides previews. Reopen a collapsed preview here."))
+            .setView(scroll)
+            .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+            .show();
   }
 
   /**

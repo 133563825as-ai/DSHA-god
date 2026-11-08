@@ -88,9 +88,14 @@ final class CardPage {
   }
 
   LinearLayout card() {
+    return card(CardTokens.Tier.OUTLINED);
+  }
+
+  /** 按 H1 层级建卡：页面主卡 elevated、分组 filled、次级 outlined。 */
+  LinearLayout card(CardTokens.Tier tier) {
     LinearLayout card = column();
-    card.setBackgroundResource(R.drawable.bg_shell_card);
     card.setPadding(dp(16), dp(12), dp(16), dp(12));
+    CardTokens.tier(card, tier);
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
     p.bottomMargin = dp(14);
     content.addView(card, p);
@@ -127,6 +132,7 @@ final class CardPage {
     row.setBackgroundResource(R.drawable.bg_action_plain);
     row.setFocusable(true);
     row.setOnClickListener(v -> action.run());
+    PressFeedback.attach(row, PressFeedback.Variant.ROW);
     ImageView mark = new ImageView(context);
     mark.setImageResource(icon);
     mark.setImageTintList(
@@ -191,6 +197,7 @@ final class CardPage {
     button.setTextColor(
         context.getColorStateList(primary ? R.color.button_primary_text : R.color.button_text));
     button.setOnClickListener(v -> action.run());
+    PressFeedback.attach(button, PressFeedback.Variant.BUTTON);
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
     p.topMargin = dp(context, 10);
     parent.addView(button, p);

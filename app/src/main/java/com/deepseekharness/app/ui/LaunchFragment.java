@@ -114,6 +114,7 @@ public class LaunchFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_launch, container, false);
+    PressFeedback.attachButtons(v);
     if (savedInstanceState != null)
       disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 

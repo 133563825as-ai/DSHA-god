@@ -182,6 +182,7 @@ public final class WorkspaceFilesActivity extends AppCompatActivity {
     body.setBackgroundColor(getColor(R.color.surface));
     body.setPadding(dp(12), dp(6), dp(12), dp(12));
     setContentView(body);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     UiNavigation.addHeader(this, body, UiText.choose("作品文件导出", "Export work files"), this::finish);
     // 页首只留一句摘要，完整说明点开 ⓘ（审计 D-06）。
     TextView note = text(UiText.text("导出工作区文件"), 13);

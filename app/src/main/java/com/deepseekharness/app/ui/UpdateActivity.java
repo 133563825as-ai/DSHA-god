@@ -31,6 +31,7 @@ public final class UpdateActivity extends AppCompatActivity {
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
     setContentView(R.layout.activity_update);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     repository = new ViewModelProvider(this).get(UpdateRepository.class);
     resumeInstall = saved != null && saved.getBoolean("resumeInstall");
     repository.restoreInterruptedInstall(saved != null && saved.getBoolean("installPending"));

@@ -39,6 +39,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     model = new ViewModelProvider(this).get(PairModel.class);
     model.restore(saved);
     setContentView(buildUi());
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     model.status.observe(
         this,
         text -> {

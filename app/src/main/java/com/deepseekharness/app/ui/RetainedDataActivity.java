@@ -39,6 +39,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
 
   private Model model;
   private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+  private SelectionActionBar.Bar selectionBar;
   private LinearLayout rows;
   private TextView report, pageStatus;
   private LinearLayout chips;
@@ -85,26 +86,30 @@ public final class RetainedDataActivity extends AppCompatActivity {
     chipParams.bottomMargin = shell.dp(10);
     body.addView(chipScroll, chipParams);
     renderChips();
-    shell.button(shell.footer, t("检查所选记录", "Inspect selected records"), true, this::inspect);
-    shell.button(
-        shell.footer,
-        t("刷新清单", "Refresh list"),
-        false,
-        () -> {
-          if (model.working.get()) return;
-          model.page = 0;
-          model.starts.clear();
-          model.starts.add(null);
-          refresh();
-        });
-    shell.button(
-        shell.footer,
-        t("取消检查", "Cancel inspection"),
-        false,
-        () -> {
-          if (model.control != null) model.control.cancel();
-        });
+    // D2 多选底部操作栏：已选数量 + 检查所选记录；刷新/取消仍在同一栏内。
+    selectionBar = SelectionActionBar.attach(shell.footer);
+    if (selectionBar != null) {
+      selectionBar.action(t("检查所选记录", "Inspect selected records"), true, this::inspect);
+      selectionBar.action(
+          t("刷新清单", "Refresh list"),
+          false,
+          () -> {
+            if (model.working.get()) return;
+            model.page = 0;
+            model.starts.clear();
+            model.starts.add(null);
+            refresh();
+          });
+      selectionBar.action(
+          t("取消检查", "Cancel inspection"),
+          false,
+          () -> {
+            if (model.control != null) model.control.cancel();
+          });
+      selectionBar.update(model.selected.size());
+    }
     setContentView(shell.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     report = new TextView(this);
     report.setTextColor(getColor(R.color.shell_text_secondary));
     report.setTextIsSelectable(true);
@@ -294,6 +299,10 @@ public final class RetainedDataActivity extends AppCompatActivity {
         + t("不自动删除", "No automatic deletion");
   }
 
+  private void updateSelectionBar() {
+    if (selectionBar != null) selectionBar.update(model.selected.size());
+  }
+
   private void render(RetainedCatalogue.Page page) {
     rows.removeAllViews();
     long first = (long) model.page * page.size, last = first + page.entries.size();
@@ -334,6 +343,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
           (v, on) -> {
             if (on) model.selected.put(entry.key(), entry);
             else model.selected.remove(entry.key());
+            updateSelectionBar();
           });
       card.addView(selected);
       button(card, t("查看与操作", "Details and actions"), () -> details(entry));
@@ -341,6 +351,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
       layout.bottomMargin = pad;
       rows.addView(card, layout);
     }
+    updateSelectionBar();
     if (shown == 0) {
       TextView empty = new TextView(this);
       empty.setText(t("本页没有这一类记录。", "No records of this type on this page."));

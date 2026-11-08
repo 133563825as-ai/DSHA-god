@@ -114,7 +114,9 @@ public class InstallFragment extends Fragment {
   @Override
   public View onCreateView(
       @NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
-    return inflater.inflate(R.layout.fragment_install, container, false);
+    View installRoot = inflater.inflate(R.layout.fragment_install, container, false);
+    PressFeedback.attachButtons(installRoot);
+    return installRoot;
   }
 
   @Override

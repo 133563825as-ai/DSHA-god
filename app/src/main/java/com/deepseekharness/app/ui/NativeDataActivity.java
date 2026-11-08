@@ -246,6 +246,7 @@ public final class NativeDataActivity extends AppCompatActivity {
             page.footer, t("取消当前作业", "Cancel current operation"), false, () -> jobs.cancel());
     cancelOperation.setVisibility(View.GONE);
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     renderWizard();
 
     jobs.changes().observe(this, this::render);
@@ -447,26 +448,32 @@ public final class NativeDataActivity extends AppCompatActivity {
     scopeGroup(card);
   }
 
-  private RadioGroup scopeGroup(LinearLayout parent) {
-    RadioGroup group = new RadioGroup(this);
-    group.setOrientation(RadioGroup.VERTICAL);
+  private LinearLayout scopeGroup(LinearLayout parent) {
+    LinearLayout list = new LinearLayout(this);
+    list.setOrientation(LinearLayout.VERTICAL);
+    java.util.List<View> cards = new java.util.ArrayList<>();
     for (int i = 0; i < SCOPES.length; i++) {
-      RadioButton option = new RadioButton(this);
-      option.setId(View.generateViewId());
-      option.setText(twoLine(t(SCOPES[i][0], SCOPES[i][1]), t(SCOPES[i][2], SCOPES[i][3])));
-      option.setMinHeight(dp(52));
-      option.setPadding(dp(6), dp(6), 0, dp(6));
-      option.setTextColor(getColor(R.color.shell_text));
+      SelectableCard.Model model = new SelectableCard.Model();
+      model.title = t(SCOPES[i][0], SCOPES[i][1]);
+      model.subtitle = t(SCOPES[i][2], SCOPES[i][3]);
+      model.selected = i == pending.scopeIndex;
       final int index = i;
-      group.addView(option, new RadioGroup.LayoutParams(-1, -2));
-      if (index == pending.scopeIndex) option.setChecked(true);
-      option.setOnCheckedChangeListener(
-          (button, checked) -> {
-            if (checked) pending.scopeIndex = index;
-          });
+      View card =
+          SelectableCard.single(
+              this,
+              model,
+              () -> {
+                pending.scopeIndex = index;
+                for (int k = 0; k < cards.size(); k++)
+                  SelectableCard.setSelected(cards.get(k), k == index);
+              });
+      cards.add(card);
+      LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+      if (i > 0) params.topMargin = dp(6);
+      list.addView(card, params);
     }
-    parent.addView(group);
-    return group;
+    parent.addView(list);
+    return list;
   }
 
   private CharSequence twoLine(String title, String subtitle) {

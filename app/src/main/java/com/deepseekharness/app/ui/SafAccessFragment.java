@@ -58,6 +58,7 @@ public final class SafAccessFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View root = inflater.inflate(R.layout.fragment_saf_access, container, false);
+    PressFeedback.attachButtons(root);
     Context ctx = requireContext();
     executor = Executors.newSingleThreadExecutor();
 

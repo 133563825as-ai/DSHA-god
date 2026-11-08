@@ -86,6 +86,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
     setContentView(R.layout.activity_diagnostics);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     repository = new ViewModelProvider(this).get(DiagnosticRepository.class);
     logs = new ViewModelProvider(this).get(com.deepseekharness.app.core.ErrorLogRepository.class);
     resultList =
