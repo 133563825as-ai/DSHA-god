@@ -1619,6 +1619,13 @@
     "app/src/test/java/com/deepseekharness/app/util/StickyHeaderMathTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/DiagnosticToolsTabsTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/SettingsGroupsLayoutTest.java",
-    "app/src/test/java/com/deepseekharness/app/ui/GrantsAccordionTest.java"
+    "app/src/test/java/com/deepseekharness/app/ui/GrantsAccordionTest.java",
+    "app/src/main/java/com/deepseekharness/app/ui/SwipeAction.java",
+    "app/src/main/java/com/deepseekharness/app/ui/BottomSheetCard.java",
+    "app/src/main/java/com/deepseekharness/app/util/SwipeGesture.java",
+    "app/src/test/java/com/deepseekharness/app/util/SwipeGestureTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/SwipeActionTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/BottomSheetCardTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/BottomSheetCardLayoutTest.java"
   ]
 }

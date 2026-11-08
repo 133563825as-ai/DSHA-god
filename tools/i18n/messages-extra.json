@@ -15889,5 +15889,93 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java"
     ]
+  },
+  {
+    "id": "m9038",
+    "zh": "需要确认后才能执行",
+    "en": "Confirmation required first",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SwipeAction.java"
+    ]
+  },
+  {
+    "id": "m9039",
+    "zh": "显示操作",
+    "en": "Show actions",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SwipeAction.java"
+    ]
+  },
+  {
+    "id": "m9040",
+    "zh": "已显示操作",
+    "en": "Actions shown",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SwipeAction.java"
+    ]
+  },
+  {
+    "id": "m9041",
+    "zh": "拖动或点击收起抽屉",
+    "en": "Drag down or tap to close the drawer",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/BottomSheetCard.java"
+    ]
+  },
+  {
+    "id": "m9042",
+    "zh": "备份详情",
+    "en": "Backup details",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "m9043",
+    "zh": "编号",
+    "en": "ID",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "m9044",
+    "zh": "摘要",
+    "en": "Summary",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "m9045",
+    "zh": "结果",
+    "en": "Result",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "m9046",
+    "zh": "预检与导出都会再次核对私有副本；原副本保留，不覆盖已有备份。",
+    "en": "Inspect and export verify the private copy again. The original is kept and existing backups are not overwritten.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java"
+    ]
+  },
+  {
+    "id": "m9047",
+    "zh": "当前排序",
+    "en": "Current sort",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
+  },
+  {
+    "id": "m9048",
+    "zh": "再次确认后删除",
+    "en": "Confirm before delete",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
+    ]
   }
 ]

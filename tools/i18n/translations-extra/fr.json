@@ -1957,5 +1957,16 @@
   "m9034": "Notes techniques · DSHA v%s",
   "m9035": "Démarrage et restauration",
   "m9036": "Réseau et plugins",
-  "m9037": "Mode d'exécution : %s · Port : %s\nDNS : %s\nLes réglages restent dans le stockage privé de l'application ; la clé API native n'est pas exportée par défaut."
+  "m9037": "Mode d'exécution : %s · Port : %s\nDNS : %s\nLes réglages restent dans le stockage privé de l'application ; la clé API native n'est pas exportée par défaut.",
+  "m9038": "Confirmation requise avant exécution",
+  "m9039": "Afficher les actions",
+  "m9040": "Actions affichées",
+  "m9041": "Faites glisser ou touchez pour fermer le tiroir",
+  "m9042": "Détails de la sauvegarde",
+  "m9043": "ID",
+  "m9044": "Résumé",
+  "m9045": "Résultat",
+  "m9046": "L'inspection et l'export vérifient à nouveau la copie privée ; l'original est conservé et les sauvegardes existantes ne sont pas écrasées.",
+  "m9047": "Tri actuel",
+  "m9048": "Supprimer après confirmation"
 }

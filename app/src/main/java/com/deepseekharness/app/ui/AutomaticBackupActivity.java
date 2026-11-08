@@ -202,6 +202,62 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
     refresh();
   }
 
+  private void openCopy(String extra, String copyId) {
+    startActivity(new Intent(this, NativeDataActivity.class).putExtra(extra, copyId));
+  }
+
+  /**
+   * G1 详情 / 动作抽屉：只读展示副本时间、大小、编号与结果；动作跳到 NativeData 的既有预检 / 导出
+   * 流程。点遮罩或返回键只关闭抽屉，不会执行任何动作。
+   */
+  private void showCopyDrawer(VerifiedBackupCopy copy, String title, String detail) {
+    CardPage sheet = new CardPage(this, t("备份详情", "Backup details"), title, true);
+    LinearLayout facts = sheet.card();
+    sheet.kv(
+        facts,
+        t("创建时间", "Created"),
+        android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", copy.created).toString());
+    sheet.kv(facts, t("大小", "Size"), com.deepseekharness.app.util.Fmt.bytes(copy.bytes));
+    sheet.kv(facts, t("编号", "ID"), copy.id);
+    if (!detail.isEmpty()) sheet.kv(facts, t("摘要", "Summary"), detail);
+    String result = copy.result(true);
+    if (!result.isEmpty()) sheet.kv(facts, t("结果", "Result"), result);
+    TextView note =
+        sheet.text(
+            t(
+                "预检与导出都会再次核对私有副本；原副本保留，不覆盖已有备份。",
+                "Inspect and export verify the private copy again. The original is kept and existing backups are not overwritten."),
+            12,
+            R.color.text_secondary);
+    note.setPadding(0, sheet.dp(4), 0, sheet.dp(8));
+    sheet.content.addView(note);
+    final BottomSheetCard.Sheet[] drawer = new BottomSheetCard.Sheet[1];
+    sheet.button(
+        sheet.footer,
+        t("预检恢复", "Inspect for restore"),
+        true,
+        () -> {
+          if (drawer[0] != null) drawer[0].dismiss();
+          openCopy("auto_restore_id", copy.id);
+        });
+    sheet.button(
+        sheet.footer,
+        t("导出无密码备份", "Export backup without a password"),
+        false,
+        () -> {
+          if (drawer[0] != null) drawer[0].dismiss();
+          openCopy("auto_export_id", copy.id);
+        });
+    sheet.button(
+        sheet.footer,
+        t("关闭", "Close"),
+        false,
+        () -> {
+          if (drawer[0] != null) drawer[0].dismiss();
+        });
+    drawer[0] = BottomSheetCard.show(this, sheet);
+  }
+
   private void refresh() {
     if (reading) return;
     reading = true;
@@ -252,31 +308,31 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                           String title =
                               android.text.format.DateFormat.format("MM-dd HH:mm", copy.created)
                                   .toString();
+                          String detail =
+                              com.deepseekharness.app.util.Fmt.bytes(copy.bytes)
+                                  + ("DATA_SAVED_PLUGIN_WARNINGS".equals(copy.result(true))
+                                      ? t(" · 插件依赖待核对", " · review plugin dependencies")
+                                      : "");
                           View copyRow =
                               page.entry(
                                   copies,
                                   title,
-                                  com.deepseekharness.app.util.Fmt.bytes(copy.bytes)
-                                      + ("DATA_SAVED_PLUGIN_WARNINGS".equals(copy.result(true))
-                                          ? t(" · 插件依赖待核对", " · review plugin dependencies")
-                                          : ""),
+                                  detail,
                                   R.drawable.ic_recovery_document,
-                                  () ->
-                                      CardSheet.choices(
-                                          this,
-                                          title,
-                                          () ->
-                                              java.util.List.of(
-                                                  t("预检恢复", "Inspect for restore"),
-                                                  t("导出无密码备份", "Export backup without a password")),
-                                          action ->
-                                              startActivity(
-                                                  new Intent(this, NativeDataActivity.class)
-                                                      .putExtra(
-                                                          action == 0
-                                                              ? "auto_restore_id"
-                                                              : "auto_export_id",
-                                                          copy.id))));
+                                  () -> showCopyDrawer(copy, title, detail));
+                          // F2：左滑露出「预检恢复 / 导出」；滑动只露出动作，点按才生效。
+                          SwipeAction.attach(
+                              copyRow,
+                              SwipeAction.Model.of(
+                                  SwipeAction.Action.of(
+                                      t("预检恢复", "Inspect for restore"),
+                                      R.drawable.ic_recovery_refresh,
+                                      () -> openCopy("auto_restore_id", copy.id)),
+                                  SwipeAction.Action.of(
+                                      t("导出", "Export"),
+                                      t("导出无密码备份", "Export backup without a password"),
+                                      R.drawable.ic_ui_export,
+                                      () -> openCopy("auto_export_id", copy.id))));
                           // F1：备份记录列表首次出现前 8 条错峰，刷新重排不重放。
                           StaggerList.revealRow(copyRow, "auto-backup-copies", copy.id);
                         }
