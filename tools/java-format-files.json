@@ -1044,6 +1044,7 @@
     "app/src/test/java/com/deepseekharness/app/runtime/BoundedGuestSessionsTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/ColdSplitExtractionTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/ContainerRuntimeEnvironmentTest.java",
+    "app/src/test/java/com/deepseekharness/app/runtime/ContainerRuntimeSelfMirrorTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/GuestPluginScriptsTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/GuestScriptQueueTest.java",
     "app/src/test/java/com/deepseekharness/app/runtime/GuestScriptsTest.java",
