@@ -190,12 +190,13 @@ public final class GitHubLoginFragment extends Fragment {
                 : UiText.text("未登录"));
     scopesValue.setText(scopesText(current, hosts));
     credentialValue.setText(
-        hosts.credentialStored ? UiText.text("登录记录已保存（内容不显示）") : UiText.text("登录记录未保存（可能来自环境变量）"));
+        hosts.credentialStored ? UiText.text("已保存（内容不显示）") : UiText.text("未保存"));
     protocolValue.setText(
         hosts.gitProtocol.isEmpty() ? UiText.text("未记录") : UiText.raw(hosts.gitProtocol));
     sourceValue.setText(
         UiText.raw(
-            GhManagedInstall.HOSTS + (current.hostsPresent ? "" : " · " + UiText.text("未写入"))));
+            new java.io.File(GhManagedInstall.HOSTS).getName()
+                + (current.hostsPresent ? "" : " · " + UiText.text("未写入"))));
     managedValue.setText(managedText(current.managed));
     managedVersionValue.setText(
         current.managed == GhManagedInstall.State.AVAILABLE
@@ -238,13 +239,13 @@ public final class GitHubLoginFragment extends Fragment {
     } else {
       switch (probe.state) {
         case VALID:
-          value = UiText.text("已登录（在线校验通过）");
+          value = UiText.text("已登录");
           break;
         case NOT_LOGGED_IN:
           value = UiText.text("未登录");
           break;
         case TOKEN_INVALID:
-          value = UiText.text("token 已失效，需要重新登录");
+          value = UiText.text("Token 失效");
           break;
         case TLS_CA_FAILURE:
           value = UiText.text("证书校验失败");
@@ -256,13 +257,13 @@ public final class GitHubLoginFragment extends Fragment {
           value = UiText.text("校验超时");
           break;
         case BINARY_UNAVAILABLE:
-          value = UiText.text("跳过：受管 gh 不可用");
+          value = UiText.text("跳过");
           break;
         case SKIPPED_ENV:
-          value = UiText.text("跳过：运行环境未就绪");
+          value = UiText.text("跳过");
           break;
         default:
-          value = UiText.text("无法完成校验");
+          value = UiText.text("无法校验");
           break;
       }
       detail = probe.detail;
@@ -277,8 +278,8 @@ public final class GitHubLoginFragment extends Fragment {
     if (probe != null && probe.state == GhAuthProbe.State.VALID && !probe.scopes.isEmpty())
       return UiText.raw(String.join(", ", probe.scopes));
     if (!hosts.scopes.isEmpty()) return UiText.raw(String.join(", ", hosts.scopes));
-    if (probe != null && probe.state != GhAuthProbe.State.VALID) return UiText.text("未取得（在线校验未通过）");
-    return UiText.text("登录记录未含权限范围");
+    if (probe != null && probe.state != GhAuthProbe.State.VALID) return UiText.text("未取得");
+    return UiText.text("未记录");
   }
 
   private String stateText(GitHubLogin.Snapshot current) {
@@ -300,11 +301,11 @@ public final class GitHubLoginFragment extends Fragment {
       case LOGGED_IN:
         return UiText.text("已登录");
       case CREDENTIAL_MISSING:
-        return UiText.text("已登录，但登录记录未保存");
+        return UiText.text("已登录");
       case ACCOUNT_UNKNOWN:
-        return UiText.text("已保存 token，但无法确定账号");
+        return UiText.text("已保存（账号未知）");
       case OTHER_HOSTS_ONLY:
-        return UiText.text("只有其他 GitHub 主机登录");
+        return UiText.text("其他主机");
       case MALFORMED:
         return UiText.text("登录记录结构无法识别");
       default:
