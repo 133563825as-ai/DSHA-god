@@ -3,6 +3,8 @@ package com.deepseekharness.app.ui;
 import static org.junit.Assert.*;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,6 +21,7 @@ import com.deepseekharness.app.util.Constants;
 import com.deepseekharness.app.util.DeviceShellPolicy;
 import com.deepseekharness.app.util.GrantSummary;
 import com.deepseekharness.app.util.UiText;
+import com.google.android.material.materialswitch.MaterialSwitch;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.After;
@@ -31,6 +34,8 @@ import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowActivity;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowLooper;
 
@@ -309,19 +314,47 @@ public final class DeviceGrantsLayoutTest {
     assertSummaryPillsFit((ViewGroup) page.findViewById(R.id.grants_pills), "short");
   }
 
-  /** 全部文件访问改为折叠披露：收起只有状态词与一行后果；展开才出现完整范围与系统设置入口。 */
+  /** 开关关闭态轨道用近白底（不能与浅灰卡片同色），开启态仍是主题主色。 */
   @Test
-  public void allFilesRowIsCollapsedDisclosure() {
+  public void switchesUseContrastingTrackTint() {
+    View page = start(360);
+    MaterialSwitch pause = page.findViewById(R.id.screen_pause);
+    ColorStateList tint = pause.getTrackTintList();
+    assertNotNull("开关必须带显式轨道填充", tint);
+    Context context = page.getContext();
+    assertEquals(
+        "关闭态轨道应为近白底", themeColor(context, R.attr.dsha_pal_shell_surface), tint.getDefaultColor());
+    assertEquals(
+        "开启态轨道仍为主题主色",
+        themeColor(context, R.attr.dsha_pal_primary),
+        tint.getColorForState(new int[] {android.R.attr.state_checked}, 0));
+  }
+
+  private static int themeColor(Context context, int attribute) {
+    android.util.TypedValue value = new android.util.TypedValue();
+    assertTrue(context.getTheme().resolveAttribute(attribute, value, true));
+    return value.data;
+  }
+
+  /** 全部文件访问：整行与状态词都直接打开系统授权页，不再折叠成说明。 */
+  @Test
+  public void allFilesRowOpensSystemSettings() {
     View page = start(360);
     TextView status = page.findViewById(R.id.config_all_files_status);
     assertEquals("未开启", status.getText().toString());
-    assertFalse(page.findViewById(R.id.config_all_files).isClickable());
-    assertEquals(View.GONE, page.findViewById(R.id.config_all_files_chevron).getVisibility());
-    assertFalse(DisclosureCard.expanded(status));
-    assertNull(findText(page, "未开启：仅能访问应用私有目录；去系统设置开启后可访问全部文件"));
-    status.performClick();
-    assertTrue(DisclosureCard.expanded(status));
-    assertNotNull("展开后才给出系统设置动作", findText(page, "去系统设置"));
+    View row = page.findViewById(R.id.config_all_files);
+    assertTrue("整行可点，直接进系统授权页", row.isClickable());
+    assertEquals(
+        "行尾箭头提示会跳转到系统页",
+        View.VISIBLE,
+        page.findViewById(R.id.config_all_files_chevron).getVisibility());
+    row.performClick();
+    ShadowActivity shadowActivity = Shadow.extract(host.get());
+    Intent started = shadowActivity.getNextStartedActivity();
+    assertNotNull("点击后应拉起系统「所有文件访问」设置", started);
+    assertEquals(
+        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        started.getAction());
   }
 
   /** 屏幕确认方式：收起态保留一行安全后果；「全部允许」放宽档位默认展开完整规则。 */

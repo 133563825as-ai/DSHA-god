@@ -81,21 +81,21 @@ public final class GrantsAccordionTest {
   }
 
   @Test
-  public void openingAFileAccessNoteClosesTheChannelsNote() {
+  public void openingOneNoteClosesTheOther() {
     View page = page();
     TextView channels = page.findViewById(R.id.grants_channels_label);
-    TextView allFiles = page.findViewById(R.id.config_all_files_status);
+    TextView policy = page.findViewById(R.id.screen_policy_status);
     assertNotNull(channels);
-    assertNotNull(allFiles);
+    assertNotNull(policy);
 
     channels.performClick();
     settle();
     assertEquals(View.VISIBLE, detailVisibility(channels));
     assertEquals("已展开", channels.getStateDescription().toString());
 
-    allFiles.performClick();
+    policy.performClick();
     settle();
-    assertEquals(View.VISIBLE, detailVisibility(allFiles));
+    assertEquals(View.VISIBLE, detailVisibility(policy));
     assertEquals(View.GONE, detailVisibility(channels));
     assertEquals("已收起", channels.getStateDescription().toString());
   }
@@ -103,14 +103,14 @@ public final class GrantsAccordionTest {
   @Test
   public void collapsingTheOpenNoteDoesNotOpenAnother() {
     View page = page();
-    TextView allFiles = page.findViewById(R.id.config_all_files_status);
+    TextView policy = page.findViewById(R.id.screen_policy_status);
     TextView channels = page.findViewById(R.id.grants_channels_label);
-    allFiles.performClick();
+    policy.performClick();
     settle();
-    assertEquals(View.VISIBLE, detailVisibility(allFiles));
-    allFiles.performClick();
+    assertEquals(View.VISIBLE, detailVisibility(policy));
+    policy.performClick();
     settle();
-    assertEquals(View.GONE, detailVisibility(allFiles));
+    assertEquals(View.GONE, detailVisibility(policy));
     assertEquals(View.GONE, detailVisibility(channels));
   }
 

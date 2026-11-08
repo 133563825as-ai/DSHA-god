@@ -65,7 +65,6 @@ public final class DeviceGrantsFragment extends Fragment {
   private final DisclosureCard.Model channelsModel = new DisclosureCard.Model();
   private final DisclosureCard.Model screenLabelModel = new DisclosureCard.Model();
   private final DisclosureCard.Model screenPolicyModel = new DisclosureCard.Model();
-  private final DisclosureCard.Model allFilesModel = new DisclosureCard.Model();
 
   /** B2：同屏四段折叠说明只允许一段展开；仍走 DisclosureCard 的后果行与读屏语义。 */
   private Accordion accordion;
@@ -118,7 +117,6 @@ public final class DeviceGrantsFragment extends Fragment {
     accordion.register("global-confirm", () -> fullPermissions.refresh());
     bindChannelsDisclosure(ctx, view);
     bindScreenLabelDisclosure(ctx, view);
-    bindAllFilesDisclosure(ctx, view);
     View.OnClickListener setup =
         button -> startActivity(new Intent(requireContext(), AccessibilitySetupActivity.class));
     android.widget.Button setupButton = view.findViewById(R.id.computer_use_accessibility);
@@ -280,11 +278,8 @@ public final class DeviceGrantsFragment extends Fragment {
                 .show();
           } else startActivity(new Intent(ctx, AdbPairActivity.class));
         });
-    // 全部文件访问改为折叠披露：收起只留状态词与一行后果，展开后才是完整范围与「去设置」。
-    View allFilesRow = view.findViewById(R.id.config_all_files);
-    allFilesRow.setClickable(false);
-    allFilesRow.setFocusable(false);
-    view.findViewById(R.id.config_all_files_chevron).setVisibility(View.GONE);
+    // 全部文件访问：整行与状态词都直接打开系统「所有文件访问」页（与其它系统权限行一致）。
+    view.findViewById(R.id.config_all_files).setOnClickListener(v -> openAllFilesAccess(ctx));
     // 跨应用文件访问：授权管理在子页，行上只报数量与失效数。
     ((TextView) view.findViewById(R.id.config_saf_access_title))
         .setText(com.deepseekharness.app.util.UiText.choose("跨应用文件访问", "Cross-app files"));
@@ -1514,25 +1509,6 @@ public final class DeviceGrantsFragment extends Fragment {
         label, channelsModel, accordion.state(), () -> accordion.onToggle("channels"));
   }
 
-  /** 全部文件访问：收起=状态词+一行后果，展开=完整范围与系统设置入口。 */
-  private void bindAllFilesDisclosure(Context ctx, View page) {
-    TextView status = page.findViewById(R.id.config_all_files_status);
-    if (status == null) return;
-    var settings = new androidx.appcompat.widget.AppCompatButton(ctx);
-    settings.setText(UiText.choose("去系统设置", "System settings"));
-    settings.setTextSize(13f);
-    settings.setAllCaps(false);
-    settings.setMinHeight(dp(40));
-    settings.setMinimumHeight(dp(40));
-    settings.setPadding(dp(12), 0, dp(12), 0);
-    settings.setBackgroundResource(R.drawable.bg_btn);
-    settings.setTextColor(ctx.getColorStateList(R.color.button_text));
-    settings.setOnClickListener(v -> openAllFilesAccess(ctx));
-    allFilesModel.key = "all-files";
-    allFilesModel.actions = new View[] {settings};
-    refreshAllFilesStatus(status);
-  }
-
   @Override
   public void onSaveInstanceState(@androidx.annotation.NonNull Bundle outState) {
     super.onSaveInstanceState(outState);
@@ -2346,24 +2322,6 @@ public final class DeviceGrantsFragment extends Fragment {
       granted = true;
     }
     status.setText(granted ? UiText.choose("已开启", "On") : UiText.choose("未开启", "Off"));
-    // 状态行只留「已开启/未开启」，限制说明收进展开区 detail。
-    allFilesModel.consequence = null;
-    allFilesModel.detail =
-        granted
-            ? UiText.choose(
-                "可读写系统允许的共享存储；其他应用私有目录仍受系统限制",
-                "Shared storage allowed by Android; other apps' private directories stay restricted")
-            : UiText.choose(
-                "仅能访问应用私有目录；去系统设置开启后可访问全部文件",
-                "Only app-private storage; enable all files access in system settings");
-    View line = status.getParent() instanceof View parent ? parent : null;
-    if (accordion == null) {
-      DisclosureCard.bind(status, allFilesModel, disclosure, null, line);
-    } else {
-      DisclosureCard.bind(
-          status, allFilesModel, accordion.state(), () -> accordion.onToggle("all-files"), line);
-      accordion.register("all-files", () -> refreshAllFilesStatus(status));
-    }
     try {
       status.setTextColor(
           granted
