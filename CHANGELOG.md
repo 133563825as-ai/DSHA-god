@@ -1,5 +1,16 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261109.0700-dsh0.2.2-rc.1 / build346（屏幕常亮与省电模式硬互斥 + 实体主屏活动历史 M1；含受管运行时更新 runtimeId 7b1ca97d）
+
+- 屏幕常亮与省电模式硬互斥（`d540dfe9d`）：新增 `util/PowerModePolicy` 纯逻辑；屏幕常亮与省电模式默认关闭，开启任一边强制关闭另一边并同步持久化、服务与窗口常亮，关闭一边与重复开启不误伤另一边；设置页用同步护栏阻断编程式 `setChecked` 递归，强制关闭另一边时给中英 toast；启动时把历史「双开」归一为保留屏幕常亮、关闭省电模式并写回持久化，不提示。`PowerModePolicyTest` / `ConfigStorePowerModeTest` 覆盖默认值、互不影响与归一分支。
+- 实体主屏活动历史 M1（`19d928f3c`）：新增 `ScreenActivityFeed`（约 120 秒 / 64 条内存环形）、`ScreenActivityEvent` / `ScreenActivityPolicy` / `ScreenActivityQuery` 与 `ScreenActivityRecorder`；只在手机任务期间记录目标切换、用户点按 / 滚动、内容变化与助手动作；task-end、暂停、无障碍服务断开或重连立即清空；不落盘、不进备份 / 诊断日志；敏感应用只留目标切换，密码框只留「已输入」，输入法与自身浮层事件丢弃。
+- 回执与工具：`/app/ui/*` 的 JSON 回执统一附带 `recentActivity`（上次回执之后至多 3 条）；新增 `GET /app/ui/history?since=<序号>&limit=20`（默认 20、最大 100，`since` 用 `nextSince` 续读；M1 不返回图片，`frames` 为空数组）；内置 `dsh-computer-use-android` 新增 `android_history` 工具并与 `/app/help` 同步。无障碍配置增加 `typeViewClicked|typeViewScrolled`，动作执行器显式记录 `ASSISTANT_ACTION` 并以 1.5 秒派发窗口区分 user / assistant；目标比对、凭据 TTL 与确认策略等执行期护栏语义不变。
+- 受管运行时更新：`DshaAccessibilityService` / `HttpShellService` / `screen/ScreenActionExecutor` / 新增 `screen/ScreenActivityRecorder` / 无障碍配置与内置插件 `server.cjs` 变化，`runtime-descriptor` 由脚本重算为 `7b1ca97d`；fixed-inputs 冻结沿用锁定的 20261105e；内置 `dsh-web-mobile` 保持上游 3.3.1 与默认启用不变。
+- 版本与范围：版本码提升为 346（基于已发布的 build345 / `917295a5a`）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。本批只含上述两条线，不改设备 shell 白名单、不放宽执行期护栏。build345 已作为正式包发布（tag `dsha-a-su-build345-20261109-030000`）。
+- **未验证 / 未验收**：真机验收未做：两个开关的强制关闭与 toast、历史「双开」启动归一、活动历史在真实手机任务中的记录 / 清空、`recentActivity` 与 `/app/ui/history` / `android_history` 的实际回执、敏感应用与密码框脱敏均未在真机逐项执行；M1 不提供图片帧。**build346 尚未真机验收**，验收项是 345→346 首次覆盖安装成功、数据完好、READY、受管运行时更新与上述两个功能的表现；build344 / build345 / build346 正式包真机覆盖安装验收仍待用户；build338–345 已发布版本的真机验收按各自记录。
+- 验证范围：发布身份与前置检查、宿主 contracts 整组、descriptor `7b1ca97d` / 受管运行时源、第三方声明、内置插件、凭据路径、semver、host manifest、源卫生、UI i18n、`generate-changelog --check`、文档链接、全树 Java 格式、`git diff --check`、`test-vscreen-help`、`test-diagnostic-feedback`；全量 `:app:testStandardDebugUnitTest`（先 `tools/prepare-test-runtime.py`，10 例 aarch64 Robolectric 环境基线失败如实记录）与 `:app:lintStandardRelease`；正式签名 assemble 不在本机执行（无发布 keystore）。结果以本机发布准备回执与本次 CI run 为准。
+- 十语种更新说明见 [build346 更新说明](docs/releases/build346-changes.zh.md)。
+
 ## 0.2.1-rc.5-20261109.0300-dsh0.2.2-rc.1 / build345（设置 / 设备授权文案精简与状态胶囊 + 管理文件行直开系统页 + 折叠披露二次展开崩溃修复 + 开关关闭态白底 + 数据与备份 / GitHub 登录瘦身与可复制弹窗；纯 UI）
 
 - 设置与设备能力授权精简（`0d0b9d359`）：设置页删除页顶标语与 6 个入口副标题，悬浮条 / 隐藏后台 / 版本更新 / 自检 / 关于的常显说明收起，主题与语言状态改行尾值；省电模式去掉随开关出现的动态副标题，行高恒定。设备能力授权页：设备执行通道与全局确认长说明默认折叠，重复的 Root 说明合并，删除页顶说明与多处常显解释；通道 / 系统权限 / 敏感能力 / 虚拟识屏状态统一为同行 `ShellStatusPill` 胶囊，外接设备状态短化为已关闭 / 未绑定 / 已绑定 / 未验证。开关保持 Material 胶囊形状，关闭态轨道先改近白底 + 细边（随后由 `90609c2c4` 换成 `trackTint` 方案）。该基线已经用户真机确认，作为后续迭代基线。
