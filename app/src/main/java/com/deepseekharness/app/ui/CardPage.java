@@ -123,7 +123,8 @@ final class CardPage {
     card.addView(row);
   }
 
-  void entry(LinearLayout card, String title, String subtitle, int icon, Runnable action) {
+  /** 可点行；返回行视图，列表首次错峰等效果需要直接操作它。 */
+  View entry(LinearLayout card, String title, String subtitle, int icon, Runnable action) {
     if (card.getChildCount() > 0) card.addView(divider());
     LinearLayout row = new LinearLayout(context);
     row.setGravity(Gravity.CENTER_VERTICAL);
@@ -163,6 +164,7 @@ final class CardPage {
     arrow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     row.addView(arrow, new LinearLayout.LayoutParams(dp(16), dp(16)));
     card.addView(row);
+    return row;
   }
 
   private View divider() {

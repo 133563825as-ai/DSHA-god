@@ -3,6 +3,7 @@ package com.deepseekharness.app.ui;
 import android.app.TimePickerDialog;
 import android.os.Bundle;
 import android.content.Intent;
+import android.view.View;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import com.deepseekharness.app.R;
@@ -15,6 +16,8 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
   private TextView state;
   private LinearLayout copies;
   private boolean reading;
+  private FiniteSkeleton skeleton;
+  private boolean skeletonPlayed;
 
   private static String t(String zh, String en) {
     return UiText.choose(zh, en);
@@ -203,6 +206,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
     if (reading) return;
     reading = true;
     FadeSwap.text(state, t("正在读取记录…", "Reading records…"));
+    showFirstLoadSkeleton();
     new Thread(
             () -> {
               try {
@@ -214,6 +218,7 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                     () -> {
                       reading = false;
                       if (isFinishing() || isDestroyed()) return;
+                      stopSkeleton();
                       copies.removeAllViews();
                       String status =
                           AutomaticBackups.enabled(this)
@@ -247,30 +252,33 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                           String title =
                               android.text.format.DateFormat.format("MM-dd HH:mm", copy.created)
                                   .toString();
-                          page.entry(
-                              copies,
-                              title,
-                              com.deepseekharness.app.util.Fmt.bytes(copy.bytes)
-                                  + ("DATA_SAVED_PLUGIN_WARNINGS".equals(copy.result(true))
-                                      ? t(" · 插件依赖待核对", " · review plugin dependencies")
-                                      : ""),
-                              R.drawable.ic_recovery_document,
-                              () ->
-                                  CardSheet.choices(
-                                      this,
-                                      title,
-                                      () ->
-                                          java.util.List.of(
-                                              t("预检恢复", "Inspect for restore"),
-                                              t("导出无密码备份", "Export backup without a password")),
-                                      action ->
-                                          startActivity(
-                                              new Intent(this, NativeDataActivity.class)
-                                                  .putExtra(
-                                                      action == 0
-                                                          ? "auto_restore_id"
-                                                          : "auto_export_id",
-                                                      copy.id))));
+                          View copyRow =
+                              page.entry(
+                                  copies,
+                                  title,
+                                  com.deepseekharness.app.util.Fmt.bytes(copy.bytes)
+                                      + ("DATA_SAVED_PLUGIN_WARNINGS".equals(copy.result(true))
+                                          ? t(" · 插件依赖待核对", " · review plugin dependencies")
+                                          : ""),
+                                  R.drawable.ic_recovery_document,
+                                  () ->
+                                      CardSheet.choices(
+                                          this,
+                                          title,
+                                          () ->
+                                              java.util.List.of(
+                                                  t("预检恢复", "Inspect for restore"),
+                                                  t("导出无密码备份", "Export backup without a password")),
+                                          action ->
+                                              startActivity(
+                                                  new Intent(this, NativeDataActivity.class)
+                                                      .putExtra(
+                                                          action == 0
+                                                              ? "auto_restore_id"
+                                                              : "auto_export_id",
+                                                          copy.id))));
+                          // F1：备份记录列表首次出现前 8 条错峰，刷新重排不重放。
+                          StaggerList.revealRow(copyRow, "auto-backup-copies", copy.id);
                         }
                       if (copies.getChildCount() == 0)
                         copies.addView(
@@ -291,6 +299,28 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
             },
             "auto-backup-records")
         .start();
+  }
+
+  /**
+   * E4：首次读取记录时用 2 行骨架占位，数据到达立即收掉；上限 1.5 秒后骨架自己停，
+   * 页面保留静态「正在读取记录…」，不做无限 shimmer。
+   */
+  private void showFirstLoadSkeleton() {
+    if (skeletonPlayed || copies.getChildCount() > 0) return;
+    skeletonPlayed = true;
+    LinearLayout host = new LinearLayout(this);
+    host.setOrientation(LinearLayout.VERTICAL);
+    copies.addView(host, new LinearLayout.LayoutParams(-1, -2));
+    skeleton =
+        FiniteSkeleton.attach(host, 2, com.deepseekharness.app.util.SkeletonTiming.DEFAULT_MS);
+    skeleton.start();
+  }
+
+  private void stopSkeleton() {
+    if (skeleton != null) {
+      skeleton.stop();
+      skeleton = null;
+    }
   }
 
   @Override

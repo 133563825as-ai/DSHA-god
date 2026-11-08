@@ -1615,6 +1615,9 @@
     "app/src/test/java/com/deepseekharness/app/util/ProgressStateTest.java",
     "app/src/test/java/com/deepseekharness/app/util/SkeletonTimingTest.java",
     "app/src/test/java/com/deepseekharness/app/util/StaggerPolicyTest.java",
-    "app/src/test/java/com/deepseekharness/app/util/StickyHeaderMathTest.java"
+    "app/src/test/java/com/deepseekharness/app/util/StickyHeaderMathTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/DiagnosticToolsTabsTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/SettingsGroupsLayoutTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/GrantsAccordionTest.java"
   ]
 }

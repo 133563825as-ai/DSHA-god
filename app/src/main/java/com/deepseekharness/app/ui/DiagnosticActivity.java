@@ -21,9 +21,11 @@ import com.deepseekharness.app.util.UiText;
 
 public final class DiagnosticActivity extends AppCompatActivity {
   private static final String STATE_EXPANDED = "diagnostic_ok_expanded";
+  private static final String STATE_TOOLS_TAB = "diagnostic_tools_tab";
   private DiagnosticRepository repository;
   private com.deepseekharness.app.core.ErrorLogRepository logs;
   private DiagnosticResultList resultList;
+  private CardTabs toolsTabs;
   private PendingLogExport pendingLogExport;
 
   /** 本页输入的补充说明：仅内存，不持久化，不随页面重建恢复。 */
@@ -87,6 +89,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     super.onCreate(saved);
     setContentView(R.layout.activity_diagnostics);
     PressFeedback.attachButtons(findViewById(android.R.id.content));
+    bindToolTabs(saved);
     repository = new ViewModelProvider(this).get(DiagnosticRepository.class);
     logs = new ViewModelProvider(this).get(com.deepseekharness.app.core.ErrorLogRepository.class);
     resultList =
@@ -146,6 +149,31 @@ public final class DiagnosticActivity extends AppCompatActivity {
   protected void onSaveInstanceState(Bundle out) {
     super.onSaveInstanceState(out);
     if (resultList != null) out.putBoolean(STATE_EXPANDED, resultList.expanded());
+    if (toolsTabs != null) out.putString(STATE_TOOLS_TAB, toolsTabs.selectedKey());
+  }
+
+  /**
+   * F3：诊断页工具卡内的页签。「启动与恢复」放启动记录与故障处理，「网络与插件」放网络健康、
+   * 修复网络工具与插件管理；未选中的面板 GONE，读屏不会读到隐藏内容。
+   */
+  private void bindToolTabs(Bundle saved) {
+    android.widget.LinearLayout tools = findViewById(R.id.diagnostic_tools);
+    View startup = findViewById(R.id.diagnostic_tools_startup);
+    View network = findViewById(R.id.diagnostic_tools_network);
+    if (tools == null || startup == null || network == null) return;
+    toolsTabs =
+        CardTabs.bind(
+            tools,
+            java.util.List.of(
+                new CardTabs.Tab(
+                    "startup",
+                    com.deepseekharness.app.util.UiText.choose("启动与恢复", "Startup and recovery"),
+                    startup),
+                new CardTabs.Tab(
+                    "network",
+                    com.deepseekharness.app.util.UiText.choose("网络与插件", "Network and plugins"),
+                    network)),
+            saved == null ? null : saved.getString(STATE_TOOLS_TAB));
   }
 
   // ---------- 状态卡：图标 + 一句结论 + 唯一主按钮 ----------

@@ -21,13 +21,27 @@ final class FullPermissionControls implements AutoCloseable {
   private final androidx.appcompat.widget.AppCompatButton diagnostics;
   private final DisclosureCard.State disclosure;
   private final DisclosureCard.Model disclosureModel = new DisclosureCard.Model();
+
+  /** 展开本段时通知同屏手风琴（B2）；没有页面协调时为 null。 */
+  private final Runnable disclosureToggled;
+
   private boolean rendering, closed;
 
   FullPermissionControls(
       Fragment owner, LinearLayout host, DisclosureCard.State disclosure, Runnable policyChanged) {
+    this(owner, host, disclosure, policyChanged, null);
+  }
+
+  FullPermissionControls(
+      Fragment owner,
+      LinearLayout host,
+      DisclosureCard.State disclosure,
+      Runnable policyChanged,
+      Runnable disclosureToggled) {
     app = owner.requireContext().getApplicationContext();
     this.disclosure = disclosure;
     this.policyChanged = policyChanged;
+    this.disclosureToggled = disclosureToggled;
     Context ctx = owner.requireContext();
     // 压缩卡片：分组标题由页面标签承担；卡内只有开关、状态行（ⓘ + 诊断）与异常时的恢复操作。
     float density = ctx.getResources().getDisplayMetrics().density;
@@ -209,7 +223,11 @@ final class FullPermissionControls implements AutoCloseable {
 
   private void save(boolean enabled) {
     new DeviceGrants(app).setGlobalAllowed(enabled);
-    if (enabled) disclosure.setExpanded("global-confirm", true);
+    if (enabled) {
+      disclosure.setExpanded("global-confirm", true);
+      // 放宽确认属于高风险状态：展开说明的同时收掉同屏其它说明，避免两段同时展开。
+      if (disclosureToggled != null) disclosureToggled.run();
+    }
     policyChanged.run();
     refresh();
   }
@@ -283,7 +301,7 @@ final class FullPermissionControls implements AutoCloseable {
                 "只影响 DSHA 确认，不改系统权限", "Affects DSHA confirmations only, not system permissions");
     disclosureModel.consequenceTone = on ? R.color.shell_warn : R.color.shell_text_muted;
     disclosureModel.defaultExpanded = on;
-    DisclosureCard.bind(status, disclosureModel, disclosure, null);
+    DisclosureCard.bind(status, disclosureModel, disclosure, disclosureToggled);
   }
 
   static String diagnosticText(NativeConsentPolicy.Snapshot snapshot) {

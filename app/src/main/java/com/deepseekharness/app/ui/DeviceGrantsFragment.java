@@ -66,6 +66,10 @@ public final class DeviceGrantsFragment extends Fragment {
   private final DisclosureCard.Model screenLabelModel = new DisclosureCard.Model();
   private final DisclosureCard.Model screenPolicyModel = new DisclosureCard.Model();
   private final DisclosureCard.Model allFilesModel = new DisclosureCard.Model();
+
+  /** B2：同屏四段折叠说明只允许一段展开；仍走 DisclosureCard 的后果行与读屏语义。 */
+  private Accordion accordion;
+
   private FullPermissionControls fullPermissions;
   private java.util.concurrent.ExecutorService safExecutor;
   private int safStatusGeneration;
@@ -100,15 +104,18 @@ public final class DeviceGrantsFragment extends Fragment {
     ((TextView) view.findViewById(R.id.grants_global_label))
         .setText(UiText.choose("全局权限", "Global permission"));
     if (saved != null) disclosure = DisclosureCard.Memory.restore(saved, "disclosure");
+    accordion = new Accordion(disclosure);
     fullPermissions =
         new FullPermissionControls(
             this,
             view.findViewById(R.id.grants_global_slot),
-            disclosure,
+            accordion.state(),
             () -> {
               refreshNativePolicyControls();
               refreshSummary();
-            });
+            },
+            () -> accordion.onToggle("global-confirm"));
+    accordion.register("global-confirm", () -> fullPermissions.refresh());
     bindChannelsDisclosure(ctx, view);
     bindScreenLabelDisclosure(ctx, view);
     bindAllFilesDisclosure(ctx, view);
@@ -830,8 +837,10 @@ public final class DeviceGrantsFragment extends Fragment {
     if (!grants.setScreenPolicy(mode, grants.screenPolicy().rules))
       toast(com.deepseekharness.app.util.UiText.text("授权保存失败，请重试"));
     // 放宽到「全部允许」后直接展开规则说明，让安全后果与作用范围可见（B4）。
-    if (mode == com.deepseekharness.app.util.ScreenConfirmationPolicy.Mode.ALLOW_ALL)
-      disclosure.setExpanded("screen-policy", true);
+    if (mode == com.deepseekharness.app.util.ScreenConfirmationPolicy.Mode.ALLOW_ALL) {
+      if (accordion == null) disclosure.setExpanded("screen-policy", true);
+      else accordion.open("screen-policy");
+    }
     refreshScreenPolicy();
     refreshSummary();
   }
@@ -991,7 +1000,16 @@ public final class DeviceGrantsFragment extends Fragment {
     screenPolicyModel.consequenceTone = allowAll ? R.color.shell_warn : R.color.shell_text_muted;
     screenPolicyModel.defaultExpanded = allowAll;
     screenPolicyStatus.setText(summary);
-    DisclosureCard.bind(screenPolicyStatus, screenPolicyModel, disclosure, null);
+    if (accordion == null) {
+      DisclosureCard.bind(screenPolicyStatus, screenPolicyModel, disclosure, null);
+    } else {
+      DisclosureCard.bind(
+          screenPolicyStatus,
+          screenPolicyModel,
+          accordion.state(),
+          () -> accordion.onToggle("screen-policy"));
+      accordion.register("screen-policy", this::refreshScreenPolicy);
+    }
     screenPolicyStatus.setTextColor(
         ctx.getColor(global ? R.color.shell_warn : R.color.shell_text_muted));
     updating = true;
@@ -1451,7 +1469,9 @@ public final class DeviceGrantsFragment extends Fragment {
     channelsModel.key = "channels";
     channelsModel.detail = full;
     channelsModel.defaultExpanded = new ConfigStore(ctx).isRootShellAllowed();
-    DisclosureCard.bind(label, channelsModel, disclosure, null);
+    DisclosureCard.bind(
+        label, channelsModel, accordion.state(), () -> accordion.onToggle("channels"));
+    accordion.register("channels", () -> bindChannelsDisclosure(ctx, page));
   }
 
   /** 「屏幕操作」标签折叠说明：只放一条操作顺序提示，不再挂 ⓘ。 */
@@ -1467,20 +1487,28 @@ public final class DeviceGrantsFragment extends Fragment {
 
   /** 标签旁的折叠说明（替代 ⓘ）：保留标签原有起始图标，收起态只有标签与展开箭头。 */
   private void bindLabelInfo(TextView label, String key, String full, boolean defaultExpanded) {
-    if (label == null) return;
+    if (label == null || accordion == null) return;
     DisclosureCard.Model model = new DisclosureCard.Model();
     model.key = key;
     model.detail = full;
     model.defaultExpanded = defaultExpanded;
-    DisclosureCard.bind(label, model, disclosure, null);
+    // 标签可能嵌在水平行里（例如「屏幕操作」标签 + 撤销按钮）：详情容器插到整行之后的竖向容器。
+    View host =
+        label.getParent() instanceof android.widget.LinearLayout line
+                && line.getOrientation() == android.widget.LinearLayout.HORIZONTAL
+            ? (View) line
+            : null;
+    DisclosureCard.bind(label, model, accordion.state(), () -> accordion.onToggle(key), host);
+    accordion.register(key, () -> bindLabelInfo(label, key, full, defaultExpanded));
   }
 
   /** Root 开关放宽到高风险档位时直接展开通道说明，把后果与拦截范围显示出来。 */
   private void expandChannelsDisclosure(View page) {
     TextView label = page == null ? null : page.findViewById(R.id.grants_channels_label);
     if (label == null) return;
-    disclosure.setExpanded("channels", true);
-    DisclosureCard.bind(label, channelsModel, disclosure, null);
+    accordion.open("channels");
+    DisclosureCard.bind(
+        label, channelsModel, accordion.state(), () -> accordion.onToggle("channels"));
   }
 
   /** 全部文件访问：收起=状态词+一行后果，展开=完整范围与系统设置入口。 */
@@ -2335,7 +2363,13 @@ public final class DeviceGrantsFragment extends Fragment {
             : UiText.choose(
                 "未开启：仅能访问应用私有目录；去系统设置开启后可访问全部文件",
                 "Disabled: only app-private storage is accessible. Enable all files access in system settings for other files.");
-    DisclosureCard.bind(status, allFilesModel, disclosure, null);
+    if (accordion == null) {
+      DisclosureCard.bind(status, allFilesModel, disclosure, null);
+    } else {
+      DisclosureCard.bind(
+          status, allFilesModel, accordion.state(), () -> accordion.onToggle("all-files"));
+      accordion.register("all-files", () -> refreshAllFilesStatus(status));
+    }
     try {
       status.setTextColor(
           granted

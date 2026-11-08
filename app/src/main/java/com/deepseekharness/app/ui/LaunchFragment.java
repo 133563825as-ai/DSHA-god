@@ -46,7 +46,7 @@ public class LaunchFragment extends Fragment {
   private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
 
   private TextView techNote;
-  private DisclosureCard.Model techModel;
+  private TechNote.Model techModel;
 
   /** 访问地址弹窗的自定义正文与三个横向按钮（关闭固定在最右）。 */
   private TextView accessBody;
@@ -221,13 +221,13 @@ public class LaunchFragment extends Fragment {
           refreshRunState();
         });
 
-    // 页尾「技术信息」：运行时与 dsh 版本不再占副标题，折叠后才展开（B3）。
-    techNote = new TextView(requireContext(), null, 0, R.style.ShellLaunchMeta);
-    techNote.setText(UiText.choose("技术信息", "Technical details"));
-    ((LinearLayout) v.findViewById(R.id.launch_sections))
-        .addView(techNote, new LinearLayout.LayoutParams(-1, -2));
-    techModel = new DisclosureCard.Model();
+    // 页尾「技术说明」：运行时与 dsh 版本不再占副标题，折叠后才展开（B3）。
+    techModel = new TechNote.Model();
     techModel.key = "launch-tech";
+    techModel.style = R.style.ShellLaunchMeta;
+    techNote =
+        TechNote.attach(
+            (LinearLayout) v.findViewById(R.id.launch_sections), techModel, disclosure, null);
     return v;
   }
 
@@ -624,7 +624,7 @@ public class LaunchFragment extends Fragment {
                     : "—")
                 + " · dsh "
                 + com.deepseekharness.app.util.Constants.DSH_VERSION;
-        DisclosureCard.bind(techNote, techModel, disclosure, null);
+        TechNote.bind(techNote, techModel, disclosure, null);
       }
       // 语境小字 / 活动条 / 工作台状态只取真实状态；不根据等待时长推算阶段。
       renderStatusChrome(

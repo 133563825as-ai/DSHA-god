@@ -656,14 +656,15 @@ public class PluginFragment extends Fragment {
 
   /** 首次出现插件行时逐项淡入；只播一次，滚动复用与局部刷新不重放。 */
   private void playListEnter() {
-    if (listEnterPlayed || root == null) return;
+    if (listEnterPlayed || root == null || market) return;
     listEnterPlayed = true;
     View list = find(R.id.pluginList);
-    if (!(list instanceof ViewGroup)) return;
-    list.post(
+    if (!(list instanceof ViewGroup group)) return;
+    group.post(
         () -> {
           if (root == null) return;
-          UiMotion.staggerIn((ViewGroup) list, 8);
+          // F1：插件列表首次出现前 8 项错峰；滚动 / 切页重建都不重放。
+          StaggerList.reveal(group, "plugin-installed");
         });
   }
 

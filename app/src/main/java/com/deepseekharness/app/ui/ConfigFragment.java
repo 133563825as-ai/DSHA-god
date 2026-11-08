@@ -317,6 +317,26 @@ public class ConfigFragment extends Fragment {
         (view, l, t, r, b, ol, ot, orr, ob) -> {
           if (r - l != orr - ol) view.post(this::applyColumns);
         });
+    // 页尾技术说明（B3）：运行方式 / 端口 / DNS 与配置存放位置；展开后才创建明细。
+    ConfigStore techConfig = new ConfigStore(requireContext());
+    String runtimeMode = techConfig.isProroot() ? "proroot" : "proot";
+    String portMode =
+        techConfig.getRequestedWebPort() > 0
+            ? String.valueOf(techConfig.getRequestedWebPort())
+            : com.deepseekharness.app.util.UiText.text("自动");
+    String dnsMode =
+        "ipv4".equals(techConfig.getDnsMode())
+            ? "IPv4"
+            : "native".equals(techConfig.getDnsMode())
+                ? com.deepseekharness.app.util.UiText.text("原生")
+                : com.deepseekharness.app.util.UiText.text("自动");
+    TechNote.Model tech = new TechNote.Model();
+    tech.key = "config-tech";
+    tech.detail =
+        com.deepseekharness.app.util.UiText.format(
+            "运行方式：%s · 端口：%s\nDNS：%s\n配置保存在应用私有目录，本机 API Key 默认不参与导出。",
+            runtimeMode, portMode, dnsMode);
+    TechNote.attach((LinearLayout) v.findViewById(R.id.config_column_end), tech, disclosure, null);
     return v;
   }
 

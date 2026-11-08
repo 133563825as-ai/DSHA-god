@@ -45,8 +45,11 @@ public class SettingsFragment extends Fragment {
   private boolean twoPane;
   private String selectedKey = DEFAULT_KEY;
 
-  /** 页脚「技术信息」的折叠状态；旋转/切页/返回后保留，用户折叠后不再被默认展开覆盖。 */
+  /** 页脚「技术说明」的折叠状态；旋转/切页/返回后保留，用户折叠后不再被默认展开覆盖。 */
   private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
+  /** 分组吸顶与折叠状态（F4）：设置页三组，收起后正文不进读屏。 */
+  private GroupedList.Memory groups = new GroupedList.Memory();
 
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
@@ -80,6 +83,7 @@ public class SettingsFragment extends Fragment {
     super.onSaveInstanceState(outState);
     outState.putString(STATE_SELECTED, selectedKey);
     disclosure.save(outState, "disclosure");
+    groups.save(outState, "groups");
   }
 
   @Nullable
@@ -91,8 +95,10 @@ public class SettingsFragment extends Fragment {
     View v = inflater.inflate(R.layout.fragment_settings, container, false);
     PressFeedback.attachButtons(v);
     selectable.clear();
-    if (savedInstanceState != null)
+    if (savedInstanceState != null) {
       disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
+      groups = GroupedList.Memory.restore(savedInstanceState, "groups");
+    }
 
     LinearLayout tabs = v.findViewById(R.id.settings_tabs);
     int optionCount = TAB_OPTIONS.length;
@@ -176,13 +182,13 @@ public class SettingsFragment extends Fragment {
     } catch (Exception ignored) {
     }
     TextView ver = v.findViewById(R.id.settings_ver);
-    ver.setText(com.deepseekharness.app.util.UiText.format("DSHA v%s · MIT 许可", version));
-    // 页脚技术信息：版本留在摘要上，包名与系统版本收进折叠区（不创建隐藏子视图）。
-    DisclosureCard.Model tech = new DisclosureCard.Model();
+    // 页脚技术说明（B3）：版本留在摘要上，包名与系统版本收进折叠区（不创建隐藏子视图）。
+    ver.setText(com.deepseekharness.app.util.UiText.format("技术说明 · DSHA v%s", version));
+    TechNote.Model tech = new TechNote.Model();
     tech.key = "settings-tech";
     tech.detail =
         requireContext().getPackageName() + " · Android " + android.os.Build.VERSION.RELEASE;
-    DisclosureCard.bind(ver, tech, disclosure, null);
+    TechNote.bind(ver, tech, disclosure, null);
     TextView updateSub = v.findViewById(R.id.settings_update_sub);
     updateSub.setText(com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
 
@@ -222,8 +228,32 @@ public class SettingsFragment extends Fragment {
     View overlayRow = v.findViewById(R.id.settings_overlay);
     selectable.put(KEY_OVERLAY, overlayRow);
     overlayRow.setOnClickListener(x -> select(KEY_OVERLAY));
+    // F4：三组（环境 / 体验 / 支持）标题吸顶并可折叠；折叠状态在旋转与分屏后保留。
+    installGroups(v);
     if (!twoPane) return v;
     return twoPaneShell(v, savedInstanceState);
+  }
+
+  private void installGroups(View root) {
+    android.widget.ScrollView scroll = root instanceof android.widget.ScrollView view ? view : null;
+    if (scroll == null) return;
+    GroupedList.install(
+        scroll,
+        java.util.List.of(
+            new GroupedList.Group(
+                "environment",
+                root.findViewById(R.id.settings_section_environment),
+                root.findViewById(R.id.settings_tabs)),
+            new GroupedList.Group(
+                "experience",
+                root.findViewById(R.id.settings_section_experience),
+                root.findViewById(R.id.settings_group_experience)),
+            new GroupedList.Group(
+                "support",
+                root.findViewById(R.id.settings_section_support),
+                root.findViewById(R.id.settings_group_support))),
+        groups,
+        null);
   }
 
   @Override

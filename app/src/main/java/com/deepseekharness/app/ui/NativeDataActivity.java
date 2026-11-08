@@ -29,6 +29,10 @@ public final class NativeDataActivity extends AppCompatActivity {
     int restoreStep;
     String restoreJob = "", restoreUri, restoreCopy, restoreName = "";
     boolean restoreNeedsOriginal, restoreAutomatic;
+
+    /** 预检（PREVIEW）时记下的总量：恢复进度用真实已复制字节 / 条目算百分比。 */
+    long restoreTotalEntries, restoreTotalBytes;
+
     final List<BackupSource> projects = new ArrayList<>();
     final androidx.lifecycle.MutableLiveData<BackupPreview.Report> preview =
         new androidx.lifecycle.MutableLiveData<>();
@@ -63,6 +67,9 @@ public final class NativeDataActivity extends AppCompatActivity {
 
   /** 当前正在构建的步骤容器；步骤方法写它，不再整块清空 wizard。 */
   private LinearLayout stepTarget;
+
+  /** 恢复进度复用同一个组件：每次状态刷新只改数值，不重启动画、不丢取消按钮状态。 */
+  private DeterminateProgress restoreProgress, restoreOutcome;
 
   private TextView status, project;
 
@@ -631,6 +638,8 @@ public final class NativeDataActivity extends AppCompatActivity {
 
   /** 回到选择文件后，选项/进度/结果下次重新构建；已填内容不跨流程保留。 */
   private void invalidateStepsAfterPick() {
+    restoreProgress = null;
+    restoreOutcome = null;
     for (int i = STEP_OPTIONS; i < stepBuilt.length; i++) {
       if (!stepBuilt[i]) continue;
       stepBuilt[i] = false;
@@ -795,6 +804,8 @@ public final class NativeDataActivity extends AppCompatActivity {
   /** 作业已切到 busy：记下本向导拥有的作业号，之后只按它推进步骤。 */
   private void restoreStarted(String id) {
     pending.restoreJob = id;
+    restoreProgress = null;
+    restoreOutcome = null;
     NativeBackupJobs.State now = jobs.state();
     // 作业可能在回到主线程前就已结束（例如立即失败）；此时直接显示结果，不停在进度步骤。
     pending.restoreStep =
@@ -805,28 +816,31 @@ public final class NativeDataActivity extends AppCompatActivity {
     reveal();
   }
 
+  /**
+   * E1：恢复 / 备份向导的进度。总量来自预检（PREVIEW 时的真实条目与字节），之后按后端累计的
+   * 已复制量算百分比；预检之前或导出（无总量）保持不确定态，不拿时间猜进度。取消与完成态由
+   * {@link DeterminateProgress} 统一收口，结束时立即停。
+   */
   private void progressStep(String heading) {
-    TextView title = page.text(heading, 16, R.color.shell_text);
-    title.setTypeface(null, android.graphics.Typeface.BOLD);
-    title.setPadding(0, dp(6), 0, 0);
-    stepTarget.addView(title);
-    ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-    bar.setIndeterminate(true);
-    bar.setIndeterminateTintList(
-        android.content.res.ColorStateList.valueOf(getColor(R.color.shell_accent)));
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-    p.topMargin = dp(12);
-    stepTarget.addView(bar, p);
     NativeBackupJobs.State value = jobs.state();
-    TextView line =
-        page.text(
-            com.deepseekharness.app.util.UiText.format(
-                "%s · %s 项", stage(value.stage), String.valueOf(value.entries)),
-            13,
-            R.color.shell_text_secondary);
-    line.setPadding(0, dp(8), 0, 0);
-    stepTarget.addView(line);
-    page.button(stepTarget, t("取消当前作业", "Cancel current operation"), false, () -> jobs.cancel());
+    if (restoreProgress == null) {
+      restoreProgress = new DeterminateProgress(this);
+      restoreProgress.setCancelAction(t("取消当前作业", "Cancel current operation"), () -> jobs.cancel());
+    }
+    DeterminateProgress progress = restoreProgress;
+    if (progress.getParent() instanceof LinearLayout parent) parent.removeView(progress);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+    params.topMargin = dp(6);
+    stepTarget.addView(progress, params);
+    progress.setLabel(heading);
+    progress.setDetail(
+        com.deepseekharness.app.util.UiText.format(
+            "%s · %s 项", stage(value.stage), String.valueOf(value.entries)));
+    int percent =
+        com.deepseekharness.app.util.ProgressFraction.restorePercent(
+            value.entries, value.bytes, pending.restoreTotalEntries, pending.restoreTotalBytes);
+    if (percent >= 0) progress.setPercent(percent);
+    else progress.setIndeterminate();
   }
 
   private void confirmStep() {
@@ -872,15 +886,36 @@ public final class NativeDataActivity extends AppCompatActivity {
   private void resultStep() {
     NativeBackupJobs.State value = jobs.state();
     boolean mine = value.id.equals(pending.restoreJob);
-    boolean ok = mine && value.error.isEmpty() && !value.stage.equals("CANCELLED");
-    TextView title =
-        page.text(
-            ok ? t("恢复完成", "Restore finished") : t("恢复未完成", "Restore did not finish"),
-            16,
-            R.color.shell_text);
-    title.setTypeface(null, android.graphics.Typeface.BOLD);
-    title.setPadding(0, dp(6), 0, dp(8));
-    stepTarget.addView(title);
+    boolean cancelled = mine && value.stage.equals("CANCELLED");
+    boolean ok = mine && value.error.isEmpty() && !cancelled;
+    if (mine) {
+      // E1 完成态：真实百分比停在结果上，成功 / 失败 / 取消都收起取消按钮并停止动画。
+      if (restoreOutcome == null) {
+        restoreOutcome = new DeterminateProgress(this);
+        int percent =
+            com.deepseekharness.app.util.ProgressFraction.restorePercent(
+                value.entries, value.bytes, pending.restoreTotalEntries, pending.restoreTotalBytes);
+        if (percent >= 0) restoreOutcome.setPercent(percent);
+        if (cancelled) restoreOutcome.cancelled(t("恢复已取消", "Restore cancelled"));
+        else if (ok) restoreOutcome.complete(t("恢复完成", "Restore finished"));
+        else restoreOutcome.fail(t("恢复未完成", "Restore did not finish"));
+      }
+      DeterminateProgress outcome = restoreOutcome;
+      if (outcome.getParent() instanceof LinearLayout parent) parent.removeView(outcome);
+      LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+      params.topMargin = dp(6);
+      params.bottomMargin = dp(8);
+      stepTarget.addView(outcome, params);
+    } else {
+      TextView title =
+          page.text(
+              ok ? t("恢复完成", "Restore finished") : t("恢复未完成", "Restore did not finish"),
+              16,
+              R.color.shell_text);
+      title.setTypeface(null, android.graphics.Typeface.BOLD);
+      title.setPadding(0, dp(6), 0, dp(8));
+      stepTarget.addView(title);
+    }
     if (mine) {
       TextView body =
           page.text(
@@ -1434,6 +1469,10 @@ public final class NativeDataActivity extends AppCompatActivity {
     // 预检停在 PREVIEW 时由向导承接确认；进程重建后也认领现有预检，与原确认弹窗一致。
     if (value.stage.equals("PREVIEW")) {
       if (!mine) pending.restoreJob = value.id;
+      if (value.id.equals(pending.restoreJob)) {
+        pending.restoreTotalEntries = value.entries;
+        pending.restoreTotalBytes = value.bytes;
+      }
       pending.restoreStep = STEP_CONFIRM;
       cancelOperation.setVisibility(View.GONE);
       clearStatus();
