@@ -1,5 +1,15 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261108.1300-dsh0.2.2-rc.1 / build344（T123 proot 运行根自镜像绑定（受管运行时更新，runtimeId f65796a2）+ T122 Wave D 左滑动作 / 底部抽屉；24 项卡效果最后一波）
+
+- proot 运行根自镜像绑定（T123，`424b4a015`）：`baseArgv()` 增加 `-b <canonical rootfs>:<canonical rootfs>`，修 `/proc/self/maps` 宿主路径回读（运行根以 `/data/user/0` 别名传入、maps 却是 `/data/data` 时 guest 会误读 `<rootfs>/data/data/...` 并 ENOENT）；canonical 由 `getCanonicalFile()` 解析、失败回退传入路径；proroot v1.2.8 vendor 已绑，App 不重复绑定（升级 proroot 需复核）。落在 launcher 源，受管运行时 descriptor 由 `2ae3f266` 重算为 **`f65796a2`**；固定输入未重建、未新增受管运行时。新增 `ContainerRuntimeSelfMirrorTest`。**proot 真机核对未做**（切换 proot 会重启 Web 并中断当前会话）。
+- 左滑动作 `SwipeAction`（T122 / F2，`df9d77263`）：行尾动作条 45% 阈值、超过动作条宽度 30% 阻尼；LTR 向左、RTL 向右由 `SwipeGesture` 纯逻辑镜像。滑动只露动作，破坏性动作只调用宿主既有确认弹窗（二次确认），无回呼不可点；与横向滚动冲突的列表不挂滑动；同屏只开一行；读屏提供「显示操作」。底部抽屉 `BottomSheetCard`（T122 / G1）：贴底整宽、拖拽手柄下拖 96dp 或点击关闭、返回键先收、短屏 <480dp 全高正文滚动页脚常驻、遮罩只关闭；系统关闭动画直接落终态。
+- 接入与文案（T122）：自动备份记录左滑「预检恢复 / 导出」、点按开详情 / 动作抽屉；插件列表左滑「删除插件」（仍走原确认弹窗，平板双栏与临时插件禁用），插件「更多」动作与排序筛选改底部抽屉；已有确认弹窗不迁移。新增十语文案 11 条与 `ids.swipe_action_open`，刷新 hygiene 字节钉；三个新类与四个测试类登记格式化清单。
+- 版本与范围：版本码提升为 344（基于已发布的 build343 / `4ba75ddd`）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。本版含一处受管运行时更新（proot launcher 自镜像绑定，runtimeId `f65796a2…`），不改其余代码行为、不新增受管运行时；fixed-inputs 冻结沿用锁定的 20261105e；内置 `dsh-web-mobile` 保持上游 3.3.1 与默认启用不变。
+- **未验证 / 未验收**：真机手势、短屏、RTL 与 TalkBack 验收未做；proot 真机核对未做（切换 proot 会重启 Web 并中断当前会话），需用户安排。**build344 尚未真机验收**，验收项是 343→344 首次覆盖安装成功、数据完好、READY、proot 运行根自镜像在真机的行为，以及 `SwipeAction` / `BottomSheetCard` 在真机短屏、RTL、TalkBack 下的表现；build338–build343 真机安装验收仍待用户。
+- 验证范围：发布身份与前置检查、宿主 contracts 整组、descriptor `f65796a2` / 受管运行时源、第三方声明、内置插件、凭据路径、semver、host manifest、源卫生、UI i18n、`generate-changelog --check`、文档链接、全树 Java 格式、`git diff --check`、`test-vscreen-help`、`test-diagnostic-feedback`；全量 `:app:testStandardDebugUnitTest`（先 `tools/prepare-test-runtime.py`，10 例 aarch64 Robolectric 环境基线失败如实记录）与 `:app:lintStandardRelease`；正式签名 assemble 不在本机执行（无发布 keystore）。结果以本机发布准备回执与本次 CI run 为准。
+- 十语种更新说明见 [build344 更新说明](docs/releases/build344-changes.zh.md)。
+
 ## 0.2.1-rc.5-20261108.1100-dsh0.2.2-rc.1 / build343（T121 Wave C：确定性进度 / 有限骨架 / 错峰列表 / 卡内页签 / 吸顶折叠 / 单开手风琴 / 页尾技术说明；纯 UI）
 
 - 进度与骨架（E1 / E4）：新 `DeterminateProgress` 支持条 / 环两种确定性进度，真实百分比只增不减、`100` 只由完成态写入；取消只发一次且取消后不再接受进度，完成 / 失败 / 取消终态停动画并收起取消；总量未知走不确定态，不伪造进度。`FiniteSkeleton` 有限骨架上限 1–2 秒，数据到达即停，到上限隐藏并回调静态提示，无无限 shimmer。
