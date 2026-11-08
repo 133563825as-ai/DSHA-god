@@ -366,22 +366,145 @@ public final class GitHubLoginFragment extends Fragment {
       return;
     }
     String command = refresh ? GhAuthCommands.refresh() : GhAuthCommands.login();
-    String message =
-        UiText.format(
-            "将打开终端并运行：\n%s\n\n1. 终端显示一次性验证码；用手机浏览器打开\n%s\n2. 输入验证码并按提示授权 GitHub CLI\n3. 回到本页，状态会自动刷新\n\ngh 默认申请作用域：repo、read:org、gist。",
-            command, GhAuthCommands.BROWSER_URL);
-    if (refresh) message = message + "\n\n" + UiText.text("重新授权会重新打开网页授权流程。");
-    if (probe != null && probe.state == GhAuthProbe.State.TLS_CA_FAILURE)
-      message =
-          message + "\n\n" + UiText.text("注意：当前 gh 无法完成 TLS 校验（CA 路径失效），终端会显示真实错误；修复运行环境后再试。");
+    boolean tlsFailure = probe != null && probe.state == GhAuthProbe.State.TLS_CA_FAILURE;
+    String note =
+        refresh
+            ? UiText.choose("重新授权会重新打开网页授权流程。", "Reauthorizing opens the web flow again.")
+            : UiText.choose(
+                "gh 默认申请作用域：repo、read:org、gist。",
+                "gh requests these scopes by default: repo, read:org, gist.");
     final boolean reauthorize = refresh;
-    new DshaDialogBuilder(requireContext())
-        .setTitle(UiText.text(reauthorize ? "重新授权 GitHub" : "登录 GitHub"))
-        .setMessage(message)
-        .setPositiveButton(
-            UiText.text("打开终端"), (dialog, which) -> openTerminalForLogin(reauthorize))
-        .setNegativeButton(UiText.text("取消"), null)
-        .show();
+    DshaDialogBuilder builder = new DshaDialogBuilder(requireContext());
+    builder.setTitle(UiText.text(reauthorize ? "重新授权 GitHub" : "登录 GitHub"));
+    builder.setView(loginGuideView(command, note, tlsFailure));
+    builder.setPositiveButton(
+        UiText.text("打开终端"), (dialog, which) -> openTerminalForLogin(reauthorize));
+    builder.setNeutralButton(
+        UiText.choose("复制命令", "Copy command"),
+        (dialog, which) -> copyLoginValue(UiText.choose("已复制命令", "Command copied"), command));
+    builder.setNegativeButton(UiText.text("取消"), null);
+    builder.show();
+  }
+
+  /** 登录引导内容：命令与授权链接都可复制（长按也能选），一键执行仍走「打开终端」。 */
+  private View loginGuideView(String command, String note, boolean tlsFailure) {
+    var ctx = requireContext();
+    float density = getResources().getDisplayMetrics().density;
+    int gap = Math.round(density * 10);
+    LinearLayout root = new LinearLayout(ctx);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(gap, Math.round(density * 3), gap, 0);
+
+    TextView lead = new TextView(ctx);
+    lead.setText(
+        UiText.choose(
+            "两种方式任选：复制命令到任意终端执行，或直接点「打开终端」自动执行。",
+            "Two ways: copy the command into any terminal, or open the built-in terminal to run it."));
+    lead.setTextSize(13);
+    lead.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+    lead.setLineSpacing(gap / 5f, 1f);
+    root.addView(lead, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView commandView = new TextView(ctx);
+    commandView.setText(command);
+    commandView.setTextSize(13);
+    commandView.setTypeface(android.graphics.Typeface.MONOSPACE);
+    commandView.setTextColor(ctx.getColor(R.color.shell_text));
+    commandView.setTextIsSelectable(true);
+    commandView.setPadding(gap, gap, gap, gap);
+    commandView.setBackgroundResource(R.drawable.bg_data_stat);
+    LinearLayout.LayoutParams commandParams = new LinearLayout.LayoutParams(-1, -2);
+    commandParams.topMargin = Math.round(density * 5);
+    root.addView(commandView, commandParams);
+
+    LinearLayout copyRow = new LinearLayout(ctx);
+    copyRow.setOrientation(LinearLayout.HORIZONTAL);
+    copyRow.setGravity(Gravity.END);
+    copyRow.addView(
+        textAction(
+            UiText.choose("复制命令", "Copy command"),
+            UiText.choose("已复制命令", "Command copied"),
+            command),
+        new LinearLayout.LayoutParams(-2, -2));
+    LinearLayout.LayoutParams linkParams = new LinearLayout.LayoutParams(-2, -2);
+    linkParams.setMarginStart(gap);
+    copyRow.addView(
+        textAction(
+            UiText.choose("复制授权链接", "Copy link"),
+            UiText.choose("已复制链接", "Link copied"),
+            GhAuthCommands.BROWSER_URL),
+        linkParams);
+    root.addView(copyRow, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView steps = new TextView(ctx);
+    steps.setText(
+        UiText.choose(
+            "1. 终端显示一次性验证码。\n2. 用手机浏览器打开下方授权链接，输入验证码并授权 GitHub CLI。\n3. 回到本页，状态会自动刷新。",
+            "1. The terminal shows a one-time code.\n2. Open the authorization link below in your phone browser, enter the code and approve GitHub CLI.\n3. Come back here; the status refreshes automatically."));
+    steps.setTextSize(13);
+    steps.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+    steps.setLineSpacing(gap / 5f, 1f);
+    steps.setTextIsSelectable(true);
+    root.addView(steps, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView authLink = new TextView(ctx);
+    authLink.setText(GhAuthCommands.BROWSER_URL);
+    authLink.setTextSize(13);
+    authLink.setTypeface(android.graphics.Typeface.MONOSPACE);
+    authLink.setTextColor(ctx.getColor(R.color.shell_accent));
+    authLink.setTextIsSelectable(true);
+    authLink.setPadding(0, Math.round(density * 3), 0, 0);
+    root.addView(authLink, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView notes = new TextView(ctx);
+    notes.setText(note);
+    notes.setTextSize(12);
+    notes.setTextColor(ctx.getColor(R.color.shell_text_muted));
+    notes.setLineSpacing(gap / 5f, 1f);
+    notes.setTextIsSelectable(true);
+    notes.setPadding(0, Math.round(density * 5), 0, 0);
+    root.addView(notes, new LinearLayout.LayoutParams(-1, -2));
+
+    if (tlsFailure) {
+      TextView warning = new TextView(ctx);
+      warning.setText(
+          UiText.choose(
+              "当前 gh 无法完成 TLS 校验（CA 路径失效），终端会显示真实错误；修复运行环境后再试。",
+              "gh cannot verify TLS right now (CA path is broken); the terminal will show the real error. Repair the runtime and retry."));
+      warning.setTextSize(12);
+      warning.setTextColor(ctx.getColor(R.color.shell_warn));
+      warning.setLineSpacing(gap / 5f, 1f);
+      warning.setTextIsSelectable(true);
+      warning.setPadding(0, Math.round(density * 3), 0, 0);
+      root.addView(warning, new LinearLayout.LayoutParams(-1, -2));
+    }
+    return root;
+  }
+
+  private TextView textAction(CharSequence label, String toastMessage, String value) {
+    var ctx = requireContext();
+    float density = getResources().getDisplayMetrics().density;
+    TextView action = new TextView(ctx);
+    action.setText(label);
+    action.setTextSize(13);
+    action.setTextColor(ctx.getColor(R.color.shell_accent));
+    action.setGravity(Gravity.CENTER);
+    action.setPadding(0, Math.round(density * 6), 0, Math.round(density * 6));
+    action.setBackgroundResource(R.drawable.bg_action_plain);
+    action.setOnClickListener(view -> copyLoginValue(toastMessage, value));
+    return action;
+  }
+
+  private void copyLoginValue(String toastMessage, String value) {
+    var clipboard =
+        (android.content.ClipboardManager)
+            requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+    if (clipboard == null) {
+      toast(UiText.choose("剪贴板不可用", "Clipboard unavailable"));
+      return;
+    }
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DSHA", value));
+    toast(toastMessage);
   }
 
   private void openTerminalForLogin(boolean refresh) {
