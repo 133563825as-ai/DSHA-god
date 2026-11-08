@@ -12,6 +12,7 @@ import androidx.fragment.app.Fragment;
 import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.ConfigStore;
 import com.deepseekharness.app.core.HarnessController;
+import com.deepseekharness.app.util.PowerModePolicy;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 /**
@@ -135,6 +136,7 @@ public class MainActivity extends AppCompatActivity {
     // 「隐藏后台」每次启动都重放：进程重启、覆盖更新或任务被系统重建后，新任务默认可见，
     // 不能只靠设置页开关。失败只记录不崩溃（BrowserTasks 内部降级并写诊断）。
     BrowserTasks.applyRecentsPreference(this);
+    normalizeScreenPowerConflict(config);
     getOnBackPressedDispatcher()
         .addCallback(
             this,
@@ -212,6 +214,23 @@ public class MainActivity extends AppCompatActivity {
     }
     pendingMainState = savedInstanceState;
     beginEntryCheck();
+  }
+
+  /**
+   * 屏幕常亮与省电模式硬互斥：历史数据或旧版本可能把两者都打开。启动归一规则固定为
+   * <b>保留屏幕常亮、关闭省电模式</b>并写回持久化；这是修复旧状态，不向用户提示。
+   * 放在 MainActivity（不在运行时启动器契约里），避免仅 UI 改动触发运行时描述符重算。
+   */
+  private void normalizeScreenPowerConflict(ConfigStore config) {
+    PowerModePolicy.Decision decision =
+        PowerModePolicy.normalizeOnStartup(config.isKeepScreenOn(), config.isEcoMode());
+    if (!decision.changed()) return;
+    if (decision.keepScreenOn != config.isKeepScreenOn())
+      config.setKeepScreenOn(decision.keepScreenOn);
+    if (decision.ecoMode != config.isEcoMode()) {
+      config.setEcoMode(decision.ecoMode);
+      com.deepseekharness.app.HarnessService.refreshPowerMode(this);
+    }
   }
 
   private void beginEntryCheck() {

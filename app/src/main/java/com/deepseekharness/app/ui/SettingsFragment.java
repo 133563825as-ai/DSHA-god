@@ -50,6 +50,9 @@ public class SettingsFragment extends Fragment {
   /** 分组吸顶与折叠状态（F4）：设置页三组，收起后正文不进读屏。 */
   private GroupedList.Memory groups = new GroupedList.Memory();
 
+  /** 屏幕常亮/省电模式互斥的编程式开关同步；置位期间不再触发持久化、服务刷新与提示。 */
+  private boolean syncingPowerSwitches;
+
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
 
@@ -112,32 +115,44 @@ public class SettingsFragment extends Fragment {
     }
     com.deepseekharness.app.core.ConfigStore config =
         HarnessController.get(requireContext()).config();
+    com.google.android.material.materialswitch.MaterialSwitch eco =
+        v.findViewById(R.id.settings_eco);
+    com.google.android.material.materialswitch.MaterialSwitch keepOn =
+        v.findViewById(R.id.settings_keep_screen_on_switch);
+
     TextView powerTitle = v.findViewById(R.id.settings_power_title);
     powerTitle.setText(com.deepseekharness.app.util.UiText.text("省电模式"));
     TextView powerHint = v.findViewById(R.id.settings_power_hint);
-    com.google.android.material.materialswitch.MaterialSwitch eco =
-        v.findViewById(R.id.settings_eco);
     eco.setContentDescription(com.deepseekharness.app.util.UiText.text("省电模式"));
     eco.setChecked(config.isEcoMode());
     // 行高恒定：副标题不再随开关出现/消失，避免开关在行内上下漂移。
     if (powerHint != null) powerHint.setVisibility(View.GONE);
-    eco.setOnCheckedChangeListener(
-        (button, checked) -> {
-          config.setEcoMode(checked);
-          com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
-        });
 
     TextView keepTitle = v.findViewById(R.id.settings_keep_screen_on_title);
     keepTitle.setText(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
-    com.google.android.material.materialswitch.MaterialSwitch keepOn =
-        v.findViewById(R.id.settings_keep_screen_on_switch);
     keepOn.setContentDescription(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
     keepOn.setChecked(config.isKeepScreenOn());
+
+    // 两个开关硬互斥：开启任一边都会强制关闭另一边；关闭只改自己，不误伤另一边。
+    eco.setOnCheckedChangeListener(
+        (button, checked) -> {
+          if (syncingPowerSwitches) return;
+          applyPowerDecision(
+              config,
+              eco,
+              keepOn,
+              com.deepseekharness.app.util.PowerModePolicy.afterEcoModeToggle(
+                  config.isKeepScreenOn(), config.isEcoMode(), checked));
+        });
     keepOn.setOnCheckedChangeListener(
         (button, checked) -> {
-          config.setKeepScreenOn(checked);
-          android.app.Activity activity = getActivity();
-          if (activity != null) ModernAndroidUi.applyKeepScreenOn(activity);
+          if (syncingPowerSwitches) return;
+          applyPowerDecision(
+              config,
+              eco,
+              keepOn,
+              com.deepseekharness.app.util.PowerModePolicy.afterKeepScreenOnToggle(
+                  config.isKeepScreenOn(), config.isEcoMode(), checked));
         });
 
     // 隐藏后台：只改最近任务可见性，不动常驻通知、前台服务与 ADB 保活。
@@ -474,6 +489,46 @@ public class SettingsFragment extends Fragment {
           }
         });
     return row;
+  }
+
+  /**
+   * 落地屏幕常亮/省电模式互斥决策：先写持久化，再同步两个开关与服务/窗口。
+   * 编程式 setChecked 只在 {@link #syncingPowerSwitches} 保护下执行，不会再次进入本方法或刷新服务。
+   */
+  private void applyPowerDecision(
+      com.deepseekharness.app.core.ConfigStore config,
+      com.google.android.material.materialswitch.MaterialSwitch eco,
+      com.google.android.material.materialswitch.MaterialSwitch keepOn,
+      com.deepseekharness.app.util.PowerModePolicy.Decision decision) {
+    if (!decision.changed()) return;
+    if (decision.keepScreenOn != decision.previousKeepScreenOn)
+      config.setKeepScreenOn(decision.keepScreenOn);
+    if (decision.ecoMode != decision.previousEcoMode) config.setEcoMode(decision.ecoMode);
+    syncingPowerSwitches = true;
+    try {
+      eco.setChecked(decision.ecoMode);
+      keepOn.setChecked(decision.keepScreenOn);
+    } finally {
+      syncingPowerSwitches = false;
+    }
+    if (decision.keepScreenOn != decision.previousKeepScreenOn) {
+      android.app.Activity activity = getActivity();
+      if (activity != null) ModernAndroidUi.applyKeepScreenOn(activity);
+    }
+    if (decision.ecoMode != decision.previousEcoMode)
+      com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
+    if (decision.disabledEcoMode)
+      android.widget.Toast.makeText(
+              requireContext(),
+              com.deepseekharness.app.util.UiText.choose("已关闭省电模式", "Eco mode turned off"),
+              android.widget.Toast.LENGTH_SHORT)
+          .show();
+    else if (decision.disabledKeepScreenOn)
+      android.widget.Toast.makeText(
+              requireContext(),
+              com.deepseekharness.app.util.UiText.choose("已关闭屏幕常亮", "Keep screen on turned off"),
+              android.widget.Toast.LENGTH_SHORT)
+          .show();
   }
 
   private View divider() {
