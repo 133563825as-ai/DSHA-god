@@ -48,7 +48,7 @@ public class WorkspaceFragment extends Fragment {
 
   private final androidx.activity.result.ActivityResultLauncher<android.net.Uri> backupDirectory =
       registerForActivityResult(
-          new androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+          new SystemDocumentPicker.TreeContract(),
           uri -> {
             if (oneClick != null) oneClick.directoryResult(uri);
           });

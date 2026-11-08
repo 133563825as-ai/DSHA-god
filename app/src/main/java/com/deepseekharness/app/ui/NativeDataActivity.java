@@ -137,7 +137,7 @@ public final class NativeDataActivity extends AppCompatActivity {
           });
   private final ActivityResultLauncher<Uri> projectPicker =
       registerForActivityResult(
-          new ActivityResultContracts.OpenDocumentTree(),
+          new SystemDocumentPicker.TreeContract(),
           uri -> {
             if (uri == null) return;
             try {
