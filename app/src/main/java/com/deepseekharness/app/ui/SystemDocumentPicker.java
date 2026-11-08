@@ -132,10 +132,12 @@ final class SystemDocumentPicker {
   }
 
   /**
-   * {@code ActivityResultContracts.OpenDocumentTree} 的显式系统选择器版本。
+   * 系统 DocumentsUI 的显式树选择合同（与框架的 OpenDocumentTree 合同等价）。
    *
-   * <p>结果解析沿用框架合同；只在创建意图时把 component 指向 DocumentsUI，因此返回的
-   * tree URI 与系统选择器正常授权完全一致，授权簿与路径护栏都不需要改动。
+   * <p>结果解析沿用框架合同语义；只在创建意图时把 component 指向 DocumentsUI，因此返回的
+   * tree URI 与系统选择器正常授权完全一致，授权簿与路径护栏都不需要改动。本类只创建意图，
+   * 不负责启动：调用方必须经 {@code RecentsPrivacyGuard.launch} 启动，严格模式才不会在
+   * 结果在途时结束 UI 任务。
    */
   static final class TreeContract extends ActivityResultContract<Uri, Uri> {
     @Override

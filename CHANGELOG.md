@@ -1,5 +1,16 @@
 # 更新记录
 
+## 0.2.1-rc.5-20261109.0900-dsh0.2.2-rc.1 / build347（SAF 目录选择指向系统文件选择器 + 设备通道状态胶囊让位 + 隐藏后台内容守卫/严格模式；含受管运行时更新 runtimeId 28dc573a）
+
+- SAF 目录选择明确指向系统 DocumentsUI（`479302313`）：新增 `ui/SystemDocumentPicker`，树选择意图显式指向 `com.android.documentsui` / `com.google.android.documentsui`，未导出、禁用或本机缺失时退回默认解析；默认处理程序被 OEM 改写时先说明「可能看不到 SD 卡 / U 盘等存储挂载点」再给三个入口——系统文件选择器 / 接管者应用信息（清「默认打开」）/ 继续用默认，没有可用处理程序时 toast 而不是崩溃。授权页、工作区备份目录与原生数据项目备份源三处 tree 选择统一；清单 `<queries>` 增加两个系统包与 `OPEN_DOCUMENT_TREE`；`SystemDocumentPickerTest` 7 项覆盖强制系统入口、OEM 接管识别、缺失 / 未导出回退与 tree URI / 起始目录转发。授权仍由系统逐目录发放，`/app/saf/*` 的授权簿、路径护栏与写入开关不变。
+- 设备通道状态胶囊不再挤出配对按钮与开关（`cfad29009`）：Root / Shizuku / ADB / 外接设备四行改为「左列标题 + 状态胶囊」按权重让位，行内验证、配对按钮与开关先按自身宽度测量，状态胶囊只在剩余宽度内换行；新增 `ShellChannelStatusPill`（最多 6 行、不省略、行距 2dp），外接设备状态并入标题左列；`DeviceGrantsLayoutTest` 补长状态 / 中英 / 1.3 倍字体下动作保持宽度且留在页内的回归，通道高度预算放宽到 500（实测 462）。
+- 隐藏后台补内容守卫与严格模式（`76b3a44a6`，一加 C16 报障）：Android 13+ 的 `RecentTasks#isInVisibleRange` 会保留「最近可见任务」——从应用内直接滑到最近任务时当前卡片仍由系统保留，公开 API 不能只移除卡片而不结束 UI；本版按用户决定做内容守卫 + 实验性严格模式。新增 `ui/RecentsPrivacyGuard`（Application 级生命周期）：开关开启时对全部界面关闭最近任务截图内容（API 33+），严格模式（默认关）在应用整体退到后台 700ms 后结束 UI 任务；SAF 等结果型外部选择器经 `RecentsPrivacyGuard.launch` 启动、在途时不结束，画中画 / 多窗口 / 旋转不触发，失败写 `DiagnosticLog` 且不崩溃、不重放。`BrowserTasks.applyRecentsPreference` 刷完回读任务列表与 root Intent 标志，任务为空或标志不符时写 `RECENTS_HIDE_APPLY` / `RECENTS_HIDE_VERIFY` 并返回失败，不再假成功。设置页主开关补副标题并新增「严格模式（实验）」子行（父开关关闭时隐藏）；十语文案 `m9500`–`m9502`；设计文档记录平台限制与 C16 待验证项。**如实说明**：Android 13+ 最近任务会保留当前可见任务卡片，公开 API 无法只移除这一张；内容守卫只让卡片不显示页面内容，严格模式通过结束 UI 任务让卡片消失（dsh 进程、终端会话、ADB 保活与常驻通知不受影响）。
+- 受管运行时更新：`DshaApp` / `ConfigStore` 属 `runtime-descriptor` 的 launcherSources，重算 `runtimeId` 为 `28dc573a`；fixed-inputs 冻结沿用锁定的 20261105e；内置 `dsh-web-mobile` 保持上游 3.3.1 与默认启用不变。
+- 版本与范围：版本码提升为 347（基于已发布的 build346 / `86f91ba0a`）；DSHA 修订号保持 `0.2.1-rc.5`，内置 DSH 为 `0.2.2-rc.1`。本批只含上述三条线，不改设备 shell 白名单、不放宽执行期护栏。build346 已作为正式包发布（tag `dsha-a-su-build346-20261109-070000`）。
+- **未验证 / 未验收**：真机验收未做：一加 C16（ColorOS 16）上从应用内直接滑到最近任务看当前卡片内容是否空白、按 Home 后卡片是否消失、严格模式开启后卡片是否消失且 dsh Web / 终端 / ADB 保活仍在；系统文件选择器在 OEM 接管场景的实际入口与返回的 tree 授权；设备通道四行在日夜 / 短屏 / 1.3 倍字体 / RTL 下的视觉验收（`LayoutAuditInstrumentation` 测试包）；`BrowserTasks` 回读在新 ROM 上的真实结果。**build347 尚未真机验收**，验收项是 346→347 首次覆盖安装成功、数据完好、READY、受管运行时更新与上述三项功能的表现；build344–build347 正式包真机覆盖安装验收仍待用户；build338–build346 已发布版本的真机验收按各自记录。
+- 验证范围：发布身份与前置检查、宿主 contracts 整组、descriptor `28dc573a` / 受管运行时源、第三方声明、内置插件、凭据路径、semver、host manifest、源卫生、UI i18n、`generate-changelog --check`、文档链接、全树 Java 格式、`git diff --check`、`test-vscreen-help`、`test-diagnostic-feedback`；全量 `:app:testStandardDebugUnitTest`（先 `tools/prepare-test-runtime.py`，10 例 aarch64 Robolectric 环境基线失败如实记录）与 `:app:lintStandardRelease`；正式签名 assemble 不在本机执行（无发布 keystore）。结果以本机发布准备回执与本次 CI run 为准。
+- 十语种更新说明见 [build347 更新说明](docs/releases/build347-changes.zh.md)。
+
 ## 0.2.1-rc.5-20261109.0700-dsh0.2.2-rc.1 / build346（屏幕常亮与省电模式硬互斥 + 实体主屏活动历史 M1；含受管运行时更新 runtimeId 7b1ca97d）
 
 - 屏幕常亮与省电模式硬互斥（`d540dfe9d`）：新增 `util/PowerModePolicy` 纯逻辑；屏幕常亮与省电模式默认关闭，开启任一边强制关闭另一边并同步持久化、服务与窗口常亮，关闭一边与重复开启不误伤另一边；设置页用同步护栏阻断编程式 `setChecked` 递归，强制关闭另一边时给中英 toast；启动时把历史「双开」归一为保留屏幕常亮、关闭省电模式并写回持久化，不提示。`PowerModePolicyTest` / `ConfigStorePowerModeTest` 覆盖默认值、互不影响与归一分支。
