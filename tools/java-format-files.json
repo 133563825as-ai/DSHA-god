@@ -1626,6 +1626,15 @@
     "app/src/test/java/com/deepseekharness/app/util/SwipeGestureTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/SwipeActionTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/BottomSheetCardTest.java",
-    "app/src/test/java/com/deepseekharness/app/ui/BottomSheetCardLayoutTest.java"
+    "app/src/test/java/com/deepseekharness/app/ui/BottomSheetCardLayoutTest.java",
+    "app/src/main/java/com/deepseekharness/app/screen/ScreenActivityRecorder.java",
+    "app/src/main/java/com/deepseekharness/app/util/ScreenActivityEvent.java",
+    "app/src/main/java/com/deepseekharness/app/util/ScreenActivityFeed.java",
+    "app/src/main/java/com/deepseekharness/app/util/ScreenActivityPolicy.java",
+    "app/src/main/java/com/deepseekharness/app/util/ScreenActivityQuery.java",
+    "app/src/test/java/com/deepseekharness/app/screen/ScreenActivityRecorderTest.java",
+    "app/src/test/java/com/deepseekharness/app/util/ScreenActivityFeedTest.java",
+    "app/src/test/java/com/deepseekharness/app/util/ScreenActivityPolicyTest.java",
+    "app/src/test/java/com/deepseekharness/app/util/ScreenActivityQueryTest.java"
   ]
 }
