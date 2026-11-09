@@ -1,3 +1,3 @@
-# DSHA-god
+# Personal asset mirror
 
-下载与发布：原生运行时（native-runtime）资产。
+Opaque packages for private use. No documentation, no warranty.
