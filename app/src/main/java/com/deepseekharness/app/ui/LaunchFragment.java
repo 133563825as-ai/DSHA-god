@@ -634,8 +634,7 @@ public class LaunchFragment extends Fragment {
             (ready
                     ? com.deepseekharness.app.runtime.NativeRuntime.lastWebWasNative(
                             requireContext())
-                        ? com.deepseekharness.app.util.UiText.choose(
-                            "Android 原生", "Android native")
+                        ? com.deepseekharness.app.util.UiText.choose("Android 原生", "Android native")
                         : controller.isWebCompatibilityFallback()
                             ? "proot"
                             : controller.proot().runtime().id()

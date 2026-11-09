@@ -268,7 +268,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-computer-use-token',
         'path': 'dsha-computer-use-android/lib/server.cjs',
-        'original_sha256': '084dd7629e904d2e11bf3df829308751d2a3da7a326cfaa61ca83e599216c24a',
+        'original_sha256': '1772322722a8f3d5b1d3c639031fb0f33633d059115757c5e8f452c57a624496',
         'replace_exact': [("dependencies.fs.readFile('/root/.dsh/.bridge_token','utf8')",
                            "dependencies.fs.readFile(" + PLUGIN_TOKEN + ",'utf8')")],
         'append': HELPER,
@@ -277,7 +277,7 @@ PLUGIN_PATCHES = [
     {
         'id': 'plugin-vscreen-token',
         'path': 'dsha-tool-vscreen/lib/server.cjs',
-        'original_sha256': 'e4681b5e642990151477ffd1791efe3a4abbafaeca4a0fd9db950144b62bc42c',
+        'original_sha256': '89a55f296aae54f766950ec6c885b92c24969233cf81b4fffd91288977ab16c1',
         'replace_exact': [
             ("const TOKEN_FILE='/root/.dsh/.bridge_token',", "const TOKEN_FILE=" + PLUGIN_TOKEN + ","),
             (" for(const path of ['/root','/root/.dsh']){",
