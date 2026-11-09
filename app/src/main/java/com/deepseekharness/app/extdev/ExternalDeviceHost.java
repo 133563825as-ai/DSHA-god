@@ -161,12 +161,12 @@ public final class ExternalDeviceHost {
     }
   }
 
+  /**
+   * 导入中转目录。Android 16 的 getFilesDir() 可能返回 /data/user/0 别名（指向 /data/data 的系统链接）：祖先别名
+   * 允许，只拒绝叶子自身是符号链接；返回 canonical，供后续 startsWith 比较与 root shell 使用。
+   */
   public File importRoot() throws IOException {
-    if (!importRoot.isDirectory() && !importRoot.mkdirs())
-      throw new IOException("IMPORT_DIRECTORY");
-    File canonical = importRoot.getCanonicalFile();
-    if (!canonical.equals(importRoot.getAbsoluteFile())) throw new IOException("IMPORT_PATH_ALIAS");
-    return canonical;
+    return com.deepseekharness.app.util.ExternalImportRoot.resolve(importRoot);
   }
 
   /** 列出导入槽位（NOFOLLOW 判定普通文件），all=true 回收全部，否则只回收过期条目；返回剩余条目。 */
