@@ -1973,5 +1973,10 @@
   "x2100107": "Seletor do sistema",
   "x2100108": "Alterar app padrão",
   "x2100109": "Manter padrão",
-  "x2100110": "Não abre ajustes"
+  "x2100110": "Não abre ajustes",
+  "x2100200": "Entrada privilegiada",
+  "x2100201": "Permitir entrada?",
+  "x2100202": "Permitir entrada",
+  "x2100203": "O assistente de tela física pode ignorar a acessibilidade, capturar a tela e injetar toques, gestos e teclas durante a tarefa de telefone atual — para jogos e outras interfaces desenhadas pelo app.\n\nDesativado por padrão e revogável a qualquer momento. As ações ainda exigem permissão de controle de tela para o app alvo; telas de senha, pagamento e segurança do sistema são sempre recusadas. A fase experimental garante apenas o canal root.",
+  "x2100204": "Falha ao salvar a configuração"
 }

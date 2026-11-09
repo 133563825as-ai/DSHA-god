@@ -294,6 +294,7 @@ public final class HttpShellService {
     routes.put(BridgeRoutes.Route.UI, (s, r) -> s.appUi(r.path, r.scope));
     routes.put(BridgeRoutes.Route.SENSE, (s, r) -> s.appSense(r.path, r.scope));
     routes.put(BridgeRoutes.Route.VSCREEN, (s, r) -> s.handleVscreen(r));
+    routes.put(BridgeRoutes.Route.PRIV, (s, r) -> s.appPriv(r.path, r.scope));
     routes.put(BridgeRoutes.Route.DEVICE, (s, r) -> s.appDevice());
     routes.put(BridgeRoutes.Route.NET, (s, r) -> s.appNet());
     routes.put(
@@ -1734,6 +1735,159 @@ public final class HttpShellService {
     return appUi("/app/ui/sense/state" + (query.isEmpty() ? "" : "?" + query), scope);
   }
 
+  /**
+   * T130：实体屏特权执行桥。{@code /app/priv/*} 只接受完整端点；能力开关、当前手机任务、
+   * 屏幕确认策略与目标窗口都在这里先判，再交给 {@code PhysicalScreenManager}。
+   *
+   * <p>Phase A 不发原生逐动作确认窗：屏幕确认策略未允许该应用时一律 NOT_SENT（fail-closed），
+   * 只放行「全部允许」或该应用显式 ALLOW。整条路径不需要无障碍：抓帧与注入由受管特权 Core 完成。
+   */
+  private String appPriv(String path, RequestScope scope) {
+    String route = path.split("\\?", 2)[0];
+    String operation = com.deepseekharness.app.util.PrivilegedScreenRoutes.operation(route);
+    if (operation.isEmpty())
+      return privRefused("PRIV_UNKNOWN_ROUTE", "USE_A_DOCUMENTED_PRIV_ENDPOINT", null);
+    try {
+      org.json.JSONObject arguments = new org.json.JSONObject();
+      for (String pair : queryOf(path).split("&")) {
+        if (pair.isEmpty()) continue;
+        String[] item = pair.split("=", 2);
+        String key = java.net.URLDecoder.decode(item[0], "UTF-8");
+        if (arguments.has(key))
+          return privRefused("PRIV_DUPLICATE_ARGUMENT", "FIX_THE_REQUEST", null);
+        arguments.put(key, java.net.URLDecoder.decode(item.length == 2 ? item[1] : "", "UTF-8"));
+      }
+      if (!new com.deepseekharness.app.core.DeviceGrants(ctx).privilegedExecutionAllowed()) {
+        com.deepseekharness.app.vscreen.PhysicalScreenManager.from(ctx).revoke();
+        return privRefused(
+            "PRIVILEGED_EXECUTION_DISABLED", "ENABLE_PRIVILEGED_EXECUTION_IN_DEVICE_GRANTS", null);
+      }
+      if (!arguments.has("taskSessionId") || !arguments.has("turnId"))
+        return privRefused("SCREEN_TASK_IDENTITY_REQUIRED", "CALL_app_ui_task_begin_FIRST", null);
+      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+      var runtime = com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx);
+      var binding =
+          new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
+              com.deepseekharness.app.control.ControlTaskAuthority.Owner.LOCAL_DSH,
+              scope.run.runId + ":" + runtime.instanceId,
+              arguments.getString("taskSessionId"),
+              arguments.getString("turnId"));
+      var state = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).snapshot();
+      if (state.binding() == null || !state.binding().equals(binding))
+        return privRefused("PRIV_SCREEN_TASK_REQUIRED", "BEGIN_THE_PHONE_TASK_FIRST", null);
+      if (state.paused())
+        return privRefused("PRIV_SCREEN_TASK_PAUSED", "ASK_USER_TO_RESUME_OR_STOP_THE_TASK", null);
+
+      var manager = com.deepseekharness.app.vscreen.PhysicalScreenManager.from(ctx);
+      if (operation.equals("info") || operation.equals("frame")) {
+        org.json.JSONObject receipt = operation.equals("info") ? manager.info() : manager.frame();
+        if (receipt.optBoolean("ok")) {
+          String rejected =
+              privTargetGate(
+                  receipt.optString("package", ""), receipt.optBoolean("packageVerified", false));
+          if (rejected != null) return rejected;
+        }
+        return receipt.toString();
+      }
+      if (operation.equals("config")) {
+        Integer maxWidth = arguments.has("maxWidth") ? privInt(arguments, "maxWidth") : null;
+        Integer quality = arguments.has("jpegQuality") ? privInt(arguments, "jpegQuality") : null;
+        Integer fps = arguments.has("maxFps") ? privInt(arguments, "maxFps") : null;
+        return manager.configure(maxWidth, quality, fps).toString();
+      }
+      if (operation.equals("close")) return manager.close().toString();
+      // 动作与 benchmark 必须先有过一次成功观察：Phase A 不做"没看屏就点"。
+      String target = manager.targetPackage();
+      if (!manager.targetVerified() || target.isEmpty())
+        return privRefused("PRIV_OBSERVE_FIRST", "CALL_app_priv_frame_FIRST", null);
+      String rejected = privTargetGate(target, true);
+      if (rejected != null) return rejected;
+      int waitMs =
+          arguments.has("waitMs")
+              ? privInt(arguments, "waitMs")
+              : com.deepseekharness.app.util.PrivilegedScreenPolicy.DEFAULT_FRAME_WAIT_MS;
+      switch (operation) {
+        case "tap":
+          return manager
+              .tap(privFloat(arguments, "x"), privFloat(arguments, "y"), waitMs)
+              .toString();
+        case "swipe":
+          return manager
+              .swipe(
+                  privFloat(arguments, "x1"),
+                  privFloat(arguments, "y1"),
+                  privFloat(arguments, "x2"),
+                  privFloat(arguments, "y2"),
+                  arguments.has("ms") ? privInt(arguments, "ms") : 300,
+                  waitMs)
+              .toString();
+        case "key":
+          return manager.key(privInt(arguments, "keycode"), waitMs).toString();
+        case "benchmark":
+          return manager
+              .benchmark(
+                  privInt(arguments, "n"),
+                  privFloat(arguments, "x"),
+                  privFloat(arguments, "y"),
+                  waitMs)
+              .toString();
+        default:
+          return privRefused("PRIV_UNKNOWN_ROUTE", "USE_A_DOCUMENTED_PRIV_ENDPOINT", null);
+      }
+    } catch (IllegalArgumentException invalid) {
+      return privRefused("PRIV_INVALID_ARGUMENT", "FIX_THE_REQUEST", null);
+    } catch (Exception error) {
+      return "[ERR] " + safeError(error);
+    }
+  }
+
+  /** 目标窗口与屏幕确认门禁：目标不明、敏感应用或未允许都 fail-closed。 */
+  private String privTargetGate(String pkg, boolean verified) {
+    if (!verified || pkg.isEmpty())
+      return privRefused("PRIV_TARGET_UNVERIFIABLE", "OBSERVE_THE_PHYSICAL_SCREEN_AGAIN", pkg);
+    if (com.deepseekharness.app.util.SensitiveAppPolicy.sensitive(pkg))
+      return privRefused(
+          "PRIV_SENSITIVE_TARGET_UNSUPPORTED", "BRING_A_SUPPORTED_APP_TO_THE_FOREGROUND", pkg);
+    var policy = new com.deepseekharness.app.core.DeviceGrants(ctx).effectiveScreenPolicy();
+    if (!policy.allows(pkg))
+      return privRefused(
+          "SCREEN_CONFIRMATION_REQUIRED",
+          "ALLOW_SCREEN_CONTROL_FOR_THIS_APP_IN_DEVICE_GRANTS",
+          pkg);
+    return null;
+  }
+
+  private static int privInt(org.json.JSONObject arguments, String key) {
+    String value = arguments.optString(key, "");
+    if (!value.matches("-?[0-9]{1,6}")) throw new IllegalArgumentException("PRIV_INVALID_ARGUMENT");
+    return Integer.parseInt(value);
+  }
+
+  private static float privFloat(org.json.JSONObject arguments, String key) {
+    String value = arguments.optString(key, "");
+    if (!value.matches("-?[0-9]{1,6}(\\.[0-9]{1,4})?"))
+      throw new IllegalArgumentException("PRIV_INVALID_ARGUMENT");
+    return Float.parseFloat(value);
+  }
+
+  private static String privRefused(String code, String nextAction, String detail) {
+    org.json.JSONObject value = new org.json.JSONObject();
+    try {
+      value
+          .put("ok", false)
+          .put("state", "NOT_SENT")
+          .put("error", code)
+          .put("retryable", false)
+          .put("automaticRetry", false)
+          .put("accessibilityRequired", false)
+          .put("nextAction", nextAction);
+      if (detail != null && !detail.isEmpty()) value.put("package", detail);
+    } catch (Exception ignored) {
+      // 结构固定的回执不会编码失败；失败也不能让桥返回未处理的异常。
+    }
+    return value.toString();
+  }
+
   /** Main-screen adapter receives an explicit request and the caller's observation evidence. */
   private String appUi(String path, RequestScope scope) {
     String route = path.split("\\?", 2)[0];
@@ -2521,6 +2675,10 @@ public final class HttpShellService {
         com.deepseekharness.app.util.UiText.choose(
             "\n== 识屏模式（实体 / 虚拟互斥） ==\n用户在 设置 → 设备能力授权 → 识屏 选择：关闭、实体识屏或虚拟识屏，两者不能同时开启。\n实体识屏：/app/ui/* 与 dsha-android 工具可用；需要无障碍。虚拟识屏：/app/vscreen/* 与 dsha-vscreen 工具可用；需要 Root / Shizuku / ADB 任一可用通道；只在设置里切换到虚拟识屏、或已开启但虚拟屏未运行（STOPPED）时再次选择，才尝试创建；App 启动/恢复、崩溃或关闭后不会自动重建，创建失败会在设置页提示错误码；无障碍只增强节点与中文输入。\n模式关闭返回 SCREEN_MODE_OFF；实体模式下调虚拟屏返回 SCREEN_MODE_VIRTUAL_OFF，虚拟模式下调实体主屏返回 SCREEN_MODE_PHYSICAL_OFF。这表示容器没有拿到这块屏的授权：照原话告诉用户去哪里切换，不要改用另一块屏，也不要重试。/app/ui/task-end 收尾不受模式限制。\n",
             "\n== Screen mode (physical / virtual, mutually exclusive) ==\nThe user chooses Off, Physical screen or Virtual screen in Settings → Device permissions → Screen; both cannot be on at once.\nPhysical: /app/ui/* and the dsha-android tools work; requires accessibility. Virtual: /app/vscreen/* and the dsha-vscreen tools work; requires a usable Root / Shizuku / ADB channel; creation is attempted only when switching the mode to Virtual, or re-selecting while the mode is on but the screen is stopped (STOPPED); it is not recreated after app start, recovery or close, and a failed creation shows an error code in Settings; accessibility only adds nodes and Unicode input.\nOff returns SCREEN_MODE_OFF; virtual-screen calls in physical mode return SCREEN_MODE_VIRTUAL_OFF and main-screen calls in virtual mode return SCREEN_MODE_PHYSICAL_OFF. This means the container has no authorization for that screen: tell the user where to switch, never use the other screen instead and do not retry. /app/ui/task-end cleanup is not restricted by the mode.\n");
+    String privHelp =
+        com.deepseekharness.app.util.UiText.choose(
+            "\n== 实体屏特权执行（实验；设置→设备能力授权→特权执行，默认关闭）==\n不依赖无障碍：受管特权 Core 镜像 display 0 并注入 tap/swipe/key。只在当前手机任务期间可用（先 /app/ui/task-begin，并带真实 taskSessionId/turnId）；权限要求：能力开关 + 目标应用屏幕确认允许；敏感应用与无法核验的目标一律 NOT_SENT。\n/app/priv/info  状态：displayId=0、generation、frameSeq、目标包、输入后端、frameConfig\n/app/priv/frame?since=  取帧并签发一次性 observationId；同帧只回 unchanged\n/app/priv/config?maxWidth=320..1920&jpegQuality=30..90&maxFps=1..10\n/app/priv/tap?x=&y=&frameSeq=&observationId=&generation=&waitMs=0..500\n/app/priv/swipe?x1=&y1=&x2=&y2=&ms=1..3000&frameSeq=&observationId=&generation=\n/app/priv/key?keycode=3|4|66|67&frameSeq=&observationId=&generation=\n/app/priv/benchmark?n=1..20&x=&y=&waitMs=  连续动作，返回 roundTripMs/inputMs/frameWaitMs 的 p50/p95/max 与 frameConfig\n/app/priv/close  关闭 Core\n坐标使用回执 width×height 图像空间。动作回执带新帧与新 observation，可直接做下一步，不要每步重新取帧。凭据 30 秒、一次性、绑定 generation/目标包；EXECUTION_UNKNOWN 不自动重放；失败不回退无障碍。默认帧配置 maxWidth=1280 / jpegQuality=60 / maxFps=6。\n",
+            "\n== Physical-screen privileged input (experimental; Settings → Device permissions → Privileged input, off by default) ==\nNo accessibility dependency: the managed privileged Core mirrors display 0 and injects tap/swipe/key. It only works during the current phone task (call /app/ui/task-begin first and pass the real taskSessionId/turnId); gates: capability switch + screen-control permission for the target app; sensitive apps and unverifiable targets are always NOT_SENT.\n/app/priv/info  status: displayId=0, generation, frameSeq, target package, input backend, frameConfig\n/app/priv/frame?since=  capture a frame and issue a one-use observationId; the same frame returns unchanged only\n/app/priv/config?maxWidth=320..1920&jpegQuality=30..90&maxFps=1..10\n/app/priv/tap?x=&y=&frameSeq=&observationId=&generation=&waitMs=0..500\n/app/priv/swipe?x1=&y1=&x2=&y2=&ms=1..3000&frameSeq=&observationId=&generation=\n/app/priv/key?keycode=3|4|66|67&frameSeq=&observationId=&generation=\n/app/priv/benchmark?n=1..20&x=&y=&waitMs=  repeated actions; returns p50/p95/max of roundTripMs/inputMs/frameWaitMs plus frameConfig\n/app/priv/close  close the Core\nCoordinates are in the receipt image space (width x height). An action receipt carries a new frame and a new observation, so the next action can follow directly without re-capturing. Credentials last 30 s, are single-use and bound to generation/target package; EXECUTION_UNKNOWN is never replayed and failures never fall back to accessibility. Defaults: maxWidth=1280 / jpegQuality=60 / maxFps=6.\n");
     String senseHelp =
         com.deepseekharness.app.util.UiText.choose(
             "\n== 紧凑识屏预览（ScreenSense） ==\n/app/sense/state?taskSessionId=...&turnId=...&geom=0|1&max=200&full=1\n该端点复用手机任务、无障碍授权、窗口代次和 owner 围栏，只返回紧凑树状态：连续观察默认回增量——mode=delta 只列变化行，mode=same 表示与上次相同，变化超过三分之一、窗口/尺寸/焦点/来源变化或加 full=1 时回全量 mode=full；encodedState 的内容由 mode 决定（全量或 D 开头的差异）。返回的 k*** 是阅读顺序位置编号，只用于预览与差异展示，不是动作凭据。每行为 `id 角色 \"标签\" [标志+动作]`，标志 !不可用 *已选 %焦点 ~密码，动作 c点击 l长按 f/b滚动 o聚焦 t输入，无标志无动作时省略。回复另含 source、quality（ok/partial/empty）、partial、readMs、ageMs（-1 为未知）；ageMs 只表示快照采集后经过的时间，不证明界面未变。动作仍使用最新 /app/ui/tree 或 dump 返回的 treeId/nodeId；Android 接受动作不等于业务状态已变化，不自动重放 UNKNOWN。\n",
@@ -2542,6 +2700,7 @@ public final class HttpShellService {
                 BRIDGE_PROTOCOL)
             .replace("3090", Integer.toString(bridgePort))
         + modeHelp
+        + privHelp
         + taskHelp
         + historyHelp
         + installHelp

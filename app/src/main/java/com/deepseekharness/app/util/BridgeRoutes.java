@@ -40,6 +40,7 @@ public final class BridgeRoutes {
     UI(false),
     SENSE(false),
     VSCREEN(false),
+    PRIV(false),
     DEVICE(false),
     NET(false),
     NET_RESOLVE(false),
@@ -150,6 +151,8 @@ public final class BridgeRoutes {
     if (path.startsWith("/app/ui/")) return Route.UI;
     if (path.equals("/app/sense/state")) return Route.SENSE;
     if (path.startsWith("/app/vscreen/")) return Route.VSCREEN;
+    // T130：实体屏特权执行固定端点；未知子路径由 appPriv 再拒绝一次。
+    if (path.startsWith("/app/priv/")) return Route.PRIV;
     return Route.UNKNOWN;
   }
 }

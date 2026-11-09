@@ -74,6 +74,8 @@ public final class BridgeRoutesTest {
     assertEquals(BridgeRoutes.Route.UI, BridgeRoutes.match("/app/ui/shot"));
     assertEquals(BridgeRoutes.Route.SENSE, BridgeRoutes.match("/app/sense/state"));
     assertEquals(BridgeRoutes.Route.VSCREEN, BridgeRoutes.match("/app/vscreen/status"));
+    assertEquals(BridgeRoutes.Route.PRIV, BridgeRoutes.match("/app/priv/frame"));
+    assertEquals(BridgeRoutes.Route.PRIV, BridgeRoutes.match("/app/priv/tap"));
     for (String invalid :
         new String[] {
           "/app/ui",

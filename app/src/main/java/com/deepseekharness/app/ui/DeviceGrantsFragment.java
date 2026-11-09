@@ -36,6 +36,7 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 public final class DeviceGrantsFragment extends Fragment {
   private MaterialSwitch sms;
   private TextView smsStatus;
+  private MaterialSwitch privilegedExecution;
   private TextView clipboardTitle, clipboardStatus;
   private android.widget.RadioGroup clipboardModes;
   private android.widget.RadioButton[] clipboardModeButtons;
@@ -315,6 +316,35 @@ public final class DeviceGrantsFragment extends Fragment {
               .show();
         });
     updateSms();
+    privilegedExecution = view.findViewById(R.id.device_privileged_execution);
+    if (privilegedExecution != null) {
+      privilegedExecution.setText(
+          com.deepseekharness.app.util.UiText.choose(
+              "特权执行（实验）", "Privileged input (experimental)"));
+      privilegedExecution.setChecked(
+          new com.deepseekharness.app.core.DeviceGrants(ctx).privilegedExecutionAllowed());
+      privilegedExecution.setOnCheckedChangeListener(
+          (button, enabled) -> {
+            if (updating) return;
+            if (!enabled) {
+              savePrivilegedExecution(false);
+              return;
+            }
+            new com.deepseekharness.app.ui.DshaDialogBuilder(ctx, true)
+                .setTitle(
+                    com.deepseekharness.app.util.UiText.choose(
+                        "允许特权执行？", "Allow privileged input?"))
+                .setMessage(
+                    com.deepseekharness.app.util.UiText.choose(
+                        "实体屏助手可以绕过无障碍，直接抓取屏幕并在当前手机任务期间注入点击、滑动和按键，用于游戏等自绘界面。\n\n默认关闭、可随时关闭；动作还要求屏幕操作确认已允许目标应用，密码、支付和系统安全界面一律拒绝。实验阶段只保证 root 通道。",
+                        "The physical-screen assistant can bypass accessibility, capture the screen and inject taps, swipes and keys while a phone task is active — for games and other self-drawn UIs.\n\nOff by default and revocable at any time. Actions still need screen-control permission for the target app; password, payment and system-security screens are always refused. The experimental phase only guarantees the root channel."))
+                .setPositiveButton(
+                    com.deepseekharness.app.util.UiText.choose("允许特权执行", "Allow privileged input"),
+                    (dialog, which) -> savePrivilegedExecution(true))
+                .setNegativeButton(com.deepseekharness.app.util.UiText.text("取消"), null)
+                .show();
+          });
+    }
     addClipboardControls(ctx, view);
     // 通道说明与页面说明改为标签内折叠，不挂 ⓘ。
     buildSummaryHeader(ctx, view);
@@ -2442,6 +2472,32 @@ public final class DeviceGrantsFragment extends Fragment {
         });
   }
 
+  /** 特权执行开关：保存失败恢复原状态；关闭时立即丢弃 Core 连接（Core 自身空闲退出）。 */
+  private void savePrivilegedExecution(boolean allowed) {
+    boolean saved =
+        new com.deepseekharness.app.core.DeviceGrants(requireContext())
+            .setPrivilegedExecutionAllowed(allowed);
+    if (!saved) {
+      updating = true;
+      if (privilegedExecution != null) privilegedExecution.setChecked(!allowed);
+      updating = false;
+      android.widget.Toast.makeText(
+              requireContext(),
+              com.deepseekharness.app.util.UiText.choose(
+                  "保存特权执行设置失败", "Could not save the privileged input setting"),
+              android.widget.Toast.LENGTH_SHORT)
+          .show();
+      return;
+    }
+    if (!allowed) {
+      try {
+        com.deepseekharness.app.vscreen.PhysicalScreenManager.from(requireContext()).revoke();
+      } catch (RuntimeException ignored) {
+        // 关闭能力本身已生效；丢弃连接失败不影响下一次请求的 fail-closed 判断。
+      }
+    }
+  }
+
   @Override
   public void onResume() {
     super.onResume();
@@ -2449,6 +2505,13 @@ public final class DeviceGrantsFragment extends Fragment {
     if (fullPermissions != null) fullPermissions.resume();
     ShizukuShell.ensureBound(requireContext());
     updateSms();
+    if (privilegedExecution != null) {
+      updating = true;
+      privilegedExecution.setChecked(
+          new com.deepseekharness.app.core.DeviceGrants(requireContext())
+              .privilegedExecutionAllowed());
+      updating = false;
+    }
     main.removeCallbacks(refreshConnections);
     main.post(refreshConnections);
     View page = getView();
@@ -2482,6 +2545,7 @@ public final class DeviceGrantsFragment extends Fragment {
     adbStatusRequest++;
     sms = null;
     smsStatus = null;
+    privilegedExecution = null;
     clipboardTitle = null;
     clipboardStatus = null;
     clipboardModes = null;

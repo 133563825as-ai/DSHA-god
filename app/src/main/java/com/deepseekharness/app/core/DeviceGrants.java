@@ -80,6 +80,29 @@ public final class DeviceGrants {
     return preferences.getBoolean("sms_read", false);
   }
 
+  /**
+   * T130 实体屏特权执行：默认关闭、可撤销、无独立后台常驻授权。
+   *
+   * <p>只授权"允许使用"；是否能在当前任务里动作仍由任务身份、屏幕确认策略与目标窗口决定。
+   * 与短信/剪贴板一样存原生授权，不从环境、插件或备份恢复。
+   */
+  public boolean privilegedExecutionAllowed() {
+    try {
+      return preferences.getBoolean("privileged_execution_v1", false);
+    } catch (RuntimeException unreadable) {
+      return false;
+    }
+  }
+
+  public boolean setPrivilegedExecutionAllowed(boolean allowed) {
+    try {
+      boolean saved = preferences.edit().putBoolean("privileged_execution_v1", allowed).commit();
+      return saved && privilegedExecutionAllowed() == allowed;
+    } catch (RuntimeException failed) {
+      return false;
+    }
+  }
+
   public NativeConsentPolicy.Snapshot consentSnapshot() {
     // Reads never acquire SCREEN_LOCK beneath the bridge lifecycle lock.
     long readGeneration = mutationGeneration.get();
