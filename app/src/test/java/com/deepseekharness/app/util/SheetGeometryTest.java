@@ -76,6 +76,17 @@ public class SheetGeometryTest {
   }
 
   @Test
+  public void actionDrawerCapsFirstScreenAt72PercentOfAvailableHeight() {
+    // 动作抽屉（BottomSheetCard）单独用 0.72，不改变 CardSheet 贴底卡片的 0.9。
+    assertEquals(530, SheetGeometry.bottomDrawerMaxHeight(736, 0));
+    assertEquals(477, SheetGeometry.bottomDrawerMaxHeight(736, 74));
+    assertEquals(0, SheetGeometry.bottomDrawerMaxHeight(40, 74));
+    assertTrue(
+        SheetGeometry.bottomDrawerMaxHeight(736, 0) < SheetGeometry.maxHeight(Mode.BOTTOM, 736, 0));
+    assertEquals(0.72f, SheetGeometry.BOTTOM_DRAWER_HEIGHT_RATIO, 0f);
+  }
+
+  @Test
   public void centeredHeightIsCappedAt800() {
     assertEquals(676, SheetGeometry.maxHeight(Mode.CENTER, 756, 0));
     assertEquals(800, SheetGeometry.maxHeight(Mode.CENTER, 1236, 0));

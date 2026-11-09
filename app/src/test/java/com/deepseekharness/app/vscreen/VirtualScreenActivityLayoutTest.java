@@ -414,4 +414,28 @@ public final class VirtualScreenActivityLayoutTest {
     send.performClick();
     assertEquals("A second busy click must not enqueue a replay", 1, pending.queued.size());
   }
+
+  @Test
+  public void displaySizeRowShowsTheWhitelistSelectionAndAppliesOnNextCreate() throws Exception {
+    var render = VirtualScreenActivity.class.getDeclaredMethod("render");
+    render.setAccessible(true);
+    VirtualScreenDisplaySettings.setPreset(
+        activity, com.deepseekharness.app.util.VirtualScreenDisplayPreset.DEFAULT_ID);
+    render.invoke(activity);
+    drain();
+    View row = activity.findViewById(R.id.vscreen_display_spec_row);
+    TextView sub = (TextView) activity.findViewById(R.id.vscreen_display_spec_sub);
+    assertNotNull(row);
+    assertNotNull(sub);
+    assertEquals(View.VISIBLE, row.getVisibility());
+    assertTrue(sub.getText().toString(), sub.getText().toString().contains("1008×1792 @320"));
+    assertTrue("默认也要显示逻辑 dp", sub.getText().toString().contains("504×896 dp"));
+
+    VirtualScreenDisplaySettings.setPreset(activity, "compat-720");
+    render.invoke(activity);
+    drain();
+    assertTrue(sub.getText().toString(), sub.getText().toString().contains("720×1600 @320"));
+    assertTrue(sub.getText().toString(), sub.getText().toString().contains("360×800 dp"));
+    assertEquals("compat-720", VirtualScreenDisplaySettings.preset(activity).id);
+  }
 }

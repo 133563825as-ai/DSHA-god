@@ -4,6 +4,7 @@ import android.graphics.Rect;
 import android.view.accessibility.AccessibilityNodeInfo;
 import com.deepseekharness.app.util.AccessibilityDumpBounds;
 import com.deepseekharness.app.util.ScreenSenseCodec;
+import com.deepseekharness.app.util.ScreenSenseDeltaPolicy;
 import com.deepseekharness.app.util.ScreenSenseMetadata;
 import com.deepseekharness.app.util.ScreenSenseState;
 import com.deepseekharness.app.util.ScreenSenseStateStore;
@@ -12,7 +13,8 @@ import java.util.List;
 import org.json.JSONObject;
 
 /**
- * 紧凑识屏读取路径。当前只提供只读预览；紧凑 id 不是动作凭据，动作仍必须走旧 tree/node 租约。
+ * 紧凑识屏读取路径。只提供只读预览；紧凑 id 是阅读顺序里的位置编号，只用于预览与增量展示， 不是动作凭据，动作仍必须
+ * 走新的 {@code /app/ui/tree} 或 {@code /app/ui/dump} 租约。
  */
 public final class ScreenSenseReader {
   private static final int DEFAULT_MAX = 200;
@@ -30,6 +32,8 @@ public final class ScreenSenseReader {
     try (var resolved =
         ScreenTargetResolver.resolve(context.service(), context.target().displayId)) {
       context.validateRoot(context.target().displayId, resolved.root);
+      ScreenSenseState previous =
+          states.previous(context.ownerIdentity(), context.serviceEpoch(), resolved.target);
       String scopeId =
           states.scopeId(context.ownerIdentity(), context.serviceEpoch(), resolved.target);
       List<ScreenSenseState.Element> elements = new ArrayList<>();
@@ -62,17 +66,19 @@ public final class ScreenSenseReader {
       ScreenSenseMetadata meta =
           ScreenSenseMetadata.of(
               state, startedAt, capturedAt, android.os.SystemClock.elapsedRealtime());
-      // Compact ids are preview-only until a current-tree resolver exists. Never emit a
-      // delta that could make a caller associate a new node with an old position.
+      ScreenSenseDeltaPolicy.Decision decision =
+          ScreenSenseDeltaPolicy.decide(previous, state, full);
       JSONObject result =
           ScreenReply.completed()
               .put("kind", "dsha-screen-sense-v1")
-              .put("format", "v4-preview-2")
-              .put("mode", "full")
+              .put("format", "v4-preview-3")
+              .put("mode", decision.mode().name().toLowerCase(java.util.Locale.ROOT))
               .put("fullRequested", full)
-              .put("deltaAvailable", false)
+              .put("deltaAvailable", true)
+              .put("deltaReason", decision.reason())
               .put("readOnlyPreview", true)
               .put("actionCredential", "LEGACY_TREE_NODE_ONLY")
+              .put("compactIdScope", "PREVIEW_POSITION_ORDER_ONLY")
               .put("sid", sid)
               .put("treeId", scopeId)
               .put("visited", state.visited)
@@ -83,14 +89,29 @@ public final class ScreenSenseReader {
               .put("partial", meta.partial)
               .put("readMs", meta.readMs)
               .put("ageMs", meta.ageMs)
-              .put("encodedState", ScreenSenseCodec.encode(state))
+              .put("encodedState", encodedState(decision, state))
               .put("target", ScreenSnapshotReader.target(resolved.target));
+      if (previous != null && decision.mode() != ScreenSenseDeltaPolicy.Mode.FULL) {
+        result.put("previousSid", previous.sid);
+        result.put("changedElements", decision.delta().changedCount);
+      }
+      if (decision.mode() == ScreenSenseDeltaPolicy.Mode.SAME)
+        result.put("unchanged", true).put("nextAction", "SCREEN_UNCHANGED");
       if (state.truncated) result.put("truncationReason", state.truncationReason);
       return result;
     } catch (Exception failure) {
       states.clearOwner(context.ownerIdentity());
       throw failure;
     }
+  }
+
+  /** 全量/相同/差异都用同一个 {@code encodedState} 字段，由 {@code mode} 区分其内容。 */
+  private static String encodedState(
+      ScreenSenseDeltaPolicy.Decision decision, ScreenSenseState current) {
+    return switch (decision.mode()) {
+      case FULL -> ScreenSenseCodec.encode(current);
+      case DELTA, SAME -> ScreenSenseCodec.encodeDelta(decision.delta(), current);
+    };
   }
 
   private void collect(

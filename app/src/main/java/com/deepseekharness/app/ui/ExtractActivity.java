@@ -43,6 +43,10 @@ public class ExtractActivity extends AppCompatActivity {
   private boolean automaticDeclined;
   private boolean rebuildRequested;
   private String lastRender = "";
+
+  /** 阶段条/阶段列表上一轮的形态键；形态没变就不重建，避免每秒刷新闪动（审计 B-01）。 */
+  private String lastStageKey = "";
+
   private Boolean cachedReady;
   private long cachedReadyTaskId = -1;
   private BackupTaskState.Status cachedReadyStatus;
@@ -55,6 +59,7 @@ public class ExtractActivity extends AppCompatActivity {
   protected void onCreate(@Nullable Bundle saved) {
     super.onCreate(saved);
     setContentView(R.layout.activity_extract);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     controller = HarnessController.get(this);
     task = BackupTask.get(this);
     kit = new OnboardingKit(this);
@@ -150,7 +155,7 @@ public class ExtractActivity extends AppCompatActivity {
     // 只读救援导出：不停止写入、不进入受限主界面，也不写就绪标记；后端在维护待恢复时仍允许 rescue。
     rescue = findViewById(R.id.extract_rescue);
     rescue.setText(UiText.text("导出可读副本"));
-    rescue.setContentDescription(UiText.text("只读救援导出可读取的数据，不停止写入、不修改原件"));
+    rescue.setContentDescription(UiText.text("只读导出，不停止写入"));
     rescue.setOnClickListener(
         v ->
             startActivity(
@@ -288,12 +293,13 @@ public class ExtractActivity extends AppCompatActivity {
 
   private void renderHeader(
       BackupTaskState.Snapshot s, DeployStages.View view, boolean busy, boolean pending) {
-    status.setText(
+    String statusText =
         busy
             ? com.deepseekharness.app.util.UiStateText.render(s.kind)
             : pending
                 ? UiText.text("上次维护未完成，请先恢复原环境")
-                : view.visible() ? view.label() : UiText.text("环境维护"));
+                : view.visible() ? view.label() : UiText.text("环境维护");
+    FadeSwap.text(status, statusText);
     OnboardingKit.Tone tone = OnboardingKit.tone(view.phase);
     pill.setVisibility(view.visible() ? View.VISIBLE : View.GONE);
     if (view.visible()) {
@@ -310,21 +316,43 @@ public class ExtractActivity extends AppCompatActivity {
                   : OnboardingKit.toneColor(tone)));
       pill.setPadding(kit.dp(9), kit.dp(3), kit.dp(9), kit.dp(3));
     }
-    lead.setText(
+    // 行内只留一句本次动作；完整说明走既有 InfoHint 弹层（不新增翻译键）。
+    DeployStages.Mode mode =
+        view.visible() && view.mode != DeployStages.Mode.GENERIC
+            ? view.mode
+            : DeployStages.Mode.GENERIC;
+    InfoHint.bind(
+        lead,
+        DeployStages.title(mode),
+        DeployTaskSheet.summary(mode),
         view.visible() && view.mode != DeployStages.Mode.GENERIC
             ? DeployTaskSheet.description(view.mode, false)
-            : UiText.text("相同基础环境只更新 dsh 与内置插件，个人数据保持原位；基础环境变更时先保护数据再重建。验证失败可恢复原环境。"));
+            : UiText.text("更新不移动个人数据；失败可恢复"));
   }
 
   private void renderStages(DeployStages.View view) {
-    segments.removeAllViews();
-    stages.removeAllViews();
     boolean show = view.visible() && view.total() > 0;
     stageCard.setVisibility(show ? View.VISIBLE : View.GONE);
     if (!show) return;
     stageLine.setText(DeployCard.line(view));
+    // 阶段集合与当前步都没变时只更新那一行文字：不重建整块列表，也不丢滚动位置。
+    String stageKey =
+        view.mode
+            + ":"
+            + view.phase
+            + ":"
+            + view.current
+            + ":"
+            + view.total()
+            + ":"
+            + UiText.language();
+    if (stageKey.equals(lastStageKey)) return;
+    lastStageKey = stageKey;
+    segments.removeAllViews();
+    stages.removeAllViews();
     segments.addView(kit.segmentBar(view));
     stages.addView(kit.stageList(view));
+    UiMotion.reveal(stageCard);
   }
 
   private void renderMessages(
@@ -340,7 +368,7 @@ public class ExtractActivity extends AppCompatActivity {
     if (failed) {
       message =
           UiText.format(
-                  "未完成的操作：%s\n最后记录阶段：%s\n\n%s\n\n原件状态：尚未确认恢复完成。请查看记录后使用“恢复中断维护”；也可先点“导出可读副本”保存数据。",
+                  "未完成的操作：%s\n最后记录阶段：%s\n\n%s\n\n原件状态：尚未确认恢复完成。请查看记录后使用「恢复中断维护」；也可先点「导出可读副本」保存数据。",
                   com.deepseekharness.app.util.UiStateText.render(s.kind),
                   s.lastStage.isEmpty()
                       ? UiText.choose(
@@ -350,7 +378,7 @@ public class ExtractActivity extends AppCompatActivity {
                           com.deepseekharness.app.util.UiStateText.render(s.lastStage), 240),
                   com.deepseekharness.app.util.MaintenanceErrorText.render(s.detail))
               + "\n\n"
-              + UiText.text("任务未完成。请按上方原因处理后重试；本页不会自动覆盖环境。");
+              + UiText.text("任务未完成，请处理后重试");
       message += supportHint();
       warn = false;
     } else if (incomplete) {
@@ -472,6 +500,9 @@ public class ExtractActivity extends AppCompatActivity {
   protected void onResume() {
     super.onResume();
     cachedReady = null;
+    // 从应急 DSH 的「恢复中断维护」返回时，外部恢复不会经过本页的 BackupTask；立即丢弃
+    // 维护记录的 UI 缓存，避免恢复完成后仍沿用恢复前的结果把页面停在“中断维护”。
+    task.refreshPendingForUi();
     main.post(refresh);
   }
 

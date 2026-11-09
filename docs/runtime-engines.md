@@ -69,7 +69,7 @@ flowchart TD
 
 ## 4. proot 实际调用与原生来源
 
-当前 proot 使用 Termux 分支的 ptrace 路径翻译。`baseArgv()` 传入 `-L --kill-on-exit -0 --rootfs=<私有根> --cwd=/root` 及 bind。`--link2symlink` 取决于该入口的LaunchSpec，并设置 `.l2s` 目录及 `PROOT_L2S_DIR`；主Web用实际硬链接探测选择，CAS/install等入口的默认值和探测路径须分别核对，不能宣称每个proot命令都先完成同一硬链接探测。
+当前 proot 使用 Termux 分支的 ptrace 路径翻译。`baseArgv()` 传入 `-L --kill-on-exit -0 --rootfs=<私有根> --cwd=/root` 及 bind。`--link2symlink` 取决于该入口的LaunchSpec，并设置 `.l2s` 目录及 `PROOT_L2S_DIR`；主Web用实际硬链接探测选择，CAS/install等入口的默认值和探测路径须分别核对，不能宣称每个proot命令都先完成同一硬链接探测。`baseArgv()` 另绑定运行根的 canonical 自镜像（`-b <canonical rootfs>:<canonical rootfs>`）：proot 用宿主路径 exec/mmap，guest 按 `/proc/self/maps` 记录的宿主路径回读自身文件时必须有该视图；proroot v1.2.8 已由 vendor 绑定同一 canonical 根，App 侧不重复加。
 
 `applyEnv()` 设置 `PROOT_LOADER`、存在时的 `PROOT_LOADER_32`、`PROOT_TMP_DIR`、依赖搜索路径。`PROOT_NO_SECCOMP=1` 对应显式关闭加速；这不会取消应用本身的安全边界。[RuntimeNativeFiles.prepare()](../app/src/main/java/com/deepseekharness/app/runtime/RuntimeNativeFiles.java) 从随包原生库准备 `libtalloc.so.2` 与 `libandroid-shmem.so` 别名，不把缺失依赖当成环境已就绪。
 

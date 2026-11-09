@@ -360,12 +360,20 @@ public final class MainEntryLayoutLifecycleTest {
       refresh.setAccessible(true);
       refresh.invoke(current);
       assertEquals(
-          com.deepseekharness.app.util.UiText.choose(
-              "原 Web 实例状态待确认，请查看诊断或正常停止后重试",
-              "The previous Web instance is unconfirmed. Inspect diagnostics or stop it normally before retrying."),
+          com.deepseekharness.app.core.WebSessionRestoreText.state(""),
           ((android.widget.TextView) current.requireView().findViewById(R.id.launch_run_state))
               .getText()
               .toString());
+      // 完整原因不再占大标题：副标题收成摘要，异常状态默认展开完整原因（折叠卡，不再用 ⓘ）。
+      android.widget.TextView subtitle = current.requireView().findViewById(R.id.launch_subtitle);
+      com.deepseekharness.app.util.SummaryText.Split split =
+          com.deepseekharness.app.util.SummaryText.split(
+              com.deepseekharness.app.core.WebSessionRestoreText.unresolved(""));
+      assertEquals(split.summary, subtitle.getText().toString());
+      assertTrue("恢复核对异常默认展开", com.deepseekharness.app.ui.DisclosureCard.expanded(subtitle));
+      assertTrue(subtitle.isClickable());
+      subtitle.performClick();
+      assertFalse("折叠后不再显示完整原因", com.deepseekharness.app.ui.DisclosureCard.expanded(subtitle));
       assertTrue(current.requireView().findViewById(R.id.launch_stop).isEnabled());
       assertTrue(current.requireView().findViewById(R.id.launch_stop).performClick());
       assertEquals(1, Controller.stopRequests);

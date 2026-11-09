@@ -21,6 +21,7 @@ public final class WebSessionRestoreTextTest {
     String unknownLauncher = WebSessionRestoreText.unresolved("LAUNCHER_UNKNOWN");
     String retire = WebSessionRestoreText.unresolved("RETIRE_UNAVAILABLE");
     assertTrue(identity.contains("身份无法确认"));
+    assertTrue(identity.contains("强制结束"));
     assertTrue(auth.contains("仍然存活"));
     assertTrue(launcher.contains("启动器"));
     assertTrue(unknownLauncher.contains("无法确认启动器状态"));

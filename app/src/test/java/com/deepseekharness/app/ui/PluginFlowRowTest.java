@@ -3,6 +3,7 @@ package com.deepseekharness.app.ui;
 import static org.junit.Assert.*;
 
 import android.view.View;
+import com.deepseekharness.app.DshaApp;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -11,8 +12,17 @@ import org.robolectric.annotation.Config;
 
 /** 头部流式行的折行、贴尾、拉满与 RTL；固定尺寸子项，不依赖文字测量。 */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 34, qualifiers = "mdpi")
+@Config(sdk = 34, qualifiers = "mdpi", application = PluginFlowRowTest.App.class)
 public final class PluginFlowRowTest {
+  /**
+   * 不执行真实 {@code DshaApp.onCreate}：那会按系统语言改写 {@code UiText} 全局静态并在测试 JVM
+   * 内跨类泄漏（en_US 的 CI 上会让随后依赖中文默认值的用例失败）。与其余界面测试保持同一约定。
+   */
+  public static final class App extends DshaApp {
+    @Override
+    public void onCreate() {}
+  }
+
   private PluginFlowRow row(boolean stretch) {
     android.util.AttributeSet attrs =
         org.robolectric.Robolectric.buildAttributeSet()

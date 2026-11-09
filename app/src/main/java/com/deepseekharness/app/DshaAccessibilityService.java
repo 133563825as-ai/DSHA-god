@@ -161,6 +161,13 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
+    // 手机任务期间的活动摘要：有界内存记录，任务结束/暂停/断开即清空；没有记录任务时零成本返回，不读节点。
+    com.deepseekharness.app.screen.ScreenActivityRecorder.recordAccessibilityEvent(event);
+    // 动作等待只借事件判断“界面动过没有”，不读节点、不缓存内容；没有等待者时这里零成本返回。
+    if (event != null && SCREEN_EVENTS.watching())
+      SCREEN_EVENTS.record(
+          event.getWindowId(),
+          event.getPackageName() == null ? "" : event.getPackageName().toString());
     // 平时一律不读屏幕：没有用户主动开的窗口，这里立刻返回
     if (instance != this || !watching()) return;
     if (event == null) return;
@@ -269,8 +276,13 @@ public class DshaAccessibilityService extends AccessibilityService {
   private static volatile DshaAccessibilityService instance;
   private static final com.deepseekharness.app.util.ScreenConnectionEpoch<DshaAccessibilityService>
       CONNECTION = new com.deepseekharness.app.util.ScreenConnectionEpoch<>();
+
+  /** 动作等待期间的事件脉冲；没有等待者时不记录任何事件，不构成读屏缓存。 */
+  public static final com.deepseekharness.app.util.ScreenEventPulse SCREEN_EVENTS =
+      new com.deepseekharness.app.util.ScreenEventPulse(android.os.SystemClock::elapsedRealtime);
+
   private static final com.deepseekharness.app.screen.MainScreenActions MAIN_SCREEN =
-      new com.deepseekharness.app.screen.MainScreenActions(CONNECTION);
+      new com.deepseekharness.app.screen.MainScreenActions(CONNECTION, SCREEN_EVENTS);
 
   public static boolean connected() {
     return CONNECTION.snapshot() != null;
@@ -347,6 +359,19 @@ public class DshaAccessibilityService extends AccessibilityService {
       target = root.root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
       if (target == null || !target.isEditable() || !target.isEnabled())
         return com.deepseekharness.app.screen.ScreenReply.refused("VIRTUAL_INPUT_NOT_FOCUSED");
+      // 与 editor/set_text 同一条硬边界：语义 type 也不能把文字写进密码框（T97）。
+      if (target.isPassword()) {
+        org.json.JSONObject refused =
+            com.deepseekharness.app.screen.ScreenReply.refused("PASSWORD_INPUT_UNAVAILABLE");
+        try {
+          refused
+              .put("nextAction", "REPORT_TO_USER")
+              .put("retryable", false)
+              .put("sensitive", "PASSWORD");
+        } catch (org.json.JSONException ignored) {
+        }
+        return refused;
+      }
       if (text == null || text.length() > 16000)
         return com.deepseekharness.app.screen.ScreenReply.refused("TEXT_LIMIT");
       android.os.Bundle args = new android.os.Bundle();
@@ -418,18 +443,28 @@ public class DshaAccessibilityService extends AccessibilityService {
   }
 
   /**
-   * 只读诊断：该显示当前的窗口解析结果（READABLE / NO_WINDOWS / …）。不返回节点、不登记目标证据，
-   * 只用于在失败回复里说明原因；不替代授权链使用的 observeTarget。
+   * 只读诊断：该显示当前的窗口解析结果（READABLE / NO_WINDOWS / …）与最小窗口证据（T98）。不返回节点、
+   * 不登记目标证据、不改变任何门控；只用于在失败回复里说明原因和下一步。
    */
-  public static String displayWindowDiagnostic(int display) {
+  public static com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics
+      displayWindowSnapshot(int display) {
     var lease = CONNECTION.snapshot();
-    if (lease == null || display < 0) return "ACCESSIBILITY_UNAVAILABLE";
+    if (lease == null || display < 0)
+      return new com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics(
+          "ACCESSIBILITY_UNAVAILABLE", null);
     try (var result =
         com.deepseekharness.app.screen.ScreenTargetResolver.resolve(lease.service, display)) {
-      return CONNECTION.current(lease) ? result.diagnostic : "ACCESSIBILITY_UNAVAILABLE";
+      return new com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics(
+          CONNECTION.current(lease) ? result.diagnostic : "ACCESSIBILITY_UNAVAILABLE",
+          result.evidence);
     } catch (RuntimeException unavailable) {
-      return "ACCESSIBILITY_UNAVAILABLE";
+      return new com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics(
+          "ACCESSIBILITY_UNAVAILABLE", null);
     }
+  }
+
+  public static String displayWindowDiagnostic(int display) {
+    return displayWindowSnapshot(display).diagnostic;
   }
 
   private static AccessibilityNodeInfo displayRoot(DshaAccessibilityService service, int display) {
@@ -568,6 +603,7 @@ public class DshaAccessibilityService extends AccessibilityService {
   @Override
   protected void onServiceConnected() {
     super.onServiceConnected();
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     CONNECTION.connect(this);
     instance = this;
     var ownLease = CONNECTION.snapshot();
@@ -594,6 +630,7 @@ public class DshaAccessibilityService extends AccessibilityService {
     if (!CONNECTION.disconnect(this)) return;
     if (instance == this) instance = null;
     MAIN_SCREEN.revoke();
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     // Platform disconnect always fences old screen authority, including our own planned disable.
     HttpShellService.revokeDisconnectedScreenGrant(this);
     com.deepseekharness.app.screen.AccessibilityRepairOwner.platformDisconnected();

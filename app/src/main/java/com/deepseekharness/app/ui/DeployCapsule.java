@@ -110,19 +110,22 @@ final class DeployCapsule extends FrameLayout {
     String main = view.label();
     String detail = subText(view);
     boolean narrow = getResources().getConfiguration().screenWidthDp < 370;
-    label.setText(main);
+    // 文本变化 150ms 淡入；胶囊从隐藏变可见时整块淡入（审计 B-09）；状态点 pulse 已合规。
+    UiMotion.crossFadeText(label, main);
     label.setTextColor(getContext().getColor(ink));
-    sub.setText(detail.isEmpty() ? "" : "· " + detail);
+    UiMotion.crossFadeText(sub, detail.isEmpty() ? "" : "· " + detail);
     sub.setVisibility(detail.isEmpty() || narrow ? GONE : VISIBLE);
     String count = counterText(view);
-    counter.setText(count);
+    UiMotion.crossFadeTimerText(counter, count);
     counter.setVisibility(count.isEmpty() ? GONE : VISIBLE);
     chevron.setImageTintList(
         android.content.res.ColorStateList.valueOf(
             getContext()
                 .getColor(phase == DeployStages.Phase.RUNNING ? R.color.shell_text_muted : ink)));
     setContentDescription(description(view));
+    boolean wasHidden = getVisibility() != VISIBLE;
     setVisibility(VISIBLE);
+    if (wasHidden) UiMotion.reveal(this);
     if (phase == DeployStages.Phase.RUNNING) startPulse();
     else stopPulse();
   }

@@ -178,7 +178,7 @@ final class TransferDetailView {
             body(
                 TransferListModel.renamed(task.displayName, task.artifact.name)
                     ? TransferText.f(
-                        "已保存到 %s。保存位置已有同名文件，已自动改名。",
+                        "已保存到 %s（同名文件已改名）",
                         "Saved to %s. A file with the same name existed, so it was renamed.", where)
                     : TransferText.f("已保存到 %s。", "Saved to %s.", where)),
             TransferUi.match(context, 8));
@@ -261,7 +261,7 @@ final class TransferDetailView {
         card.addView(
             body(
                 TransferText.t(
-                    "选好位置后才会写入。取消选择不会丢失这条记录，可以稍后再选。",
+                    "选好位置才写入，取消不丢记录",
                     "Nothing is written until you choose. Cancelling the picker keeps this record so you can choose later.")),
             TransferUi.match(context, 8));
       }
@@ -475,7 +475,7 @@ final class TransferDetailView {
         TransferUi.text(
             context,
             TransferText.t(
-                "系统不保证能按文档 URI 精确定位文件夹；相册和其他提供方保存的文件可能不在系统下载列表中。",
+                "部分文件可能不在系统下载列表",
                 "Android does not guarantee exact folder navigation from a document URI. Gallery files and files saved by other providers may not appear in the system Downloads list."),
             12,
             R.color.shell_text_muted,

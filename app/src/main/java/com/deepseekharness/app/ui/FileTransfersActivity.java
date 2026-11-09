@@ -244,6 +244,7 @@ public final class FileTransfersActivity extends AppCompatActivity
     LinearLayout root = TransferUi.vertical(this);
     root.setBackgroundColor(getColor(R.color.shell_bg));
     setContentView(root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     LinearLayout header = TransferUi.horizontal(this);
     header.setMinimumHeight(dp(60));
     header.setPadding(dp(4), dp(2), dp(6), dp(2));
@@ -725,6 +726,7 @@ public final class FileTransfersActivity extends AppCompatActivity
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, dp(160), 0, 0);
         detailContent.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        UiMotion.reveal(detailContent);
       }
       return;
     }
@@ -744,7 +746,11 @@ public final class FileTransfersActivity extends AppCompatActivity
       detailContent.removeAllViews();
       detail = new TransferDetailView(this, this, task, detailWide());
       detailContent.addView(detail.root, new LinearLayout.LayoutParams(-1, -2));
-      if (!sameTask) detailScroll.scrollTo(0, 0);
+      if (!sameTask) {
+        detailScroll.scrollTo(0, 0);
+        // 双栏首次进入某条详情：整块 150ms 淡入；同任务进度刷新走 refresh，不重建也不闪（审计 E-08）。
+        UiMotion.reveal(detailContent);
+      }
     } else detail.refresh(task);
   }
 
@@ -800,7 +806,7 @@ public final class FileTransfersActivity extends AppCompatActivity
     title.announceForAccessibility(title.getText());
   }
 
-  /** 关闭二级页回到列表；列表视图一直存在，滚动位置自然保留。 */
+  /** 关闭二级页回到列表；列表视图一直存在，滚动位置自然保留。返回用 160ms 反向滑出（审计 E-08）。 */
   private void closeDetailPage() {
     String id = pageId;
     pageId = null;
@@ -808,11 +814,29 @@ public final class FileTransfersActivity extends AppCompatActivity
     detailKey = null;
     closePage.setEnabled(false);
     detailScroll.animate().cancel();
-    detailScroll.setAlpha(1f);
-    detailScroll.setTranslationX(0);
-    detailScroll.setVisibility(View.GONE);
+    if (UiMotion.animationsEnabled(this)) {
+      boolean rtl = detailScroll.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+      detailScroll
+          .animate()
+          .alpha(0f)
+          .translationX(dp(rtl ? -24 : 24))
+          .setDuration(160)
+          .setInterpolator(UiMotion.standard())
+          .withEndAction(
+              () -> {
+                detailScroll.setVisibility(View.GONE);
+                detailScroll.setAlpha(1f);
+                detailScroll.setTranslationX(0);
+                detailContent.removeAllViews();
+              })
+          .start();
+    } else {
+      detailScroll.setAlpha(1f);
+      detailScroll.setTranslationX(0);
+      detailScroll.setVisibility(View.GONE);
+      detailContent.removeAllViews();
+    }
     listScroll.setVisibility(View.VISIBLE);
-    detailContent.removeAllViews();
     renderHeader(engine.state().getValue());
     RowHolder holder = id == null ? null : rows.get(id);
     if (holder != null) holder.hit.requestFocus();
@@ -1225,9 +1249,13 @@ public final class FileTransfersActivity extends AppCompatActivity
   }
 
   private void showNotice(String message, boolean bad) {
-    notice.setText(message);
-    tintNotice(bad);
+    // 结果条出现用 150ms 淡入，避免直接盖住列表顶部（审计 E-09）。
+    boolean wasHidden = noticeBox.getVisibility() != View.VISIBLE;
+    boolean changed = !message.contentEquals(notice.getText());
     noticeBox.setVisibility(View.VISIBLE);
+    if (changed) UiMotion.crossFadeText(notice, message);
+    tintNotice(bad);
+    if (wasHidden) UiMotion.reveal(noticeBox);
     notice.announceForAccessibility(message);
   }
 
@@ -1452,7 +1480,7 @@ public final class FileTransfersActivity extends AppCompatActivity
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
     try {
-      savePicker.launch(picker);
+      RecentsPrivacyGuard.launch(savePicker, picker);
       showNotice(t("请选择保存位置。", "Choose a save destination."));
     } catch (RuntimeException unavailable) {
       pendingSaveId = null;

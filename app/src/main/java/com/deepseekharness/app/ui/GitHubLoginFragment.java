@@ -61,11 +61,7 @@ public final class GitHubLoginFragment extends Fragment {
       @NonNull LayoutInflater inflater,
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
-    ui =
-        new CardPage(
-            requireContext(),
-            UiText.text("GitHub 登录"),
-            UiText.text("管理容器内 GitHub CLI 的登录；本页不读取或显示 token。"));
+    ui = new CardPage(requireContext(), UiText.text("GitHub 登录"), UiText.text("管理 GitHub CLI 登录"));
     ui.label(UiText.text("当前账号"));
     LinearLayout account = ui.card();
     statusValue = kv(account, UiText.text("状态"));
@@ -97,18 +93,15 @@ public final class GitHubLoginFragment extends Fragment {
     ui.entry(
         more,
         UiText.text("在终端核对作用域"),
-        UiText.text("运行 gh auth status，查看 token 的实际作用域；需要网络。"),
+        UiText.text("查看登录状态与权限范围"),
         R.drawable.ic_ui_link,
         this::openStatusTerminal);
 
-    TextView policy =
-        ui.text(
-            UiText.text(
-                "gh 把 token 明文保存在容器 hosts.yml；本页不读取、不显示 token，也不会写入日志、备份或导出。网页与插件在容器内仍可能读取该文件。"),
-            11,
-            R.color.shell_text_muted);
+    TextView policy = ui.text(UiText.text("登录凭据存于容器，网页与插件可能读取"), 11, R.color.shell_text_muted);
     policy.setLineSpacing(ui.dp(2), 1);
     policy.setPadding(0, ui.dp(4), 0, ui.dp(8));
+    // 行内只留存储位置这一句；本页不读、不写日志、网页与插件仍可读等边界收进 ⓘ。
+    InfoHint.attach(policy, UiText.text("凭据"));
     ui.content.addView(policy);
 
     loginButton = ui.button(ui.footer, UiText.text("登录"), true, this::startLogin);
@@ -197,20 +190,19 @@ public final class GitHubLoginFragment extends Fragment {
                 : UiText.text("未登录"));
     scopesValue.setText(scopesText(current, hosts));
     credentialValue.setText(
-        hosts.credentialStored
-            ? UiText.text("hosts.yml 已保存（不显示内容）")
-            : UiText.text("hosts.yml 未保存（可能来自环境变量或钥匙串）"));
+        hosts.credentialStored ? UiText.text("已保存（内容不显示）") : UiText.text("未保存"));
     protocolValue.setText(
         hosts.gitProtocol.isEmpty() ? UiText.text("未记录") : UiText.raw(hosts.gitProtocol));
     sourceValue.setText(
         UiText.raw(
-            GhManagedInstall.HOSTS + (current.hostsPresent ? "" : " · " + UiText.text("未写入"))));
+            new java.io.File(GhManagedInstall.HOSTS).getName()
+                + (current.hostsPresent ? "" : " · " + UiText.text("未写入"))));
     managedValue.setText(managedText(current.managed));
     managedVersionValue.setText(
         current.managed == GhManagedInstall.State.AVAILABLE
             ? UiText.raw("v" + GhManagedInstall.VERSION)
             : UiText.text("—"));
-    managedHint.setText(UiText.text("缺失时首次运行 gh 会按固定版本自举；也可重装环境重新注入。"));
+    managedHint.setText(UiText.text("缺失时会在首次运行自动补齐"));
     managedHint.setVisibility(
         current.managed == GhManagedInstall.State.MISSING
                 || current.managed == GhManagedInstall.State.SIZE_MISMATCH
@@ -247,16 +239,16 @@ public final class GitHubLoginFragment extends Fragment {
     } else {
       switch (probe.state) {
         case VALID:
-          value = UiText.text("已登录（在线校验通过）");
+          value = UiText.text("已登录");
           break;
         case NOT_LOGGED_IN:
           value = UiText.text("未登录");
           break;
         case TOKEN_INVALID:
-          value = UiText.text("token 已失效，需要重新登录");
+          value = UiText.text("Token 失效");
           break;
         case TLS_CA_FAILURE:
-          value = UiText.text("TLS 证书校验失败（CA 路径失效）");
+          value = UiText.text("证书校验失败");
           break;
         case NETWORK_ERROR:
           value = UiText.text("网络不可用");
@@ -265,13 +257,13 @@ public final class GitHubLoginFragment extends Fragment {
           value = UiText.text("校验超时");
           break;
         case BINARY_UNAVAILABLE:
-          value = UiText.text("跳过：受管 gh 不可用");
+          value = UiText.text("跳过");
           break;
         case SKIPPED_ENV:
-          value = UiText.text("跳过：运行环境未就绪");
+          value = UiText.text("跳过");
           break;
         default:
-          value = UiText.text("无法完成校验");
+          value = UiText.text("无法校验");
           break;
       }
       detail = probe.detail;
@@ -286,8 +278,8 @@ public final class GitHubLoginFragment extends Fragment {
     if (probe != null && probe.state == GhAuthProbe.State.VALID && !probe.scopes.isEmpty())
       return UiText.raw(String.join(", ", probe.scopes));
     if (!hosts.scopes.isEmpty()) return UiText.raw(String.join(", ", hosts.scopes));
-    if (probe != null && probe.state != GhAuthProbe.State.VALID) return UiText.text("未取得（在线校验未通过）");
-    return UiText.text("hosts.yml 未记录作用域（gh 不写入）");
+    if (probe != null && probe.state != GhAuthProbe.State.VALID) return UiText.text("未取得");
+    return UiText.text("未记录");
   }
 
   private String stateText(GitHubLogin.Snapshot current) {
@@ -295,13 +287,13 @@ public final class GitHubLoginFragment extends Fragment {
     if (loading) return UiText.text("正在读取…");
     switch (current.problem) {
       case HOSTS_READ_FAILED:
-        return UiText.text("无法读取 hosts.yml");
+        return UiText.text("无法读取登录记录");
       case HOSTS_TOO_LARGE:
-        return UiText.text("hosts.yml 超过大小上限");
+        return UiText.text("登录记录超过大小上限");
       case HOSTS_NOT_REGULAR:
-        return UiText.text("hosts.yml 不是普通文件");
+        return UiText.text("登录记录不是普通文件");
       case HOSTS_MALFORMED:
-        return UiText.text("hosts.yml 结构无法识别");
+        return UiText.text("登录记录结构无法识别");
       default:
         break;
     }
@@ -309,13 +301,13 @@ public final class GitHubLoginFragment extends Fragment {
       case LOGGED_IN:
         return UiText.text("已登录");
       case CREDENTIAL_MISSING:
-        return UiText.text("已登录，但 hosts.yml 未保存 token");
+        return UiText.text("已登录");
       case ACCOUNT_UNKNOWN:
-        return UiText.text("已保存 token，但无法确定账号");
+        return UiText.text("已保存（账号未知）");
       case OTHER_HOSTS_ONLY:
-        return UiText.text("只有其他 GitHub 主机登录");
+        return UiText.text("其他主机");
       case MALFORMED:
-        return UiText.text("hosts.yml 结构无法识别");
+        return UiText.text("登录记录结构无法识别");
       default:
         return UiText.text("未登录");
     }
@@ -370,26 +362,149 @@ public final class GitHubLoginFragment extends Fragment {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null) return;
     if (!current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     String command = refresh ? GhAuthCommands.refresh() : GhAuthCommands.login();
-    String message =
-        UiText.format(
-            "将打开终端并运行：\n%s\n\n1. 终端显示一次性验证码；用手机浏览器打开\n%s\n2. 输入验证码并按提示授权 GitHub CLI\n3. 回到本页，状态会自动刷新\n\ngh 默认申请作用域：repo、read:org、gist。",
-            command, GhAuthCommands.BROWSER_URL);
-    if (refresh) message = message + "\n\n" + UiText.text("重新授权会重新打开网页授权流程。");
-    if (probe != null && probe.state == GhAuthProbe.State.TLS_CA_FAILURE)
-      message =
-          message + "\n\n" + UiText.text("注意：当前 gh 无法完成 TLS 校验（CA 路径失效），终端会显示真实错误；修复运行环境后再试。");
+    boolean tlsFailure = probe != null && probe.state == GhAuthProbe.State.TLS_CA_FAILURE;
+    String note =
+        refresh
+            ? UiText.choose("重新授权会重新打开网页授权流程。", "Reauthorizing opens the web flow again.")
+            : UiText.choose(
+                "gh 默认申请作用域：repo、read:org、gist。",
+                "gh requests these scopes by default: repo, read:org, gist.");
     final boolean reauthorize = refresh;
-    new DshaDialogBuilder(requireContext())
-        .setTitle(UiText.text(reauthorize ? "重新授权 GitHub" : "登录 GitHub"))
-        .setMessage(message)
-        .setPositiveButton(
-            UiText.text("打开终端"), (dialog, which) -> openTerminalForLogin(reauthorize))
-        .setNegativeButton(UiText.text("取消"), null)
-        .show();
+    DshaDialogBuilder builder = new DshaDialogBuilder(requireContext());
+    builder.setTitle(UiText.text(reauthorize ? "重新授权 GitHub" : "登录 GitHub"));
+    builder.setView(loginGuideView(command, note, tlsFailure));
+    builder.setPositiveButton(
+        UiText.text("打开终端"), (dialog, which) -> openTerminalForLogin(reauthorize));
+    builder.setNeutralButton(
+        UiText.choose("复制命令", "Copy command"),
+        (dialog, which) -> copyLoginValue(UiText.choose("已复制命令", "Command copied"), command));
+    builder.setNegativeButton(UiText.text("取消"), null);
+    builder.show();
+  }
+
+  /** 登录引导内容：命令与授权链接都可复制（长按也能选），一键执行仍走「打开终端」。 */
+  private View loginGuideView(String command, String note, boolean tlsFailure) {
+    var ctx = requireContext();
+    float density = getResources().getDisplayMetrics().density;
+    int gap = Math.round(density * 10);
+    LinearLayout root = new LinearLayout(ctx);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(gap, Math.round(density * 3), gap, 0);
+
+    TextView lead = new TextView(ctx);
+    lead.setText(
+        UiText.choose(
+            "两种方式任选：复制命令到任意终端执行，或直接点「打开终端」自动执行。",
+            "Two ways: copy the command into any terminal, or open the built-in terminal to run it."));
+    lead.setTextSize(13);
+    lead.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+    lead.setLineSpacing(gap / 5f, 1f);
+    root.addView(lead, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView commandView = new TextView(ctx);
+    commandView.setText(command);
+    commandView.setTextSize(13);
+    commandView.setTypeface(android.graphics.Typeface.MONOSPACE);
+    commandView.setTextColor(ctx.getColor(R.color.shell_text));
+    commandView.setTextIsSelectable(true);
+    commandView.setPadding(gap, gap, gap, gap);
+    commandView.setBackgroundResource(R.drawable.bg_data_stat);
+    LinearLayout.LayoutParams commandParams = new LinearLayout.LayoutParams(-1, -2);
+    commandParams.topMargin = Math.round(density * 5);
+    root.addView(commandView, commandParams);
+
+    LinearLayout copyRow = new LinearLayout(ctx);
+    copyRow.setOrientation(LinearLayout.HORIZONTAL);
+    copyRow.setGravity(Gravity.END);
+    copyRow.addView(
+        textAction(
+            UiText.choose("复制命令", "Copy command"),
+            UiText.choose("已复制命令", "Command copied"),
+            command),
+        new LinearLayout.LayoutParams(-2, -2));
+    LinearLayout.LayoutParams linkParams = new LinearLayout.LayoutParams(-2, -2);
+    linkParams.setMarginStart(gap);
+    copyRow.addView(
+        textAction(
+            UiText.choose("复制授权链接", "Copy link"),
+            UiText.choose("已复制链接", "Link copied"),
+            GhAuthCommands.BROWSER_URL),
+        linkParams);
+    root.addView(copyRow, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView steps = new TextView(ctx);
+    steps.setText(
+        UiText.choose(
+            "1. 终端显示一次性验证码。\n2. 用手机浏览器打开下方授权链接，输入验证码并授权 GitHub CLI。\n3. 回到本页，状态会自动刷新。",
+            "1. The terminal shows a one-time code.\n2. Open the authorization link below in your phone browser, enter the code and approve GitHub CLI.\n3. Come back here; the status refreshes automatically."));
+    steps.setTextSize(13);
+    steps.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+    steps.setLineSpacing(gap / 5f, 1f);
+    steps.setTextIsSelectable(true);
+    root.addView(steps, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView authLink = new TextView(ctx);
+    authLink.setText(GhAuthCommands.BROWSER_URL);
+    authLink.setTextSize(13);
+    authLink.setTypeface(android.graphics.Typeface.MONOSPACE);
+    authLink.setTextColor(ctx.getColor(R.color.shell_accent));
+    authLink.setTextIsSelectable(true);
+    authLink.setPadding(0, Math.round(density * 3), 0, 0);
+    root.addView(authLink, new LinearLayout.LayoutParams(-1, -2));
+
+    TextView notes = new TextView(ctx);
+    notes.setText(note);
+    notes.setTextSize(12);
+    notes.setTextColor(ctx.getColor(R.color.shell_text_muted));
+    notes.setLineSpacing(gap / 5f, 1f);
+    notes.setTextIsSelectable(true);
+    notes.setPadding(0, Math.round(density * 5), 0, 0);
+    root.addView(notes, new LinearLayout.LayoutParams(-1, -2));
+
+    if (tlsFailure) {
+      TextView warning = new TextView(ctx);
+      warning.setText(
+          UiText.choose(
+              "当前 gh 无法完成 TLS 校验（CA 路径失效），终端会显示真实错误；修复运行环境后再试。",
+              "gh cannot verify TLS right now (CA path is broken); the terminal will show the real error. Repair the runtime and retry."));
+      warning.setTextSize(12);
+      warning.setTextColor(ctx.getColor(R.color.shell_warn));
+      warning.setLineSpacing(gap / 5f, 1f);
+      warning.setTextIsSelectable(true);
+      warning.setPadding(0, Math.round(density * 3), 0, 0);
+      root.addView(warning, new LinearLayout.LayoutParams(-1, -2));
+    }
+    return root;
+  }
+
+  private TextView textAction(CharSequence label, String toastMessage, String value) {
+    var ctx = requireContext();
+    float density = getResources().getDisplayMetrics().density;
+    TextView action = new TextView(ctx);
+    action.setText(label);
+    action.setTextSize(13);
+    action.setTextColor(ctx.getColor(R.color.shell_accent));
+    action.setGravity(Gravity.CENTER);
+    action.setPadding(0, Math.round(density * 6), 0, Math.round(density * 6));
+    action.setBackgroundResource(R.drawable.bg_action_plain);
+    action.setOnClickListener(view -> copyLoginValue(toastMessage, value));
+    return action;
+  }
+
+  private void copyLoginValue(String toastMessage, String value) {
+    var clipboard =
+        (android.content.ClipboardManager)
+            requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+    if (clipboard == null) {
+      toast(UiText.choose("剪贴板不可用", "Clipboard unavailable"));
+      return;
+    }
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DSHA", value));
+    toast(toastMessage);
   }
 
   private void openTerminalForLogin(boolean refresh) {
@@ -401,7 +516,7 @@ public final class GitHubLoginFragment extends Fragment {
   private void openStatusTerminal() {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null || !current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     openTerminal(GhAuthCommands.statusGuestArgv(), UiText.text("GitHub 状态"));
@@ -419,7 +534,7 @@ public final class GitHubLoginFragment extends Fragment {
     GitHubLogin.Snapshot current = snapshot;
     if (current == null || !GhLoginState.canLogout(current.login)) return;
     if (!current.environmentReady) {
-      toast(UiText.text("运行环境未就绪，请先在「安装」页完成安装"));
+      toast(UiText.text("环境未就绪，请先安装"));
       return;
     }
     String message =
@@ -427,8 +542,7 @@ public final class GitHubLoginFragment extends Fragment {
             ? UiText.format(
                 "将从本机 hosts.yml 删除账号 %s 的登录。只影响本机，不会撤销 GitHub 上的授权；如需撤销，请到 GitHub 设置中操作。",
                 current.hosts.login)
-            : UiText.text(
-                "将从本机 hosts.yml 删除 GitHub 登录。只影响本机，不会撤销 GitHub 上的授权；如需撤销，请到 GitHub 设置中操作。");
+            : UiText.text("删除本机登录记录；不影响 GitHub 授权");
     new DshaDialogBuilder(requireContext())
         .setTitle(UiText.text("退出 GitHub 登录？"))
         .setMessage(message)
@@ -465,7 +579,7 @@ public final class GitHubLoginFragment extends Fragment {
   private void showLogoutFailure(GitHubLogin.LogoutResult result) {
     String message =
         result.problem == GitHubLogin.Problem.ENV_NOT_READY
-            ? UiText.text("运行环境未就绪，请先在「安装」页完成安装")
+            ? UiText.text("环境未就绪，请先安装")
             : result.detail == null || result.detail.isEmpty()
                 ? UiText.text("退出失败")
                 : UiText.format("退出失败：%s", result.detail);

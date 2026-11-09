@@ -128,21 +128,11 @@ final class RuntimeMaintenanceStarter {
    * 所以重试必须改走恢复，不能再次发起更新。这里不删除、不修改任何文件。
    */
   static boolean pendingTrial(Context context) {
-    // 维护页 / 面板每秒重绘会调用：结果缓存 2 秒，只省目录列举，不影响执行门禁（试运行自身仍会拒绝）。
-    long now = android.os.SystemClock.elapsedRealtime();
-    synchronized (RuntimeMaintenanceStarter.class) {
-      if (trialCheckedAt != 0 && now - trialCheckedAt < 2_000L) return trialPending;
-    }
-    boolean result = scanPendingTrial(context);
-    synchronized (RuntimeMaintenanceStarter.class) {
-      trialPending = result;
-      trialCheckedAt = now;
-    }
-    return result;
+    // 维护页每秒重绘会调用，但这里不做跨调用缓存：应急 DSH 的外部恢复完成后，页面下一次
+    // 重绘就必须反映真实的 trial 记录状态，不能先沿用恢复前的旧值再等缓存过期。
+    // 目录列举 + 少量 exists 的开销远小于让用户误以为仍要再恢复一次。
+    return scanPendingTrial(context);
   }
-
-  private static long trialCheckedAt;
-  private static boolean trialPending;
 
   private static boolean scanPendingTrial(Context context) {
     try {

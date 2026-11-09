@@ -32,7 +32,31 @@ export function phoneTaskEnvironment(execution) {
   return { DSH_PHONE_SESSION_ID: session.id, DSH_PHONE_TURN_ID: String(turn.data.turn),
     ...(completed ? { DSH_PHONE_COMPLETED_TURN_ID: String(completed.data.turn) } : {}) }
 }
-/** Uses the exact locked rc3 public business API. No private registry mutation. */
+/** The Host's own turn-boundary projection: O(1) and independent of the bounded page. */
+function projectedTurn(ctx, agent) {
+  if (!agent || typeof ctx.agents?.turnBoundaryOf !== 'function') return undefined
+  try {
+    const boundary = ctx.agents.turnBoundaryOf(agent.session)
+    return { turnId: boundary.lastTurn > 0 ? String(boundary.lastTurn) : '',
+      turnActive: boundary.openTurnStartSeq !== null }
+  } catch { return undefined }
+}
+/** The bounded page's own turn events; absent when the open turn started before the cut. */
+function pageTurn(events) {
+  const turn = events.findLast(event => event.type === 'turn/start')
+  const ended = turn !== undefined && events.some(event => event.type === 'turn/end'
+    && event.seq > turn.seq && event.data?.turn === turn.data?.turn)
+  return { turnId: turn ? String(turn.data.turn) : '', turnActive: turn !== undefined && !ended }
+}
+/** A long turn can outgrow the transcript page, so the Host projection names the current
+ * turn, and the page decides whether that exact turn already ended when it covers it. */
+function currentTurn(ctx, agent, events) {
+  const projected = projectedTurn(ctx, agent)
+  if (projected === undefined) return pageTurn(events)
+  const page = pageTurn(events)
+  return page.turnId === projected.turnId ? { turnId: projected.turnId, turnActive: page.turnActive } : projected
+}
+/** Uses the exact locked public business API. No private registry mutation. */
 export function sessionAdapter(ctx, instance = hostInstanceId, liveText = () => '', sessionError = () => false) {
   return async function call(method, args = {}, signal = AbortSignal.timeout(10000)) {
     if (args.hostInstanceId !== undefined && args.hostInstanceId !== instance)
@@ -55,19 +79,21 @@ export function sessionAdapter(ctx, instance = hostInstanceId, liveText = () => 
     }
     const sessionId = id(args.sessionId)
     if (method === 'sessions.status') {
-      const inspected = await controller.inspect(sessionId, signal)
-      if (inspected.meta.id !== sessionId) throw new Error('SESSION_ID_CHANGED')
-      const events = inspected.events
-      const turn = events.findLast(event => event.type === 'turn/start')
-      const turnActive = !!turn && !events.some(event => event.type === 'turn/end'
-        && event.seq > turn.seq && event.data?.turn === turn.data?.turn)
-      const agent = ctx.agents?.get(sessionId)
-      const queued = (agent?.inbox?.nextTurn?.length || 0) + (agent?.inbox?.nextStep?.length || 0)
+      // 0.2.2-rc.1 has no SessionController.inspect. One passive state read plus one
+      // bounded history page are the current public reads; neither activates a cold
+      // conversation. The message budget also covers hidden runtime/time context entries.
+      const [state, history] = await Promise.all([
+        controller.state({ sessionId }, signal),
+        controller.events({ address: { kind: 'session', sessionId }, maxMessages: 16 }, signal),
+      ])
+      const events = history.records.map(record => record.event)
+      const turn = currentTurn(ctx, ctx.agents?.get(sessionId), events)
+      const queued = state.queue?.length || 0
+      const running = state.running === true || queued > 0
       const messages = events.filter(visibleConversationMessage).slice(-8)
-      const running = agent?.status === 'running' || queued > 0
       const stream = running ? liveText(sessionId) : ''
-      return { sessionId, hostInstanceId: instance, running: agent?.status === 'running' || queued > 0,
-        turnId: turn ? String(turn.data.turn) : '', turnActive, taskId: sessionId,
+      return { sessionId, hostInstanceId: instance, running,
+        turnId: turn.turnId, turnActive: turn.turnActive, taskId: sessionId,
         messages: messages.map(event => ({ role: event.type === 'user/message' ? 'user' : 'assistant', text: textOf(event).slice(-3000) })),
         streamText: String(stream).slice(-4000),
         failed: !running && sessionError(sessionId),
@@ -88,8 +114,8 @@ export function sessionAdapter(ctx, instance = hostInstanceId, liveText = () => 
     if (method === 'sessions.cancel') {
       const agent = ctx.agents?.get(sessionId)
       if (!agent) {
-        // Inspect proves an existing cold conversation; it has no turn to cancel.
-        await controller.inspect(sessionId, signal)
+        // The passive state read proves an existing cold conversation; it has no turn to cancel.
+        await controller.state({ sessionId }, signal)
         return { accepted: true, running: false }
       }
       const lastTurn = agent.session.snapshotEvents().findLast(event => event.type === 'turn/start')

@@ -6,6 +6,7 @@ import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import com.deepseekharness.app.R;
 import com.deepseekharness.app.util.UiText;
+import com.deepseekharness.app.util.VirtualScreenDisplayPreset;
 import com.deepseekharness.app.util.VirtualScreenLifecycleState;
 import java.util.concurrent.*;
 import org.json.JSONObject;
@@ -36,6 +37,8 @@ public final class VirtualScreenActivity extends AppCompatActivity {
   private ScrollView scroll;
   private View expandedPanel;
   private View stage, stageCard, stageProgress, createGroup, toolGroup;
+  private View displaySpecRow;
+  private TextView displaySpecTitle, displaySpecSub;
   private TextView stageTitle, stageMessage;
   private ImageView stageIcon;
   private ImageButton floatButton;
@@ -168,6 +171,11 @@ public final class VirtualScreenActivity extends AppCompatActivity {
     stageProgress = findViewById(R.id.vscreen_stage_progress);
     createGroup = findViewById(R.id.vscreen_create_group);
     toolGroup = findViewById(R.id.vscreen_tool_group);
+    displaySpecRow = findViewById(R.id.vscreen_display_spec_row);
+    displaySpecTitle = findViewById(R.id.vscreen_display_spec_title);
+    displaySpecSub = findViewById(R.id.vscreen_display_spec_sub);
+    displaySpecTitle.setText(t("显示规格", "Display size"));
+    displaySpecRow.setOnClickListener(v -> chooseDisplayPreset());
 
     ((TextView) findViewById(R.id.vscreen_title)).setText(t("虚拟识屏", "Virtual screen"));
     ImageButton back = findViewById(R.id.vscreen_back);
@@ -392,10 +400,12 @@ public final class VirtualScreenActivity extends AppCompatActivity {
         next == ViewState.STARTING || next == ViewState.RUNNING && !framed
             ? View.VISIBLE
             : View.GONE);
-    createGroup.setVisibility(
-        next == ViewState.STOPPED || next == ViewState.STARTING ? View.VISIBLE : View.GONE);
+    boolean showCreate = next == ViewState.STOPPED || next == ViewState.STARTING;
+    createGroup.setVisibility(showCreate ? View.VISIBLE : View.GONE);
+    displaySpecRow.setVisibility(showCreate ? View.VISIBLE : View.GONE);
     toolGroup.setVisibility(next == ViewState.RUNNING ? View.VISIBLE : View.GONE);
     verifyClose.setVisibility(next == ViewState.CLEANUP ? View.VISIBLE : View.GONE);
+    renderDisplaySpec();
     boolean canCreate = !busy && next == ViewState.STOPPED && !"".equals(channelHint);
     createPortrait.setEnabled(canCreate);
     createLandscape.setEnabled(canCreate);
@@ -1109,6 +1119,65 @@ public final class VirtualScreenActivity extends AppCompatActivity {
     b.setTextColor(getColorStateList(R.color.button_text));
     b.setOnClickListener(v -> click.run());
     return b;
+  }
+
+  /** 显示规格行：摘要只来自白名单，界面不拼任意尺寸/dpi。 */
+  private void renderDisplaySpec() {
+    if (displaySpecSub == null) return;
+    displaySpecSub.setText(displayPresetLine(VirtualScreenDisplaySettings.preset(this)));
+  }
+
+  private String displayPresetLine(VirtualScreenDisplayPreset.Preset preset) {
+    String size =
+        preset.width
+            + "×"
+            + preset.height
+            + " @"
+            + preset.density
+            + " · "
+            + preset.logicalWidth()
+            + "×"
+            + preset.logicalHeight()
+            + " dp";
+    if (VirtualScreenDisplayPreset.DEFAULT_ID.equals(preset.id))
+      return t("默认 · ", "Default · ") + size;
+    return t("兼容基线（360 dp）· ", "Compatibility baseline (360 dp) · ") + size;
+  }
+
+  /**
+   * 选择显示规格：白名单单选，保存后只影响下一次创建或旋转重建；不会重建当前画面，也不改帧身份与输入门。
+   * 白名单外的规格（例如 1440×2560）需要先调整观察预算，因此不在这里提供。
+   */
+  private void chooseDisplayPreset() {
+    final java.util.List<VirtualScreenDisplayPreset.Preset> presets =
+        VirtualScreenDisplayPreset.whitelist();
+    VirtualScreenDisplayPreset.Preset current = VirtualScreenDisplaySettings.preset(this);
+    CharSequence[] items = new CharSequence[presets.size()];
+    int selected = 0;
+    for (int i = 0; i < presets.size(); i++) {
+      items[i] = displayPresetLine(presets.get(i));
+      if (presets.get(i).id.equals(current.id)) selected = i;
+    }
+    new com.deepseekharness.app.ui.DshaDialogBuilder(this)
+        .setTitle(t("虚拟屏显示规格", "Virtual screen display size"))
+        .setMessage(
+            t(
+                "默认规格保持不变。选择只影响之后创建或旋转重建的显示，当前运行中的画面不会改变尺寸。白名单外（含 1440×2560）需要先调整观察预算，暂不提供。",
+                "The default stays unchanged. The choice only applies to the next create or rotate; a running screen is not resized. Sizes outside the whitelist (including 1440×2560) need an observation-budget change first and are not offered."))
+        .setSingleChoiceItems(
+            items,
+            selected,
+            (dialog, which) -> {
+              dialog.dismiss();
+              VirtualScreenDisplaySettings.setPreset(this, presets.get(which).id);
+              renderDisplaySpec();
+              operationResult.setText(
+                  t(
+                      "显示规格已保存，下次创建或旋转生效",
+                      "Display size saved; it applies on the next create or rotate"));
+            })
+        .setNegativeButton(t("取消", "Cancel"), null)
+        .show();
   }
 
   /**

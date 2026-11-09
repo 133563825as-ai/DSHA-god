@@ -106,15 +106,16 @@ if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeSt
 - **覆盖安装后的残留进程**：App 已被系统结束、`/root/.dsha-web.pid` / `.dsha-web.identity` 可能缺失时，用会话记录里已保存的出生身份（`StoredWebSession.Record.proof`：boot、代次、实例、nonce、guest 与 launcher 的 PID + 出生时间 + 命令行）作为兜底证据。[`WebProofStop`](../app/src/main/java/com/deepseekharness/app/util/WebProofStop.java) 只在两次完整核验一致时先 SIGTERM，允许强制时再次复核后 SIGKILL；PID 复用、出生时间或命令行变化、记录不可读都**不发送任何信号**。非覆盖路径（当前实例、普通停止、试运行）下启动器仍不被结束（I9）。
 - **覆盖更新弃旧版（T91 / I10）**：覆盖更新后旧 proot 启动器可能先于 guest 存活，只结束 guest 无法解除维护屏障。只有已装 APK 身份与记录身份不同时，`WebLifecycleController.overwriteRetireCandidate` 才按记录准备候选；`WebProcessManager.prepareOverwriteRetire` 对 guest 与旧启动器各自连读两次出生身份，`WebProofStop.runRetiringLauncher` 在 guest 确认退出后才对旧启动器 SIGTERM → 短等待 → 复核 → SIGKILL。guest 未确认退出、启动器 PID 复用 / 属于他人 UID / 命令行或代次不符 / 环境不可读时都不发信号，维护页保留原环境并给出重试文案；用户确认的强制停止对话框会明确写出「放弃上一版 Web 并强制结束」。自动开始 / 闲时清理等自动路径仍不升级。
 - **自动路径不升级**：覆盖更新后的自动开始、闲时清理等仍走 `MaintenanceCoordinator.exclusive`（不传 `allowForceStop`）；未确认旧 Web 会话只拦自动开始（I4），只有用户手点维护才允许身份核验的强制结束（I9 / I10）。
-- **隔离试运行收尾（T91）**：proroot 启动器可能在试用 guest 已退出后晚退或残留（Android 16 实测），因此 `WebProcessManager.confirmTrackedTrialStopped` 只按本记录 guest 的退出证据（PID 退休 + 无本应用 Web）确认，不把启动器对象仍活当成试用失败；`RuntimeTrial` 只对本次持有的 `Process` 句柄做一次有界清理（超时 / 失败只写 `TRIAL_LAUNCHER_RETENTION` 诊断，不改变 guest 退出结论）。`TrialRecovery` 遇到 `launched` 但缺 `.dsha-web.pid` / `.stale` 的记录时，改为要求平台按该记录 id 推导的试运行 profile **确认无此进程**（两次一致出生身份、同 UID；仍存在 / 拒读 / 身份变化继续 fail-closed），不再无条件留下无法自愈的 `TRIAL_NO_PID_OR_BOUND_SESSION_EXIT_EVIDENCE`。
-- **半提交恢复与维护页出口（T91）**：trial 失败留下的 `files-committed / settings-committed` 半提交事务仍只能由 `EnvironmentMaintenance.recover()` 回切；恢复失败的原因现在同时写入任务状态与可导出的操作记录（`MAINTENANCE_TASK_START / MAINTENANCE_TASK_FAILED`），维护页必须能显示。外部完成恢复后，页面只要环境可运行、无维护进行 / 待恢复，就丢弃旧的失败快照（`RuntimeUpgradeState.clearStaleFailure`），回到“上一版运行时待更新”的标准状态并给出更新入口，而不是继续把 `TRIAL_PROCESS_UNCONFIRMED` 留在主位。应急 DSH、维护记录、导出可读副本与「进入受限主界面」在任何失败态都保持可点，不能只剩进度条。
+- **隔离试运行收尾（T91 / T103）**：proroot 启动器可能在试用 guest 已退出后晚退或残留（Android 16 实测），因此 `WebProcessManager.confirmTrackedTrialStopped` 只按本记录 guest 的退出证据（PID 退休 + 无本应用 Web）确认，不把启动器对象仍活当成试用失败；`RuntimeTrial` 只对本次持有的 `Process` 句柄做一次有界清理（超时 / 失败只写 `TRIAL_LAUNCHER_RETENTION` 诊断，不改变 guest 退出结论）。`TrialRecovery` 遇到 `launched` 但缺 `.dsha-web.pid` / `.stale` 的记录时，改为要求平台按该记录 id 推导的试运行 profile **确认无此进程**（两次一致出生身份、同 UID；仍存在 / 拒读 / 身份变化继续 fail-closed），不再无条件留下无法自愈的 `TRIAL_NO_PID_OR_BOUND_SESSION_EXIT_EVIDENCE`。
+- **优雅停止未确认不再立即失败（T103）**：试运行收尾先按记录优雅停止（SIGTERM + 3 秒窗口）；未确认时 `TrialGuestCleanup` 不立即抛错，而是有界等待本次持有的启动器（3 秒），再由 `WebProcessManager.forceStopTrialGuest` 按本轮记录、唯一 profile 与保存的出生身份连读复核后只对本轮 guest 发 SIGKILL，然后重跑一次记录停止与全局无 Web 核验。强制路径缺出生身份、PID 记录对不上、两次观察变化或强制后仍非空时才保留现场并报 `TRIAL_PROCESS_UNCONFIRMED`；脱敏详情同时写入可导出操作记录与记录目录（成功试用后的收尾失败写 `failure.json`，恢复路径写 `recovery-stop.json`，已有失败详情不覆盖）。强杀不扫描 `/proc`、不按 PID / 名称 / 进程组结束任何其它进程，也不作用于主 Web；`TrialRecovery` 走同一顺序，因此一次 `recover-maintenance` 就能关闭此前停在 guest 未退的记录，不再需要第二次恢复。
+- **半提交恢复与维护页出口（T91 / T103）**：trial 失败留下的 `files-committed / settings-committed` 半提交事务仍只能由 `EnvironmentMaintenance.recover()` 回切；恢复失败的原因现在同时写入任务状态与可导出的操作记录（`MAINTENANCE_TASK_START / MAINTENANCE_TASK_FAILED`），维护页必须能显示。回切后已装运行时不是当前 APK 候选，启动仍必须走一次更新（I5，这是设计）；但页面**不能**再把旧的 `TRIAL_PROCESS_UNCONFIRMED` 留在主位或继续写“中断维护”。外部完成恢复后，页面只要环境可运行、无维护进行 / 待恢复，就丢弃旧的失败快照（`RuntimeUpgradeState.clearStaleFailure`），回到“上一版运行时待更新”的标准状态并给出更新入口。`RuntimeMaintenanceStarter.pendingTrial` 不再跨调用缓存，维护页 `onResume` 还会主动重扫一次宿主维护记录，避免从应急 DSH 返回后沿用恢复前的 UI 缓存。应急 DSH、维护记录、导出可读副本与「进入受限主界面」在任何失败态都保持可点，不能只剩进度条。
 - **三步绕道作废**：维护页失败文案不再要求“先去受限主界面停止”。主界面 → 停止仍是既有的手动停止 / 强制停止入口，但不再是完成运行环境维护的必经步骤。
 
 ## 内置插件对宿主 UI 的依赖禁令
 
 ### 事故案例：`dsh-web-mobile` 侧栏齿轮
 
-- 上游 3.2.2 的 `drawer-quick-settings-chip-guard` 用 `:has(> button[data-phase], > [role="status"])` 判断连接指示灯是否在场，再决定 footer 齿轮要不要让位。这使插件渲染**依赖宿主某个子节点存在**。
+- 上游（3.2.2 起，3.3.1 仍保留）的 `drawer-quick-settings-chip-guard` 用 `:has(> button[data-phase], > [role="status"])` 判断连接指示灯是否在场，再决定 footer 齿轮要不要让位。这使插件渲染**依赖宿主某个子节点存在**。
 - build324 的受管补丁 `DSHA_FIRST_CONNECT_SILENT_V1` 让首次进入不再渲染 `ConnectionIndicator`。于是该 `:has()` 判据永远“放得下”，但行的真实宽度没人核对；插件渲染链失效，用户看到侧栏 footer 重复叠加，禁用内置插件后恢复正常。
 - 修复（T61，`DSHA_GEAR_FIT_V1`）：
   - 导出纯判据 `dshaGearFits(rowWidth, usedWidth)`：`行内容宽度 − 其它可见孩子宽度 ≥ 40px` 才显示齿轮；布局未就绪（宽度 ≤ 0 / 非有限数）按“放不下”处理，保守保留账户菜单入口；
@@ -130,7 +131,7 @@ if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeSt
 3. 尺寸不可读、布局未就绪时选择**保守降级**（少显示一个入口），不要选择“假设存在、直接渲染”。
 4. 每个类似依赖都要有可在 Node 里跑的契约测试，用真实产物 + 最小 DOM，而不是只测手写函数。
 5. 宿主 UI 变更（例如新增/删除连接指示灯、更新条）必须同步检查所有内置插件补丁的 CSS 选择器与 DOM 假设。
-6. **`dsh-web-mobile` 当前默认禁用（build327 起），且覆盖更新也会再次收敛为禁用**：原因（大量代码不适配 build324 起的新页面与新逻辑、已发生白屏/侧栏重复）与范围见[插件页](plugins.md)。只有当前安装内从原生插件页显式启用才生效；恢复默认启用前必须满足那里的硬门槛：竖屏适配补齐并通过真机覆盖升级验收、build325 齿轮契约与 build324 白屏路径回归全绿；只凭 CI 或单测通过不得恢复。**恢复到默认启用的提交必须引用该判据并附真机证据。**
+6. **`dsh-web-mobile` 从 build336 起恢复默认启用**：上游 3.3.1（4e71eb67）已适配宿主 0.2.2，插件字节、锁与补丁取舍见[插件页](plugins.md)和 [build336 记录](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md)；build327 的默认禁用与事故原因保留在 build327 记录。恢复引用了原硬门槛：build325 齿轮契约与 build324 白屏路径回归全绿，`generate-builtin-plugins` / `prepare-runtime-descriptor` 与发布前门禁已重跑；**真机覆盖升级验收（不白屏、侧栏不重复、footer 设置入口不重复、升级后默认启用）仍须在 build336 发布前补写回执**，只凭 CI 或单测通过不得宣称真机通过。
 
 ## 发布前必跑清单
 
@@ -243,6 +244,7 @@ dsha-gradle :app:testStandardDebugUnitTest --tests '*WebProofStopTest'         #
 | `RuntimeUpgradeState` 纯逻辑 | `app/src/test/java/com/deepseekharness/app/util/RuntimeUpgradeStateTest.java`（T60 / build326） |
 | 维护前自行停止与强制升级顺序 | `app/src/test/java/com/deepseekharness/app/core/MaintenancePreStopTest.java`（T67 / build327） |
 | 覆盖更新弃旧版身份核验与 trial 收尾 | `app/src/test/java/com/deepseekharness/app/runtime/WebOverwriteRetireTest.java`（T91）、`TrialRecoveryTest`（缺 PID 证据的收尾）、`ManagedRuntimeTransactionTest`（半提交回切） |
+| 试运行收尾顺序与有界强杀 | `app/src/test/java/com/deepseekharness/app/runtime/TrialGuestCleanupTest.java`、`TrialRecoveryTest`（强制后一次恢复关闭 / 仍非空留 `recovery-stop.json`）、`WebRecordedStopTest`（强制路径必须先复核出生身份）（T103） |
 | 维护页旧失败快照清理 | `app/src/test/java/com/deepseekharness/app/util/RuntimeUpgradeStateTest.java`（T91） |
 | 残留 Web 按出生身份核验回收（PID 复用 / 记录缺失不杀） | `app/src/test/java/com/deepseekharness/app/util/WebProofStopTest.java`（T67 / build327）、`WebSessionProofTest` |
 | 停止算法与强制结束身份门禁 | `app/src/test/java/com/deepseekharness/app/runtime/WebRecordedStopTest.java`、`app/src/test/java/com/deepseekharness/app/util/WebForceStopTest.java`、`app/src/test/java/com/deepseekharness/app/core/WebForceStopGateTest.java` |

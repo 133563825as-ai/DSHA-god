@@ -224,6 +224,45 @@ public final class PluginRuntimeProjectionTest {
   }
 
   @Test
+  public void canonicalCardAcceptsLegacyShimEvidenceRegardlessOfVersion() throws Exception {
+    Item card =
+        new Item(
+            new JSONObject()
+                .put("name", PluginIdentity.AUTO_REVIEW_CANONICAL)
+                .put("version", "0.2.2-rc.1")
+                .put("enabled", true)
+                .put("available", true)
+                .put("loadState", "loaded"));
+    Item value =
+        project(
+                List.of(card),
+                snapshot(row(PluginIdentity.AUTO_REVIEW_ALIAS, "loaded").put("version", "0.1.0")))
+            .get(0);
+    assertEquals("loaded", value.runtimeState);
+    assertFalse(value.runtimeStale);
+    assertFalse(value.restartRequired);
+  }
+
+  @Test
+  public void canonicalVersionMismatchWithoutLegacyShimStillRequiresRestart() throws Exception {
+    Item card =
+        new Item(
+            new JSONObject()
+                .put("name", PluginIdentity.AUTO_REVIEW_CANONICAL)
+                .put("version", "0.2.2-rc.1")
+                .put("enabled", true)
+                .put("available", true));
+    Item value =
+        project(
+                List.of(card),
+                snapshot(
+                    row(PluginIdentity.AUTO_REVIEW_CANONICAL, "loaded").put("version", "0.2.1")))
+            .get(0);
+    assertEquals("unknown", value.runtimeState);
+    assertTrue(value.restartRequired);
+  }
+
+  @Test
   public void dynamicAndInstalledNamesDoNotCollideAndUnavailableListIsNotEmptyProof()
       throws Exception {
     JSONObject active = snapshot(row("sample", "loaded"));

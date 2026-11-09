@@ -21,9 +21,11 @@ import com.deepseekharness.app.util.UiText;
 
 public final class DiagnosticActivity extends AppCompatActivity {
   private static final String STATE_EXPANDED = "diagnostic_ok_expanded";
+  private static final String STATE_TOOLS_TAB = "diagnostic_tools_tab";
   private DiagnosticRepository repository;
   private com.deepseekharness.app.core.ErrorLogRepository logs;
   private DiagnosticResultList resultList;
+  private CardTabs toolsTabs;
   private PendingLogExport pendingLogExport;
 
   /** 本页输入的补充说明：仅内存，不持久化，不随页面重建恢复。 */
@@ -31,6 +33,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
 
   /** 本页是否发起过导出；用于在页面上显示保存结果（包括失败）。 */
   private boolean exportTouched;
+
+  /** 状态卡上一轮图标的 drawable id；-1 表示尚未渲染，用于只给真正的档位变化做高亮。 */
+  private int lastDiagnosticIcon = -1;
 
   private record PendingLogExport(boolean include, String note) {}
 
@@ -83,6 +88,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
     setContentView(R.layout.activity_diagnostics);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
+    bindToolTabs(saved);
     repository = new ViewModelProvider(this).get(DiagnosticRepository.class);
     logs = new ViewModelProvider(this).get(com.deepseekharness.app.core.ErrorLogRepository.class);
     resultList =
@@ -142,6 +149,31 @@ public final class DiagnosticActivity extends AppCompatActivity {
   protected void onSaveInstanceState(Bundle out) {
     super.onSaveInstanceState(out);
     if (resultList != null) out.putBoolean(STATE_EXPANDED, resultList.expanded());
+    if (toolsTabs != null) out.putString(STATE_TOOLS_TAB, toolsTabs.selectedKey());
+  }
+
+  /**
+   * F3：诊断页工具卡内的页签。「启动与恢复」放启动记录与故障处理，「网络与插件」放网络健康、
+   * 修复网络工具与插件管理；未选中的面板 GONE，读屏不会读到隐藏内容。
+   */
+  private void bindToolTabs(Bundle saved) {
+    android.widget.LinearLayout tools = findViewById(R.id.diagnostic_tools);
+    View startup = findViewById(R.id.diagnostic_tools_startup);
+    View network = findViewById(R.id.diagnostic_tools_network);
+    if (tools == null || startup == null || network == null) return;
+    toolsTabs =
+        CardTabs.bind(
+            tools,
+            java.util.List.of(
+                new CardTabs.Tab(
+                    "startup",
+                    com.deepseekharness.app.util.UiText.choose("启动与恢复", "Startup and recovery"),
+                    startup),
+                new CardTabs.Tab(
+                    "network",
+                    com.deepseekharness.app.util.UiText.choose("网络与插件", "Network and plugins"),
+                    network)),
+            saved == null ? null : saved.getString(STATE_TOOLS_TAB));
   }
 
   // ---------- 状态卡：图标 + 一句结论 + 唯一主按钮 ----------
@@ -167,57 +199,69 @@ public final class DiagnosticActivity extends AppCompatActivity {
     int icon = R.drawable.ic_onb_info,
         color = R.color.shell_text_muted,
         soft = R.color.shell_raised;
+    String headlineText = headline.getText().toString();
+    String statusText = status.getText().toString();
     switch (tone) {
       case RUNNING -> {
-        headline.setText(UiText.choose("正在检查", "Checking"));
-        status.setText(UiText.text("正在检查环境…"));
+        headlineText = UiText.choose("正在检查", "Checking");
+        statusText = UiText.text("正在检查环境…");
         icon = R.drawable.ic_recovery_refresh;
         color = R.color.shell_accent;
         soft = R.color.shell_accent_soft;
       }
       case GOOD -> {
-        headline.setText(UiText.choose("环境正常", "Everything looks fine"));
-        status.setText(UiText.format("%d 项检查全部通过", healths.size()));
+        headlineText = UiText.choose("环境正常", "Everything looks fine");
+        statusText = UiText.format("%d 项检查全部通过", healths.size());
         icon = R.drawable.ic_onb_check;
         color = R.color.shell_good;
         soft = R.color.shell_good_soft;
       }
       case ATTENTION -> {
-        headline.setText(UiText.format("%d 项需要处理", attention));
-        status.setText(
-            UiText.choose("问题已排在结果顶部，点开查看原因", "Issues are listed first. Open one for details."));
+        headlineText = UiText.format("%d 项需要处理", attention);
+        statusText =
+            UiText.choose("问题已排在结果顶部，点开查看原因", "Issues are listed first. Open one for details.");
         icon = R.drawable.ic_onb_alert;
         color = R.color.shell_warn;
         soft = R.color.shell_warn_soft;
       }
       case UNVERIFIED -> {
-        headline.setText(UiText.format("%d 项未核验", unverified));
-        status.setText(
+        headlineText = UiText.format("%d 项未核验", unverified);
+        statusText =
             UiText.choose(
                 "未核验不代表故障，通常是相关服务未运行",
-                "Unverified is not a failure; the related service is usually not running"));
+                "Unverified is not a failure; the related service is usually not running");
       }
       case FAILED -> {
-        headline.setText(UiText.choose("检查未完成", "Check incomplete"));
-        status.setText(
+        headlineText = UiText.choose("检查未完成", "Check incomplete");
+        statusText =
             UiText.choose(
                 "请打开失败卡片查看原因，也可复制或导出脱敏报告。",
-                "Open the failure card for details, or copy or export the redacted report."));
+                "Open the failure card for details, or copy or export the redacted report.");
         icon = R.drawable.ic_onb_x;
         color = R.color.shell_bad;
         soft = R.color.shell_bad_soft;
       }
       case IDLE -> {
-        headline.setText(getString(R.string.diag248_idle_title));
-        status.setText(getString(R.string.diag248_idle_sub));
+        headlineText = getString(R.string.diag248_idle_title);
+        statusText = getString(R.string.diag248_idle_sub);
       }
     }
+    // 结论、状态、按钮标签交叉淡入；图标/色块在档位变化时高亮一次（审计 F-02）。
+    UiMotion.crossFadeText(headline, headlineText);
+    UiMotion.crossFadeText(status, statusText);
+    boolean iconChanged = lastDiagnosticIcon != icon;
+    lastDiagnosticIcon = icon;
     badge.setImageResource(icon);
     badge.setImageTintList(android.content.res.ColorStateList.valueOf(getColor(color)));
     badge.setBackgroundTintList(android.content.res.ColorStateList.valueOf(getColor(soft)));
-    findViewById(R.id.diagnostic_progress)
-        .setVisibility(tone == DiagnosticSummary.Tone.RUNNING ? View.VISIBLE : View.GONE);
-    action.setText(
+    if (iconChanged) UiMotion.flash(badge);
+    View progress = findViewById(R.id.diagnostic_progress);
+    boolean showProgress = tone == DiagnosticSummary.Tone.RUNNING;
+    boolean progressWasHidden = progress.getVisibility() != View.VISIBLE;
+    progress.setVisibility(showProgress ? View.VISIBLE : View.GONE);
+    if (showProgress && progressWasHidden) UiMotion.reveal(progress);
+    UiMotion.crossFadeText(
+        action,
         tone == DiagnosticSummary.Tone.IDLE
             ? getString(R.string.diag248_start)
             : UiText.text("重新检查"));
@@ -246,10 +290,14 @@ public final class DiagnosticActivity extends AppCompatActivity {
     TextView status = findViewById(R.id.diagnostic_logs_status);
     // 初始说明已移入导出弹层；页面上只显示进行中、本次结果或上次保存的文件。
     boolean show = state != null && (state.busy || state.uri != null || exportTouched);
+    boolean wasHidden = status.getVisibility() != View.VISIBLE;
     status.setVisibility(show ? View.VISIBLE : View.GONE);
     findViewById(R.id.diagnostic_logs_divider).setVisibility(show ? View.VISIBLE : View.GONE);
-    if (state != null)
-      status.setText(com.deepseekharness.app.util.UiStateText.render(state.message));
+    if (state != null) {
+      UiMotion.crossFadeText(
+          status, com.deepseekharness.app.util.UiStateText.render(state.message));
+      if (show && wasHidden) UiMotion.reveal(status);
+    }
     status.setEnabled(!logsBusy && state != null && state.uri != null);
   }
 
@@ -296,9 +344,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
               .setDataAndType(uri, logs.savedMimeType())
               .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION));
     } catch (RuntimeException error) {
-      Toast.makeText(
-              this, UiText.text("无法打开日志，可在文件管理器的 Download/DSHA 中查看，或重新下载"), Toast.LENGTH_LONG)
-          .show();
+      Toast.makeText(this, UiText.text("无法打开日志，请用文件管理器查看"), Toast.LENGTH_LONG).show();
     }
   }
 
@@ -480,22 +526,24 @@ public final class DiagnosticActivity extends AppCompatActivity {
     }
     pendingLogExport = new PendingLogExport(include, include ? selected : "");
     try {
-      logExporter.launch(com.deepseekharness.app.core.ErrorLogRepository.filename());
+      RecentsPrivacyGuard.launch(
+          logExporter, com.deepseekharness.app.core.ErrorLogRepository.filename());
     } catch (RuntimeException error) {
       pendingLogExport = null;
-      Toast.makeText(this, UiText.text("无法打开文件管理器，请尝试下载到默认目录"), Toast.LENGTH_LONG).show();
+      Toast.makeText(this, UiText.text("无法打开文件管理器，请下载到默认目录"), Toast.LENGTH_LONG).show();
     }
   }
 
   private void exportText() {
     try {
-      exporter.launch(
+      RecentsPrivacyGuard.launch(
+          exporter,
           "DSHA-diagnostic-"
               + new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT)
                   .format(new java.util.Date())
               + ".txt");
     } catch (RuntimeException error) {
-      Toast.makeText(this, UiText.text("无法打开保存位置，请使用复制报告或检查系统文件管理器"), Toast.LENGTH_LONG).show();
+      Toast.makeText(this, UiText.text("无法打开保存位置，请复制报告"), Toast.LENGTH_LONG).show();
     }
   }
 

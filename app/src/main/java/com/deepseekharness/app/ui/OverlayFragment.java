@@ -236,7 +236,7 @@ public final class OverlayFragment extends Fragment {
     } else {
       permission.setText(
           UiText.choose(
-              "系统悬浮条预览已显示，调整下面的选项会立即刷新。",
+              "预览已显示，改动即时生效",
               "System overlay preview is shown; changes below update it immediately."));
     }
   }

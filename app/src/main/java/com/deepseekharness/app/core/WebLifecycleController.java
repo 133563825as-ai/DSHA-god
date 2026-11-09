@@ -217,7 +217,9 @@ final class WebLifecycleController {
                     public WebProcessManager.SessionObservation observe(
                         com.deepseekharness.app.runtime.StoredWebSession.Record r)
                         throws Exception {
-                      return webProc.observeSession(r.proof());
+                      // 严格 PID / 身份文件缺失或被退休时，用记录里的完整出生身份复核；
+                      // 只有内核退出证据才能作为 EXITED，证明版读不到仍是 UNKNOWN。
+                      return webProc.observeRecoveredSession(r.proof());
                     }
 
                     public boolean launcherExited(
@@ -281,8 +283,11 @@ final class WebLifecycleController {
                             run.generation,
                             com.deepseekharness.app.util.UiText.choose(
                                 "已重新接入原 Web 实例", "Reconnected to the existing Web instance"));
-                        return true;
                       }
+                      // 证明版恢复可能在旧身份文件缺失时接回；按已核验的出生身份补写证据，
+                      // 让之后的严格停止 / 复核守卫仍能核验同一实例。失败只影响诊断。
+                      webProc.attestRecoveredSession(r.proof());
+                      return true;
                     }
                   });
           var result = outcome.result();
@@ -298,7 +303,21 @@ final class WebLifecycleController {
           DiagnosticLog.record(
               ctx,
               "WEB_SESSION_RESTORE",
-              result.name() + ":" + outcome.reason() + ":" + outcome.attempts());
+              result.name()
+                  + ":"
+                  + outcome.reason()
+                  + ":"
+                  + outcome.attempts()
+                  + ":"
+                  + outcome.stage());
+          if (result == WebSessionRecovery.Result.UNKNOWN) {
+            // 终局未确认必须可导出：阶段与稳定原因是用户点「查看诊断」时唯一可靠的现场。
+            DiagnosticLog.record(
+                ctx,
+                "WEB_SESSION_RESTORE_FAILURE",
+                com.deepseekharness.app.util.WebSessionDiagnostics.unresolved(
+                    outcome.stage(), outcome.reason(), outcome.attempts()));
+          }
           if (result == WebSessionRecovery.Result.RESTORED) {
             WebRun run = state.currentRun;
             try {
@@ -483,7 +502,9 @@ final class WebLifecycleController {
               }
 
               public WebProcessManager.SessionObservation observe() {
-                return webProc.observeSession(record.proof());
+                // 与启动恢复共用同一份证据：严格文件核验为 UNKNOWN 时按出生身份复核，
+                // 避免证明版接回后第一次前后台复核又把实例判成未确认。
+                return webProc.observeRecoveredSession(record.proof());
               }
 
               public com.deepseekharness.app.util.DshAuthSession.Result authenticate() {

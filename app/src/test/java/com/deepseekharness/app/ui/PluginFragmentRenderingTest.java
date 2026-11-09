@@ -180,8 +180,10 @@ public final class PluginFragmentRenderingTest {
                 .put("deletable", true)
                 .put("metadataError", "PLUGIN_METADATA_UNREADABLE"));
     mount(state(catalog(List.of(damaged)), List.of(), false, "", -1));
-    assertTrue(text(rowAt(1).findViewById(R.id.pluginDesc)).contains("metadata cannot be read"));
-    assertTrue(rowStatus(1).contains("Plugin metadata unavailable"));
+    assertTrue(text(rowAt(1).findViewById(R.id.pluginDesc)).contains("Metadata read failed"));
+    assertTrue(
+        String.valueOf(rowAt(1).findViewById(R.id.pluginStatus).getContentDescription())
+            .contains("Plugin metadata unavailable"));
     assertEquals(View.VISIBLE, rowAt(1).findViewById(R.id.pluginDelete).getVisibility());
   }
 
@@ -204,7 +206,7 @@ public final class PluginFragmentRenderingTest {
   public void runtimeEvidenceRefreshKeepsRowsAndDistinguishesHistoryFromCurrent() throws Exception {
     var alpha = item("alpha").withRuntime("loaded", 1);
     mount(state(catalog(List.of(alpha, item("beta"))), List.of(), false, "", -1));
-    assertTrue(text(rowAt(1).findViewById(R.id.pluginRuntime)).contains("Current Web: loaded"));
+    assertEquals("Loaded", text(rowAt(1).findViewById(R.id.pluginRuntime)));
     publish(
         state(
             catalog(List.of(alpha.withRuntime("loaded", 1, true), item("beta"))),
@@ -212,9 +214,10 @@ public final class PluginFragmentRenderingTest {
             false,
             "",
             -1));
-    String stale = text(rowAt(1).findViewById(R.id.pluginRuntime));
-    assertTrue(stale.contains("awaiting verification; last state: loaded"));
-    assertFalse(stale.contains("Current Web: loaded"));
+    assertEquals("Unverified", text(rowAt(1).findViewById(R.id.pluginRuntime)));
+    String staleDetail =
+        String.valueOf(rowAt(1).findViewById(R.id.pluginRuntime).getContentDescription());
+    assertTrue(staleDetail.contains("awaiting verification; last state: loaded"));
     for (String runtime : List.of("pending", "failed", "loaded")) {
       publish(
           state(
@@ -223,12 +226,9 @@ public final class PluginFragmentRenderingTest {
               false,
               "",
               -1));
-      assertTrue(
-          text(rowAt(1).findViewById(R.id.pluginRuntime))
-              .contains(
-                  runtime.equals("pending")
-                      ? "waiting for services"
-                      : runtime.equals("failed") ? "load failed" : "Current Web: loaded"));
+      assertEquals(
+          runtime.equals("pending") ? "Waiting" : runtime.equals("failed") ? "Failed" : "Loaded",
+          text(rowAt(1).findViewById(R.id.pluginRuntime)));
       assertEquals(List.of("alpha", "beta"), renderedNames());
     }
     var historical =
@@ -240,10 +240,133 @@ public final class PluginFragmentRenderingTest {
                 .put("version", "1.0")
                 .put("loadState", "loaded"));
     publish(state(catalog(List.of(historical)), List.of(), false, "", -1));
-    String history = text(rowAt(1).findViewById(R.id.pluginRuntime));
+    assertEquals("Unverified", text(rowAt(1).findViewById(R.id.pluginRuntime)));
+    String history =
+        String.valueOf(rowAt(1).findViewById(R.id.pluginRuntime).getContentDescription());
     assertTrue(history.contains("Current Web: load unconfirmed"));
     assertTrue(history.contains("Last activation record: loaded"));
-    assertFalse(history.contains("Current Web: loaded"));
+  }
+
+  @Test
+  public void badgesSeparateSourceVersionConfigAndRuntimeTones() throws Exception {
+    var loaded =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "a-loaded")
+                .put("available", true)
+                .put("enabled", true)
+                .put("runtimeProvided", true)
+                .put("version", "0.2.2-rc.1")
+                .put("runtimeState", "loaded")
+                .put("runtimeStale", false));
+    var disabled =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "b-disabled")
+                .put("available", true)
+                .put("version", "1.0")
+                .put("runtimeState", "stopped")
+                .put("runtimeStale", false));
+    var unconfirmed =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "c-unconfirmed")
+                .put("available", true)
+                .put("enabled", true)
+                .put("version", "1.0")
+                .put("runtimeState", "unknown"));
+    mount(state(catalog(List.of(loaded, disabled, unconfirmed)), List.of(), false, "", -1));
+
+    View loadedRow = rowAt(1);
+    assertBadge(
+        loadedRow,
+        R.id.pluginBadge,
+        "Provided by DSH",
+        R.color.shell_text_secondary,
+        page.requireContext().getColor(R.color.shell_raised));
+    assertBadge(
+        loadedRow,
+        R.id.pluginVersion,
+        "0.2.2-rc.1",
+        R.color.shell_text_secondary,
+        page.requireContext().getColor(R.color.shell_raised));
+    assertBadge(
+        loadedRow, R.id.pluginStatus, "Enabled", R.color.shell_good, badgeFill(R.color.shell_good));
+    String loadedRuntime = text(loadedRow.findViewById(R.id.pluginRuntime));
+    assertEquals("Loaded", loadedRuntime);
+    assertBadge(
+        loadedRow,
+        R.id.pluginRuntime,
+        loadedRuntime,
+        R.color.shell_good,
+        badgeFill(R.color.shell_good));
+
+    View disabledRow = rowAt(2);
+    assertBadge(
+        disabledRow,
+        R.id.pluginBadge,
+        "Third-party",
+        R.color.shell_text_secondary,
+        page.requireContext().getColor(R.color.shell_raised));
+    assertBadge(
+        disabledRow,
+        R.id.pluginStatus,
+        "Disabled",
+        R.color.shell_text_secondary,
+        page.requireContext().getColor(R.color.shell_raised));
+    String unloadedRuntime = text(disabledRow.findViewById(R.id.pluginRuntime));
+    assertEquals("Not loaded", unloadedRuntime);
+    assertBadge(
+        disabledRow,
+        R.id.pluginRuntime,
+        unloadedRuntime,
+        R.color.shell_text_secondary,
+        page.requireContext().getColor(R.color.shell_raised));
+
+    View unconfirmedRow = rowAt(3);
+    assertBadge(
+        unconfirmedRow,
+        R.id.pluginStatus,
+        "Enabled",
+        R.color.shell_good,
+        badgeFill(R.color.shell_good));
+    String unconfirmedRuntime = text(unconfirmedRow.findViewById(R.id.pluginRuntime));
+    assertEquals("Unverified", unconfirmedRuntime);
+    assertBadge(
+        unconfirmedRow,
+        R.id.pluginRuntime,
+        unconfirmedRuntime,
+        R.color.shell_warn,
+        badgeFill(R.color.shell_warn));
+  }
+
+  @Test
+  public void restartRequirementRendersWarningChipBesidesTheFourBadges() throws Exception {
+    var pending =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "restart-plugin")
+                .put("available", true)
+                .put("enabled", true)
+                .put("version", "1.0")
+                .put("runtimeState", "loaded")
+                .put("runtimeStale", false)
+                .put("restartRequired", true));
+    mount(state(catalog(List.of(pending)), List.of(), false, "", -1));
+    View row = rowAt(1);
+    for (int id :
+        new int[] {R.id.pluginBadge, R.id.pluginVersion, R.id.pluginStatus, R.id.pluginRuntime})
+      assertEquals(View.VISIBLE, row.findViewById(id).getVisibility());
+
+    TextView chipText = row.findViewById(R.id.pluginChipText);
+    assertNotNull("重启待办必须渲染为警示胶囊", chipText);
+    assertEquals("Restart Web to apply.", text(chipText));
+    assertEquals(View.VISIBLE, row.findViewById(R.id.pluginNotes).getVisibility());
+    assertEquals(
+        page.requireContext().getColor(R.color.shell_warn), chipText.getCurrentTextColor());
+    View chip = (View) chipText.getParent();
+    assertNotNull(chip.getBackgroundTintList());
+    assertEquals(badgeFill(R.color.shell_warn), chip.getBackgroundTintList().getDefaultColor());
   }
 
   @Test
@@ -698,13 +821,36 @@ public final class PluginFragmentRenderingTest {
     AlertDialog dialog = (AlertDialog) ShadowDialog.getLatestDialog();
     assertNotNull(dialog);
     assertTrue(dialog.isShowing());
-    var choices = dialog.getListView();
-    View choice = choices.getAdapter().getView(mode.ordinal(), null, choices);
-    assertTrue(
-        choices.performItemClick(
-            choice, mode.ordinal(), choices.getAdapter().getItemId(mode.ordinal())));
+    // G1：排序入口改为底部抽屉，按文案点对应行（不再是单选 ListView）。
+    int[] labels = {
+      R.string.plugin_sort_az,
+      R.string.plugin_sort_za,
+      R.string.plugin_sort_enabled,
+      R.string.plugin_sort_updates
+    };
+    View title =
+        findText(
+            dialog.getWindow().getDecorView(),
+            page.requireContext().getString(labels[mode.ordinal()]));
+    assertNotNull("排序抽屉必须包含选项：" + mode, title);
+    // 文案在行内层叠容器里；点为整行（可点祖先）才是抽屉的选择动作。
+    View row = title;
+    while (row != null && !row.isClickable()) row = (View) row.getParent();
+    assertNotNull(row);
+    assertTrue(row.performClick());
     layout();
     assertFalse(dialog.isShowing());
+  }
+
+  private static View findText(View view, String expected) {
+    if (view instanceof TextView text && expected.contentEquals(text.getText())) return view;
+    if (view instanceof android.view.ViewGroup group) {
+      for (int index = 0; index < group.getChildCount(); index++) {
+        View found = findText(group.getChildAt(index), expected);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 
   private static String text(View view) {
@@ -717,6 +863,22 @@ public final class PluginFragmentRenderingTest {
     return text(row.findViewById(R.id.pluginStatus))
         + "\n"
         + text(row.findViewById(R.id.pluginRuntime));
+  }
+
+  /** 与生产一致的胶囊底色：同一语义色 18% 填充（中性用 raised）。 */
+  private int badgeFill(int toneColor) {
+    return (page.requireContext().getColor(toneColor) & 0x00FFFFFF) | (0x2E << 24);
+  }
+
+  /** 徽章必须可见、文字完整、文字色与底色都取自声明的 shell_* 语义 token。 */
+  private void assertBadge(View row, int id, String expectedText, int textColor, int background) {
+    TextView badge = row.findViewById(id);
+    assertEquals(expectedText, text(badge));
+    assertEquals(View.VISIBLE, badge.getVisibility());
+    assertEquals(page.requireContext().getColor(textColor), badge.getCurrentTextColor());
+    assertNotNull("徽章必须有胶囊背景", badge.getBackground());
+    assertNotNull("徽章底色必须由语义 token tint", badge.getBackgroundTintList());
+    assertEquals(background, badge.getBackgroundTintList().getDefaultColor());
   }
 
   private Notifications observe() {

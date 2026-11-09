@@ -63,8 +63,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
       for (String id : com.deepseekharness.app.util.UiThemePalette.REGISTERED)
         swatches.addView(swatch(page, id), new LinearLayout.LayoutParams(0, -2, 1f));
       palettes.addView(swatches);
-      TextView note =
-          page.text(UiText.text("配色只改原生界面；内嵌 Web 只同步浅色和深色。"), 12, R.color.shell_text_muted);
+      TextView note = page.text(UiText.text("配色只改原生界面，网页只同步明暗"), 12, R.color.shell_text_muted);
       note.setLineSpacing(page.dp(2), 1);
       note.setPadding(0, page.dp(10), 0, page.dp(4));
       palettes.addView(note);
@@ -294,11 +293,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     TextView title = page.text(UiText.text("Web 界面跟随"), 14, R.color.shell_text);
     title.setTypeface(null, android.graphics.Typeface.BOLD);
     words.addView(title);
-    TextView sub =
-        page.text(
-            UiText.text("切换时把浅色、深色或跟随系统同步到内嵌 Web；之后在 Web 里改的外观保留到下次切换。"),
-            12,
-            R.color.shell_text_muted);
+    TextView sub = page.text(UiText.text("切换主题会同步内嵌网页"), 12, R.color.shell_text_muted);
     sub.setLineSpacing(page.dp(2), 1);
     sub.setPadding(0, page.dp(4), 0, 0);
     words.addView(sub);

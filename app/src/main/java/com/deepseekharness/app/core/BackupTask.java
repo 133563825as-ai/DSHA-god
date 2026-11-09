@@ -121,6 +121,16 @@ public final class BackupTask {
     }
   }
 
+  /**
+   * 外部入口（应急 DSH 的「恢复中断维护」）完成后强制丢弃 UI 缓存。
+   *
+   * <p>外部恢复不经过本任务，页面若沿用恢复前的 2 秒缓存，会把已经清理完的记录继续显示成
+   * “中断维护”。这里只清缓存；下一次 {@link #pendingMaintenanceForUi()} 在渲染线程重扫。
+   */
+  public void refreshPendingForUi() {
+    invalidatePendingCache();
+  }
+
   public boolean busy() {
     return state.busy() || MaintenanceCoordinator.isExclusiveWorkBlocked();
   }

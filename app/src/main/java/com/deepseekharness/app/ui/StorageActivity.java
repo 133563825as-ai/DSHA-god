@@ -31,11 +31,15 @@ public final class StorageActivity extends AppCompatActivity {
     super.onCreate(saved);
     page =
         new CardPage(
-            this,
-            t("存储与文件", "Storage and files"),
-            t(
-                "完整 Linux 环境约占 1 GB。历史环境和回退副本另行保留；它们不等于聊天数据。以下为文件大小估算。",
-                "The full Linux environment uses about 1 GB. Older environments and rollback copies are retained separately from chats. Sizes below are estimates."));
+            this, t("存储与文件", "Storage and files"), t("空间占用与清理", "Storage usage and cleanup"));
+    // 摘要进页首，完整说明点开 ⓘ（审计 D-06）。
+    InfoHint.bind(
+        page.subtitle,
+        t("存储与文件", "Storage and files"),
+        t("空间占用与清理", "Storage usage and cleanup"),
+        t(
+            "完整 Linux 环境约占 1 GB。历史环境和回退副本另行保留；它们不等于聊天数据。以下为文件大小估算。",
+            "The full Linux environment uses about 1 GB. Older environments and rollback copies are retained separately from chats. Sizes below are estimates."));
     UiNavigation.addHeader(this, page.root, t("存储与文件", "Storage and files"), this::finish);
     var files = page.card();
     page.kv(
@@ -52,7 +56,7 @@ public final class StorageActivity extends AppCompatActivity {
                 this,
                 t("文件共享", "File sharing"),
                 t(
-                    "在文件管理器中添加本地存储，选择 DocumentsProvider → DSHA。找不到 DSHA 时，先打开本 App 后重试。",
+                    "在文件管理器中添加本地存储，选择 DocumentsProvider → DSHA。找不到 DSHA 时，先打开本应用后重试。",
                     "Add local storage in your file manager and select DocumentsProvider → DSHA. Open this app first if DSHA is missing.")));
     LinearLayout overview = page.card();
     total = page.text("", 22, R.color.shell_text);
@@ -90,6 +94,7 @@ public final class StorageActivity extends AppCompatActivity {
                     .show());
     refresh = page.button(page.footer, t("重新统计", "Refresh sizes"), false, () -> load(false));
     setContentView(page.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     load(false);
   }
 
@@ -113,7 +118,7 @@ public final class StorageActivity extends AppCompatActivity {
                               ? UiText.format(
                                   "已释放 %s", com.deepseekharness.app.util.Fmt.bytes(reclaimed))
                               : t(
-                                  "已完成统计。清理只移除可再生缓存和已核验的多余运行时副本，个人数据与备份保留。",
+                                  "统计完成；清理只删可再生缓存",
                                   "Sizes updated. Cleanup removes only reproducible caches and verified excess runtime copies. Personal data and backups are retained."));
                       done();
                     });
@@ -136,9 +141,7 @@ public final class StorageActivity extends AppCompatActivity {
   private void renderUsage(java.util.Map<String, StorageMaintenance.Size> sizes) {
     java.util.Map<String, Long> bytes = new java.util.LinkedHashMap<>();
     for (var entry : sizes.entrySet()) bytes.put(entry.getKey(), entry.getValue().bytes);
-    total.setText(
-        com.deepseekharness.app.util.Fmt.bytes(
-            com.deepseekharness.app.util.StorageUsage.total(bytes)));
+    RollingNumber.bytes(total, com.deepseekharness.app.util.StorageUsage.total(bytes));
     usage.removeAllViews();
     while (rows.getChildCount() > 2) rows.removeViewAt(2);
     var segments = com.deepseekharness.app.util.StorageUsage.segments(bytes, PALETTE.length);
@@ -152,6 +155,7 @@ public final class StorageActivity extends AppCompatActivity {
       usage.addView(
           part, new LinearLayout.LayoutParams(0, -1, (float) Math.max(segment.fraction, 0.004)));
     }
+    UiMotion.reveal(usage);
     int other =
         segments.isEmpty() || segments.get(segments.size() - 1).key != null
             ? 0

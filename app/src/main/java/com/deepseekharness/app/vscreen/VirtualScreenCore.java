@@ -10,6 +10,7 @@ import android.media.ImageReader;
 import android.os.Looper;
 import android.os.SystemClock;
 import org.json.JSONObject;
+import com.deepseekharness.app.util.VirtualScreenDisplayPreset;
 import com.deepseekharness.app.util.VirtualScreenPolicy;
 import com.deepseekharness.app.util.VirtualScreenCoreIdentity;
 import com.deepseekharness.app.util.VirtualScreenHandshake;
@@ -41,6 +42,9 @@ public final class VirtualScreenCore {
   private static ServerSocket server;
   private static String startupStage = "CONTEXT";
   private static String missingDisplayFlags = "";
+  // 最近一次创建实际使用的 dpi 与白名单 id（legacy/非白名单尺寸记为 custom），只用于 status 回读。
+  private static int displayDensity = VirtualScreenDisplayPreset.defaultPreset().density;
+  private static String displayPreset = "";
   private static final ThreadPoolExecutor CLIENTS =
       new ThreadPoolExecutor(
           2,
@@ -375,6 +379,8 @@ public final class VirtualScreenCore {
       if (path.equals("/vscreen/ping")) return ok();
       if (path.equals("/vscreen/create"))
         return create(
+            q.getOrDefault("preset", ""),
+            q.getOrDefault("orientation", ""),
             Integer.parseInt(q.getOrDefault("width", "1008")),
             Integer.parseInt(q.getOrDefault("height", "1792")));
       if (path.equals("/vscreen/status")) return status();
@@ -495,9 +501,32 @@ public final class VirtualScreenCore {
     }
   }
 
-  private static JSONObject create(int width, int height) throws Exception {
+  private static JSONObject create(String presetId, String orientation, int width, int height)
+      throws Exception {
+    VirtualScreenDisplayPreset.Preset preset =
+        presetId == null || presetId.isEmpty()
+            ? null
+            : VirtualScreenDisplayPreset.resolve(presetId);
+    boolean landscape = landscape(orientation, width, height);
+    int[] size;
+    int density;
+    if (preset != null) {
+      // 白名单之外的 id 已在 resolve() 回退默认；预算守卫同样回退默认，而不是创建一块助手 see 不了的显示。
+      if (!VirtualScreenDisplayPreset.fitsObservationBudget(preset)) preset = null;
+    }
+    if (preset != null) {
+      size = preset.size(landscape);
+      density = preset.density;
+    } else {
+      // 不带 preset 的旧请求保持既有 phoneSize() 归一化与 320 dpi。
+      size = VirtualScreenPolicy.phoneSize(width, height);
+      density = VirtualScreenDisplayPreset.defaultPreset().density;
+    }
+    VirtualScreenDisplayPreset.Preset applied =
+        VirtualScreenDisplayPreset.matching(size[0], size[1], density);
+    displayDensity = density;
+    displayPreset = applied == null ? "custom" : applied.id;
     if (hostDisplayFactory != null) {
-      int[] size = VirtualScreenPolicy.phoneSize(width, height);
       if (session != null && session.width == size[0] && session.height == size[1]) return status();
       release();
       VirtualScreenDisplaySession created = null;
@@ -522,7 +551,6 @@ public final class VirtualScreenCore {
         return failure(failure);
       }
     }
-    int[] size = VirtualScreenPolicy.phoneSize(width, height);
     if (session != null && session.width == size[0] && session.height == size[1]) return status();
     release();
     ImageReader reader = ImageReader.newInstance(size[0], size[1], PixelFormat.RGBA_8888, 3);
@@ -551,7 +579,7 @@ public final class VirtualScreenCore {
       try {
         display =
             manager.createVirtualDisplay(
-                "DSHA-VirtualScreen", size[0], size[1], 320, reader.getSurface(), flags);
+                "DSHA-VirtualScreen", size[0], size[1], density, reader.getSurface(), flags);
       } catch (Throwable platformFailure) {
         displayCreateFailure = platformFailure;
         throw platformFailure;
@@ -590,6 +618,13 @@ public final class VirtualScreenCore {
       if (error instanceof IllegalArgumentException) return result.put("error", "INVALID_ARGUMENT");
       return denied ? result.put("error", VirtualScreenFailures.TRUSTED_DISPLAY_DENIED) : result;
     }
+  }
+
+  /** 显式 orientation 优先；缺省或非法值按旧请求的宽高推断，最后回退竖屏。 */
+  private static boolean landscape(String orientation, int width, int height) {
+    if ("landscape".equals(orientation)) return true;
+    if ("portrait".equals(orientation)) return false;
+    return width > height;
   }
 
   /**
@@ -634,6 +669,14 @@ public final class VirtualScreenCore {
         .put("generation", session.generation)
         .put("width", session.width)
         .put("height", session.height)
+        .put("density", displayDensity)
+        .put("preset", displayPreset)
+        .put(
+            "logicalWidth",
+            session.width * VirtualScreenDisplayPreset.LOGICAL_DENSITY / displayDensity)
+        .put(
+            "logicalHeight",
+            session.height * VirtualScreenDisplayPreset.LOGICAL_DENSITY / displayDensity)
         .put("frameSeq", session.sequence)
         .put("package", actual)
         .put("packageVerified", !actual.isEmpty())

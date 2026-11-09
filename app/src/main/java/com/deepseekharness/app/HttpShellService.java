@@ -1547,7 +1547,7 @@ public final class HttpShellService {
             DshaApp.from(ctx).installationId(),
             scope.run.runId,
             evidence,
-            new com.deepseekharness.app.core.DeviceGrants(ctx).screenPolicy().revision,
+            new com.deepseekharness.app.core.DeviceGrants(ctx).screenAuthorityRevision(),
             broker.epoch("screen"),
             android.os.SystemClock.elapsedRealtime() + 65000);
     scope.capability = request;
@@ -1581,10 +1581,27 @@ public final class HttpShellService {
       String pkg,
       com.deepseekharness.app.util.ScreenTarget target,
       com.deepseekharness.app.capabilities.CapabilityRequest capability) {
+    return screenAuthorization(scope, action, pkg, target, capability, null, false);
+  }
+
+  /**
+   * 屏幕授权。{@code sensitivity} 是已识别的敏感界面类别（虚拟屏），{@code sensitiveAsk} 表示该类别策略为
+   * ASK：跳过「全部允许」与本轮应用记忆，本次动作必须再确认；密码文本读写不走这里（输入层硬阻断）。
+   */
+  private ScreenAuthorization screenAuthorization(
+      RequestScope scope,
+      String action,
+      String pkg,
+      com.deepseekharness.app.util.ScreenTarget target,
+      com.deepseekharness.app.capabilities.CapabilityRequest capability,
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivity,
+      boolean sensitiveAsk) {
     boolean sensitive = isSensitiveApp(pkg);
     var controller = com.deepseekharness.app.core.HarnessController.get(ctx);
     var grants = new com.deepseekharness.app.core.DeviceGrants(ctx);
     long generation = controller.getWebGeneration(), revision = uiGrant.revision();
+    // 合并修订号：确认方式或敏感界面策略任一保存都会让旧确认/旧请求失效。
+    long policyRevision = grants.screenAuthorityRevision();
     if (!screenBridgeCurrent(scope)
         || uiGrant.paused()
         || !controller.isWebRunning()
@@ -1593,7 +1610,7 @@ public final class HttpShellService {
         || controller.isUserStopped()
         || generation <= 0) return ScreenAuthorization.UNAVAILABLE;
     var policy = grants.effectiveScreenPolicy();
-    if (policy.allows(pkg)) {
+    if (!sensitiveAsk && policy.allows(pkg)) {
       boolean granted =
           uiGrant.completeConfirmation(
               true,
@@ -1601,7 +1618,7 @@ public final class HttpShellService {
               com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx),
               scope.run.runId,
               revision,
-              policy.revision,
+              policyRevision,
               screenBridgeCurrent(scope)
                   && controller.isWebRunning()
                   && !controller.isStarting()
@@ -1619,8 +1636,8 @@ public final class HttpShellService {
         com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).snapshot().binding();
     String turnKey = turnTask == null ? null : turnTask.identity();
     var turnGrants = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).turnGrants();
-    long confirmRevision = grants.screenPolicy().revision;
-    if (turnGrants.allows(turnKey, pkg, sensitive, confirmRevision)) {
+    long confirmRevision = policyRevision;
+    if (!sensitiveAsk && turnGrants.allows(turnKey, pkg, sensitive, confirmRevision)) {
       boolean remembered =
           uiGrant.completeConfirmation(
               true,
@@ -1638,11 +1655,19 @@ public final class HttpShellService {
         return ScreenAuthorization.ALLOWED;
     }
     String where = pkg.isEmpty() ? com.deepseekharness.app.util.UiText.text("当前界面") : pkg;
-    String why =
-        sensitive
-            ? com.deepseekharness.app.util.UiText.format(
-                "在【%s】里：%s  # 当前确认策略要求你确认，界面可能涉及支付或隐私", where, action)
-            : com.deepseekharness.app.util.UiText.format("%s  # 仅批准本次操作；可在设备能力授权中设置确认策略", action);
+    String why;
+    if (sensitiveAsk) {
+      // 敏感类别：说明这是「识别到的类别」，仍是一次性确认；密码文本硬阻断不因确认而解除。
+      why =
+          com.deepseekharness.app.util.UiText.format(
+              "在【%s】里：%s  # 已识别为%s；本次仍需你确认。密码文本读写始终阻断", where, action, sensitiveLabel(sensitivity));
+    } else {
+      why =
+          sensitive
+              ? com.deepseekharness.app.util.UiText.format(
+                  "在【%s】里：%s  # 当前确认策略要求你确认，界面可能涉及支付或隐私", where, action)
+              : com.deepseekharness.app.util.UiText.format("%s  # 仅批准本次操作；可在设备能力授权中设置确认策略", action);
+    }
     boolean[] rememberTurn = new boolean[1];
     ConfirmationOutcome outcome =
         confirmOutcome(scope, capability, why, true, target, rememberTurn);
@@ -1655,14 +1680,14 @@ public final class HttpShellService {
             com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx),
             scope.run.runId,
             revision,
-            grants.screenPolicy().revision,
+            policyRevision,
             screenBridgeCurrent(scope)
                 && !controller.isStopping()
                 && !controller.isUserStopped()
                 && DshaApp.from(ctx).capabilityBroker().current(capability),
             false);
     if (granted && DshaApp.from(ctx).capabilityBroker().authorize(capability)) {
-      if (rememberTurn[0]) {
+      if (!sensitiveAsk && rememberTurn[0]) {
         turnGrants.remember(turnKey, pkg, confirmRevision);
         // 敏感应用：这一次已用掉一次额度。
         if (sensitive) turnGrants.allows(turnKey, pkg, true, confirmRevision);
@@ -1672,6 +1697,27 @@ public final class HttpShellService {
     if (outcome == ConfirmationOutcome.DENIED) return ScreenAuthorization.DENIED;
     if (outcome == ConfirmationOutcome.NO_ANSWER) return ScreenAuthorization.NO_ANSWER;
     return ScreenAuthorization.UNAVAILABLE;
+  }
+
+  /** 敏感类别的人类可读名称；只用于已本地化的确认文案。 */
+  private static String sensitiveLabel(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category) {
+    if (category == null)
+      return com.deepseekharness.app.util.UiText.choose("敏感界面", "sensitive screen");
+    switch (category) {
+      case PASSWORD:
+        return com.deepseekharness.app.util.UiText.choose("密码界面", "password screen");
+      case OTP:
+        return com.deepseekharness.app.util.UiText.choose("验证码界面", "one-time code screen");
+      case PAYMENT:
+        return com.deepseekharness.app.util.UiText.choose("支付界面", "payment screen");
+      case SYSTEM_SECURITY:
+        return com.deepseekharness.app.util.UiText.choose("系统安全界面", "system security screen");
+      case SECURE_UNKNOWN:
+      default:
+        return com.deepseekharness.app.util.UiText.choose(
+            "无法确认的敏感界面", "unverified sensitive screen");
+    }
   }
 
   private static String shortText(String s) {
@@ -1704,6 +1750,7 @@ public final class HttpShellService {
             "tree",
             "senseState",
             "node",
+            "history",
             "task-begin",
             "task-end")
         .contains(operation)) return "[ERR] UNKNOWN_ROUTE";
@@ -1728,7 +1775,6 @@ public final class HttpShellService {
           return "[ERR] AMBIGUOUS_SCREEN_ACTION";
         operation = "tapText";
       }
-      var coordinator = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx);
       var runtime = com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx);
       // The bridge runtime identifies a connection, never a conversation. Both
       // caller IDs must be supplied by the actual tool execution transport.
@@ -1737,169 +1783,207 @@ public final class HttpShellService {
       if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
       String taskSessionId = arguments.getString("taskSessionId");
       String turnId = arguments.getString("turnId");
-      long actualTurn = com.deepseekharness.app.control.ControlTaskAuthority.localTurn(turnId);
       var binding =
           new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
               com.deepseekharness.app.control.ControlTaskAuthority.Owner.LOCAL_DSH,
               scope.run.runId + ":" + runtime.instanceId,
               taskSessionId,
               turnId);
-      if (operation.equals("task-end")) {
-        if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-        coordinator.completeLocal(binding);
-        // finishLocalTask rechecks the exact controller on the UI thread. A user-expanded and
-        // paused task stays attached for explicit Continue/Stop; ordinary completion is retired.
-        com.deepseekharness.app.assistant.AssistantService.finishLocalTask(ctx, binding);
-        return "OK";
-      }
-      // A turn/end HTTP notification can race the next turn. Its completion
-      // evidence is also sent with the next actual execution, scoped to the
-      // same full conversation, never a global last-active turn.
-      if (arguments.has("completedTurnId")) {
-        String completed = arguments.getString("completedTurnId");
-        if (com.deepseekharness.app.control.ControlTaskAuthority.localTurn(completed) >= actualTurn)
-          return "[ERR] CONTROL_TURN_INVALID";
-        if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-        coordinator.completeLocal(
-            new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
-                binding.owner(), binding.connection(), taskSessionId, completed));
-      }
-      var taskUi = com.deepseekharness.app.assistant.AssistantService.ensureLocalTask(ctx, binding);
-      if (!taskUi.ready()) return taskUi.failureReply();
-      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-      if (operation.equals("task-begin")) {
-        if (!com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding))
-          return new com.deepseekharness.app.assistant.AssistantService.TaskUiResult(
-                  false, "ASSISTANT_STOP_NOTIFICATION_REQUIRED")
-              .failureReply();
-        coordinator.begin(binding);
-        return com.deepseekharness.app.screen.ScreenReply.completed()
-            .put("needsObservation", true)
-            .toString();
-      }
-      boolean observing =
-          java.util.Set.of("dump", "tree", "screenshot", "senseState").contains(operation);
-      var compose = coordinator.compose();
-      if (!observing) {
-        // 用户正在给 AI 输入消息：动作停在原地等，不取消对话、不结束本轮。读屏不受影响。
-        java.util.function.BooleanSupplier taskLive =
-            () -> {
-              var state = coordinator.snapshot();
-              return !state.paused()
-                  && binding.equals(state.binding())
-                  && screenBridgeCurrent(scope);
-            };
-        com.deepseekharness.app.util.ComposeGate.Outcome waited;
-        try {
-          waited =
-              compose.await(com.deepseekharness.app.util.ComposeGate.DEFAULT_WAIT_MILLIS, taskLive);
-        } catch (InterruptedException interrupted) {
-          Thread.currentThread().interrupt();
-          return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED")
-              .toString();
-        }
-        if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.MESSAGE_ARRIVED)
-          return com.deepseekharness.app.screen.ScreenReply.refused("USER_MESSAGE_ARRIVED")
-              .put("userMessage", true)
-              .put(
-                  "guidance",
-                  com.deepseekharness.app.assistant.AssistantService.taskGuidance(
-                      "USER_MESSAGE_ARRIVED"))
-              .put("actionExecuted", false)
-              .put("nextAction", "READ_THE_NEW_USER_MESSAGE_THEN_OBSERVE_THE_SCREEN_AGAIN")
-              .put("automaticRetry", false)
-              .toString();
-        if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.STILL_COMPOSING)
-          return com.deepseekharness.app.screen.ScreenReply.refused("USER_COMPOSING")
-              .put("userComposing", true)
-              .put(
-                  "guidance",
-                  com.deepseekharness.app.assistant.AssistantService.taskGuidance("USER_COMPOSING"))
-              .put("actionExecuted", false)
-              .put("nextAction", "WAIT_FOR_THE_USER_MESSAGE_DO_NOT_ACT")
-              .put("automaticRetry", false)
-              .toString();
-        // INTERRUPTED 落到下面原有的暂停 / 换轮检查，给出原来的拒绝原因。
-      }
-      var screenUi =
-          com.deepseekharness.app.assistant.AssistantService.prepareScreenOperation(
-              ctx, binding, observing);
-      if (!screenUi.ready()) return screenUi.failureReply();
-      var taskLease = coordinator.begin(binding);
-      if (!observing && !coordinator.actionAllowed(taskLease))
-        return com.deepseekharness.app.screen.ScreenReply.refused(
-                "FRESH_SCREEN_OBSERVATION_REQUIRED")
-            .toString();
-      long observationSequence = observing ? coordinator.beginObservation(taskLease) : 0;
-      if (observing && observationSequence < 0)
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
-      var observed =
-          DshaAccessibilityService.observeTargetForRequest(
-              () ->
-                  com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(
-                          ctx, binding)
-                      && screenBridgeCurrent(scope)
-                      && coordinator.current(taskLease));
-      if (observed.target == null) return observed.failure().toString();
-      var target = observed.target;
-      if (!observing && !coordinator.checkActionTarget(taskLease, target))
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_TARGET_CHANGED")
-            .toString();
-      var capability = screenRequest(scope, operation, target);
-      coordinator.bindRequest(capability, taskLease);
-      ScreenAuthorization authorization =
-          screenAuthorization(scope, operation, target.packageName, target, capability);
-      if (authorization != ScreenAuthorization.ALLOWED)
-        return "[ERR] "
-            + (authorization == ScreenAuthorization.DENIED
-                ? "USER_REJECTED"
-                : authorization == ScreenAuthorization.NO_ANSWER
-                    ? "USER_NO_ANSWER"
-                    : "USER_CONFIRM_UNAVAILABLE");
-      var controller = HarnessController.get(ctx);
-      java.util.function.BooleanSupplier live =
-          () ->
-              com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
-                  && screenBridgeCurrent(scope)
-                  && coordinator.current(taskLease)
-                  && (observing || coordinator.actionAllowed(taskLease, target))
-                  && (observing || !compose.composing())
-                  && !com.deepseekharness.app.control.OwnedScreenOverlay.expanded()
-                  && capability.runtime.equals(
-                      com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx))
-                  && controller.isWebRunning()
-                  && !controller.isStarting()
-                  && !controller.isStopping()
-                  && !controller.isUserStopped();
-      String reply =
-          DshaAccessibilityService.execute(
-              DshaApp.from(ctx).capabilityBroker(), capability, live, operation, arguments);
-      if (observing && compose.composing()) {
-        // 读屏照常返回，但明确告诉 AI 用户正在输入，下一步动作会先等待。
-        var annotated = new org.json.JSONObject(reply);
-        annotated.put("userComposing", true);
-        reply = annotated.toString();
-      }
-      if (observing
-          && new org.json.JSONObject(reply).optString("state").equals("COMPLETED")
-          && !coordinator.observed(taskLease, observationSequence, target))
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_OBSERVATION_SUPERSEDED")
-            .toString();
-      return reply;
+      // 统一包装点：同一任务的所有 JSON 回执（含拒绝与 history）都附带最近活动摘要。
+      String reply = appUiBound(scope, operation, arguments, binding);
+      return com.deepseekharness.app.screen.ScreenActivityRecorder.attach(reply, binding);
     } catch (Exception error) {
       return "[ERR] " + safeError(error);
     }
   }
 
   /**
+   * 绑定任务后的 /app/ui/* 执行体。由 {@link #appUi} 统一调用后再经
+   * {@link com.deepseekharness.app.screen.ScreenActivityRecorder#attach} 附最近活动，保证每条 JSON 回执
+   * （包括拒绝和 history）只有一个包装点。
+   */
+  private String appUiBound(
+      RequestScope scope,
+      String operation,
+      org.json.JSONObject arguments,
+      com.deepseekharness.app.control.ControlTaskAuthority.Binding binding)
+      throws Exception {
+    var coordinator = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx);
+    String taskSessionId = binding.taskSessionId();
+    long actualTurn =
+        com.deepseekharness.app.control.ControlTaskAuthority.localTurn(binding.turnId());
+    if (operation.equals("task-end")) {
+      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+      coordinator.completeLocal(binding);
+      // finishLocalTask rechecks the exact controller on the UI thread. A user-expanded and
+      // paused task stays attached for explicit Continue/Stop; ordinary completion is retired.
+      com.deepseekharness.app.assistant.AssistantService.finishLocalTask(ctx, binding);
+      return "OK";
+    }
+    // A turn/end HTTP notification can race the next turn. Its completion
+    // evidence is also sent with the next actual execution, scoped to the
+    // same full conversation, never a global last-active turn.
+    if (arguments.has("completedTurnId")) {
+      String completed = arguments.getString("completedTurnId");
+      if (com.deepseekharness.app.control.ControlTaskAuthority.localTurn(completed) >= actualTurn)
+        return "[ERR] CONTROL_TURN_INVALID";
+      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+      coordinator.completeLocal(
+          new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
+              binding.owner(), binding.connection(), taskSessionId, completed));
+    }
+    // 活动历史是内存里的只读事实，不要求任务窗可见；未开始/结束/暂停时返回空记录。
+    if (operation.equals("history")) return appUiHistory(arguments, binding);
+    var taskUi = com.deepseekharness.app.assistant.AssistantService.ensureLocalTask(ctx, binding);
+    if (!taskUi.ready()) return taskUi.failureReply();
+    if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+    if (operation.equals("task-begin")) {
+      if (!com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding))
+        return new com.deepseekharness.app.assistant.AssistantService.TaskUiResult(
+                false, "ASSISTANT_STOP_NOTIFICATION_REQUIRED")
+            .failureReply();
+      coordinator.begin(binding);
+      com.deepseekharness.app.screen.ScreenActivityRecorder.observeTask(ctx, binding);
+      return com.deepseekharness.app.screen.ScreenReply.completed()
+          .put("needsObservation", true)
+          .toString();
+    }
+    boolean observing =
+        java.util.Set.of("dump", "tree", "screenshot", "senseState").contains(operation);
+    var compose = coordinator.compose();
+    if (!observing) {
+      // 用户正在给 AI 输入消息：动作停在原地等，不取消对话、不结束本轮。读屏不受影响。
+      java.util.function.BooleanSupplier taskLive =
+          () -> {
+            var state = coordinator.snapshot();
+            return !state.paused() && binding.equals(state.binding()) && screenBridgeCurrent(scope);
+          };
+      com.deepseekharness.app.util.ComposeGate.Outcome waited;
+      try {
+        waited =
+            compose.await(com.deepseekharness.app.util.ComposeGate.DEFAULT_WAIT_MILLIS, taskLive);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
+      }
+      if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.MESSAGE_ARRIVED)
+        return com.deepseekharness.app.screen.ScreenReply.refused("USER_MESSAGE_ARRIVED")
+            .put("userMessage", true)
+            .put(
+                "guidance",
+                com.deepseekharness.app.assistant.AssistantService.taskGuidance(
+                    "USER_MESSAGE_ARRIVED"))
+            .put("actionExecuted", false)
+            .put("nextAction", "READ_THE_NEW_USER_MESSAGE_THEN_OBSERVE_THE_SCREEN_AGAIN")
+            .put("automaticRetry", false)
+            .toString();
+      if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.STILL_COMPOSING)
+        return com.deepseekharness.app.screen.ScreenReply.refused("USER_COMPOSING")
+            .put("userComposing", true)
+            .put(
+                "guidance",
+                com.deepseekharness.app.assistant.AssistantService.taskGuidance("USER_COMPOSING"))
+            .put("actionExecuted", false)
+            .put("nextAction", "WAIT_FOR_THE_USER_MESSAGE_DO_NOT_ACT")
+            .put("automaticRetry", false)
+            .toString();
+      // INTERRUPTED 落到下面原有的暂停 / 换轮检查，给出原来的拒绝原因。
+    }
+    var screenUi =
+        com.deepseekharness.app.assistant.AssistantService.prepareScreenOperation(
+            ctx, binding, observing);
+    if (!screenUi.ready()) return screenUi.failureReply();
+    var taskLease = coordinator.begin(binding);
+    // 只有真正拿到当前任务的租约才开始记录；同一任务重复调用不会重置已有摘要。
+    com.deepseekharness.app.screen.ScreenActivityRecorder.observeTask(ctx, binding);
+    if (!observing && !coordinator.actionAllowed(taskLease))
+      return com.deepseekharness.app.screen.ScreenReply.refused("FRESH_SCREEN_OBSERVATION_REQUIRED")
+          .toString();
+    long observationSequence = observing ? coordinator.beginObservation(taskLease) : 0;
+    if (observing && observationSequence < 0)
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
+    var observed =
+        DshaAccessibilityService.observeTargetForRequest(
+            () ->
+                com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
+                    && screenBridgeCurrent(scope)
+                    && coordinator.current(taskLease));
+    if (observed.target == null) return observed.failure().toString();
+    if (!observing && !coordinator.checkActionTarget(taskLease, observed.target))
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_TARGET_CHANGED").toString();
+    var target = observed.target;
+    var capability = screenRequest(scope, operation, target);
+    coordinator.bindRequest(capability, taskLease);
+    ScreenAuthorization authorization =
+        screenAuthorization(scope, operation, target.packageName, target, capability);
+    if (authorization != ScreenAuthorization.ALLOWED)
+      return "[ERR] "
+          + (authorization == ScreenAuthorization.DENIED
+              ? "USER_REJECTED"
+              : authorization == ScreenAuthorization.NO_ANSWER
+                  ? "USER_NO_ANSWER"
+                  : "USER_CONFIRM_UNAVAILABLE");
+    var controller = HarnessController.get(ctx);
+    java.util.function.BooleanSupplier live =
+        () ->
+            com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
+                && screenBridgeCurrent(scope)
+                && coordinator.current(taskLease)
+                && (observing || coordinator.actionAllowed(taskLease, target))
+                && (observing || !compose.composing())
+                && !com.deepseekharness.app.control.OwnedScreenOverlay.expanded()
+                && capability.runtime.equals(
+                    com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx))
+                && controller.isWebRunning()
+                && !controller.isStarting()
+                && !controller.isStopping()
+                && !controller.isUserStopped();
+    String reply =
+        DshaAccessibilityService.execute(
+            DshaApp.from(ctx).capabilityBroker(), capability, live, operation, arguments);
+    if (observing && compose.composing()) {
+      // 读屏照常返回，但明确告诉 AI 用户正在输入，下一步动作会先等待。
+      var annotated = new org.json.JSONObject(reply);
+      annotated.put("userComposing", true);
+      reply = annotated.toString();
+    }
+    if (observing
+        && new org.json.JSONObject(reply).optString("state").equals("COMPLETED")
+        && !coordinator.observed(taskLease, observationSequence, target))
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_OBSERVATION_SUPERSEDED")
+          .toString();
+    return reply;
+  }
+
+  /** 内存活动历史只属于当前任务；别的任务、暂停或结束状态一律返回空记录。 */
+  private String appUiHistory(
+      org.json.JSONObject arguments,
+      com.deepseekharness.app.control.ControlTaskAuthority.Binding binding) {
+    var state = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).snapshot();
+    String identity =
+        state.binding() != null && state.binding().equals(binding) && !state.paused()
+            ? binding.identity()
+            : null;
+    return com.deepseekharness.app.screen.ScreenActivityRecorder.history(
+        arguments.optString("since"), arguments.optString("limit"), identity);
+  }
+
+  /**
    * 虚拟屏语义动作拿不到窗口目标时的只读失败：error 保留 ACCESSIBILITY_UNAVAILABLE 兼容旧调用方，
    * reason / nextAction 区分无障碍未开启、未连接、显示里没有窗口和窗口不可读。请求未发送，可安全重新观察。
+   *
+   * <p>T98：额外附最小窗口证据（目标窗口字段、应用/系统/输入法窗口计数、歧义标记）。多应用窗口并列时
+   * reason=VSCREEN_WINDOW_AMBIGUOUS、nextAction=ASK_USER_TO_CLOSE_SPLIT_SCREEN；证据只用于解释，不参与授权。
    */
   private String vscreenSemanticUnavailable(int display, boolean notSent)
       throws org.json.JSONException {
     // 没有可用显示时本次请求不会解析窗口，线程局部诊断可能残留上一次请求的值，不能当成空屏证据。
-    String diagnostic =
-        display > 0 ? DshaAccessibilityService.windowDiagnostic() : "DISPLAY_UNAVAILABLE";
+    var window =
+        display > 0
+            ? DshaAccessibilityService.displayWindowSnapshot(display)
+            : new com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics(
+                "DISPLAY_UNAVAILABLE", null);
+    String diagnostic = window.diagnostic;
     var accessibility =
         com.deepseekharness.app.util.VirtualScreenObservationHint.Accessibility.of(
             DshaAccessibilityService.isConnected(), DshaAccessibilityService.enabledState(ctx));
@@ -1908,15 +1992,23 @@ public final class HttpShellService {
             .put("ok", false)
             .put("error", "ACCESSIBILITY_UNAVAILABLE")
             .put("treeUnavailable", diagnostic)
+            .put("windowDiagnostic", diagnostic)
+            .put(
+                "windowEvidence",
+                com.deepseekharness.app.util.VirtualScreenObservationHint.windowEvidence(
+                    accessibility, diagnostic))
             .put(
                 "reason",
                 com.deepseekharness.app.util.VirtualScreenObservationHint.semanticReason(
-                    accessibility, diagnostic))
+                    accessibility, diagnostic, window.evidence))
             .put(
                 "nextAction",
                 com.deepseekharness.app.util.VirtualScreenObservationHint.semanticNextAction(
-                    accessibility, diagnostic))
+                    accessibility, diagnostic, window.evidence))
             .put("retryable", true);
+    if (window.evidence != null)
+      for (var field : window.evidence.fields().entrySet())
+        value.put(field.getKey(), field.getValue());
     if (notSent) value.put("state", "NOT_SENT");
     return value.toString();
   }
@@ -1992,6 +2084,34 @@ public final class HttpShellService {
       // 宿主自身不能启动到虚拟屏（系统会复用运行中的本进程，副屏 WebView 崩溃，T76）：
       // 连授权询问都不发起，直接回明确未发送。
       if (selfLaunch != null) return vscreenNotSent(selfLaunch);
+      // 敏感界面分档（T119）：只读分类绑定当前显示；HANDOFF 在派发任何输入前暂停助手。
+      // 分类失败不宣称安全：无障碍关闭时不做分类（保护降级），已知敏感应用读不出树时按 ASK 处理。
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivity = null;
+      String sensitivityBasis = "";
+      boolean sensitiveAsk = false;
+      if (com.deepseekharness.app.util.VirtualScreenRoutes.classified(operation) && display > 0) {
+        var evidence =
+            com.deepseekharness.app.vscreen.VirtualScreenSensitiveProbe.read(display, pkg);
+        if (evidence.targetChanged) return vscreenNotSent("SCREEN_TARGET_CHANGED");
+        sensitivity = evidence.category;
+        sensitivityBasis = evidence.basis;
+        if (sensitivity != null) {
+          var sensitivePolicy =
+              new com.deepseekharness.app.core.DeviceGrants(ctx).sensitiveScreenPolicy();
+          var decision = sensitivePolicy.decide(sensitivity, pkg);
+          if (decision == com.deepseekharness.app.util.SensitiveScreenPolicy.Decision.HANDOFF)
+            return sensitiveScreenHandoff(sensitivity, sensitivityBasis);
+          if (decision == com.deepseekharness.app.util.SensitiveScreenPolicy.Decision.ASK)
+            sensitiveAsk = true;
+        }
+        // 密码界面的文本写入由输入层硬阻断；不先弹一个注定会被拒绝的确认。
+        if (sensitivity == com.deepseekharness.app.util.SensitiveScreenPolicy.Category.PASSWORD
+            && writesText(request, operation)) sensitiveAsk = false;
+      }
+      final com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivityForResult =
+          sensitivity;
+      final String sensitivityBasisForResult = sensitivityBasis;
+      final boolean sensitiveAskForResult = sensitiveAsk;
       var capability =
           existingCore || !callerCore.isEmpty()
               ? screenRequestEvidence(
@@ -2012,7 +2132,9 @@ public final class HttpShellService {
               com.deepseekharness.app.util.UiText.format("操作独立虚拟屏：%s", route),
               pkg,
               promptTarget,
-              capability);
+              capability,
+              sensitivityForResult,
+              sensitiveAskForResult);
       if (authorization != ScreenAuthorization.ALLOWED)
         // "用户还没点允许"与"用户拒绝了"必须给不同的码：前者调用方应等一会儿再问，
         // 后者不该重试（issue #123 的 60 秒挂起）。
@@ -2075,6 +2197,16 @@ public final class HttpShellService {
             if (!live.getAsBoolean()
                 || bindWindow && !DshaAccessibilityService.matchesTarget(target))
               return "{\"ok\":false,\"error\":\"SCREEN_TARGET_CHANGED\"}";
+            // 确认期间页面可能已换到另一个敏感类别：执行前再读一次证据。读不出就不派发（可能已换屏）。
+            if (sensitivityForResult != null && VirtualScreenRoutes.mutates(operation)) {
+              var fresh =
+                  com.deepseekharness.app.vscreen.VirtualScreenSensitiveProbe.read(
+                      confirmedDisplay, confirmedPackage);
+              if (fresh.targetChanged || !fresh.readable)
+                return vscreenSensitivityNotSent("SENSITIVE_SCREEN_UNVERIFIED");
+              if (fresh.category != sensitivityForResult)
+                return vscreenSensitivityNotSent("SENSITIVE_SCREEN_CHANGED");
+            }
             dispatched[0] = true;
             String result =
                 com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
@@ -2085,6 +2217,8 @@ public final class HttpShellService {
                         () ->
                             live.getAsBoolean()
                                 && (!bindWindow || DshaAccessibilityService.matchesTarget(target)));
+            if (sensitivityForResult != null)
+              result = annotateSensitivity(result, sensitivityForResult, sensitivityBasisForResult);
             receipt[0] = result;
             boolean targetChanged = bindWindow && !DshaAccessibilityService.matchesTarget(target);
             boolean runChanged = !live.getAsBoolean();
@@ -2189,6 +2323,76 @@ public final class HttpShellService {
     } catch (org.json.JSONException invalid) {
       return result;
     }
+  }
+
+  /**
+   * 敏感界面交接（T119）：暂停助手并把界面交给用户，不派发任何输入。沿用现有暂停语义（清本轮授权、
+   * 撤销在途请求、取消当前轮），并丢弃虚拟屏观察，用户恢复后必须重新 see，不自动重放。
+   */
+  private String sensitiveScreenHandoff(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category, String basis) {
+    com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx)
+        .pause("SENSITIVE_SCREEN_" + category.name());
+    com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx).discardObservations();
+    try {
+      return new org.json.JSONObject()
+          .put("ok", false)
+          .put("state", "NOT_SENT")
+          .put("error", "SENSITIVE_SCREEN_HANDOFF")
+          .put("code", "SENSITIVE_SCREEN_HANDOFF")
+          .put("sensitivity", category.name())
+          .put("sensitivityBasis", basis == null ? "" : basis)
+          .put("readOnly", true)
+          .put("retryable", false)
+          .put("actionExecuted", false)
+          .put(
+              "nextAction",
+              com.deepseekharness.app.util.VirtualScreenObservationHint.HANDOFF_TO_USER)
+          .toString();
+    } catch (org.json.JSONException invalid) {
+      return vscreenNotSent("SENSITIVE_SCREEN_HANDOFF");
+    }
+  }
+
+  /** 敏感证据在确认后失效或类别变化：动作未派发，重新观察后可安全重试。 */
+  private static String vscreenSensitivityNotSent(String code) {
+    try {
+      return new org.json.JSONObject()
+          .put("ok", false)
+          .put("state", "NOT_SENT")
+          .put("error", code)
+          .put("code", code)
+          .put("retryable", true)
+          .put("actionExecuted", false)
+          .put("nextAction", com.deepseekharness.app.util.VirtualScreenObservationHint.SEE_AGAIN)
+          .toString();
+    } catch (org.json.JSONException invalid) {
+      return "{\"ok\":false,\"state\":\"NOT_SENT\",\"error\":\"SENSITIVE_SCREEN_UNVERIFIED\"}";
+    }
+  }
+
+  /** 只回类别与依据码，绝不回界面文本；成功/失败回执都不改变原有字段。 */
+  private static String annotateSensitivity(
+      String json,
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category,
+      String basis) {
+    if (json == null || category == null) return json;
+    try {
+      var value = new org.json.JSONObject(json);
+      value.put("sensitivity", category.name());
+      if (basis != null && !basis.isEmpty()) value.put("sensitivityBasis", basis);
+      return value.toString();
+    } catch (org.json.JSONException invalid) {
+      return json;
+    }
+  }
+
+  /** 该请求是否会写入文本（含 node 的 set_text）；密码界面的这类请求交给输入层硬阻断。 */
+  private static boolean writesText(
+      com.deepseekharness.app.util.VscreenBridgeRequest request, String operation) {
+    if (com.deepseekharness.app.util.VirtualScreenRoutes.writesText(operation)) return true;
+    return operation.equals("node")
+        && "set_text".equals(request.parameters.getOrDefault("action", ""));
   }
 
   private static String vscreenNotSent(String code) {
@@ -2315,26 +2519,31 @@ public final class HttpShellService {
             "\n== Root command interception modes ==\nSettings → Device permissions → Root command interception: Strict (default, allow-list only), Relaxed (any command, but irreversible operations such as formatting, flashing, reboot or clearing app data stay blocked), Full (no command-content checks). Modes apply to the root channel only; the generic Shizuku/ADB executor stays strict, and SMS reads still require native authorization in all modes.\n");
     String modeHelp =
         com.deepseekharness.app.util.UiText.choose(
-            "\n== 识屏模式（实体 / 虚拟互斥） ==\n用户在 设置 → 设备能力授权 → 识屏 选择：关闭、实体识屏或虚拟识屏，两者不能同时开启。\n实体识屏：/app/ui/* 与 dsha-android 工具可用；需要无障碍。虚拟识屏：/app/vscreen/* 与 dsha-vscreen 工具可用；需要 Root / Shizuku / ADB 任一可用通道，开启时自动创建虚拟屏，无障碍只增强节点与中文输入。\n模式关闭返回 SCREEN_MODE_OFF；实体模式下调虚拟屏返回 SCREEN_MODE_VIRTUAL_OFF，虚拟模式下调实体主屏返回 SCREEN_MODE_PHYSICAL_OFF。这表示容器没有拿到这块屏的授权：照原话告诉用户去哪里切换，不要改用另一块屏，也不要重试。/app/ui/task-end 收尾不受模式限制。\n",
-            "\n== Screen mode (physical / virtual, mutually exclusive) ==\nThe user chooses Off, Physical screen or Virtual screen in Settings → Device permissions → Screen; both cannot be on at once.\nPhysical: /app/ui/* and the dsha-android tools work; requires accessibility. Virtual: /app/vscreen/* and the dsha-vscreen tools work; requires a usable Root / Shizuku / ADB channel, the virtual screen is created when the mode is turned on, and accessibility only adds nodes and Unicode input.\nOff returns SCREEN_MODE_OFF; virtual-screen calls in physical mode return SCREEN_MODE_VIRTUAL_OFF and main-screen calls in virtual mode return SCREEN_MODE_PHYSICAL_OFF. This means the container has no authorization for that screen: tell the user where to switch, never use the other screen instead and do not retry. /app/ui/task-end cleanup is not restricted by the mode.\n");
+            "\n== 识屏模式（实体 / 虚拟互斥） ==\n用户在 设置 → 设备能力授权 → 识屏 选择：关闭、实体识屏或虚拟识屏，两者不能同时开启。\n实体识屏：/app/ui/* 与 dsha-android 工具可用；需要无障碍。虚拟识屏：/app/vscreen/* 与 dsha-vscreen 工具可用；需要 Root / Shizuku / ADB 任一可用通道；只在设置里切换到虚拟识屏、或已开启但虚拟屏未运行（STOPPED）时再次选择，才尝试创建；App 启动/恢复、崩溃或关闭后不会自动重建，创建失败会在设置页提示错误码；无障碍只增强节点与中文输入。\n模式关闭返回 SCREEN_MODE_OFF；实体模式下调虚拟屏返回 SCREEN_MODE_VIRTUAL_OFF，虚拟模式下调实体主屏返回 SCREEN_MODE_PHYSICAL_OFF。这表示容器没有拿到这块屏的授权：照原话告诉用户去哪里切换，不要改用另一块屏，也不要重试。/app/ui/task-end 收尾不受模式限制。\n",
+            "\n== Screen mode (physical / virtual, mutually exclusive) ==\nThe user chooses Off, Physical screen or Virtual screen in Settings → Device permissions → Screen; both cannot be on at once.\nPhysical: /app/ui/* and the dsha-android tools work; requires accessibility. Virtual: /app/vscreen/* and the dsha-vscreen tools work; requires a usable Root / Shizuku / ADB channel; creation is attempted only when switching the mode to Virtual, or re-selecting while the mode is on but the screen is stopped (STOPPED); it is not recreated after app start, recovery or close, and a failed creation shows an error code in Settings; accessibility only adds nodes and Unicode input.\nOff returns SCREEN_MODE_OFF; virtual-screen calls in physical mode return SCREEN_MODE_VIRTUAL_OFF and main-screen calls in virtual mode return SCREEN_MODE_PHYSICAL_OFF. This means the container has no authorization for that screen: tell the user where to switch, never use the other screen instead and do not retry. /app/ui/task-end cleanup is not restricted by the mode.\n");
     String senseHelp =
         com.deepseekharness.app.util.UiText.choose(
-            "\n== 紧凑识屏预览（ScreenSense） ==\n/app/sense/state?taskSessionId=...&turnId=...&geom=0|1&max=200&full=1\n该端点复用手机任务、无障碍授权、窗口代次和 owner 围栏，只返回全量紧凑树状态；返回的 k*** 仅为本次预览标识，不是动作凭据。每行为 `id 角色 \"标签\" [标志+动作]`，标志 !不可用 *已选 %焦点 ~密码，动作 c点击 l长按 f/b滚动 o聚焦 t输入，无标志无动作时省略。回复另含 source、quality（ok/partial/empty）、partial、readMs、ageMs（-1 为未知）；ageMs 只表示快照采集后经过的时间，不证明界面未变。动作仍使用最新 /app/ui/tree 或 dump 返回的 treeId/nodeId；Android 接受动作不等于业务状态已变化，不自动重放 UNKNOWN。\n",
-            "\n== Compact screen preview (ScreenSense) ==\n/app/sense/state?taskSessionId=...&turnId=...&geom=0|1&max=200&full=1\nThis endpoint reuses the phone task, accessibility authorization, window generation and owner fences and returns only a full compact tree state; k*** ids identify this preview only and are not action credentials. Each line is `id role \"label\" [flags+actions]`: flags ! disabled, * checked, % focused, ~ password; actions c click, l long-click, f/b scroll, o focus, t set-text; the token is omitted when both are empty. The reply also carries source, quality (ok/partial/empty), partial, readMs and ageMs (-1 = unknown); ageMs is time since capture and does not prove the screen is unchanged. Actions still use treeId/nodeId from a fresh /app/ui/tree or dump; Android accepting an action does not prove a business change, and UNKNOWN is never replayed automatically.\n");
+            "\n== 紧凑识屏预览（ScreenSense） ==\n/app/sense/state?taskSessionId=...&turnId=...&geom=0|1&max=200&full=1\n该端点复用手机任务、无障碍授权、窗口代次和 owner 围栏，只返回紧凑树状态：连续观察默认回增量——mode=delta 只列变化行，mode=same 表示与上次相同，变化超过三分之一、窗口/尺寸/焦点/来源变化或加 full=1 时回全量 mode=full；encodedState 的内容由 mode 决定（全量或 D 开头的差异）。返回的 k*** 是阅读顺序位置编号，只用于预览与差异展示，不是动作凭据。每行为 `id 角色 \"标签\" [标志+动作]`，标志 !不可用 *已选 %焦点 ~密码，动作 c点击 l长按 f/b滚动 o聚焦 t输入，无标志无动作时省略。回复另含 source、quality（ok/partial/empty）、partial、readMs、ageMs（-1 为未知）；ageMs 只表示快照采集后经过的时间，不证明界面未变。动作仍使用最新 /app/ui/tree 或 dump 返回的 treeId/nodeId；Android 接受动作不等于业务状态已变化，不自动重放 UNKNOWN。\n",
+            "\n== Compact screen preview (ScreenSense) ==\n/app/sense/state?taskSessionId=...&turnId=...&geom=0|1&max=200&full=1\nThis endpoint reuses the phone task, accessibility authorization, window generation and owner fences and returns the compact tree state only: consecutive reads default to a delta (mode=delta lists changed lines only, mode=same when nothing changed, mode=full when more than one third changed, when window/size/focus/source changed, or with full=1); the content of encodedState depends on mode (the full state, or a diff starting with D); k*** ids are reading-order positions for preview and diff display only and are not action credentials. Each line is `id role \"label\" [flags+actions]`: flags ! disabled, * checked, % focused, ~ password; actions c click, l long-click, f/b scroll, o focus, t set-text; the token is omitted when both are empty. The reply also carries source, quality (ok/partial/empty), partial, readMs and ageMs (-1 = unknown); ageMs is time since capture and does not prove the screen is unchanged. Actions still use treeId/nodeId from a fresh /app/ui/tree or dump; Android accepting an action does not prove a business change, and UNKNOWN is never replayed automatically.\n");
     String taskHelp =
         com.deepseekharness.app.util.UiText.choose(
             "\n== 当前对话手机任务 ==\n用户明确要求手机操作时，先 /app/ui/task-begin；包括只启动应用的任务。每次请求携带真实工具环境的 taskSessionId=$DSH_PHONE_SESSION_ID 与 turnId=$DSH_PHONE_TURN_ID；不猜测或复制其它会话身份。begin 只显示当前对话状态和建立任务围栏，不授予系统权限、不自动批准动作。需要读屏再 dump/tree/screenshot；任务窗口会先隐藏，窗口可见状态变化后必须重新观察。成功 begin 后，任务完成或放弃时在 finally 收尾中调用一次 /app/ui/task-end，完成围栏；正常完成会关闭任务窗口，但用户在本机展开并暂停的任务会保留控制窗供明确继续或停止，不取消模型对话；本轮结束后不再重新 begin。完成收尾不证明 UNKNOWN 动作已成功或已退出，不自动重放。普通讨论、引用或翻译不开始手机任务。\n",
             "\n== Phone task in the current conversation ==\nWhen the user explicitly requests phone actions, call /app/ui/task-begin first, including app-launch-only tasks. Every request carries the real tool environment taskSessionId=$DSH_PHONE_SESSION_ID and turnId=$DSH_PHONE_TURN_ID; never invent or copy another conversation identity. Begin displays this conversation state and establishes the task boundary; it grants no system permission or automatic approval. Read dump/tree/screenshot when observation is needed; the task window is hidden first, and any visibility change requires a fresh observation. After successful begin, call /app/ui/task-end once in final cleanup when the task is completed or abandoned. End finishes this task and normally closes its window without cancelling the model conversation; if the user expanded and paused the task locally, the control window remains for an explicit Continue or Stop; do not begin again in the same finished turn. Cleanup does not prove an UNKNOWN action succeeded or exited; never replay automatically. Discussion, quotations and translations do not start phone tasks.\n");
+    String historyHelp =
+        com.deepseekharness.app.util.UiText.choose(
+            "\n== 屏幕活动历史（仅实体主屏手机任务） ==\n/app/ui/history?taskSessionId=...&turnId=...&since=&limit=20\n手机任务期间自动在内存记录实体主屏活动：目标切换、用户点按/滚动、内容变化与助手动作；约 120 秒 / 64 条，任务结束、暂停或无障碍断开立即清空，不落盘、不进备份或诊断日志。任务未开始、已结束或暂停时 events 为空。since 传上次返回的 nextSince 增量续读（事件序号，不是毫秒时间戳），limit 默认 20、最大 100；truncated=true 表示后面还有。M1 不返回图片，frames 为空数组。每个 /app/ui/* 的 JSON 回执自动附带 recentActivity（上次回执之后最多 3 条）；任务未开始时为空数组。\n",
+            "\n== Screen activity history (physical main screen, phone task only) ==\n/app/ui/history?taskSessionId=...&turnId=...&since=&limit=20\nWhile the phone task is active the app keeps an in-memory record of physical-screen activity: target changes, user taps and scrolls, content changes and assistant actions; about 120 seconds / 64 events, cleared immediately on task-end, pause or accessibility disconnect, and never written to disk, backups or diagnostic logs. events is empty when the task has not started, has ended or is paused. Pass the previous nextSince as since for incremental reads (event sequence, not a millisecond timestamp); limit defaults to 20 and maxes out at 100; truncated=true means more events remain. M1 returns no images; frames is an empty array. Every JSON /app/ui/* receipt automatically includes recentActivity (at most 3 events since the previous receipt); it is an empty array when no task has started.\n");
     String safHelp =
         com.deepseekharness.app.util.UiText.choose(
             "\n== 跨应用文件访问（SAF；先到 设置→设备能力授权→跨应用文件访问 授权）==\n/app/saf/trees   已授权目录：id / app / label / readable / writable / valid\n/app/saf/ls?tree=$ID&path=/files&limit=200\n/app/saf/stat?tree=$ID&path=/files/x.db\n/app/saf/read?tree=$ID&path=/files/x.txt&max=262144&offset=0   文本原样返回；二进制加 base64=1；offset 越界返回 OFFSET_OUT_OF_RANGE\n/app/saf/write?tree=$ID&path=/files/x.txt&text=…      小文本直接写（≤16 KiB；更大的用 push）\n/app/saf/push?tree=$ID&path=/files/x.db&src=/root/x.db    容器文件→目标（≤32 MiB）\n/app/saf/pull?tree=$ID&path=/files/x.db&dest=/root/x.db   目标→容器文件（≤32 MiB）\n/app/saf/mkdir?tree=$ID&path=/files/new   ·   /app/saf/rm?tree=$ID&path=/files/x.txt&confirm=1\n只认 /app/saf/trees 里的 id，不接受直接给 URI/authority。写与删要求该目录在设置里开着「允许写入」，否则 READ_ONLY；只给写权限的树会被拒绝（WRITE_ONLY，路径解析需要读权限）。rm 是两段式 + 一次性 token：先不带 confirm 调用获取 NEEDS_CONFIRM、目标/子项数与 token，再对同一路径带 confirm=<token>（60 秒有效）才会删除；confirm=1 一律返回 CONFIRM_REQUIRED，未知 token 同样 CONFIRM_REQUIRED。\n目标应用没启动/无响应时返回 PROVIDER_ERROR 或 TIMEOUT：先请用户打开那个应用再试。授权失效返回 PERMISSION_DENIED，让用户回设置页移除后重选。\n路径一律相对授权根；不许 ..；大文件先 pull 到容器改完再 push，别直接手改二进制。\n",
             "\n== Cross-app file access (SAF; grant a folder in Settings → Device permissions → Cross-app files first) ==\n/app/saf/trees   granted folders: id / app / label / readable / writable / valid\n/app/saf/ls?tree=$ID&path=/files&limit=200\n/app/saf/stat?tree=$ID&path=/files/x.db\n/app/saf/read?tree=$ID&path=/files/x.txt&max=262144&offset=0   text is returned as-is; add base64=1 for binary; an out-of-range offset returns OFFSET_OUT_OF_RANGE\n/app/saf/write?tree=$ID&path=/files/x.txt&text=…      write small text directly (≤16 KiB; use push for more)\n/app/saf/push?tree=$ID&path=/files/x.db&src=/root/x.db    container file → target (≤32 MiB)\n/app/saf/pull?tree=$ID&path=/files/x.db&dest=/root/x.db   target → container file (≤32 MiB)\n/app/saf/mkdir?tree=$ID&path=/files/new   ·   /app/saf/rm?tree=$ID&path=/files/x.txt&confirm=1\nOnly ids from /app/saf/trees are accepted; never pass a URI or authority directly. Writes and deletes require \"allow assistant writes\" for that folder, otherwise READ_ONLY; write-only trees are rejected (WRITE_ONLY, path resolution needs read access). rm uses two-step confirmation with a one-time token: call without confirm to get NEEDS_CONFIRM plus the target/child count and a token, then call again with confirm=<token> for the same path (valid for 60 seconds). confirm=1 always returns CONFIRM_REQUIRED; an unknown token also returns CONFIRM_REQUIRED.\nPROVIDER_ERROR or TIMEOUT means the target app is not running or not responding: ask the user to open it and retry. PERMISSION_DENIED means the grant is gone: remove it in Settings and pick the folder again.\nPaths are always relative to the granted root; .. is rejected. For large files, pull into the container, edit, then push; do not edit binary files through the bridge.\n");
     return com.deepseekharness.app.util.UiText.format(
-                "DSHA 3090 桥端点清单（BRIDGE_PROTOCOL=%s）\n凭据由宿主写入 /root/.dsh/.bridge_headers；使用 curl -H @/root/.dsh/.bridge_headers，不把 token 写进 URL 或命令参数。\n带中文/空格的参数一律用 -G --data-urlencode，别手写 URL 编码。\n\n== 屏幕操作（无障碍服务，不需要 ADB/Shizuku）==\n坐标触控仅限物理display 0：先 /app/ui/screenshot，返回 coordinatesAvailable:true 且含 observationId 才可用；dump/tree不签发像素凭据。ID限最新截图、30秒、一次手势；画面/窗口/遮挡/代次变化即拒绝。\n文字/节点动作返回 SCREEN_ACTION_SUBMITTED、actionAccepted:true、effectVerified:false 只代表Android接受动作，不证明WebView DOM已变；须重新观察，后续坐标操作须显式取新截图，禁止隐式回退或重放UNKNOWN。\n读屏  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → 每行语义节点附bounds；boundsHaveArea:false没有可触摸面积，不能取中心点触控\n点按  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=设置\" -H @/root/.dsh/.bridge_headers\n      → 优先按文字点：控件位置随滚动/动画变，文字不变。坐标触控须先截图取得 observationId（dump不签发），再用 ?observationId=截图返回的ID&x=&y=\n语义滚动 先 /app/ui/tree 或 dump 取 treeId、nodeId 和 supportedActions；/app/ui/node?treeId=返回的树ID&nodeId=返回的节点ID&action=scroll_forward（或 scroll_backward）。只调用节点列出的动作，一次请求后取新树；无障碍接受不代表实际已滚动，不自动改用滑动或重放未知结果。\n输入  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=内容\" -H @/root/.dsh/.bridge_headers\n      → 填到当前焦点框；没有焦点先 tap 一下输入框\n按键  /app/ui/key?name=back  （back/home/recents/notifications/quicksettings/lock）\n长按  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=long_press&ms=600\n双击  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=double_tap（同一Gesture/一次许可）\n当前只支持单指触控；多指/缩放不支持。\n滑动  /app/ui/swipe?observationId=截图返回的ID&x1=500&y1=1500&x2=500&y2=500&ms=300\n截屏  /app/ui/screenshot   → 存 PNG 到应用截图目录并返回路径（不回 base64）\n节奏：每次点按/输入后先 dump 再决定下一步，别凭记忆连点。\n\n== 独立虚拟屏（Android 11+） ==\n/app/vscreen/create?orientation=portrait  创建虚拟屏；也可选 landscape\n/app/vscreen/status  查询 coreInstance、generation、displayId 和状态\n$CORE 取自 create/status 返回的 coreInstance；$GEN 取自当前 see 或 tree 的 generation，$FRAME 取自该 see 的 frameSeq，$NODE 取自该 tree 的 nodeId。不要混用不同 Core 或不同观察的身份。\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  启动已安装应用；此端点不接受 generation\n/app/vscreen/see?coreInstance=$CORE  获取新画面及 generation、frameSeq\n空屏：新建的虚拟屏可能没有窗口；see 失败且 nextAction=LAUNCH_APP_FIRST（VSCREEN_NO_WINDOW）时先 launch，WAIT_AND_SEE_AGAIN（FRAME_PENDING）稍等再 see，REPORT_TO_USER（FRAME_STALLED）告诉用户。只读失败可安全重看，legacyError 保留 FRAME_NOT_READY。\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key 需要 coreInstance、generation 和最新 see 的 frameSeq；坐标按显示尺寸换算。\n/app/vscreen/tree?coreInstance=$CORE  获取当前树及 nodeId、generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  语义节点动作；不要求 frameSeq，使用新树中的节点\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  读取当前输入框；edit/submit 还需 editorId，edit 需 text；均不要求 frameSeq\nanchor 使用原 see 的 coreInstance、generation、frameSeq、observationId 和全尺寸整数 x/y；anchored-click 使用同一组身份及 anchorId。\n/app/vscreen/close?coreInstance=$CORE  关闭对应 Core；无运行中或待清理的 Core 时可省略身份\n应用启动或动作后重新观察；UNKNOWN 不自动重放。\n\n== 设备与应用 ==\n/app/device                     机型/系统/电量/网络/屏幕/存储/内存\n/app/apps                       全部已装应用，分用户应用与系统应用；可加 q/limit/user=1 筛选显示\n/app/launch?pkg=com.tencent.mm  启动应用\n/app/clip                       读剪贴板（需 App 在前台，系统限制）\n/app/clip + text=…              写剪贴板\n/app/readfile?path=/…          读取容器路径或当前用户共享存储的目录或文本（最多 256 KiB）；受 Android 权限限制，凭据区及跨域符号链接不可读；format=image 返回 8 MiB 内静态 PNG/JPEG/WebP 数据，动图及 GIF 不支持；/proc/self/status 单独提供当前桥进程诊断\n设备文件写入请走下方受保护的设备 shell；普通 Download 文件可操作，DCIM/Pictures/Android/data/obb 只读。\n\n== 与用户交互 ==\n/app/ask?options=继续|取消 + q=…  弹窗阻塞等回答（最多三个选项）\n/app/notify?title=… + text=…      通知栏\n/app/toast + text=…               App 内提示\n/app/vibrate?ms=300               震动（长任务跑完叫醒用户）\n/app/share（text= 或 path=）      分享到其它应用\n/app/open?url=https://…           打开链接\n/app/export?path=/root/report.md  把产物交给用户 → 落 Download/DSHA；凭据区不可导出\n建议：需要用户拍板用 /app/ask 而不是干等；长任务结束用 notify 或 vibrate 叫人；\n产出报告用 /app/export，别只留在容器里。\n\n== 传感器与位置（默认关闭，需用户在配置页勾选）==\n/app/location（加 fresh=1 强制重新定位，可能等数秒）\n/app/sensors 列表 · /app/sensor?name=light 读值\n（light 环境光 lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation 姿态四元数 / steps 开机后步数）\n/app/torch?on=1 手电\n这三类返回 DISABLED（用户没开该能力）或 NO_PERMISSION（没授系统权限）时，\n照原话告诉用户去哪开，不要重试 —— 重试不会让开关自己变。\n\n== 元信息 ==\n/app/version                          桥协议版本 + App 版本（特性检测用）\n/app/help                             本清单\n/app/entry-target                     读取桌面图标启动后进入的页面；加 set=main 或 set=web 修改（仅影响下次从桌面图标启动）\n\n== 插件状态 ==\n/app/plugins                          读回上次上报的加载状态\n/app/plugins?loaded=a,b&failed=c      上报（插件侧用）\n\n== 设备 shell（自动选择 root / Shizuku / ADB）==\n/root/dsh-bin/adb-shell \"命令\"        用 id 核验实际身份\n包装命令不存在时：python3 /root/.dsh/adb-shell.py \"命令\"\n短信只允许当前 Android 用户的 content query --uri content://sms，默认关闭；设置 → 设备能力授权可开启或撤销。\n短信预授权可能返回正文及验证码；不允许发送、修改或删除，Android 仍可拒绝访问。Shizuku 不执行此敏感查询。\n仅执行已识别的单条命令；允许读取各目录和明确路径的普通文件操作。禁止脚本、管道、重定向、未知命令。\n根目录及系统目录只读；禁止块设备/分区、SELinux、系统设置写入、挂载和刷机操作。\n结束进程前自动刷新全量用户/系统应用清单；普通用户应用直接结束，系统应用与关键进程拦截。\n按完整包名调用 am force-stop / killall / pkill -x；kill 正数 PID 会核对 UID 后按包名停止。\n策略拦截返回 [POLICY_BLOCKED]/126；root 和旧确认开关不能放行。不可用其它解释器或 UI 绕过。\n报连不上/未配对：先看上面的 App 层接口能不能办成；确实必须 shell 才请用户到\n设置 → 设备能力授权中连接可用通道，别反复试同一条命令。\n不要用 /root/dsh-bin/adb 或裸 adb —— 那是守卫包装脚本，会失败。\n\n== root（--su）==\n已启用并经 root 管理器授权的 su 可直接执行，无需 ADB 配对；其次使用 Shizuku，再使用 ADB。\n--su 仅在明确需要 root 时使用，须先在设备能力授权页允许；同一设备保护策略始终生效。\n[EXECUTION_UNKNOWN] 表示命令可能已执行，先核对实际状态，不能切换通道或自动重放。\n",
+                "DSHA 3090 桥端点清单（BRIDGE_PROTOCOL=%s）\n凭据由宿主写入 /root/.dsh/.bridge_headers；使用 curl -H @/root/.dsh/.bridge_headers，不把 token 写进 URL 或命令参数。\n带中文/空格的参数一律用 -G --data-urlencode，别手写 URL 编码。\n\n== 屏幕操作（无障碍服务，不需要 ADB/Shizuku）==\n坐标触控仅限物理display 0：先 /app/ui/screenshot，返回 coordinatesAvailable:true 且含 observationId 才可用；dump/tree不签发像素凭据。ID限最新截图、30秒、一次手势；画面/窗口/遮挡/代次变化即拒绝。\n文字/节点动作返回 SCREEN_ACTION_SUBMITTED、actionAccepted:true、effectVerified:false 只代表Android接受动作，不证明WebView DOM已变。动作端点加 observe=1（MCP 动作工具默认带上）时，成功后同一次请求会先等界面稳定（首个事件≤800ms、静默250ms、总上限2.5s，回执 settle 字段如实记录），再返回新生成的 observation（新 treeId/nodeId 与文字树）；坐标动作只回新树、不返回截图，坐标仍须重新 /app/ui/screenshot。观察失败只回 observationUnavailable，不改写动作状态；UNKNOWN 仍不得重放。\n读屏  curl -s -H @/root/.dsh/.bridge_headers \"127.0.0.1:3090/app/ui/dump\"\n      → 每行语义节点附bounds；boundsHaveArea:false没有可触摸面积，不能取中心点触控\n点按  curl -s -G 127.0.0.1:3090/app/ui/tap --data-urlencode \"text=设置\" -H @/root/.dsh/.bridge_headers\n      → 优先按文字点：控件位置随滚动/动画变，文字不变。坐标触控须先截图取得 observationId（dump不签发），再用 ?observationId=截图返回的ID&x=&y=\n语义滚动 先 /app/ui/tree 或 dump 取 treeId、nodeId 和 supportedActions；/app/ui/node?treeId=返回的树ID&nodeId=返回的节点ID&action=scroll_forward（或 scroll_backward）。只调用节点列出的动作，一次请求后取新树；无障碍接受不代表实际已滚动，不自动改用滑动或重放未知结果。\n输入  curl -s -G 127.0.0.1:3090/app/ui/input --data-urlencode \"text=内容\" -H @/root/.dsh/.bridge_headers\n      → 填到当前焦点框；没有焦点先 tap 一下输入框\n按键  /app/ui/key?name=back  （back/home/recents/notifications/quicksettings/lock）\n长按  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=long_press&ms=600\n双击  /app/ui/tap?observationId=截图返回的ID&x=540&y=1200&gesture=double_tap（同一Gesture/一次许可）\n当前只支持单指触控；多指/缩放不支持。\n滑动  /app/ui/swipe?observationId=截图返回的ID&x1=500&y1=1500&x2=500&y2=500&ms=300\n截屏  /app/ui/screenshot   → 存 PNG 到应用截图目录并返回路径（不回 base64）\n节奏：点按/输入带 observe=1 时回执已附新树，直接用新 treeId/nodeId 继续；没有 observation 或出现 SCREEN_TARGET_CHANGED 时再 dump，别凭记忆连点。\n\n== 独立虚拟屏（Android 11+） ==\n/app/vscreen/create?orientation=portrait  创建虚拟屏；也可选 landscape\n/app/vscreen/status  查询 coreInstance、generation、displayId 和状态\n$CORE 取自 create/status 返回的 coreInstance；$GEN 取自当前 see 或 tree 的 generation，$FRAME 取自该 see 的 frameSeq，$NODE 取自该 tree 的 nodeId。不要混用不同 Core 或不同观察的身份。\n/app/vscreen/launch?coreInstance=$CORE&package=com.example.app  启动已安装应用；此端点不接受 generation\n/app/vscreen/see?coreInstance=$CORE  获取新画面及 generation、frameSeq\n空屏：新建的虚拟屏可能没有窗口；see 失败且 nextAction=LAUNCH_APP_FIRST（VSCREEN_NO_WINDOW）时先 launch，WAIT_AND_SEE_AGAIN（FRAME_PENDING）稍等再 see，REPORT_TO_USER（FRAME_STALLED）告诉用户。只读失败可安全重看，legacyError 保留 FRAME_NOT_READY。\n/app/vscreen/tap?coreInstance=$CORE&generation=$GEN&frameSeq=$FRAME&x=10&y=20\ntap/swipe/touch/type/key 需要 coreInstance、generation 和最新 see 的 frameSeq；坐标按显示尺寸换算。\n/app/vscreen/tree?coreInstance=$CORE  获取当前树及 nodeId、generation\n/app/vscreen/node?coreInstance=$CORE&generation=$GEN&nodeId=$NODE&action=click  语义节点动作；不要求 frameSeq，使用新树中的节点\n/app/vscreen/editor?coreInstance=$CORE&generation=$GEN  读取当前输入框；edit/submit 还需 editorId，edit 需 text；均不要求 frameSeq\nanchor 使用原 see 的 coreInstance、generation、frameSeq、observationId 和全尺寸整数 x/y；anchored-click 使用同一组身份及 anchorId。\n/app/vscreen/close?coreInstance=$CORE  关闭对应 Core；无运行中或待清理的 Core 时可省略身份\n应用启动或动作后重新观察；UNKNOWN 不自动重放。\n\n== 设备与应用 ==\n/app/device                     机型/系统/电量/网络/屏幕/存储/内存\n/app/apps                       全部已装应用，分用户应用与系统应用；可加 q/limit/user=1 筛选显示\n/app/launch?pkg=com.tencent.mm  启动应用\n/app/clip                       读剪贴板（需 App 在前台，系统限制）\n/app/clip + text=…              写剪贴板\n/app/readfile?path=/…          读取容器路径或当前用户共享存储的目录或文本（最多 256 KiB）；受 Android 权限限制，凭据区及跨域符号链接不可读；format=image 返回 8 MiB 内静态 PNG/JPEG/WebP 数据，动图及 GIF 不支持；/proc/self/status 单独提供当前桥进程诊断\n设备文件写入请走下方受保护的设备 shell；普通 Download 文件可操作，DCIM/Pictures/Android/data/obb 只读。\n\n== 与用户交互 ==\n/app/ask?options=继续|取消 + q=…  弹窗阻塞等回答（最多三个选项）\n/app/notify?title=… + text=…      通知栏\n/app/toast + text=…               App 内提示\n/app/vibrate?ms=300               震动（长任务跑完叫醒用户）\n/app/share（text= 或 path=）      分享到其它应用\n/app/open?url=https://…           打开链接\n/app/export?path=/root/report.md  把产物交给用户 → 落 Download/DSHA；凭据区不可导出\n建议：需要用户拍板用 /app/ask 而不是干等；长任务结束用 notify 或 vibrate 叫人；\n产出报告用 /app/export，别只留在容器里。\n\n== 传感器与位置（默认关闭，需用户在配置页勾选）==\n/app/location（加 fresh=1 强制重新定位，可能等数秒）\n/app/sensors 列表 · /app/sensor?name=light 读值\n（light 环境光 lux / accel / gyro / magnet / pressure / proximity /\n gravity / rotation 姿态四元数 / steps 开机后步数）\n/app/torch?on=1 手电\n这三类返回 DISABLED（用户没开该能力）或 NO_PERMISSION（没授系统权限）时，\n照原话告诉用户去哪开，不要重试 —— 重试不会让开关自己变。\n\n== 元信息 ==\n/app/version                          桥协议版本 + App 版本（特性检测用）\n/app/help                             本清单\n/app/entry-target                     读取桌面图标启动后进入的页面；加 set=main 或 set=web 修改（仅影响下次从桌面图标启动）\n\n== 插件状态 ==\n/app/plugins                          读回上次上报的加载状态\n/app/plugins?loaded=a,b&failed=c      上报（插件侧用）\n\n== 设备 shell（自动选择 root / Shizuku / ADB）==\n/root/dsh-bin/adb-shell \"命令\"        用 id 核验实际身份\n包装命令不存在时：python3 /root/.dsh/adb-shell.py \"命令\"\n短信只允许当前 Android 用户的 content query --uri content://sms，默认关闭；设置 → 设备能力授权可开启或撤销。\n短信预授权可能返回正文及验证码；不允许发送、修改或删除，Android 仍可拒绝访问。Shizuku 不执行此敏感查询。\n仅执行已识别的单条命令；允许读取各目录和明确路径的普通文件操作。禁止脚本、管道、重定向、未知命令。\n根目录及系统目录只读；禁止块设备/分区、SELinux、系统设置写入、挂载和刷机操作。\n结束进程前自动刷新全量用户/系统应用清单；普通用户应用直接结束，系统应用与关键进程拦截。\n按完整包名调用 am force-stop / killall / pkill -x；kill 正数 PID 会核对 UID 后按包名停止。\n策略拦截返回 [POLICY_BLOCKED]/126；root 和旧确认开关不能放行。不可用其它解释器或 UI 绕过。\n报连不上/未配对：先看上面的 App 层接口能不能办成；确实必须 shell 才请用户到\n设置 → 设备能力授权中连接可用通道，别反复试同一条命令。\n不要用 /root/dsh-bin/adb 或裸 adb —— 那是守卫包装脚本，会失败。\n\n== root（--su）==\n已启用并经 root 管理器授权的 su 可直接执行，无需 ADB 配对；其次使用 Shizuku，再使用 ADB。\n--su 仅在明确需要 root 时使用，须先在设备能力授权页允许；同一设备保护策略始终生效。\n[EXECUTION_UNKNOWN] 表示命令可能已执行，先核对实际状态，不能切换通道或自动重放。\n",
                 BRIDGE_PROTOCOL)
             .replace("3090", Integer.toString(bridgePort))
         + modeHelp
         + taskHelp
+        + historyHelp
         + installHelp
         + senseHelp
         + netHelp

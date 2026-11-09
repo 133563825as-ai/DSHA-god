@@ -28,11 +28,13 @@ public final class ConfigStoreHideFromRecentsTest {
         RuntimeEnvironment.getApplication()
             .getSharedPreferences(Constants.PREFS, Context.MODE_PRIVATE);
     preferences.edit().remove(Constants.KEY_HIDE_FROM_RECENTS).commit();
+    preferences.edit().remove(Constants.KEY_HIDE_RECENTS_STRICT).commit();
   }
 
   @After
   public void restoreHideFromRecentsPreference() {
     preferences.edit().remove(Constants.KEY_HIDE_FROM_RECENTS).commit();
+    preferences.edit().remove(Constants.KEY_HIDE_RECENTS_STRICT).commit();
   }
 
   @Test
@@ -52,5 +54,19 @@ public final class ConfigStoreHideFromRecentsTest {
     ConfigStore config = new ConfigStore(RuntimeEnvironment.getApplication());
     config.setHideFromRecents(true);
     assertFalse(config.hostSettingsState().containsKey(Constants.KEY_HIDE_FROM_RECENTS));
+  }
+
+  @Test
+  public void strictModeDefaultsOffAndSurvivesAConfigStoreReload() {
+    assertFalse(new ConfigStore(RuntimeEnvironment.getApplication()).isHideRecentsStrict());
+    new ConfigStore(RuntimeEnvironment.getApplication()).setHideRecentsStrict(true);
+    assertTrue(new ConfigStore(RuntimeEnvironment.getApplication()).isHideRecentsStrict());
+  }
+
+  @Test
+  public void strictModeIsExcludedFromHostSettingsState() {
+    ConfigStore config = new ConfigStore(RuntimeEnvironment.getApplication());
+    config.setHideRecentsStrict(true);
+    assertFalse(config.hostSettingsState().containsKey(Constants.KEY_HIDE_RECENTS_STRICT));
   }
 }

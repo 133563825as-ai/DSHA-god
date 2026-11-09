@@ -124,7 +124,7 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         TransferUi.text(
             this,
             t(
-                "这里只显示进度。需要取消或处理时，请进入对应页面操作。",
+                "仅显示进度；操作请进对应页面",
                 "This page only shows progress. Open the related page to cancel or resolve a task."),
             12.5f,
             R.color.shell_text_muted,
@@ -190,7 +190,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
             ? t("当前空闲，没有正在执行的原生任务", "Idle; no native tasks are running")
             : String.format(
                 java.util.Locale.ROOT, t("%d 项任务正在执行", "%d tasks running"), rows.size());
-    if (!count.contentEquals(summary.getText())) summary.setText(count);
+    // 计数行：数字变化直接落值（不闪），空闲/运行文案切换才淡入（审计 E-10）。
+    UiMotion.crossFadeTimerText(summary, count);
     taskList.setVisibility(rows.isEmpty() ? View.GONE : View.VISIBLE);
     emptyState.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
 
@@ -204,6 +205,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         if (i > 0) taskList.addView(TransferUi.divider(this, 68));
         taskList.addView(taskRow(rows.get(i)));
       }
+      // 新增/消失的行用既有列表首屏同一节奏淡入；不重排已有行。
+      UiMotion.staggerIn(taskList, 8);
       return;
     }
     // 同一批任务：只刷新时长与步骤文字，不重建行，保留焦点与读屏位置。
@@ -212,8 +215,8 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
       View child = taskList.getChildAt(i);
       if (!(child.getTag() instanceof TextView[] views)) continue;
       Task row = rows.get(index++);
-      if (!row.title.contentEquals(views[0].getText())) views[0].setText(row.title);
-      if (!row.meta.contentEquals(views[1].getText())) views[1].setText(row.meta);
+      UiMotion.crossFadeText(views[0], row.title);
+      UiMotion.crossFadeTimerText(views[1], row.meta);
       child.setContentDescription(row.title + ", " + row.meta);
     }
   }
@@ -298,7 +301,7 @@ public final class BackgroundTasksActivity extends AppCompatActivity {
         TransferUi.text(
             this,
             t(
-                "终端、插件、备份与环境维护开始后会显示在这里。",
+                "任务开始后在此显示",
                 "Terminals, plugins, backups and maintenance appear here while they run."),
             13,
             R.color.shell_text_secondary,

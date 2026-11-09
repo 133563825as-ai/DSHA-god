@@ -57,7 +57,7 @@ final class PermissionChannelCard {
     m.icon = R.drawable.ic_terminal;
     boolean stellar = com.deepseekharness.app.ShizukuManagerCompat.isStellar(ctx);
     boolean hasManager = com.deepseekharness.app.ShizukuManagerCompat.manager(ctx) != null;
-    m.title = UiText.choose("设备命令通道", "Device command channel");
+    m.title = UiText.choose("设备执行通道", "Device command channel");
     m.why =
         UiText.choose(
             "通过 Stellar 的 Shizuku 兼容层执行设备命令。Root 与 ADB 在设置中配置。",
@@ -270,15 +270,16 @@ final class PermissionChannelCard {
     line.addView(toggle);
     panel.addView(line);
     panel.addView(statusBox(kit, RootShell.status(ctx), rootReady(ctx)), kit.topMargin(4));
-    kit.add(
-        panel,
+    // 行内只留第一句（root 可直接用 su、无需 ADB 配对），严格档与不回退说明挂 ⓘ。
+    TextView rootHint =
         kit.text(
             UiText.choose(
                 "手机已 root 时可直接使用 su，无需 ADB 配对。首次执行请在 root 管理器中授权 DSHA。开关打开且找到 su 后命令会先走 root，管理器拒绝时不会自动改用 Shizuku；引导中固定为严格档，放宽只在 设置 → 设备能力授权 中调整。",
                 "On a rooted phone su works without ADB pairing; approve DSHA in your root manager on first use. Once enabled and su is found, commands go through root first and do not fall back to Shizuku if the manager denies. Onboarding keeps the strict level; relax it only in Settings → Device access."),
             12,
-            R.color.shell_text_muted),
-        8);
+            R.color.shell_text_muted);
+    InfoHint.attach(rootHint, label.getText());
+    kit.add(panel, rootHint, 8);
     if (enabled) {
       Button verify =
           kit.small(
@@ -286,8 +287,7 @@ final class PermissionChannelCard {
               true,
               v -> {
                 if (!RootShell.present()) {
-                  PermissionActions.toast(
-                      activity, UiText.text("未找到 su；请确认手机已 root，且 root 管理器允许 DSHA 使用"));
+                  PermissionActions.toast(activity, UiText.text("未找到 su，请检查 root 授权"));
                   return;
                 }
                 PermissionActions.verify(
@@ -313,15 +313,15 @@ final class PermissionChannelCard {
   private static String adbStatus(Context app) {
     try {
       if (!com.deepseekharness.app.DeviceBridgeService.isAdbEnabled(app))
-        return UiText.text("ADB 已关闭。开启后才会保持连接。");
+        return UiText.text("ADB 已关闭");
       String bridge = com.deepseekharness.app.DeviceBridgeService.adbState;
       if ("need_pair".equals(bridge)) return UiText.text("配对已失效，请重新配对。");
       if ("reconnecting".equals(bridge)) return UiText.format("正在重连无线调试…%s", "");
       if ("connected".equals(bridge))
         return UiText.choose("连接已验证 · ADB 通道可用", "Connection verified · ADB channel available");
-      return UiText.text("尚未配对：点下方「ADB 无线配对」，配对后还会验证连接。");
+      return UiText.text("尚未配对");
     } catch (RuntimeException unknown) {
-      return UiText.text("尚未配对：点下方「ADB 无线配对」，配对后还会验证连接。");
+      return UiText.text("尚未配对");
     }
   }
 

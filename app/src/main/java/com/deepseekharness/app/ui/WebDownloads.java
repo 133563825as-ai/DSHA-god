@@ -67,7 +67,7 @@ public final class WebDownloads {
                       .setType("application/octet-stream")
                       .putExtra(Intent.EXTRA_TITLE, model.fileName());
               try {
-                picker.launch(intent);
+                RecentsPrivacyGuard.launch(picker, intent);
               } catch (RuntimeException error) {
                 model.pickerOpen = false;
                 model.acknowledge();

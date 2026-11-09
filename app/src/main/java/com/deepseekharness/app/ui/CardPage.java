@@ -88,9 +88,14 @@ final class CardPage {
   }
 
   LinearLayout card() {
+    return card(CardTokens.Tier.OUTLINED);
+  }
+
+  /** 按 H1 层级建卡：页面主卡 elevated、分组 filled、次级 outlined。 */
+  LinearLayout card(CardTokens.Tier tier) {
     LinearLayout card = column();
-    card.setBackgroundResource(R.drawable.bg_shell_card);
     card.setPadding(dp(16), dp(12), dp(16), dp(12));
+    CardTokens.tier(card, tier);
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
     p.bottomMargin = dp(14);
     content.addView(card, p);
@@ -118,7 +123,8 @@ final class CardPage {
     card.addView(row);
   }
 
-  void entry(LinearLayout card, String title, String subtitle, int icon, Runnable action) {
+  /** 可点行；返回行视图，列表首次错峰等效果需要直接操作它。 */
+  View entry(LinearLayout card, String title, String subtitle, int icon, Runnable action) {
     if (card.getChildCount() > 0) card.addView(divider());
     LinearLayout row = new LinearLayout(context);
     row.setGravity(Gravity.CENTER_VERTICAL);
@@ -127,6 +133,7 @@ final class CardPage {
     row.setBackgroundResource(R.drawable.bg_action_plain);
     row.setFocusable(true);
     row.setOnClickListener(v -> action.run());
+    PressFeedback.attach(row, PressFeedback.Variant.ROW);
     ImageView mark = new ImageView(context);
     mark.setImageResource(icon);
     mark.setImageTintList(
@@ -157,6 +164,7 @@ final class CardPage {
     arrow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     row.addView(arrow, new LinearLayout.LayoutParams(dp(16), dp(16)));
     card.addView(row);
+    return row;
   }
 
   private View divider() {
@@ -169,23 +177,36 @@ final class CardPage {
   }
 
   Button button(LinearLayout parent, String title, boolean primary, Runnable action) {
+    Button button = button(context, parent, title, primary, action);
+    if (primary) primaryButtons.add(button);
+    return button;
+  }
+
+  /** 对话框等不使用卡片页脚的容器复用同一套按钮样式；只有卡片页脚需要登记主按钮。 */
+  static Button button(
+      Context context, LinearLayout parent, String title, boolean primary, Runnable action) {
     var button = new androidx.appcompat.widget.AppCompatButton(context);
     button.setText(title);
     button.setTextSize(14);
     button.setAllCaps(false);
     button.setTypeface(null, android.graphics.Typeface.BOLD);
     button.setIncludeFontPadding(false);
-    button.setMinHeight(dp(primary ? 52 : 46));
-    button.setMinimumHeight(dp(primary ? 52 : 46));
+    int height = dp(context, primary ? 52 : 46);
+    button.setMinHeight(height);
+    button.setMinimumHeight(height);
     button.setMinWidth(0);
     button.setBackgroundResource(primary ? R.drawable.bg_btn_primary : R.drawable.bg_btn);
     button.setTextColor(
         context.getColorStateList(primary ? R.color.button_primary_text : R.color.button_text));
     button.setOnClickListener(v -> action.run());
-    if (primary) primaryButtons.add(button);
+    PressFeedback.attach(button, PressFeedback.Variant.BUTTON);
     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-    p.topMargin = dp(10);
+    p.topMargin = dp(context, 10);
     parent.addView(button, p);
     return button;
+  }
+
+  private static int dp(Context context, int value) {
+    return Math.round(value * context.getResources().getDisplayMetrics().density);
   }
 }

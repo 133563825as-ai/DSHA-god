@@ -27,6 +27,23 @@ SAF 是唯一不看 UID 的正规通道，但**只有用户能在系统文档选
   **普通应用的 `/data/data` 不会出现**——这是系统隔离，不是功能缺失。
 - 目标应用进程不在或不应答时返回 `PROVIDER_ERROR`/`TIMEOUT`；Provider 在 binder 内完全忽略取消时，后台线程仍会被占用到它返回为止。
 
+## 选择器：优先系统 DocumentsUI
+
+`ACTION_OPEN_DOCUMENT_TREE` 是隐式意图，厂商文件管理器可以把默认处理程序改成自家界面；那种界面
+往往看不到 SD 卡 / U 盘等存储挂载点，甚至不按 SAF 合同返回可持久化的 tree 授权（一加 C16 / ColorOS
+报障，T126）。授权页与备份目录选择因此改为**显式指向系统 DocumentsUI**
+（`com.android.documentsui` / `com.google.android.documentsui`，代码见 `ui/SystemDocumentPicker`）：
+
+- 图标清单 `<queries>` 同时声明两个系统包与 `OPEN_DOCUMENT_TREE` 意图，否则 Android 11+ 的包可见性
+  会让查询看不到系统选择器；
+- 发起选择时先查可见且已导出的系统入口并设置 component；没有系统选择器时退回原默认解析，不阻断流程；
+- 默认处理程序被厂商改写时，授权页弹窗说明「可能看不到挂载点」，给出三个入口：系统文件选择器 /
+  跳到接管者的应用信息页（清「默认打开」）/ 明确继续用默认界面。用户选择不被持久化，不改变系统默认；
+- 这只是选择界面的路由，授权仍由系统逐目录发放，`/app/saf/*` 的授权簿、路径护栏与写入开关完全不变。
+
+存储挂载点能不能选到仍取决于系统 DocumentsUI 与 ROM 是否暴露对应 root；本模块不申请
+`MANAGE_EXTERNAL_STORAGE`，也不扩大任何权限声明。
+
 ## 授权与持久化
 
 | 项 | 做法 |
@@ -93,6 +110,8 @@ SAF 是唯一不看 UID 的正规通道，但**只有用户能在系统文档选
 - `rm` 是两段式 + 一次性 token：第一次只探测并返回 `NEEDS_CONFIRM`（目标路径、目录子项数、60 秒有效的 token），第二次必须带 `confirm=<token>`；token 绑定 tree/path/探测时的目标身份，消费即删。`confirm=1` 一律返回 `CONFIRM_REQUIRED`，未知 token 同样拒绝。目录内容递归删除前先逐层只读预检；任何一层超过 500 子项直接 `SCAN_LIMIT`，不先删任何项（分页递归删除留待后续）。不再用「先列目录判空/非空」分支，避免检查与删除之间的 TOCTOU。Provider 仍可能在确认后按自身语义处理并发新增子项。
 - 32 MiB 以上的单文件不支持（`pull`/`push` 各有上限）；需要的话先分段。
 - 目标应用卸载或授权被系统撤销后，条目显示「已失效」，需用户移除后重选。
+- 系统 DocumentsUI 被 ROM 移除或禁用时只能退回默认选择器；那种界面若看不到挂载点，属于本机缺少系统
+  文档选择器，DSHA 不会用 `MANAGE_EXTERNAL_STORAGE` 或直接路径遍历替代用户授权。
 - 只给写权限（Provider 未给读位）的树在添加时会被拒绝；旧版本留下的只写记录读端点/浏览页不可用，移除后重新授权读写即可。
 - `push` 覆盖已有文件时先 `"wt"` 截断目标；Provider 超时/取消/长度不符可能留下半截目标（无法回滚，属于已知限制；重要文件请先备份）。
 - `write` 的写后校验依赖 `COLUMN_SIZE`：Provider 返回 -1 时只能依赖写调用本身成功，无法再比对
@@ -113,6 +132,8 @@ SAF 是唯一不看 UID 的正规通道，但**只有用户能在系统文档选
   取消/错误码映射、慢 write/mkdir TIMEOUT、write/read 成功路径。
 - `SafBridgeTest`（Robolectric）：`trees` 零查询、`rm` token/空路径/confirm=1 拒绝、未知/失效/只读/写开关关闭、
   push/pull 参数校验与成功/失败路径（临时 rootfs）。
+- `SystemDocumentPickerTest`（Robolectric）：系统 DocumentsUI 与厂商处理程序共存时强制系统入口、OEM 接管可识别、
+  系统选择器缺失/未导出时退回默认解析、系统意图选择器不算接管、tree URI 结果与起始目录只经合同转发。
 - `app/src/test/java/com/deepseekharness/app/util/BridgeRoutesTest.java`：SAF 路由匹配。
 - `tools/test-saf-local-files.py`：真实 Linux syscall 祖先换链负控 5 例（朴素 O_NOFOLLOW 仍读到凭据、
   readlink 不匹配即拒绝、锚定遍历拒绝换链、rename 后 fd 不变、父 fd 发布不跟随路径）。

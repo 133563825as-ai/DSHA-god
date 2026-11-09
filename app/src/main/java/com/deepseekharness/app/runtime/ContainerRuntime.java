@@ -107,6 +107,9 @@ public interface ContainerRuntime {
       argv.add("-0");
       argv.add("--rootfs=" + rootfsDir.getAbsolutePath());
       argv.add("--cwd=/root");
+      // 运行根自镜像：guest 内按 /proc/self/maps 回读自身文件依赖它，见 rootfsSelfMirror()。
+      argv.add("-b");
+      argv.add(rootfsSelfMirror(rootfsDir));
       for (Bind b : binds(com.deepseekharness.app.StorageAccess.granted(context))) {
         if (!new File(b.host()).exists()) {
           if (context != null)
@@ -119,6 +122,24 @@ public interface ContainerRuntime {
       }
       if (dataDomain != null) UserDataBindings.append(argv, rootfsDir, dataDomain);
       return argv;
+    }
+
+    /**
+     * 运行根自我镜像绑定：guest 内按 {@code /proc/self/maps} 记录的宿主绝对路径回读自身文件。
+     *
+     * <p>proot 用宿主路径 exec/mmap，maps 里是内核解析后的 canonical 路径；而运行根通常以
+     * {@code /data/user/0} 别名传入，maps 却是 {@code /data/data}。不绑定的话，guest 的 open
+     * 会被翻译成 {@code <rootfs>/data/data/...}（通常不存在或只有骨架目录）并报 ENOENT。
+     * 历史 maintenance proot 也在 {@code RecoveryToolchain} 里绑定同类自镜像。
+     */
+    private static String rootfsSelfMirror(File rootfsDir) {
+      File canonical = rootfsDir;
+      try {
+        canonical = rootfsDir.getCanonicalFile();
+      } catch (java.io.IOException ignored) {
+        // 路径暂不可解析时退回传入路径，不阻断启动。
+      }
+      return canonical.getAbsolutePath() + ":" + canonical.getAbsolutePath();
     }
 
     @Override
@@ -250,6 +271,8 @@ public interface ContainerRuntime {
       argv.add("-0");
       argv.add("-w");
       argv.add("/root");
+      // 运行根自镜像不在这里重复绑定：当前 v1.2.8 已把 -r 解析后的 canonical rootfs 绑进 guest
+      // （见 util/GhHostRoot 与 build343 真机实测）；重复 -b 的 vendor 行为未验证，升级 proroot 时复核。
       for (Bind b : binds(com.deepseekharness.app.StorageAccess.granted(ctx))) {
         if (!new File(b.host()).exists()) {
           RuntimeHostPorts.fromOwner(ctx.getApplicationContext())

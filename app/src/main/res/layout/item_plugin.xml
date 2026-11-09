@@ -7,6 +7,8 @@
     DETAIL  平板右栏：完整说明、属性表与操作，复用同一视图树
   pluginName / pluginDesc / pluginStatus / pluginSwitch / pluginActions / pluginExpand /
   pluginDelete / pluginDetails 的 id 与点击语义保留；颜色全部取 shell_* token。
+  来源 / 版本 / 配置 / 当前 Web 各用一枚 shell_* 语义色胶囊（T129）；重启待办用警示胶囊，
+  窄屏与 1.3 倍字体下由 PluginFlowRow 整枚换行，不省略关键状态词。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="10dp" android:background="@drawable/bg_shell_card" android:orientation="vertical" android:paddingStart="@dimen/shell_card_pad" android:paddingTop="14dp" android:paddingEnd="10dp" android:paddingBottom="4dp">
 
@@ -18,12 +20,12 @@
 
             <TextView android:id="@+id/pluginName" style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:breakStrategy="simple" android:accessibilityHeading="true" />
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <com.deepseekharness.app.ui.PluginFlowRow android:id="@+id/pluginMetaRow" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" app:flowGapHorizontal="6dp" app:flowGapVertical="6dp">
 
-                <TextView android:id="@+id/pluginBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/bg_plugin_badge" android:ellipsize="end" android:includeFontPadding="false" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="@color/shell_accent" android:textSize="11.5sp" android:textStyle="bold" />
+                <TextView android:id="@+id/pluginBadge" style="@style/ShellPluginBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" />
 
-                <TextView android:id="@+id/pluginVersion" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="monospace" android:includeFontPadding="false" android:maxLines="1" android:textColor="@color/shell_text_muted" android:textSize="11.5sp" />
-            </LinearLayout>
+                <TextView android:id="@+id/pluginVersion" style="@style/ShellPluginBadgeMono" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" />
+            </com.deepseekharness.app.ui.PluginFlowRow>
         </LinearLayout>
 
         <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/pluginSwitch" style="@style/ShellSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="-4dp" android:minHeight="48dp" android:saveEnabled="false" android:showText="false" />
@@ -31,14 +33,14 @@
 
     <TextView android:id="@+id/pluginDesc" style="@style/ShellCardBody" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:layout_marginEnd="6dp" android:ellipsize="end" android:maxLines="2" />
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:layout_marginEnd="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+    <com.deepseekharness.app.ui.PluginFlowRow android:id="@+id/pluginStatusRow" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:layout_marginEnd="6dp" app:flowGapHorizontal="8dp" app:flowGapVertical="6dp">
 
-        <View android:id="@+id/pluginStatusDot" android:layout_width="7dp" android:layout_height="7dp" android:background="@drawable/bg_plugin_dot" android:importantForAccessibility="no" />
+        <!-- 配置徽章：圆点合进文字胶囊，作为装饰不单独暴露给 TalkBack；文字由 PluginFragment 按语义着色。 -->
+        <TextView android:id="@+id/pluginStatus" style="@style/ShellPluginBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:drawableStart="@drawable/bg_plugin_dot" android:drawablePadding="5dp" android:maxLines="3" />
 
-        <TextView android:id="@+id/pluginStatus" style="@style/ShellStatusText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:ellipsize="end" android:includeFontPadding="false" android:maxLines="1" android:textStyle="bold" />
-
-        <TextView android:id="@+id/pluginRuntime" style="@style/ShellStatusText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:layout_weight="1" android:ellipsize="end" android:gravity="end" android:includeFontPadding="false" android:maxLines="1" android:textColor="@color/shell_text_muted" />
-    </LinearLayout>
+        <!-- 当前 Web 徽章：放不下时整枚换到下一行，不省略关键状态词。 -->
+        <TextView android:id="@+id/pluginRuntime" style="@style/ShellPluginBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:lineSpacingExtra="2dp" android:maxLines="4" android:textStyle="normal" />
+    </com.deepseekharness.app.ui.PluginFlowRow>
 
     <com.deepseekharness.app.ui.PluginTaskProgress android:id="@+id/pluginProgress" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="10dp" android:layout_marginEnd="6dp" android:importantForAccessibility="yes" android:visibility="gone" />
 

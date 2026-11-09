@@ -6,6 +6,24 @@ import org.junit.Test;
 
 public final class WebSessionDiagnosticsTest {
   @Test
+  public void unresolvedOutcomeExportsOnlyStableStageAndReason() {
+    assertEquals(
+        "stage=KERNEL_VERIFY reason=IDENTITY_UNKNOWN attempts=0 kind=UNRESOLVED",
+        WebSessionDiagnostics.unresolved("KERNEL_VERIFY", "IDENTITY_UNKNOWN", 0));
+    assertEquals(
+        "stage=RETIRE reason=RETIRE_UNAVAILABLE attempts=3 kind=UNRESOLVED",
+        WebSessionDiagnostics.unresolved("RETIRE", "RETIRE_UNAVAILABLE", 3));
+  }
+
+  @Test
+  public void unresolvedStageAndReasonNeverCarryFreeFormContent() {
+    String detail =
+        WebSessionDiagnostics.unresolved("stage with space", "reason\nwith newline", 80);
+    assertEquals("stage=UNKNOWN reason=UNKNOWN attempts=9 kind=UNRESOLVED", detail);
+    assertFalse(detail.contains("with"));
+  }
+
+  @Test
   public void safeOuterStageAndKnownInnerBoundarySurviveWithoutFreeFormContent() {
     var error =
         new IOException(

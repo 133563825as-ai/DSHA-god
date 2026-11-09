@@ -73,6 +73,7 @@ public final class LayoutPreviewActivity extends AppCompatActivity {
           com.deepseekharness.app.util.UiText.choose(
               "只加载官方基础界面；插件开关与配置原样保留。",
               "Loads only the official basic interface; plugin switches and configuration stay as they are."),
+          "",
           false,
           R.drawable.ic_recovery_shield,
           () -> {},
@@ -80,6 +81,9 @@ public final class LayoutPreviewActivity extends AppCompatActivity {
       page.action(
           page.recovery,
           com.deepseekharness.app.util.UiText.choose("恢复最近健康快照", "Restore latest healthy snapshot"),
+          com.deepseekharness.app.util.UiText.choose(
+              "只覆盖配置文件；会话、工作区和插件文件不动。",
+              "Overwrites configuration files only; sessions, workspaces and plugin files are untouched."),
           com.deepseekharness.app.util.UiText.choose("没有可用的健康快照", "No healthy snapshot available"),
           true,
           R.drawable.ic_recovery_clock,

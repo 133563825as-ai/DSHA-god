@@ -19,6 +19,7 @@ import com.deepseekharness.app.core.ConfigStore;
 import com.deepseekharness.app.util.DeployStages;
 import com.deepseekharness.app.util.PermissionGoals;
 import com.deepseekharness.app.util.UiText;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -151,8 +152,11 @@ public final class OnboardingActivityTest {
     }
   }
 
+  private String previousLanguage;
+
   @Before
   public void prepare() {
+    previousLanguage = UiText.language();
     UiText.setLanguage("zh");
     Context app = RuntimeEnvironment.getApplication();
     ConfigStore config = new ConfigStore(app);
@@ -165,6 +169,11 @@ public final class OnboardingActivityTest {
     Environment.ready = false;
     Monitor.view = DeployStages.idle();
     Monitor.ready = false;
+  }
+
+  @After
+  public void restoreLanguage() {
+    UiText.setLanguage(previousLanguage);
   }
 
   @Test

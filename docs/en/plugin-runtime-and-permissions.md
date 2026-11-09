@@ -1,6 +1,6 @@
 # Built-in plugins, protocols, permissions, and when changes take effect
 
-> Translation baseline: 2026-10-21, originally reviewed against the build190/F12 registry, generators, plugin entry points and host readers. Current publication identity is build334 / DSH 0.2.2-rc.1 / single Standard; F10–F13 records are historical, not this build's evidence. Final identity, software and APK results are in the [English README](../../README.en.md) and this CI / Release receipt. This page adds no device-acceptance result. Runtime hot-reload conclusions require matching bundled inputs and actual execution evidence; this page and older audits do not prove Android validation.
+> Translation baseline: 2026-10-21, originally reviewed against the build190/F12 registry, generators, plugin entry points and host readers. Current publication identity is build350 / DSH 0.2.2-rc.1 / single Standard; F10–F13 records are historical, not this build's evidence. Final identity, software and APK results are in the [English README](../../README.en.md) and this CI / Release receipt. This page adds no device-acceptance result. Runtime hot-reload conclusions require matching bundled inputs and actual execution evidence; this page and older audits do not prove Android validation.
 
 ## Seven optional entries, eight signed entries, and a policy source
 
@@ -11,7 +11,7 @@
 | Visible | `dsh-device-shell-guide` 0.1.19 | Device-channel and bridge guide, `lib/index.js` |
 | Visible | `dsh-task-notifier` 0.2.0 | `/app/tasks/*` task state and notifications |
 | Visible | `dsh-status-overlay` 0.1.4 | `/app/overlay` streaming status |
-| Visible | `dsh-web-mobile` 3.2.2 | Mobile Web interface; upstream lock and local differences are recorded separately; [disabled by default, converged again on update](plugins.md) from build327 |
+| Visible | `dsh-web-mobile` 3.3.1 | Mobile Web interface (host 0.2.2 adaptation); upstream lock and local differences are recorded separately; [default-enabled again](plugins.md) from build336, device over-the-top acceptance pending |
 | Visible | `dsh-computer-use-android` 0.1.1 | MCP stdio `dsha-android`, 180-second call budget |
 | Visible | `dsh-tool-vscreen` 0.1.1 | MCP stdio `dsha-vscreen`, 60-second call budget |
 | Visible compatibility wrapper | `dsh-auto-review` 0.1.0 | Wrapper/alias; functionality comes from the locked official experimental Auto package, not the empty wrapper alone |

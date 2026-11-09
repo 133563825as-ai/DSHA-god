@@ -261,6 +261,21 @@ public class WebProcessManager {
     }
   }
 
+  /**
+   * 启动恢复与前后台复核专用：先按 PID / 身份文件严格核验；文件缺失、陈旧或被退休（UNKNOWN）时，
+   * 改用保存记录里的完整出生身份（boot / PID / 出生时间 / 命令行 / UID / generation+instance+nonce）
+   * 再判定一次。
+   *
+   * <p>严格观察已经给出 LIVE / EXITED 时不再降级，避免同一结论出现两套证据；证明版也读不到时保持
+   * UNKNOWN，绝不把不确定当作退出或可启动依据。退出证明仍只来自 boot 结束、编号退出或出生变化。
+   */
+  public SessionObservation observeRecoveredSession(
+      com.deepseekharness.app.util.WebSessionProof.Saved saved) {
+    SessionObservation strict = observeSession(saved);
+    if (strict != SessionObservation.UNKNOWN) return strict;
+    return observeRecordedSession(saved);
+  }
+
   public StopResult forceStopResult(ForceCandidate candidate) throws IOException {
     if (records != null)
       throw new WebStopException(Code.FORCE_EVIDENCE_UNCONFIRMED, "TRIAL_FORBIDDEN");
@@ -400,7 +415,7 @@ public class WebProcessManager {
       throw new IOException("TRIAL_RECORD_DIRECTORY");
   }
 
-  private File root() {
+  File root() {
     return records == null ? new File(proot.getRootfsDir(), "root") : records;
   }
 
@@ -908,13 +923,16 @@ public class WebProcessManager {
   /**
    * 已确认原 guest 与启动器都退出后，隔离仍指向它的旧 PID 记录；不发送任何信号。
    *
+   * <p>退出结论与恢复路径共用证明版观察：严格文件核验为 UNKNOWN 时仍可按出生身份确认退出，
+   * 但只有 boot 结束、编号退出或出生变化才能退休记录。
+   *
    * <p>PID 记录已被换成其它实例时保留现场并返回 false；记录已不在时视为已完成。
    * 只有与本次证明完全一致的旧记录才会被改名，异步检查不会误删新实例的记录。
    */
   public boolean retireConfirmedExit(com.deepseekharness.app.util.WebSessionProof.Saved saved)
       throws IOException {
     if (saved == null || records != null) return false;
-    if (observeSession(saved) != SessionObservation.EXITED) return false;
+    if (observeRecoveredSession(saved) != SessionObservation.EXITED) return false;
     if (!recoveredLauncherExited(saved)) return false;
     String record = pidRecord();
     if (record == null) return true;
@@ -1003,6 +1021,57 @@ public class WebProcessManager {
     }
   }
 
+  /**
+   * 证明版观察确认 guest 仍是保存记录里的实例后，按该出生身份补写 PID / 身份文件。
+   *
+   * <p>恢复接回可能发生在旧文件缺失、陈旧或被退休之后；只补证据，不授予启动 / 停止权限。
+   * PID 记录缺失或已指向同一编号时才补写，指向其它编号（可能是更新的实例）时原样保留；
+   * 身份文件只在内容与「PID 出生时间」不一致时补写。写失败只上报诊断，后续仍可走证明版观察。
+   */
+  public boolean attestRecoveredSession(com.deepseekharness.app.util.WebSessionProof.Saved saved) {
+    if (saved == null || records != null) return false;
+    try {
+      if (!saved.boot().equals(recoveryBoot())) return false;
+      if (observeRecordedSession(saved) != SessionObservation.LIVE) return false;
+      String record = readEvidence(pidFile(), 32);
+      int recorded = record == null ? -1 : WebProcSel.parsePid(record);
+      if (recorded > 0 && recorded != saved.webPid()) return false;
+      String expectedIdentity = saved.webPid() + " " + saved.webStarted();
+      boolean identityCurrent = expectedIdentity.equals(readEvidence(identityFile(), 80));
+      if (recorded == saved.webPid() && identityCurrent) return true;
+      if (recorded != saved.webPid())
+        writeEvidence(pidFile(), ".dsha-web.pid.tmp", saved.webPid() + "\n");
+      if (!identityCurrent)
+        writeEvidence(identityFile(), ".dsha-web.identity.tmp", expectedIdentity + "\n");
+      return true;
+    } catch (Exception error) {
+      proot
+          .hostPorts()
+          .record(
+              "WEB_SESSION_ATTEST_WRITE_FAILED",
+              WebStopDiagnostic.failure(Code.IDENTITY_RECORD_WRITE_FAILED, error).debug());
+      return false;
+    }
+  }
+
+  /** 证据文件只接受普通文件且不跟随链接；缺失返回 null，超长或链接视为不可用。 */
+  private static String readEvidence(File file, int maxBytes) throws IOException {
+    if (Compat.isSymbolicLink(file)) throw new IOException("WEB_SESSION_EVIDENCE_LINK");
+    if (!file.exists()) return null;
+    if (!file.isFile() || file.length() > maxBytes)
+      throw new IOException("WEB_SESSION_EVIDENCE_INVALID");
+    return Compat.readAll(file).trim();
+  }
+
+  /** 先写同目录临时文件再改名；目标与临时文件都不接受符号链接。 */
+  private void writeEvidence(File target, String tempName, String value) throws IOException {
+    File temp = new File(root(), tempName);
+    if (Compat.isSymbolicLink(target) || Compat.isSymbolicLink(temp))
+      throw new IOException("WEB_SESSION_EVIDENCE_LINK");
+    Compat.write(temp, value);
+    if (!temp.renameTo(target)) throw new IOException("WEB_SESSION_EVIDENCE_WRITE");
+  }
+
   /** 主服务与已登记的隔离试运行一起停止，再进行全局无 Web 核验，避免互相卡住停止屏障。 */
   public String stop() {
     return stopResult().detail();
@@ -1083,57 +1152,80 @@ public class WebProcessManager {
   }
 
   private WebStopDiagnostic stopOne() {
-    return WebRecordedStop.run(
-        new WebRecordedStop.Io() {
-          public boolean rootExists() {
-            return root().isDirectory();
-          }
-
-          public boolean trial() {
-            return records != null;
-          }
-
-          public String trialProfile() {
-            return "dsha-recovery-"
-                + records.getParentFile().getName().replace("-", "").substring(0, 16);
-          }
-
-          public long now() {
-            return android.os.SystemClock.elapsedRealtime();
-          }
-
-          public void pause(long millis) throws InterruptedException {
-            Thread.sleep(millis);
-          }
-
-          public void sentinel() throws IOException {
-            WebProcessManager.this.sentinel();
-          }
-
-          public String pidRecord() throws IOException {
-            return WebProcessManager.this.pidRecord();
-          }
-
-          public String savedIdentity(int pid) throws IOException {
-            return WebProcessManager.this.savedIdentity(pid);
-          }
-
-          public ProcessState inspect(int pid) throws IOException {
-            return WebProcessManager.this.inspect(pid);
-          }
-
-          public void retire(String record) throws IOException {
-            WebProcessManager.this.retire(record);
-          }
-
-          public WebRecordedStop.Signal term(int pid) throws IOException {
-            return signalTerm(pid);
-          }
-        });
+    return WebRecordedStop.run(recordedStopIo(false));
   }
 
-  private WebRecordedStop.Signal signalTerm(int pid) throws IOException {
-    return signal(pid, OsConstants.SIGTERM);
+  /**
+   * 只给隔离试运行收尾使用：本轮 payload 记录的 guest 在优雅停止窗口内没有退出时，按记录、
+   * 本轮唯一 profile 与保存的出生身份复核后 SIGKILL，并做有界退出确认。
+   *
+   * <p>不扫描 /proc、不按 PID 或名称结束其它进程，也不作用于主 Web；返回值只用于诊断，
+   * 是否真的停止由随后一次 {@link #stop()} / {@link #confirmStopped(boolean)} 决定。
+   *
+   * @return 空串表示记录已确认退出（或本来就没有记录 / 已退休）；否则是可导出的诊断码。
+   */
+  String forceStopTrialGuest() {
+    if (records == null) return "WEB_FORCE_TRIAL_FORBIDDEN";
+    try {
+      WebStopDiagnostic forced = WebRecordedStop.run(recordedStopIo(true));
+      return forced == null ? "" : SensitiveData.redact(forced.debug());
+    } catch (RuntimeException error) {
+      return SensitiveData.redact(WebStopDiagnostic.failure(Code.TRIAL_STOP_FAILED, error).debug());
+    }
+  }
+
+  /** 生产记录停止的唯一适配器；force 只换信号并加出生身份复核，其它判据共用。 */
+  private WebRecordedStop.Io recordedStopIo(boolean force) {
+    return new WebRecordedStop.Io() {
+      public boolean rootExists() {
+        return root().isDirectory();
+      }
+
+      public boolean trial() {
+        return records != null;
+      }
+
+      public String trialProfile() {
+        return "dsha-recovery-"
+            + records.getParentFile().getName().replace("-", "").substring(0, 16);
+      }
+
+      public boolean requireSavedBirth() {
+        return force;
+      }
+
+      public long now() {
+        return android.os.SystemClock.elapsedRealtime();
+      }
+
+      public void pause(long millis) throws InterruptedException {
+        Thread.sleep(millis);
+      }
+
+      public void sentinel() throws IOException {
+        WebProcessManager.this.sentinel();
+      }
+
+      public String pidRecord() throws IOException {
+        return WebProcessManager.this.pidRecord();
+      }
+
+      public String savedIdentity(int pid) throws IOException {
+        return WebProcessManager.this.savedIdentity(pid);
+      }
+
+      public ProcessState inspect(int pid) throws IOException {
+        return WebProcessManager.this.inspect(pid);
+      }
+
+      public void retire(String record) throws IOException {
+        WebProcessManager.this.retire(record);
+      }
+
+      public WebRecordedStop.Signal term(int pid) throws IOException {
+        return signal(pid, force ? OsConstants.SIGKILL : OsConstants.SIGTERM);
+      }
+    };
   }
 
   private com.deepseekharness.app.util.WebProofStop.Signal signalProofTerm(int pid)

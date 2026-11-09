@@ -5,7 +5,11 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.DshaApp;
+import com.deepseekharness.app.screen.ScreenTargetResolver;
 import com.deepseekharness.app.util.VirtualScreenObservationHint;
+import com.deepseekharness.app.util.VirtualScreenWindowEvidence;
+import com.deepseekharness.app.util.VirtualScreenDisplayPreset;
+import com.deepseekharness.app.util.VirtualScreenTextInputPolicy;
 import com.deepseekharness.app.util.Ids;
 import com.deepseekharness.app.util.OneShotLaunchAuthority;
 import com.deepseekharness.app.util.ScreenActionResult;
@@ -720,12 +724,12 @@ public final class VirtualScreenManager {
     }
     if (lifecycleState.cleanupPending())
       return decorate(failure("VSCREEN_" + lifecycleState.name()));
-    int width = "landscape".equals(orientation) ? 1792 : 1008;
-    int height = "landscape".equals(orientation) ? 1008 : 1792;
+    VirtualScreenDisplayPreset.Preset preset = VirtualScreenDisplaySettings.preset(context);
+    // 只传白名单 id 与方向：Core 再按白名单解析一次，未知 id/超预算规格回退默认。
+    String createQuery = "preset=" + encode(preset.id) + "&orientation=" + encode(orientation);
     Snapshot existing = snapshot(null, scope);
     if (existing != null) {
-      JSONObject result =
-          perform(existing, "/vscreen/create", "width=" + width + "&height=" + height, true);
+      JSONObject result = perform(existing, "/vscreen/create", createQuery, true);
       if (result.optBoolean("ok")) visuals.present();
       return decorate(result);
     }
@@ -830,12 +834,7 @@ public final class VirtualScreenManager {
         cleanupLaunched(launched, selected.id());
         return decorate(failure("VSCREEN_START_CANCELLED"));
       }
-      JSONObject created =
-          requestAt(
-              launched.port,
-              launched.token,
-              "/vscreen/create",
-              "width=" + width + "&height=" + height);
+      JSONObject created = requestAt(launched.port, launched.token, "/vscreen/create", createQuery);
       recordCreateOutcome(created);
       boolean committed, live = scope.current();
       synchronized (LOCK) {
@@ -1004,7 +1003,30 @@ public final class VirtualScreenManager {
   }
 
   private JSONObject status(VirtualScreenRequestScope scope) {
-    return decorate(request("/vscreen/status", "", scope));
+    return statusHint(decorate(request("/vscreen/status", "", scope)));
+  }
+
+  /**
+   * 独立 status 探测失败时补可行动提示（T88）：无 Core → CREATE_FIRST；待清理 → ASK_USER_TO_CLOSE。
+   * 复用 {@link com.deepseekharness.app.util.VirtualScreenObservationHint#statusNextAction}；原有
+   * error/state 字段保持不变，旧调用方仍可按 VSCREEN_NOT_RUNNING 判断。
+   */
+  private static JSONObject statusHint(JSONObject value) {
+    if (value == null || value.optBoolean("ok") || value.has("nextAction")) return value;
+    String error = value.optString("error", "VSCREEN_STATUS_UNAVAILABLE");
+    String next =
+        com.deepseekharness.app.util.VirtualScreenObservationHint.statusNextAction(
+            error, value.optBoolean("cleanupPending"));
+    try {
+      value.put("nextAction", next);
+      // 待清理须经用户同意后显式 close：重看或重试都不会改变结果。
+      value.put(
+          "retryable",
+          !com.deepseekharness.app.util.VirtualScreenObservationHint.ASK_USER_TO_CLOSE.equals(
+              next));
+    } catch (org.json.JSONException ignored) {
+    }
+    return value;
   }
 
   public JSONObject preview() {
@@ -1072,15 +1094,18 @@ public final class VirtualScreenManager {
   private static final class ObservationFacts {
     final VirtualScreenObservationHint.Accessibility accessibility;
     final String windowDiagnostic, foregroundPackage;
+    final VirtualScreenWindowEvidence.Snapshot evidence;
     final long sinceStartMs;
 
     ObservationFacts(
         VirtualScreenObservationHint.Accessibility accessibility,
         String windowDiagnostic,
+        VirtualScreenWindowEvidence.Snapshot evidence,
         String foregroundPackage,
         long sinceStartMs) {
       this.accessibility = accessibility;
       this.windowDiagnostic = windowDiagnostic;
+      this.evidence = evidence;
       this.foregroundPackage = foregroundPackage;
       this.sinceStartMs = sinceStartMs;
     }
@@ -1099,14 +1124,15 @@ public final class VirtualScreenManager {
     JSONObject status = targetStatus(scope);
     int display = status.optInt("displayId", -1);
     VirtualScreenObservationHint.Accessibility accessibility = accessibilityState();
-    String diagnostic =
+    ScreenTargetResolver.Diagnostics window =
         accessibility == VirtualScreenObservationHint.Accessibility.CONNECTED && display > 0
-            ? com.deepseekharness.app.DshaAccessibilityService.displayWindowDiagnostic(display)
-            : "ACCESSIBILITY_UNAVAILABLE";
+            ? com.deepseekharness.app.DshaAccessibilityService.displayWindowSnapshot(display)
+            : new ScreenTargetResolver.Diagnostics("ACCESSIBILITY_UNAVAILABLE", null);
     String foreground = status.optBoolean("packageVerified") ? status.optString("package") : "";
     long started = observationStartedAt;
     long since = started < 0 ? -1 : Math.max(0, clock.getAsLong() - started);
-    return new ObservationFacts(accessibility, diagnostic, foreground, since);
+    return new ObservationFacts(
+        accessibility, window.diagnostic, window.evidence, foreground, since);
   }
 
   /** 把 FRAME_NOT_READY 细分为空屏 / 首帧等待 / 停滞，并附下一步建议；legacyError 保留原码。 */
@@ -1131,6 +1157,10 @@ public final class VirtualScreenManager {
         .put("readOnly", true)
         .put("nextAction", hint.nextAction);
     if (facts.sinceStartMs >= 0) value.put("sinceReadyOrLaunchMs", facts.sinceStartMs);
+    // 最小窗口证据（T98）：目标窗口身份与计数；不影响 windowState/windowEvidence 既有语义。
+    if (facts.evidence != null)
+      for (var field : facts.evidence.fields().entrySet())
+        value.put(field.getKey(), field.getValue());
   }
 
   private JSONObject observed(
@@ -1510,8 +1540,23 @@ public final class VirtualScreenManager {
           Snapshot session = snapshot(gen, scope);
           if (session == null) return missingSnapshot(gen);
           String query = "generation=" + encode(gen) + "&frameSeq=" + seq;
-          if (text.matches("[\\x20-\\x7e]+"))
-            return perform(session, "/vscreen/type", query + "&text=" + encode(text), false);
+          boolean plainAscii = text.matches("[\\x20-\\x7e]+");
+          boolean[] unchecked = {false};
+          if (plainAscii) {
+            JSONObject rejected = passwordPreflight(scope, unchecked);
+            if (rejected != null) return rejected;
+            JSONObject sent =
+                perform(session, "/vscreen/type", query + "&text=" + encode(text), false);
+            // 无障碍未连接时纯 ASCII 输入仍然可用（文档化的降级模式），但不能让调用方误以为密码焦点已被检查。
+            if (unchecked[0] && sent.optBoolean("ok")) {
+              try {
+                sent.put("passwordFocusChecked", false)
+                    .put("passwordFocusEvidence", "ACCESSIBILITY_UNAVAILABLE");
+              } catch (Exception ignored) {
+              }
+            }
+            return sent;
+          }
           if (!com.deepseekharness.app.DshaAccessibilityService.isConnected())
             return failure("ACCESSIBILITY_REQUIRED_FOR_UNICODE");
           JSONObject check = perform(session, "/vscreen/check", query, false);
@@ -1532,6 +1577,45 @@ public final class VirtualScreenManager {
                   ScreenActionResult.TARGET_CHANGED_AFTER_EXECUTION,
                   "SCREEN_TARGET_CHANGED");
         });
+  }
+
+  /**
+   * 助手纯 ASCII 文本写入前的密码焦点预检（T97 安全切的一部分）。
+   *
+   * <p>{@code /app/vscreen/type} 的 ASCII 快路径直接让 Core 执行 {@code input -d <displayId> text}，不经过无障碍
+   * 的 {@code set_text}/{@code editor} 密码检查；因此必须在派发前读一次宿主焦点。返回 {@code null} 表示可以发送
+   * （{@code unchecked[0]} 记录「无障碍未连接、没有证据通道」）；返回 JSON 表示本机拒绝，动作未派发。
+   *
+   * <p>原生面板（{@code scope.request == null}）不经过这里：那是用户本人在虚拟屏里输入，不属于助手动作；
+   * 语义写入路径（非 ASCII、editor、node set_text）在无障碍层自己检查密码焦点。
+   */
+  private static JSONObject passwordPreflight(
+      VirtualScreenRequestScope scope, boolean[] unchecked) {
+    if (scope == null || scope.request == null) return null;
+    int display =
+        scope.request.target instanceof VscreenTargetEvidence evidence ? evidence.displayId : -1;
+    VirtualScreenPasswordProbe.Evidence probe = VirtualScreenPasswordProbe.read(display);
+    if (probe.targetChanged) return notSent("SCREEN_TARGET_CHANGED");
+    VirtualScreenTextInputPolicy.Decision decision =
+        VirtualScreenTextInputPolicy.decide(probe.focus);
+    if (decision == VirtualScreenTextInputPolicy.Decision.BLOCK_PASSWORD
+        || decision == VirtualScreenTextInputPolicy.Decision.BLOCK_UNVERIFIED) {
+      JSONObject value = notSent(VirtualScreenTextInputPolicy.code(decision));
+      try {
+        value
+            .put("nextAction", VirtualScreenTextInputPolicy.nextAction(decision))
+            .put("retryable", VirtualScreenTextInputPolicy.retryable(decision))
+            .put("passwordFocusChecked", true)
+            .put("focusEvidence", VirtualScreenTextInputPolicy.evidenceName(probe.focus))
+            .put("windowDiagnostic", probe.windowDiagnostic);
+        if (decision == VirtualScreenTextInputPolicy.Decision.BLOCK_PASSWORD)
+          value.put("sensitive", "PASSWORD");
+      } catch (Exception ignored) {
+      }
+      return value;
+    }
+    if (decision == VirtualScreenTextInputPolicy.Decision.ALLOW_UNVERIFIED) unchecked[0] = true;
+    return null;
   }
 
   private static final class ClosedSession {

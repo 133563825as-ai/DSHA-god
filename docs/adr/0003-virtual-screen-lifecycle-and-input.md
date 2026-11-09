@@ -109,7 +109,7 @@ Standard且API30+才支持虚拟屏；Low即使运行在现代系统也明确拒
 
 ## 受影响文件与维护不变量
 
-入口与协议涉及`dsh-tool-vscreen/lib/server.cjs`、HttpShellService；编排与持久化涉及VirtualScreenManager/Launcher/Transport/SessionJournal；设备侧涉及VirtualScreenCore/DisplaySession/Input/Pixels/ObservedPixels；语义与UI涉及SemanticAdapter/Accessibility/AnchorProof/ObservedControl/NativeControls、VirtualScreenActivity、NativeScreenControlLease。以上链接指向当前职责，不表示本ADR修改这些文件。
+入口与协议涉及`dsh-tool-vscreen/lib/server.cjs`、HttpShellService；编排与持久化涉及VirtualScreenManager/Launcher/Transport/SessionJournal；设备侧涉及VirtualScreenCore/DisplaySession/Input/Pixels/ObservedPixels；语义与UI涉及SemanticAdapter/Accessibility/AnchorProof/ObservedControl/NativeControls、VirtualScreenActivity、NativeScreenControlLease；前台预览形态（2026-11-06 补充）涉及VirtualScreenForeground/VirtualScreenStrip/VirtualScreenPreviewSettings/VirtualScreenPreviewPolicy。以上链接指向当前职责，不表示本ADR修改这些文件。
 
 维护时必须保留以下不变量：
 
@@ -120,6 +120,7 @@ Standard且API30+才支持虚拟屏；Low即使运行在现代系统也明确拒
 5. close释放应答、Core EXITED、journal提交、guest退出与launcher退出分别取证；任一未知不能借另一项成功清障。
 6. 升级/进程重建只恢复清理事实，不导入备份授权、不恢复旧观察或重放未确认动作；Low保持显式不支持。
 7. 识屏模式互斥且只约束助手：模式不匹配的助手屏幕请求一律拒绝且不回退；操作者面板不读写模式；虚拟屏待清理时不得离开virtual。
+8. 前台预览形态（提示条 / 完整预览 / 关闭）只是UI与偏好：提示条只显示Manager的只读目标与代次状态，不签发帧或节点凭据、不转发触摸；收起意图持久化，但不改变任何观察、输入或授权门。
 
 ## 回归用例
 

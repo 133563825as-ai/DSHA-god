@@ -266,4 +266,100 @@ public final class TrialRecoveryTest {
                 }));
     retained(entry);
   }
+
+  /** 有 PID 的残留记录：优雅停止未确认时必须先强杀本轮 guest，再一次恢复就关闭记录。 */
+  @Test
+  public void forcedGuestLetsOneRecoveryCloseTheRecord() throws Exception {
+    File home = home(), entry = entry(home);
+    write(entry, "launched", entry.getName());
+    write(entry, "payload/.dsha-web.pid", "42");
+    java.util.List<String> order = new java.util.ArrayList<>();
+    java.util.concurrent.atomic.AtomicInteger stops =
+        new java.util.concurrent.atomic.AtomicInteger();
+    TrialRecovery.recover(
+        fs,
+        home,
+        payload -> {
+          assertEquals(new File(entry, "payload"), payload);
+          TrialGuestCleanup.Io io =
+              new TrialGuestCleanup.Io() {
+                public String stop() {
+                  order.add("stop");
+                  return stops.incrementAndGet() == 1 ? "WEB_GUESTS_UNCONFIRMED" : "";
+                }
+
+                public String force() {
+                  order.add("force");
+                  return "";
+                }
+
+                public boolean launcherExited() {
+                  return true;
+                }
+
+                public void awaitLauncher(long millis) {}
+
+                public void destroyLauncher() {}
+
+                public void diagnostic(String detail) {
+                  throw new AssertionError("confirmed force must not need diagnostics");
+                }
+              };
+          assertEquals("", TrialGuestCleanup.stop(io));
+        });
+    assertEquals(java.util.List.of("stop", "force", "stop"), order);
+    assertEquals(2, stops.get());
+    assertEquals(entry.getName(), Files.readString(new File(entry, "closed").toPath()));
+    assertFalse(new File(entry, "payload").exists());
+  }
+
+  /** 强杀后仍未确认：记录必须保留，并留下可导出的脱敏诊断。 */
+  @Test
+  public void forcedGuestStillUnconfirmedKeepsRecordAndWritesDiagnostic() throws Exception {
+    File home = home(), entry = entry(home);
+    write(entry, "launched", entry.getName());
+    write(entry, "payload/.dsha-web.pid", "42");
+    IOException error =
+        assertThrows(
+            IOException.class,
+            () ->
+                TrialRecovery.recover(
+                    fs,
+                    home,
+                    payload -> {
+                      TrialGuestCleanup.Io io =
+                          new TrialGuestCleanup.Io() {
+                            public String stop() {
+                              return "WEB_GUESTS_UNCONFIRMED";
+                            }
+
+                            public String force() {
+                              return "WEB_STOP_TRIAL_IDENTITY_CHANGED";
+                            }
+
+                            public boolean launcherExited() {
+                              return true;
+                            }
+
+                            public void awaitLauncher(long millis) {}
+
+                            public void destroyLauncher() {}
+
+                            public void diagnostic(String detail) {
+                              try {
+                                RuntimeTrial.recordRecoveryStop(fs, entry, detail);
+                              } catch (IOException failure) {
+                                throw new java.io.UncheckedIOException(failure);
+                              }
+                            }
+                          };
+                      throw new IOException(
+                          "TRIAL_PROCESS_UNCONFIRMED: " + TrialGuestCleanup.stop(io));
+                    }));
+    assertTrue(error.getMessage().startsWith("TRIAL_PROCESS_UNCONFIRMED"));
+    retained(entry);
+    String diagnostic = Files.readString(new File(entry, "recovery-stop.json").toPath());
+    assertTrue(diagnostic.contains("force=WEB_STOP_TRIAL_IDENTITY_CHANGED"));
+    assertTrue(diagnostic.contains("retry=WEB_GUESTS_UNCONFIRMED"));
+  }
 }

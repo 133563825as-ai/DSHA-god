@@ -79,6 +79,9 @@ public final class Constants {
   /** 隐藏后台：从最近任务隐藏本应用任务；仅本机 UI 行为，默认关闭，不进入备份。 */
   public static final String KEY_HIDE_FROM_RECENTS = "hide_from_recents";
 
+  /** 隐藏后台严格模式（实验）：离开应用时结束 UI 任务，让当前卡片也不再保留；默认关闭。 */
+  public static final String KEY_HIDE_RECENTS_STRICT = "hide_recents_strict";
+
   /** 任务状态上岛（Android 16 实时活动 / promoted ongoing），默认开启。 */
   public static final String KEY_TASK_ISLAND = "task_island";
 

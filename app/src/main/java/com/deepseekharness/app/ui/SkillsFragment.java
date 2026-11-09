@@ -235,12 +235,12 @@ public final class SkillsFragment extends Fragment {
         });
     toolsRow.addView(search, new LinearLayout.LayoutParams(0, ui.dp(46), 1f));
     importButton = new androidx.appcompat.widget.AppCompatButton(ctx);
-    importButton.setText(t("导入 SKILL.md", "Import SKILL.md"));
+    importButton.setText(t("导入技能", "Import SKILL.md"));
     styleButton(importButton, true);
     importButton.setMinHeight(ui.dp(46));
     importButton.setMinimumHeight(ui.dp(46));
     importButton.setPadding(ui.dp(16), 0, ui.dp(16), 0);
-    importButton.setOnClickListener(v -> picker.launch(new String[] {"*/*"}));
+    importButton.setOnClickListener(v -> RecentsPrivacyGuard.launch(picker, new String[] {"*/*"}));
     LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(-2, ui.dp(46));
     importParams.setMarginStart(ui.dp(10));
     toolsRow.addView(importButton, importParams);
@@ -477,7 +477,7 @@ public final class SkillsFragment extends Fragment {
       TextView notice = ui.text("", 12, R.color.shell_warn);
       notice.setBackgroundResource(R.drawable.bg_shell_status);
       notice.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10));
-      notice.setText(UiText.format("另有 %s 个文件格式不符，原件已保留。", String.valueOf(catalogue.unreadable)));
+      notice.setText(UiText.format("另有 %s 个格式不符", String.valueOf(catalogue.unreadable)));
       LinearLayout.LayoutParams noticeParams = new LinearLayout.LayoutParams(-1, -2);
       noticeParams.topMargin = ui.dp(10);
       listColumn.addView(notice, noticeParams);
@@ -590,16 +590,16 @@ public final class SkillsFragment extends Fragment {
     TextView sub =
         ui.text(
             t(
-                "导入 SKILL.md 后会出现在这里，DSH 会按需读取。",
+                "导入 SKILL.md 后在此显示",
                 "Imported SKILL.md files appear here; DSH loads them as needed."),
             13,
             R.color.shell_text_secondary);
     sub.setGravity(Gravity.CENTER);
     sub.setLineSpacing(ui.dp(3), 1f);
     empty.addView(sub);
-    Button add = plainButton(ctx, t("导入 SKILL.md", "Import SKILL.md"), true);
+    Button add = plainButton(ctx, t("导入技能", "Import SKILL.md"), true);
     add.setEnabled(!busy());
-    add.setOnClickListener(v -> picker.launch(new String[] {"*/*"}));
+    add.setOnClickListener(v -> RecentsPrivacyGuard.launch(picker, new String[] {"*/*"}));
     LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(-2, -2);
     addParams.topMargin = ui.dp(16);
     empty.addView(add, addParams);
@@ -1443,10 +1443,17 @@ public final class SkillsFragment extends Fragment {
     statusRow.setBackground(shape);
     status.setTextColor(
         requireContext().getColor(cancelled ? R.color.shell_text_secondary : R.color.shell_text));
-    status.setText(resultText(result));
+    boolean wasHidden = statusRow.getVisibility() != View.VISIBLE;
+    statusRow.setVisibility(View.VISIBLE);
+    if (ok || cancelled) {
+      UiMotion.crossFadeText(status, resultText(result));
+    } else {
+      // 失败结果：结果条先给一句结论，完整原因/影响/下一步点开 ⓘ（审计 F-07 + 基准 ⑬）。
+      InfoHint.bindOnSurface(status, null, "", resultText(result));
+    }
     undoButton.setVisibility(
         "DISABLED".equals(code) || "TRASHED".equals(code) ? View.VISIBLE : View.GONE);
-    statusRow.setVisibility(View.VISIBLE);
+    if (wasHidden) UiMotion.reveal(statusRow);
   }
 
   @Nullable

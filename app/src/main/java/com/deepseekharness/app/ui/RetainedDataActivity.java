@@ -38,6 +38,8 @@ public final class RetainedDataActivity extends AppCompatActivity {
   }
 
   private Model model;
+  private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+  private SelectionActionBar.Bar selectionBar;
   private LinearLayout rows;
   private TextView report, pageStatus;
   private LinearLayout chips;
@@ -61,9 +63,15 @@ public final class RetainedDataActivity extends AppCompatActivity {
         new CardPage(
             this,
             t("保留副本与旧环境", "Retained copies and old environments"),
-            t(
-                "原件保持只读。记录中的成功状态不是本次重新验证；检查、导出与恢复分别处理。未知或受损原件继续保留。",
-                "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained."));
+            t("只读副本与旧环境", "Read-only copies"));
+    // 摘要进页首，完整说明展开后创建（替代 ⓘ，审计 D-06）。
+    DisclosureCard.Model disclosureModel = new DisclosureCard.Model();
+    disclosureModel.key = "retained-subtitle";
+    disclosureModel.detail =
+        t(
+            "原件保持只读。记录中的成功状态不是本次重新验证；检查、导出与恢复分别处理。未知或受损原件继续保留。",
+            "Originals remain read-only. A recorded success is not a fresh verification. Inspect, export and restore are separate operations. Unknown or damaged originals remain retained.");
+    DisclosureCard.bind(shell.subtitle, disclosureModel, disclosure, null);
     UiNavigation.addHeader(
         this, shell.root, t("保留副本与旧环境", "Retained copies and old environments"), this::finish);
     LinearLayout body = shell.content;
@@ -78,26 +86,30 @@ public final class RetainedDataActivity extends AppCompatActivity {
     chipParams.bottomMargin = shell.dp(10);
     body.addView(chipScroll, chipParams);
     renderChips();
-    shell.button(shell.footer, t("检查所选记录", "Inspect selected records"), true, this::inspect);
-    shell.button(
-        shell.footer,
-        t("刷新清单", "Refresh list"),
-        false,
-        () -> {
-          if (model.working.get()) return;
-          model.page = 0;
-          model.starts.clear();
-          model.starts.add(null);
-          refresh();
-        });
-    shell.button(
-        shell.footer,
-        t("取消检查", "Cancel inspection"),
-        false,
-        () -> {
-          if (model.control != null) model.control.cancel();
-        });
+    // D2 多选底部操作栏：已选数量 + 检查所选记录；刷新/取消仍在同一栏内。
+    selectionBar = SelectionActionBar.attach(shell.footer);
+    if (selectionBar != null) {
+      selectionBar.action(t("检查所选记录", "Inspect selected records"), true, this::inspect);
+      selectionBar.action(
+          t("刷新清单", "Refresh list"),
+          false,
+          () -> {
+            if (model.working.get()) return;
+            model.page = 0;
+            model.starts.clear();
+            model.starts.add(null);
+            refresh();
+          });
+      selectionBar.action(
+          t("取消检查", "Cancel inspection"),
+          false,
+          () -> {
+            if (model.control != null) model.control.cancel();
+          });
+      selectionBar.update(model.selected.size());
+    }
     setContentView(shell.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     report = new TextView(this);
     report.setTextColor(getColor(R.color.shell_text_secondary));
     report.setTextIsSelectable(true);
@@ -287,10 +299,16 @@ public final class RetainedDataActivity extends AppCompatActivity {
         + t("不自动删除", "No automatic deletion");
   }
 
+  private void updateSelectionBar() {
+    if (selectionBar != null) selectionBar.update(model.selected.size());
+  }
+
   private void render(RetainedCatalogue.Page page) {
     rows.removeAllViews();
     long first = (long) model.page * page.size, last = first + page.entries.size();
-    pageStatus.setText(
+    // 分页状态行淡入；列表重建后整块淡入一次（审计 E-05）。
+    UiMotion.crossFadeText(
+        pageStatus,
         UiText.format(
             "已显示 %s–%s / %s 条 · 第 %s 页",
             page.total == 0 ? 0 : first + 1, last, page.total, model.page + 1));
@@ -325,6 +343,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
           (v, on) -> {
             if (on) model.selected.put(entry.key(), entry);
             else model.selected.remove(entry.key());
+            updateSelectionBar();
           });
       card.addView(selected);
       button(card, t("查看与操作", "Details and actions"), () -> details(entry));
@@ -332,6 +351,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
       layout.bottomMargin = pad;
       rows.addView(card, layout);
     }
+    updateSelectionBar();
     if (shown == 0) {
       TextView empty = new TextView(this);
       empty.setText(t("本页没有这一类记录。", "No records of this type on this page."));
@@ -358,6 +378,7 @@ public final class RetainedDataActivity extends AppCompatActivity {
             model.page++;
             refresh();
           });
+    UiMotion.reveal(rows);
   }
 
   private void details(RetainedCatalogue.Entry entry) {

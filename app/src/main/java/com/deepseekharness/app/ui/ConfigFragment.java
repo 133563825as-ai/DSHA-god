@@ -50,6 +50,9 @@ public class ConfigFragment extends Fragment {
   private boolean renderingEntryTarget;
   private View root;
   private ConfigDraft savedDraft;
+  private final DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+  private final DisclosureCard.Model pageDisclosure = new DisclosureCard.Model();
+  private final DisclosureCard.Model entryDisclosure = new DisclosureCard.Model();
   private static final java.util.concurrent.atomic.AtomicBoolean savingLanPassword =
       new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -60,6 +63,7 @@ public class ConfigFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_config, container, false);
+    PressFeedback.attachButtons(v);
     ConfigStore c = new ConfigStore(requireContext());
     Context ctx = requireContext();
     root = v;
@@ -129,7 +133,7 @@ public class ConfigFragment extends Fragment {
     gecko.setChecked(c.isGeckoCore());
     // 网页内核目前只有 System WebView 一项，作为桌面布局行的副文案显示，不再给出单选下拉。
     ((TextView) v.findViewById(R.id.config_core_choice))
-        .setText(UiText.choose("网页内核 System WebView", "Browser engine: System WebView"));
+        .setText(UiText.choose("网页内核", "Browser engine: System WebView"));
     proroot.setChecked(c.isProroot());
     lan.setChecked(c.isLanMode());
     TextView lanPasswordStatus = v.findViewById(R.id.config_lan_password_status);
@@ -167,8 +171,20 @@ public class ConfigFragment extends Fragment {
 
     v.findViewById(R.id.config_repo_link).setOnClickListener(x -> openRepo(ctx));
 
-    // 方案 A：多句说明行内只留第一句，完整内容点 ⓘ 查看；文案仍是原有已翻译资源。
-    InfoHint.attach(v.findViewById(R.id.config_page_hint), getString(R.string.ui2_runtime_config));
+    // 多句说明行内只留第一句，完整内容展开后才创建（替代 ⓘ）；文案仍是原有已翻译资源。
+    TextView pageHint = v.findViewById(R.id.config_page_hint);
+    com.deepseekharness.app.util.SummaryText.Split pageSplit =
+        com.deepseekharness.app.util.SummaryText.split(getString(R.string.ui2_runtime_config));
+    pageHint.setText(pageSplit.summary);
+    pageDisclosure.key = "config-page";
+    pageDisclosure.detail = pageSplit.full;
+    // 说明行嵌在水平标签行里：详情容器插到该行之后的竖向列容器。
+    DisclosureCard.bind(
+        pageHint,
+        pageDisclosure,
+        disclosure,
+        null,
+        (android.view.View) pageHint.getParent().getParent());
 
     // 标题列点按与开关等价；无障碍焦点落在开关上，读出标题与副文案。
     bindRowToggle(v, R.id.config_automatic_port_text, automaticPort);
@@ -301,6 +317,26 @@ public class ConfigFragment extends Fragment {
         (view, l, t, r, b, ol, ot, orr, ob) -> {
           if (r - l != orr - ol) view.post(this::applyColumns);
         });
+    // 页尾技术说明（B3）：运行方式 / 端口 / DNS 与配置存放位置；展开后才创建明细。
+    ConfigStore techConfig = new ConfigStore(requireContext());
+    String runtimeMode = techConfig.isProroot() ? "proroot" : "proot";
+    String portMode =
+        techConfig.getRequestedWebPort() > 0
+            ? String.valueOf(techConfig.getRequestedWebPort())
+            : com.deepseekharness.app.util.UiText.text("自动");
+    String dnsMode =
+        "ipv4".equals(techConfig.getDnsMode())
+            ? "IPv4"
+            : "native".equals(techConfig.getDnsMode())
+                ? com.deepseekharness.app.util.UiText.text("原生")
+                : com.deepseekharness.app.util.UiText.text("自动");
+    TechNote.Model tech = new TechNote.Model();
+    tech.key = "config-tech";
+    tech.detail =
+        com.deepseekharness.app.util.UiText.format(
+            "运行方式：%s · 端口：%s\nDNS：%s\n配置保存在应用私有目录，本机 API Key 默认不参与导出。",
+            runtimeMode, portMode, dnsMode);
+    TechNote.attach((LinearLayout) v.findViewById(R.id.config_column_end), tech, disclosure, null);
     return v;
   }
 
@@ -522,12 +558,13 @@ public class ConfigFragment extends Fragment {
     TextView status = root.findViewById(R.id.config_save_status);
     View undo = root.findViewById(R.id.config_undo);
     if (error != null) {
-      status.setText(UiText.choose("端口无效，修正后才能保存", "Invalid port; fix it to save"));
-      status.setTextColor(requireContext().getColor(R.color.shell_bad));
+      // 错误态：文字与颜色都走 120–150ms 过渡，不再瞬切（审计 D-03）。
+      UiMotion.crossFadeTextColor(status, requireContext().getColor(R.color.shell_bad));
+      UiMotion.crossFadeText(status, UiText.choose("端口无效，修正后才能保存", "Invalid port; fix it to save"));
       undo.setVisibility(changes > 0 ? View.VISIBLE : View.GONE);
       return;
     }
-    status.setTextColor(requireContext().getColor(R.color.shell_text_secondary));
+    UiMotion.crossFadeTextColor(status, requireContext().getColor(R.color.shell_text_secondary));
     if (changes > 0) {
       android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder();
       String count = UiText.format("%d 项未保存", changes);
@@ -544,10 +581,10 @@ public class ConfigFragment extends Fragment {
           android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
       text.append("  ")
           .append(UiText.choose("端口与运行时需重启 Web", "Port and runtime apply after restarting Web"));
-      status.setText(text);
+      UiMotion.crossFadeText(status, text);
       undo.setVisibility(View.VISIBLE);
     } else {
-      status.setText(UiText.choose("配置已是最新", "Settings are up to date"));
+      UiMotion.crossFadeText(status, UiText.choose("配置已是最新", "Settings are up to date"));
       undo.setVisibility(View.GONE);
     }
   }
@@ -623,11 +660,18 @@ public class ConfigFragment extends Fragment {
     entryWeb = root.findViewById(R.id.config_entry_web);
     entryWeb.setText(
         com.deepseekharness.app.util.UiText.choose("从桌面图标直接进入 Web", "Open Web from the app icon"));
-    ((TextView) root.findViewById(R.id.config_entry_web_hint))
-        .setText(
-            com.deepseekharness.app.util.UiText.choose(
-                "开启后点击桌面图标或常驻通知先显示加载页，Web 就绪即进入；在 Web 里返回到底会回到桌面。应用被系统回收后，离开前停在 Web 就回到 Web。环境需要维护或启动失败时仍进入主界面。也可在 Web 的「设置 → 启动目标」中修改；禁用 dsh-launch-target 插件不会改变这里的选择。",
-                "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice."));
+    TextView entryHint = root.findViewById(R.id.config_entry_web_hint);
+    String entryDetail =
+        com.deepseekharness.app.util.UiText.choose(
+            "开启后点击桌面图标或常驻通知先显示加载页，Web 就绪即进入；在 Web 里返回到底会回到桌面。应用被系统回收后，离开前停在 Web 就回到 Web。环境需要维护或启动失败时仍进入主界面。也可在 Web 的「设置 → 启动目标」中修改；禁用 dsh-launch-target 插件不会改变这里的选择。",
+            "When on, the app icon and the ongoing notification show a loading screen and open Web once it is ready; going back from the first Web page returns to the home screen. After the system reclaims the app, it returns to Web if you left from Web. Maintenance or startup failures still open the main screen. You can also change this in Web under Settings → Launch target; disabling the dsh-launch-target plugin keeps this choice.");
+    // 行内只留行为摘要；系统回收、维护例外与插件说明展开后再创建。
+    entryHint.setText(
+        com.deepseekharness.app.util.UiText.choose(
+            "开启后从图标直接进入 Web，返回回到桌面", "Open Web straight from the icon; Back returns to home"));
+    entryDisclosure.key = "config-entry";
+    entryDisclosure.detail = entryDetail;
+    DisclosureCard.bind(entryHint, entryDisclosure, disclosure, null);
     entryWeb.setOnCheckedChangeListener(
         (button, enabled) -> {
           if (renderingEntryTarget) return;
@@ -735,7 +779,7 @@ public class ConfigFragment extends Fragment {
               Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
               Uri.parse("package:" + requireContext().getPackageName())));
     } catch (Exception e) {
-      toast(com.deepseekharness.app.util.UiText.text("未取得悬浮窗权限，请到系统设置 → 应用 → DSHA → 悬浮窗中允许"));
+      toast(com.deepseekharness.app.util.UiText.text("请授予悬浮窗权限"));
     }
   }
 

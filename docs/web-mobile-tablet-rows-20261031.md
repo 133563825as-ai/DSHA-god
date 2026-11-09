@@ -1,10 +1,11 @@
 # 宽屏触屏平板侧栏会话行挤压（dsh-web-mobile ≥1024px）
 
-> **状态：上游 PR 待合并；DSHA 已先行修复。** 上游 [issue #255](https://github.com/mexiaosqwq/dsh-web-mobile/issues/255)
-> 与 [PR #256](https://github.com/mexiaosqwq/dsh-web-mobile/pull/256) 已于 2026-10-31 提交（PR OPEN）。
-> 本地按方向 **A** 已打补丁 `DSHA_WIDE_TOUCH_ROW_ACTIONS_V1`，内置 `client.js` 已重新生成；
-> 上游合并并同步固定快照后摘除。修复方向：行内只保留「时间 + ⋯」，归档/置顶留在 ⋯ 菜单。
-> 记录基线：build218 / DSH 0.2.1-rc.5 / dsh-web-mobile 3.2.2（上游 main `bb0e5e15`，`v3.2.2` 标签同指）。
+> **状态：已由上游接管（2026-11-06 同步 dsh-web-mobile 3.3.1 / `4e71eb67`）。** 上游
+> [issue #255](https://github.com/mexiaosqwq/dsh-web-mobile/issues/255) 的修复已进入固定快照
+> （`712999a`，PR #257），DSHA 本地补丁 `DSHA_WIDE_TOUCH_ROW_ACTIONS_V1` 已从
+> `tools/apply-mobile-client-patches.mjs` 删除；`tools/test-mobile-client-patches.mjs` 改为校验
+> 上游规则与手机壳名单逐字一致。修复方向不变：行内只保留「时间 + ⋯」，归档/置顶留在 ⋯ 菜单。
+> 记录基线（历史）：build218 / DSH 0.2.1-rc.5 / dsh-web-mobile 3.2.2（上游 main `bb0e5e15`，`v3.2.2` 标签同指）。
 
 ## 1. 结论
 

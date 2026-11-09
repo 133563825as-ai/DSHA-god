@@ -58,13 +58,28 @@ public final class WebSessionDiagnostics {
       }
     }
     return "stage="
-        + (stage != null && stage.matches("[A-Z_]{1,40}") ? stage : "UNKNOWN")
+        + stable(stage)
         + " code="
         + code
         + " detail="
         + detail
         + " kind="
         + kind(failure);
+  }
+
+  /** 终局未确认（没有异常）也必须可导出：只保留固定阶段的稳定原因码，不带现场正文。 */
+  public static String unresolved(String stage, String reason, int attempts) {
+    return "stage="
+        + stable(stage)
+        + " reason="
+        + stable(reason)
+        + " attempts="
+        + Math.max(0, Math.min(attempts, 9))
+        + " kind=UNRESOLVED";
+  }
+
+  private static String stable(String value) {
+    return value != null && value.matches("[A-Z_]{1,40}") ? value : "UNKNOWN";
   }
 
   private static String kind(Throwable failure) {

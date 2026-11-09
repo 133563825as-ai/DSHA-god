@@ -33,9 +33,9 @@ public final class ColdSetupSpeedActivity extends androidx.appcompat.app.AppComp
     CardPage page = new CardPage(this, UiText.choose("首次安装测速", "First-install timing"), null);
     setContentView(page.root);
     LinearLayout facts = page.card();
-    fact(page, facts, R.drawable.ic_ui2_box, UiText.text("在独立目录完整执行首次安装，当前环境、数据和设置保持不变"));
+    fact(page, facts, R.drawable.ic_ui2_box, UiText.text("在独立目录执行首次安装，现有环境不变"));
     fact(page, facts, R.drawable.ic_onb_info, UiText.text("开始时会正常停止 DSH 和终端"));
-    fact(page, facts, R.drawable.ic_recovery_clock, UiText.text("测速期间请保持应用在前台，结束后自动清理临时环境"));
+    fact(page, facts, R.drawable.ic_recovery_clock, UiText.text("测速期间请保持应用在前台"));
     page.label(UiText.text("最近一次结果"));
     LinearLayout result = page.card();
     String previous = com.deepseekharness.app.core.ColdSetupTiming.report(this, false).trim();

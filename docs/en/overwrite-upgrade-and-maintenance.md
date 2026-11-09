@@ -111,7 +111,7 @@ After the user taps "Update runtime", the maintenance task must complete the sto
 
 ### Incident: the `dsh-web-mobile` sidebar gear
 
-- Upstream 3.2.2's `drawer-quick-settings-chip-guard` used `:has(> button[data-phase], > [role="status"])` to decide whether the footer gear must yield. That made plugin rendering **depend on a host child node existing**.
+- Upstream's `drawer-quick-settings-chip-guard` (from 3.2.2, still present in 3.3.1) used `:has(> button[data-phase], > [role="status"])` to decide whether the footer gear must yield. That made plugin rendering **depend on a host child node existing**.
 - build324's managed patch `DSHA_FIRST_CONNECT_SILENT_V1` stops rendering `ConnectionIndicator` on first entry. The `:has()` guard then always concluded "fits", nothing measured the row's real width, the plugin render chain broke, and the user saw a duplicated sidebar footer; disabling the built-in plugin restored normal rendering.
 - Fix (T61, `DSHA_GEAR_FIT_V1`):
   - export a pure predicate `dshaGearFits(rowWidth, usedWidth)`: the gear is shown only when `row content width − other visible children width ≥ 40px`; unusable layout (width ≤ 0 or non-finite) means "does not fit", conservatively keeping the account-menu entry;
@@ -127,7 +127,7 @@ After the user taps "Update runtime", the maintenance task must complete the sto
 3. When sizes are unreadable or layout is not ready, choose **conservative degradation** (drop one entry) instead of "assume it exists and render".
 4. Every such dependency needs a Node-runnable contract test against the real product plus a minimal DOM, not just a hand-written function test.
 5. Host UI changes (adding/removing the connection indicator, update bar, and so on) must trigger a review of every built-in plugin patch's CSS selectors and DOM assumptions.
-6. **`dsh-web-mobile` is disabled by default from build327, and every over-the-top update converges it to disabled again**: the reason (much of its code is not adapted to the new pages and flows introduced in build324, and it has already caused blank screens and a duplicated sidebar) and the scope are on the [plugins page](plugins.md). Only an explicit enable in the current install takes effect; restoring the default requires its hard gate — portrait adaptation complete with device acceptance on an over-the-top upgrade, and both the build325 gear contract and the build324 blank-screen path regressions green. CI or unit tests alone do not justify restoring it. **A commit that restores the default-enabled state must cite that gate and attach device evidence.**
+6. **`dsh-web-mobile` is default-enabled again from build336**: upstream 3.3.1 (4e71eb67) is adapted to host 0.2.2; plugin bytes, lock and patch selection are on the [plugins page](plugins.md) and in the [build336 record](releases/v0.2.1-rc.5-build336-web-mobile-3.3.1-20261106.md), while the build327 default-disable and incident cause stay in the build327 record. The restore cites the original gate: the build325 gear contract and the build324 blank-screen path regressions are green, and `generate-builtin-plugins` / `prepare-runtime-descriptor` plus the pre-release gates were rerun; **device over-the-top acceptance (no blank screen, no duplicated sidebar, no duplicated footer settings entry, default-enabled after upgrade) must still be appended before build336 is released** — CI or unit tests alone do not prove device success.
 
 ## Pre-release checklist
 

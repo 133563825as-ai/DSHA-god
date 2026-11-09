@@ -46,7 +46,15 @@ public final class ScreenActionExecutor {
               : key(args.optString("name"));
       if (key < 0) return ScreenReply.refused("INVALID_KEY");
       if (!context.claimDispatch()) return ScreenReply.refused("SCREEN_RUN_CHANGED");
-      return outcome(context, context.service().performGlobalAction(key));
+      ScreenActivityRecorder.beginDispatch();
+      boolean keyAccepted = context.service().performGlobalAction(key);
+      if (keyAccepted) {
+        String keyName = args.optString("name");
+        ScreenActivityRecorder.assistantKey(
+            keyName.isEmpty() ? "keycode:" + args.optInt("keycode", -1) : keyName,
+            context.target());
+      }
+      return outcome(context, keyAccepted);
     }
     try (var root = ScreenTargetResolver.resolve(context.service(), context.target().displayId)) {
       context.validateRoot(context.target().displayId, root.root);
@@ -127,7 +135,13 @@ public final class ScreenActionExecutor {
         } else if (region != null && region.overlapsExclusion(area))
           return ScreenReply.refused("NODE_COVERED_BY_ASSISTANT");
         if (!context.claimDispatch()) return ScreenReply.refused("SCREEN_RUN_CHANGED");
-        return semanticOutcome(context, target.performAction(action, bundle), action);
+        ScreenActivityRecorder.beginDispatch();
+        boolean accepted = target.performAction(action, bundle);
+        if (accepted) {
+          ScreenActivityRecorder.assistantNode(
+              actionLabel(operation, args), context.target(), target);
+        }
+        return semanticOutcome(context, accepted, action);
       } finally {
         if (leased != null) leased.close();
         else if (target != null) target.recycle();
@@ -206,6 +220,7 @@ public final class ScreenActionExecutor {
       var currentRegion = context.currentRegion();
       if (!seen.region.equals(currentRegion)) return geometryRefusal(seen.region, currentRegion);
       if (!context.claimDispatch()) return ScreenReply.refused("SCREEN_RUN_CHANGED");
+      ScreenActivityRecorder.beginDispatch();
       CountDownLatch done = new CountDownLatch(1);
       AtomicInteger state = new AtomicInteger();
       boolean accepted =
@@ -228,6 +243,7 @@ public final class ScreenActionExecutor {
                   },
                   null);
       if (!accepted) return owner.outcome(context, false);
+      ScreenActivityRecorder.assistantGesture(kind, context.target(), x1, y1, x2, y2);
       long remaining =
           Math.min(6000L, context.request().deadlineElapsedRealtimeMillis - context.nowMillis());
       if (remaining <= 0 || !done.await(remaining, TimeUnit.MILLISECONDS))
@@ -247,6 +263,16 @@ public final class ScreenActionExecutor {
           .put("nextAction", "OBSERVE_SCREEN_TO_VERIFY_EFFECT")
           .put("automaticRetry", false);
     }
+  }
+
+  private static String actionLabel(String operation, JSONObject args) {
+    if (operation.equals("node")) {
+      String action = args.optString("action");
+      return action.isEmpty() ? "node" : action;
+    }
+    if (operation.equals("tapText")) return "click";
+    if (operation.equals("input")) return "input";
+    return operation;
   }
 
   private JSONObject semanticOutcome(ScreenRequestContext context, boolean accepted, int action)

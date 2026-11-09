@@ -256,6 +256,8 @@ public class DshaApp extends Application
         new com.deepseekharness.app.ui.ThemeController.PaletteHook());
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.ModernAndroidUi());
     registerActivityLifecycleCallbacks(new ForegroundActivity());
+    // 「隐藏后台」截图守卫与实验性严格模式：所有界面都要重放，不能只靠设置页开关。
+    registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.RecentsPrivacyGuard());
     registerActivityLifecycleCallbacks(new PluginLifecycle());
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       NotificationManager nm = getSystemService(NotificationManager.class);

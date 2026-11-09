@@ -334,6 +334,15 @@ public class ConfigStore {
     prefs.edit().putBoolean(Constants.KEY_HIDE_FROM_RECENTS, value).apply();
   }
 
+  /** 隐藏后台严格模式（实验）：离开应用时结束 UI 任务；默认关闭，只影响界面任务，不随备份恢复。 */
+  public boolean isHideRecentsStrict() {
+    return flag(Constants.KEY_HIDE_RECENTS_STRICT, false);
+  }
+
+  public void setHideRecentsStrict(boolean value) {
+    prefs.edit().putBoolean(Constants.KEY_HIDE_RECENTS_STRICT, value).apply();
+  }
+
   /** 任务状态上岛默认开启：它只是给已有通知补充短文本与提升请求，失败会静默降级。 */
   public boolean isTaskIslandEnabled() {
     return flag(Constants.KEY_TASK_ISLAND, true);

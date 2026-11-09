@@ -19,11 +19,29 @@ final class FullPermissionControls implements AutoCloseable {
   private final LinearLayout recoveryChoices;
   private final androidx.appcompat.widget.AppCompatButton rebuild;
   private final androidx.appcompat.widget.AppCompatButton diagnostics;
+  private final DisclosureCard.State disclosure;
+  private final DisclosureCard.Model disclosureModel = new DisclosureCard.Model();
+
+  /** 展开本段时通知同屏手风琴（B2）；没有页面协调时为 null。 */
+  private final Runnable disclosureToggled;
+
   private boolean rendering, closed;
 
-  FullPermissionControls(Fragment owner, LinearLayout host, Runnable policyChanged) {
+  FullPermissionControls(
+      Fragment owner, LinearLayout host, DisclosureCard.State disclosure, Runnable policyChanged) {
+    this(owner, host, disclosure, policyChanged, null);
+  }
+
+  FullPermissionControls(
+      Fragment owner,
+      LinearLayout host,
+      DisclosureCard.State disclosure,
+      Runnable policyChanged,
+      Runnable disclosureToggled) {
     app = owner.requireContext().getApplicationContext();
+    this.disclosure = disclosure;
     this.policyChanged = policyChanged;
+    this.disclosureToggled = disclosureToggled;
     Context ctx = owner.requireContext();
     // 压缩卡片：分组标题由页面标签承担；卡内只有开关、状态行（ⓘ + 诊断）与异常时的恢复操作。
     float density = ctx.getResources().getDisplayMetrics().density;
@@ -42,33 +60,14 @@ final class FullPermissionControls implements AutoCloseable {
     global.setMinHeight(Math.round(48 * density));
     global.setPaddingRelative(0, 0, Math.round(8 * density), 0);
     card.addView(global, new LinearLayout.LayoutParams(-1, -2));
-    LinearLayout statusRow = new LinearLayout(ctx);
-    statusRow.setOrientation(LinearLayout.HORIZONTAL);
-    statusRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
     status = new TextView(ctx);
     status.setTextSize(12);
     status.setTextColor(ctx.getColor(R.color.shell_text_secondary));
-    statusRow.addView(status, new LinearLayout.LayoutParams(0, -2, 1));
-    // 完整边界（本机保存、各项授权独立、业务选择不代答）收进 ⓘ。
-    android.widget.ImageButton info = new android.widget.ImageButton(ctx);
-    info.setImageResource(R.drawable.ic_onb_info);
-    info.setImageTintList(
-        android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.shell_accent)));
-    info.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-    int infoPad = Math.round(10 * density);
-    info.setPadding(infoPad, infoPad, infoPad, infoPad);
-    info.setBackgroundResource(R.drawable.bg_action_plain);
-    info.setContentDescription(UiText.choose("全局权限说明", "About global permission"));
-    info.setOnClickListener(
-        view ->
-            InfoHint.show(
-                ctx,
-                UiText.choose("全局权限", "Global permission"),
-                UiText.choose(
-                    "开启后，已获准能力的操作不再弹出 DSHA 安全确认。\n\n关闭后恢复各项确认规则。此开关仅保存在本机，不随备份迁移。文件访问、Root、ADB、短信、定位、传感器和 Android 系统权限仍按各自授权设置生效，独立拒绝或暂停仍然有效。需要填写的业务内容、恢复范围和保存位置仍由你选择。",
-                    "When on, authorized capabilities skip DSHA safety confirmations.\n\nTurning it off restores confirmation rules. This choice stays on this device and is excluded from backups. File access, Root, ADB, SMS, location, sensors and Android permissions keep their separate grants; explicit denial or pause remains effective. Business inputs, restore scope and save destinations still require your selection.")));
-    int infoSize = Math.round(36 * density);
-    statusRow.addView(info, new LinearLayout.LayoutParams(infoSize, infoSize));
+    // 状态行直接放在竖向卡片里：折叠说明的详情容器需要竖向父容器。
+    card.addView(status, new LinearLayout.LayoutParams(-1, -2));
+    LinearLayout statusRow = new LinearLayout(ctx);
+    statusRow.setOrientation(LinearLayout.HORIZONTAL);
+    statusRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
     card.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
     recoveryChoices = new LinearLayout(ctx);
     for (boolean enabled : new boolean[] {false, true}) {
@@ -192,7 +191,7 @@ final class FullPermissionControls implements AutoCloseable {
     scope.setTextColor(ctx.getColor(R.color.shell_text_secondary));
     scope.setText(
         UiText.choose(
-            "各项能力授权、拒绝和暂停仍然有效；可随时关闭。",
+            "各能力授权与暂停仍然有效",
             "Capability grants, denials and pauses still apply. You can turn it off anytime."));
     LinearLayout body = new LinearLayout(ctx);
     body.setOrientation(LinearLayout.VERTICAL);
@@ -224,6 +223,11 @@ final class FullPermissionControls implements AutoCloseable {
 
   private void save(boolean enabled) {
     new DeviceGrants(app).setGlobalAllowed(enabled);
+    if (enabled) {
+      disclosure.setExpanded("global-confirm", true);
+      // 放宽确认属于高风险状态：展开说明的同时收掉同屏其它说明，避免两段同时展开。
+      if (disclosureToggled != null) disclosureToggled.run();
+    }
     policyChanged.run();
     refresh();
   }
@@ -252,15 +256,10 @@ final class FullPermissionControls implements AutoCloseable {
     String description =
         switch (snapshot.readState()) {
           case ON ->
-              UiText.choose(
-                  "已开启：免 DSHA 安全确认；各项能力授权保持独立",
-                  "On: skip DSHA confirmation; capability grants remain separate");
-          case OFF ->
-              UiText.choose("已关闭：按各项 DSHA 确认规则", "Off: follow individual DSHA confirmation rules");
+              UiText.choose("已开启", "On: skip DSHA confirmation; capability grants remain separate");
+          case OFF -> UiText.choose("已关闭", "Off");
           case UNCONFIGURED ->
-              UiText.choose(
-                  "已关闭（默认）：按各项 DSHA 确认规则",
-                  "Off (default): follow individual DSHA confirmation rules");
+              UiText.choose("已关闭（默认）", "Off (default): follow individual DSHA confirmation rules");
           case MALFORMED ->
               UiText.choose(
                   "本机确认设置记录损坏：未重置记录或恢复旧授权",
@@ -283,6 +282,22 @@ final class FullPermissionControls implements AutoCloseable {
                   "Local settings are readable again; old consent remains invalid. Choose and save again");
         };
     status.setText(description);
+    disclosureModel.key = "global-confirm";
+    disclosureModel.detail =
+        UiText.choose(
+            "开启后，已获准能力的操作不再弹出 DSHA 安全确认；关闭后恢复。此开关仅保存在本机，不随备份迁移；各系统权限仍按各自授权独立生效。",
+            "When on, authorized capabilities skip DSHA safety confirmations; turning it off restores them. This choice stays on this device, is excluded from backups, and leaves each system permission on its own grant.");
+    boolean on = snapshot.readState() == NativeConsentPolicy.ReadState.ON;
+    disclosureModel.consequence =
+        on
+            ? UiText.choose(
+                "开启后无法在执行前拦下单次操作", "When on, a single action cannot be stopped before it runs")
+            : UiText.choose(
+                "只影响 DSHA 确认，不改系统权限", "Affects DSHA confirmations only, not system permissions");
+    disclosureModel.consequenceTone = on ? R.color.shell_warn : R.color.shell_text_muted;
+    // 默认收起：状态行已说明开关结果，长解释点状态行再展开。
+    disclosureModel.defaultExpanded = false;
+    DisclosureCard.bind(status, disclosureModel, disclosure, disclosureToggled);
   }
 
   static String diagnosticText(NativeConsentPolicy.Snapshot snapshot) {

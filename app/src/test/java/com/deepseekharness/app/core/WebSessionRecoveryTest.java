@@ -203,6 +203,30 @@ public final class WebSessionRecoveryTest {
   }
 
   @Test
+  public void unresolvedIdentityKeepsTheFailingStageForExportableDiagnostics() {
+    ObservedFixture f = new ObservedFixture();
+    f.observed = SessionObservation.UNKNOWN;
+    WebSessionRecovery.Outcome outcome = WebSessionRecovery.recoverDetailed(f);
+    assertOutcome(WebSessionRecovery.Result.UNKNOWN, "IDENTITY_UNKNOWN", 0, outcome);
+    assertEquals("KERNEL_VERIFY", outcome.stage());
+    assertEquals(List.of("read", "observe"), f.calls);
+    assertFalse(f.calls.contains("http"));
+    assertFalse(f.calls.contains("retire"));
+  }
+
+  @Test
+  public void failedRetirementKeepsTheRetireStageWithoutFabricatingExit() {
+    ObservedFixture f = new ObservedFixture();
+    f.observed = SessionObservation.EXITED;
+    f.launcherGone = true;
+    f.retired = false;
+    WebSessionRecovery.Outcome outcome = WebSessionRecovery.recoverDetailed(f);
+    assertOutcome(WebSessionRecovery.Result.UNKNOWN, "RETIRE_UNAVAILABLE", 0, outcome);
+    assertEquals("RETIRE", outcome.stage());
+    assertEquals(List.of("read", "observe", "launcher", "retire"), f.calls);
+  }
+
+  @Test
   public void failedKernelReadReportsOnlyItsStageAndDiagnosticFailureCannotGrantAdoption() {
     Fixture f =
         new Fixture() {

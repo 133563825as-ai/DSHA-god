@@ -47,6 +47,12 @@ final class WebCrashPanel {
   private String technical = "";
   private boolean detailsOpen;
 
+  /** 上一次渲染的状态行内容键；相同就不重建列表（避免错误态反复 show 时闪动）。 */
+  private String renderedRows = "";
+
+  /** 上一次渲染的图标资源；只在档位变化时高亮一次。 */
+  private int renderedIcon = -1;
+
   WebCrashPanel(
       View root, TextView title, TextView detail, IntFunction<View> find, Listener listener) {
     this.root = root;
@@ -98,20 +104,21 @@ final class WebCrashPanel {
     boolean useOverride =
         kind == WebCrashReport.Kind.GENERIC || kind == WebCrashReport.Kind.INVALID_ADDRESS;
     if (title != null)
-      title.setText(useOverride && titleOverride != null ? titleOverride : copy[0]);
+      UiMotion.crossFadeText(title, useOverride && titleOverride != null ? titleOverride : copy[0]);
     if (detail != null)
-      detail.setText(UiText.raw(useOverride && detailOverride != null ? detailOverride : copy[1]));
+      UiMotion.crossFadeText(
+          detail, UiText.raw(useOverride && detailOverride != null ? detailOverride : copy[1]));
     tone(spec.tone, icon(kind));
     Button primary = (Button) find.apply(R.id.web_retry);
     if (primary != null) {
-      primary.setText(actionLabel(spec.primary));
+      UiMotion.crossFadeText(primary, actionLabel(spec.primary));
       primary.setEnabled(spec.primary != WebCrashReport.Action.WAIT);
     }
     Button secondary = (Button) find.apply(R.id.web_error_secondary);
-    if (secondary != null) secondary.setText(actionLabel(spec.secondary));
+    if (secondary != null) UiMotion.crossFadeText(secondary, actionLabel(spec.secondary));
     renderRows(WebCrashReport.rows(kind, facts == null ? new WebCrashReport.Facts() : facts));
     TextView tech = text(R.id.web_error_details_text);
-    if (tech != null) tech.setText(UiText.raw(technical));
+    if (tech != null) UiMotion.crossFadeText(tech, UiText.raw(technical));
     boolean browserUsable = browserAvailable && !spec.serviceDown;
     View browser = find.apply(R.id.web_error_browser);
     if (browser != null) {
@@ -132,7 +139,10 @@ final class WebCrashPanel {
     int background = context.getColor(R.color.shell_bg);
     root.setBackgroundColor(kept ? (background & 0x00FFFFFF) | 0xE6000000 : background);
     if (root.getWidth() > 0) applyWidth(root.getWidth());
+    // 覆盖 WebView 前给 180ms 淡入 + 轻微上移，避免错误面板硬切覆盖页面（审计 F-01）。
+    boolean wasHidden = root.getVisibility() != View.VISIBLE;
     root.setVisibility(View.VISIBLE);
+    if (wasHidden) UiMotion.reveal(root);
   }
 
   WebCrashReport.Kind kind() {
@@ -202,8 +212,11 @@ final class WebCrashPanel {
     if (badge != null) badge.setBackgroundTintList(ColorStateList.valueOf(context.getColor(soft)));
     ImageView icon = (ImageView) find.apply(R.id.web_error_icon);
     if (icon != null) {
+      boolean changed = renderedIcon != iconRes;
+      renderedIcon = iconRes;
       icon.setImageResource(iconRes);
       icon.setImageTintList(ColorStateList.valueOf(context.getColor(color)));
+      if (changed) UiMotion.flash(icon);
     }
   }
 
@@ -211,6 +224,10 @@ final class WebCrashPanel {
     View host = find.apply(R.id.web_error_state);
     if (!(host instanceof LinearLayout)) return;
     LinearLayout list = (LinearLayout) host;
+    // 行内容没变就保留原视图：错误态可能被连续 show（鉴权刷新重试），整表重建会闪。
+    String rowsKey = rows.toString();
+    if (rowsKey.equals(renderedRows)) return;
+    renderedRows = rowsKey;
     list.removeAllViews();
     String[] names = new String[rows.size()];
     float keyWidth = 0;
@@ -268,6 +285,7 @@ final class WebCrashPanel {
       }
       list.addView(item, new LinearLayout.LayoutParams(-1, -2));
     }
+    UiMotion.reveal(list);
   }
 
   /** 宽窄三档：窄屏单列；≥600dp 单列限宽、按钮并排；≥900dp 左右两栏。 */
@@ -526,16 +544,13 @@ final class WebCrashPanel {
         };
       case WEBVIEW_OUTDATED:
         return new String[] {
-          UiText.choose("需要更新系统 WebView", "System WebView needs an update"),
+          UiText.choose("系统 WebView 需要更新", "System WebView needs an update"),
           UiText.choose(
               "当前内核缺少对话页需要的能力。更新后重试，或先用系统浏览器打开。",
               "The engine lacks features this page needs. Update it, or open in a browser for now.")
         };
       case WEBVIEW_INIT:
-        return new String[] {
-          UiText.text("系统 WebView 无法启动"),
-          UiText.text("请更新或启用 Android System WebView / Chrome，也可以使用系统浏览器进入对话。")
-        };
+        return new String[] {UiText.text("系统 WebView 无法启动"), UiText.text("请更新系统 WebView 后重试")};
       case INVALID_ADDRESS:
         return new String[] {UiText.text("对话地址无效"), UiText.text("请返回启动页，重新进入对话。")};
       default:
@@ -610,7 +625,7 @@ final class WebCrashPanel {
       case AUTO_WAITING_CHECKS:
         return UiText.choose("保活检查中", "Health checks running");
       case AUTO_VERIFYING:
-        return UiText.choose("正在核对", "Verifying");
+        return UiText.choose("正在校验", "Verifying");
       case AUTO_WATCHING:
         return UiText.choose("保活中", "Watching");
       case AUTO_OFF:
@@ -648,7 +663,7 @@ final class WebCrashPanel {
         return UiText.choose("凭据刷新失败", "Credential refresh failed");
       case CONNECTION_UNKNOWN:
       default:
-        return UiText.choose("未检测", "Not checked");
+        return UiText.choose("未检查", "Not checked");
     }
   }
 

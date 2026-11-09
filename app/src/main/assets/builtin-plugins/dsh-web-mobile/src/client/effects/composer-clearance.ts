@@ -52,8 +52,8 @@ import { getFrame } from '../platform/frame.ts'
  * header is the host header class `wSkVaW_header` (not a bare `header`: the
  * ask-question card renders its own header inside the seat, pitfalls §提问卡
  * 顶栏误伤), and the secondary row the CSS drops is `[data-composer-dock]`
- * (0.2.1 InputBar dock row) / `[data-composer-stats]` (the 0.1.5/0.1.7/0.2.0 stats
- * row); the two markers never co-exist, so the absent one leaves its rule inert.
+ * (the InputBar dock row; the older `[data-composer-stats]` arm was removed
+ * with the host floor >=0.2.2-rc.1).
  */
 
 /** Marker written on the frame while the composer seat is occluded. */
@@ -62,8 +62,11 @@ const TIGHT_MARKER = 'data-mobile-nav-composer-tight'
 /** Host composer seat, scoped under the plugin frame marker. */
 const SEAT_SELECTOR = '[class*="_composerSeat"]'
 
-/** The conversation header — the host header class, never a bare `header`. */
-const HEADER_SELECTOR = 'header.wSkVaW_header'
+/** The conversation header — the host header class, never a bare `header`.
+ *  The anchor is the underscore suffix, not a hash prefix: the host renamed
+ *  its CSS-module prefix (wSkVaW_ → tlcmdG_ in 0.2.1-rc.2) and every
+ *  prefix-anchored rule silently stopped matching. */
+const HEADER_SELECTOR = 'header:has([class*="_headerLeading"])'
 
 export function installComposerClearance(ctx: ClientContext): void {
   installMobileEffect(ctx, 'dsh-web-mobile: composer clearance', () => {

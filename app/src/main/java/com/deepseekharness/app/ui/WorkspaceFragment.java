@@ -23,6 +23,7 @@ import com.deepseekharness.app.backup.OneClickBackup;
 import com.deepseekharness.app.core.HarnessController;
 import com.deepseekharness.app.util.BackupHealth;
 import com.deepseekharness.app.util.BackupTaskState;
+import com.deepseekharness.app.util.SummaryText;
 import com.deepseekharness.app.util.UiText;
 
 /**
@@ -38,9 +39,16 @@ public class WorkspaceFragment extends Fragment {
   private com.deepseekharness.app.core.BackupTask task;
   private AlertDialog previewDialog;
   private OneClickBackup oneClick;
+
+  /** 状态卡展开状态：旋转/返回后保留，用户折叠后不再被异常默认展开覆盖。 */
+  private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
+  private View autoDot;
+  private Button backupButton;
+
   private final androidx.activity.result.ActivityResultLauncher<android.net.Uri> backupDirectory =
       registerForActivityResult(
-          new androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+          new SystemDocumentPicker.TreeContract(),
           uri -> {
             if (oneClick != null) oneClick.directoryResult(uri);
           });
@@ -55,6 +63,8 @@ public class WorkspaceFragment extends Fragment {
     controller = HarnessController.get(requireContext());
     task = com.deepseekharness.app.core.BackupTask.get(requireContext());
     oneClick = new androidx.lifecycle.ViewModelProvider(this).get(OneClickBackup.class);
+    if (savedInstanceState != null)
+      disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 
     // ---- 状态卡 ----
     label(v, R.id.workspace_stat_manual_label, UiText.choose("最近手动备份", "Last manual backup"));
@@ -64,11 +74,31 @@ public class WorkspaceFragment extends Fragment {
     ((Button) v.findViewById(R.id.workspace_restore)).setText(UiText.text("从备份恢复"));
     ((Button) v.findViewById(android.R.id.button2)).setText(UiText.text("取消备份"));
     v.findViewById(android.R.id.button2).setOnClickListener(x -> oneClick.cancel());
+    backupButton = v.findViewById(R.id.workspace_backup);
     v.findViewById(R.id.workspace_backup).setOnClickListener(x -> primaryAction());
     v.findViewById(R.id.workspace_restore).setOnClickListener(x -> secondaryAction());
     v.findViewById(R.id.workspace_stat_manual).setOnClickListener(x -> showHistory());
     v.findViewById(R.id.workspace_stat_auto)
         .setOnClickListener(x -> open(AutomaticBackupActivity.class));
+    // H1：状态卡是页面主卡（elevated）；自动备份状态在标签前加状态点（H2）。
+    CardTokens.tier(v.findViewById(R.id.workspace_hero), CardTokens.Tier.ELEVATED);
+    TextView autoLabel = v.findViewById(R.id.workspace_stat_auto_label);
+    if (autoLabel != null && autoLabel.getParent() instanceof LinearLayout autoParent) {
+      int index = autoParent.indexOfChild(autoLabel);
+      LinearLayout labelRow = new LinearLayout(requireContext());
+      labelRow.setOrientation(LinearLayout.HORIZONTAL);
+      labelRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+      autoDot = CardTokens.dot(requireContext(), CardTokens.Tone.ACCENT);
+      LinearLayout.LayoutParams dotParams =
+          new LinearLayout.LayoutParams(
+              Math.round(8 * getResources().getDisplayMetrics().density),
+              Math.round(8 * getResources().getDisplayMetrics().density));
+      dotParams.setMarginEnd(Math.round(5 * getResources().getDisplayMetrics().density));
+      labelRow.addView(autoDot, dotParams);
+      autoParent.removeView(autoLabel);
+      labelRow.addView(autoLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+      autoParent.addView(labelRow, index, new LinearLayout.LayoutParams(-1, -2));
+    }
     // 手机竖屏三格横排会把英文标签挤成多行；窄屏改为纵向堆叠。
     if (getResources().getConfiguration().screenWidthDp < 600) stackStats(v);
 
@@ -79,16 +109,14 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_auto,
         R.drawable.ic_recovery_clock,
         UiText.text("自动备份"),
-        UiText.choose(
-            "备份时机 · 本机保留最近 3 份已验证副本",
-            "Schedule · keeps the latest 3 verified copies on this device"),
+        UiText.choose("备份时机与保留策略", "Schedule · keeps the latest 3 verified copies on this device"),
         () -> open(AutomaticBackupActivity.class));
     entry(
         v,
         R.id.workspace_export,
         R.drawable.ic_ui_export,
         UiText.choose("自定义导出", "Custom export"),
-        UiText.choose("选择范围 · 项目目录 · 是否包含 API Key", "Choose scope · project folders · API key"),
+        UiText.choose("选择备份范围", "Choose scope · project folders · API key"),
         () -> openData("export"));
     entry(
         v,
@@ -129,7 +157,7 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_guide,
         R.drawable.ic_entry_book,
         UiText.text("储存指南"),
-        UiText.text("数据位置 · 导出备份 · 恢复与清理"),
+        UiText.text("数据位置与备份"),
         () -> open(StorageHelpActivity.class));
     entry(
         v,
@@ -146,8 +174,7 @@ public class WorkspaceFragment extends Fragment {
         R.drawable.ic_recovery_wrench,
         getString(R.string.ui2_recovery_tools),
         UiText.choose(
-            "只读救援导出 · 恢复中断提交 · 回退运行时",
-            "Read-only rescue export · interrupted commits · runtime rollback"),
+            "救援、恢复与回退", "Read-only rescue export · interrupted commits · runtime rollback"),
         () -> open(NativeDataActivity.class));
     entry(
         v,
@@ -245,11 +272,19 @@ public class WorkspaceFragment extends Fragment {
         true,
         () -> {
           dialog.dismiss();
-          if (!oneClick.start())
+          if (!oneClick.start()) {
             toast(
                 UiText.choose(
                     "已有备份或保存位置选择正在进行。",
                     "A backup or destination selection is already in progress."));
+          } else if (backupButton != null) {
+            // A2：真实任务开始时才出现在线转圈，任务结束后由状态刷新恢复按钮。
+            main.post(
+                () -> {
+                  if (Boolean.TRUE.equals(oneClick.busy.getValue()))
+                    LoadingAction.start(backupButton);
+                });
+          }
         });
     page.button(page.footer, UiText.text("取消"), false, dialog::dismiss);
     CardSheet.show(dialog, requireContext());
@@ -279,7 +314,7 @@ public class WorkspaceFragment extends Fragment {
         .setTitle(UiText.text("重置配置？"))
         .setMessage(
             UiText.choose(
-                "先停止 Web、终端和写任务，在隔离服务中重置当前 web profile 的普通设置并读回，再事务提交与工作目录 .env。插件构成、对话和凭据保留；原配置可恢复。无法确认时保留原件并显示原因。",
+                "重置当前配置并读回。插件、对话与凭据保留；原配置可恢复，无法确认时保留原件。",
                 "Stop Web, terminals and writers. Reset ordinary settings of the web profile in an isolated service, read them back, then commit together with the workspace .env. Plugin composition, conversations and credentials are retained. Failures preserve originals and report the reason."))
         .setPositiveButton(
             UiText.choose("保留原件并重置", "Retain originals and reset"),
@@ -301,14 +336,11 @@ public class WorkspaceFragment extends Fragment {
 
   private void pickBackupDirectory() {
     if (isResumed() && oneClick != null && oneClick.claimDirectoryPicker())
-      backupDirectory.launch(null);
+      RecentsPrivacyGuard.launch(backupDirectory, null);
   }
 
   private void taskRejected() {
-    toast(
-        task.pendingMaintenance()
-            ? UiText.text("请先点「恢复中断维护」，原环境尚未确认。")
-            : UiText.text("已有数据任务进行中，请等待或处理恢复预览。"));
+    toast(task.pendingMaintenance() ? UiText.text("请先恢复中断维护") : UiText.text("已有任务进行中，请稍后重试"));
   }
 
   // ===================== 渲染 =====================
@@ -329,6 +361,7 @@ public class WorkspaceFragment extends Fragment {
     long success = controller.config().getLastBackupSuccess();
     BackupTaskState.Snapshot s = task.snapshot();
     boolean nativeBusy = Boolean.TRUE.equals(oneClick.busy.getValue());
+    if (!nativeBusy) LoadingAction.stop(backupButton);
     boolean busy = task.busy() || nativeBusy;
     boolean pending = EnvironmentUiStatus.get(requireContext()).recovery;
     String nativeFailure = oneClick.failure.getValue();
@@ -390,11 +423,23 @@ public class WorkspaceFragment extends Fragment {
       }
     }
     // 完成 / 取消后的一键备份结果（含保存路径）附在说明后，不吞掉原有提示。
-    if (level != BackupHealth.Level.RUNNING && !nativeStatus.isEmpty())
-      detail = detail + "\n\n" + nativeStatus;
+    // NEVER：旧回执与「还没有导出过备份」矛盾，不叠加；成功回执本应先刷新 lastBackupSuccess。
+    if (level != BackupHealth.Level.RUNNING
+        && level != BackupHealth.Level.NEVER
+        && !nativeStatus.isEmpty()) detail = detail + "\n\n" + nativeStatus;
 
-    ((TextView) view.findViewById(R.id.workspace_hero_title)).setText(title);
-    ((TextView) view.findViewById(R.id.workspace_backup_status)).setText(detail);
+    // 收起只留首句；展开区放首句之后的剩余文字，避免展开后整段重复（B1/B4）。
+    TextView heroTitle = view.findViewById(R.id.workspace_hero_title);
+    TextView heroDetail = view.findViewById(R.id.workspace_backup_status);
+    heroDetail.setTextIsSelectable(false);
+    FadeSwap.text(heroTitle, title);
+    SummaryText.Split split = SummaryText.split(detail);
+    FadeSwap.text(heroDetail, split.summary);
+    DisclosureCard.Model model = new DisclosureCard.Model();
+    model.key = "backup-status";
+    model.detail = split.hasMore ? split.full.substring(split.summary.length()).trim() : "";
+    model.defaultExpanded = level == BackupHealth.Level.FAILED || level == BackupHealth.Level.STALE;
+    DisclosureCard.bind(heroDetail, model, disclosure, null);
     tintHero(view, level, icon);
     view.findViewById(R.id.workspace_hero_progress)
         .setVisibility(level == BackupHealth.Level.RUNNING ? View.VISIBLE : View.GONE);
@@ -409,6 +454,11 @@ public class WorkspaceFragment extends Fragment {
         R.id.workspace_stat_manual_value,
         success == 0 ? UiText.choose("从未", "Never") : shortTime(success));
     label(view, R.id.workspace_stat_auto_value, automaticSummary());
+    CardTokens.setDotTone(
+        autoDot,
+        AutomaticBackups.enabled(requireContext())
+            ? CardTokens.Tone.GOOD
+            : CardTokens.Tone.NEUTRAL);
     entryValue(
         view,
         R.id.workspace_auto,
@@ -556,6 +606,12 @@ public class WorkspaceFragment extends Fragment {
 
   private static void label(View root, int id, CharSequence value) {
     ((TextView) root.findViewById(id)).setText(value);
+  }
+
+  @Override
+  public void onSaveInstanceState(@NonNull Bundle outState) {
+    super.onSaveInstanceState(outState);
+    disclosure.save(outState, "disclosure");
   }
 
   @Override

@@ -19,7 +19,7 @@
         <include layout="@layout/diagnostic_feedback" />
 
         <TextView style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:accessibilityHeading="true" android:text="@string/diag248_tools" />
-        <include layout="@layout/diagnostic_tools" />
+        <include layout="@layout/diagnostic_tools" android:id="@+id/diagnostic_tools" />
       </LinearLayout>
 
       <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="24dp" android:layout_weight="1" android:orientation="vertical">

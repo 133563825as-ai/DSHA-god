@@ -22,6 +22,7 @@ import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.HarnessController;
 import com.deepseekharness.app.util.LanAccessPresentation;
 import com.deepseekharness.app.util.LanAddressPolicy;
+import com.deepseekharness.app.util.SummaryText;
 import com.deepseekharness.app.util.UiText;
 import com.google.android.material.button.MaterialButton;
 
@@ -40,6 +41,12 @@ public class LaunchFragment extends Fragment {
   private ShellActivityTrack activityTrack;
   private androidx.appcompat.app.AlertDialog accessDialog;
   private android.animation.ObjectAnimator dotPulse;
+
+  /** 启动核对（异常默认展开）与页脚技术信息的折叠状态。 */
+  private DisclosureCard.Memory disclosure = new DisclosureCard.Memory();
+
+  private TextView techNote;
+  private TechNote.Model techModel;
 
   /** 访问地址弹窗的自定义正文与三个横向按钮（关闭固定在最右）。 */
   private TextView accessBody;
@@ -107,6 +114,9 @@ public class LaunchFragment extends Fragment {
       @Nullable ViewGroup container,
       @Nullable Bundle savedInstanceState) {
     View v = inflater.inflate(R.layout.fragment_launch, container, false);
+    PressFeedback.attachButtons(v);
+    if (savedInstanceState != null)
+      disclosure = DisclosureCard.Memory.restore(savedInstanceState, "disclosure");
 
     // v5 主页新增的语境、活动条与日志工具；原有 id 与业务 id 全部保留。
     activityTrack = v.findViewById(R.id.launch_activity);
@@ -153,8 +163,7 @@ public class LaunchFragment extends Fragment {
                 new com.deepseekharness.app.ui.DshaDialogBuilder(requireContext(), true)
                     .setTitle(com.deepseekharness.app.util.UiText.text("安全启动 Web？"))
                     .setMessage(
-                        com.deepseekharness.app.util.UiText.text(
-                            "停止当前启动，只加载官方基础界面。原插件开关、会话、模型和配置保留；普通重启后回到原配置。安全界面不加载移动插件等扩展。"))
+                        com.deepseekharness.app.util.UiText.text("安全模式：仅加载官方基础界面；插件、会话与配置保留。"))
                     .setNegativeButton(com.deepseekharness.app.util.UiText.text("取消"), null)
                     .setPositiveButton(
                         com.deepseekharness.app.util.UiText.text("安全启动"),
@@ -212,6 +221,13 @@ public class LaunchFragment extends Fragment {
           refreshRunState();
         });
 
+    // 页尾「技术说明」：运行时与 dsh 版本不再占副标题，折叠后才展开（B3）。
+    techModel = new TechNote.Model();
+    techModel.key = "launch-tech";
+    techModel.style = R.style.ShellLaunchMeta;
+    techNote =
+        TechNote.attach(
+            (LinearLayout) v.findViewById(R.id.launch_sections), techModel, disclosure, null);
     return v;
   }
 
@@ -308,7 +324,7 @@ public class LaunchFragment extends Fragment {
     if (url.isEmpty()) {
       if (getView() != null) {
         ((TextView) getView().findViewById(R.id.launch_status))
-            .setText(com.deepseekharness.app.util.UiText.text("先点「启动」，等鉴权链接就绪后再进入"));
+            .setText(com.deepseekharness.app.util.UiText.text("请先启动"));
       }
       return;
     }
@@ -316,7 +332,7 @@ public class LaunchFragment extends Fragment {
     enteringWeb = true;
     webEntryFailure = false;
     ((TextView) root.findViewById(R.id.launch_status))
-        .setText(com.deepseekharness.app.util.UiText.choose("正在打开 Web…", "Opening Web…"));
+        .setText(com.deepseekharness.app.util.UiText.choose("打开中…", "Opening Web…"));
     refreshRunState();
     try {
       if (getView() != root || !isResumed() || activity.isFinishing() || activity.isDestroyed()) {
@@ -324,7 +340,7 @@ public class LaunchFragment extends Fragment {
         return;
       }
       if (generation != webEntryGeneration() || !url.equals(webEntryUrl())) {
-        finishWebEntry(root, com.deepseekharness.app.util.UiText.text("Web 状态已变化，请等待就绪后重新进入"));
+        finishWebEntry(root, com.deepseekharness.app.util.UiText.text("状态已变化，请稍后重试"));
         return;
       }
       // The browser owns the token -> cookie -> HTTP 200 verification. Doing it here
@@ -472,6 +488,12 @@ public class LaunchFragment extends Fragment {
   }
 
   @Override
+  public void onSaveInstanceState(@NonNull Bundle outState) {
+    super.onSaveInstanceState(outState);
+    disclosure.save(outState, "disclosure");
+  }
+
+  @Override
   public void onDestroyView() {
     startRequest.incrementAndGet();
     preparingStart = false;
@@ -487,6 +509,8 @@ public class LaunchFragment extends Fragment {
     launchLog = null;
     logPanel = null;
     activityTrack = null;
+    techNote = null;
+    techModel = null;
     if (dotPulse != null) {
       dotPulse.cancel();
       dotPulse = null;
@@ -532,15 +556,16 @@ public class LaunchFragment extends Fragment {
                 + urlNote,
             urlNote.trim());
       }
-      runState.setText(
+      // 大标题只放短状态；未确认时的完整原因与下一步收进副标题的 ⓘ（见下方 subtitle）。
+      UiMotion.crossFadeText(
+          runState,
           enteringWeb
-              ? com.deepseekharness.app.util.UiText.choose("正在打开 Web…", "Opening Web…")
+              ? com.deepseekharness.app.util.UiText.choose("打开中…", "Opening Web…")
               : restoring
                   ? com.deepseekharness.app.core.WebSessionRestoreText.progress(
                       restore.reason(), restore.attempts())
                   : unresolved
-                      ? com.deepseekharness.app.core.WebSessionRestoreText.unresolved(
-                          restore.reason())
+                      ? com.deepseekharness.app.core.WebSessionRestoreText.state(restore.reason())
                       : controller.isRestartBlocked()
                           ? com.deepseekharness.app.util.UiText.text("自动重启已暂停")
                           : stopping
@@ -555,7 +580,7 @@ public class LaunchFragment extends Fragment {
                                                   "DSH 已就绪，可进入"))
                                           + (controller.isWebCompatibilityFallback()
                                               ? com.deepseekharness.app.util.UiText.text(
-                                                  " · 已兼容切换 proot")
+                                                  " · 已切换到兼容模式")
                                               : "")
                                       : controller.isUserStopped()
                                           ? getString(R.string.ui2_stopped)
@@ -566,18 +591,41 @@ public class LaunchFragment extends Fragment {
       boolean needsRecovery = environment.recovery;
       ((TextView) root.findViewById(R.id.launch_environment))
           .setText(environment.ready ? "READY" : "—");
-      ((TextView) root.findViewById(R.id.launch_subtitle))
-          .setText(
-              ready
-                  ? (controller.isWebCompatibilityFallback()
-                          ? "proot"
-                          : controller.proot().runtime().id())
-                      + " · dsh "
-                      + com.deepseekharness.app.util.Constants.DSH_VERSION
-                  // 恢复核对的结论是一整句说明，放在副标题；大标题只放短状态，窄屏不再撑成三行。
-                  : !restore.notice().isEmpty()
-                      ? restore.notice()
-                      : getString(R.string.ui2_launch_hint));
+      // 副标题只留一句；恢复核对的完整结论与下一步在折叠卡里展开（异常默认展开，B1/B4）。
+      TextView subtitle = root.findViewById(R.id.launch_subtitle);
+      String hint = getString(R.string.ui2_launch_hint);
+      String detail = "";
+      String key = "";
+      if (!ready && !restore.notice().isEmpty()) {
+        detail = restore.notice();
+        key = "restore";
+      } else if (!ready && unresolved) {
+        detail = com.deepseekharness.app.core.WebSessionRestoreText.unresolved(restore.reason());
+        key = "unresolved";
+      }
+      SummaryText.Split split = SummaryText.split(detail);
+      UiMotion.crossFadeText(subtitle, detail.isEmpty() ? hint : split.summary);
+      if (detail.isEmpty()) {
+        DisclosureCard.bind(subtitle, null, disclosure, null);
+      } else {
+        DisclosureCard.Model model = new DisclosureCard.Model();
+        model.key = key;
+        model.detail = detail;
+        model.defaultExpanded = true;
+        DisclosureCard.bind(
+            subtitle, model, disclosure, null, root.findViewById(R.id.launch_activity));
+      }
+      if (techNote != null && techModel != null) {
+        techModel.detail =
+            (ready
+                    ? controller.isWebCompatibilityFallback()
+                        ? "proot"
+                        : controller.proot().runtime().id()
+                    : "—")
+                + " · dsh "
+                + com.deepseekharness.app.util.Constants.DSH_VERSION;
+        TechNote.bind(techNote, techModel, disclosure, null);
+      }
       // 语境小字 / 活动条 / 工作台状态只取真实状态；不根据等待时长推算阶段。
       renderStatusChrome(
           root,
@@ -600,18 +648,19 @@ public class LaunchFragment extends Fragment {
                       || !trace.issues.isEmpty()
                   ? View.VISIBLE
                   : View.GONE);
-      if (starting)
+      if (starting) {
+        // 状态条只放一行阶段与计时；固定说明不再堆在状态条里（启动日志就在同页实时滚动）。
+        String timing =
+            com.deepseekharness.app.util.UiText.format(
+                "%s · 本阶段 %s 秒 · 总计 %s 秒",
+                trace.stage, trace.stageElapsedMs / 1000, trace.elapsedMs / 1000);
         ((TextView) root.findViewById(R.id.launch_status))
             .setText(
-                com.deepseekharness.app.util.UiText.format(
-                    "%s · 本阶段 %s 秒 · 总计 %s 秒\n%s",
-                    trace.stage,
-                    trace.stageElapsedMs / 1000,
-                    trace.elapsedMs / 1000,
-                    trace.issues.isEmpty()
-                        ? com.deepseekharness.app.util.UiText.text("下方实时显示启动输出；等待不会自动终止。")
-                        : com.deepseekharness.app.util.UiText.text("检测到插件或配置异常，可查看恢复选项。")));
-      else if (!startStatusMessage.isEmpty() && !stopping && !enteringWeb)
+                trace.issues.isEmpty()
+                    ? timing
+                    : com.deepseekharness.app.util.UiText.format(
+                        "%s\n%s", timing, com.deepseekharness.app.util.UiText.text("配置异常")));
+      } else if (!startStatusMessage.isEmpty() && !stopping && !enteringWeb)
         ((TextView) root.findViewById(R.id.launch_status))
             .setText(com.deepseekharness.app.util.UiStateText.render(startStatusMessage));
       Button recovery = root.findViewById(R.id.launch_recovery);
@@ -644,7 +693,7 @@ public class LaunchFragment extends Fragment {
       Button stop = root.findViewById(R.id.launch_stop);
       if (stop != null) stop.setEnabled(!stopping);
       if (needsRecovery) {
-        runState.setText(com.deepseekharness.app.util.UiText.text("环境需要恢复"));
+        runState.setText(com.deepseekharness.app.util.UiText.text("需要恢复"));
         if (start != null) start.setEnabled(false);
         if (restart != null) restart.setEnabled(false);
         root.findViewById(R.id.launch_safe).setEnabled(false);
@@ -670,7 +719,7 @@ public class LaunchFragment extends Fragment {
         if (state != null)
           state.setText(
               com.deepseekharness.app.util.UiText.choose(
-                  "运行状态暂时无法读取，请查看操作记录", "Run state unavailable. See operation history."));
+                  "状态异常", "Run state unavailable. See operation history."));
       }
     }
   }
@@ -795,13 +844,13 @@ public class LaunchFragment extends Fragment {
     int tone;
     String context;
     if (needsRecovery) {
-      context = UiText.choose("运行环境 · 需要恢复", "Runtime environment · needs recovery");
+      context = UiText.choose("运行环境需要恢复", "Runtime environment · needs recovery");
       tone = R.color.shell_bad;
     } else if (unresolved) {
       context = UiText.choose("Web 实例 · 待确认", "Web instance · unconfirmed");
       tone = R.color.shell_bad;
     } else if (restartBlocked) {
-      context = UiText.choose("自动重启 · 已暂停", "Automatic restart · paused");
+      context = UiText.choose("自动重启已暂停", "Automatic restart · paused");
       tone = R.color.shell_warn;
     } else if (entering) {
       context = UiText.choose("本机工作台 · 正在进入", "Local workspace · opening");
@@ -846,13 +895,13 @@ public class LaunchFragment extends Fragment {
         value = UiText.choose("待确认", "Pending");
         valueTone = R.color.shell_bad;
       } else if (entering) {
-        value = UiText.choose("进入中", "Opening");
+        value = UiText.choose("进入中…", "Opening");
         valueTone = R.color.shell_good;
       } else if (restoring) {
         value = UiText.choose("核对中", "Check");
         valueTone = R.color.shell_accent;
       } else if (stopping) {
-        value = UiText.choose("停止中", "Stop");
+        value = UiText.choose("停止中…", "Stop");
         valueTone = R.color.shell_accent;
       } else if (starting) {
         value = UiText.choose("启动中", "Start");
@@ -913,9 +962,7 @@ public class LaunchFragment extends Fragment {
                         || activity.isDestroyed()
                         || generation != controller.getWebGeneration()) return;
                     if (candidate == null) {
-                      status.setText(
-                          com.deepseekharness.app.util.UiText.text(
-                              "尚未确认 Web 退出；进程身份无法核验，保留运行屏障。请查看诊断后重试停止。"));
+                      status.setText(com.deepseekharness.app.util.UiText.text("停止未完成"));
                       return;
                     }
                     boolean previous =
@@ -928,9 +975,9 @@ public class LaunchFragment extends Fragment {
                         .setMessage(
                             previous
                                 ? com.deepseekharness.app.util.UiText.text(
-                                    "普通停止尚未确认上一版 Web 退出。本次已按保存的出生身份分别核验上一版 guest 与它的容器启动器；强制结束可能中断正在写入的对话或文件。\n\n确认后先结束 guest，再结束该记录对应的旧启动器；任一进程身份或状态变化都会拒绝执行，不会结束其他进程。取消会保留现场与运行屏障。")
+                                    "普通停止未确认上一版退出。强制结束可能中断写入。\n\n确认后先结束旧进程；身份变化会拒绝执行；取消会保留现场。")
                                 : com.deepseekharness.app.util.UiText.text(
-                                    "普通停止尚未确认 Web 退出。本次已核验进程属于 DSHA；强制结束可能中断正在写入的对话或文件。\n\n确认后只结束这次已核验的 Web 进程；身份或状态变化会拒绝执行。取消会保留现场与运行屏障。"))
+                                    "普通停止未确认退出。强制结束可能中断写入。\n\n确认后只结束已核验进程；取消会保留现场。"))
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(
                             com.deepseekharness.app.util.UiText.text("强制结束"),
@@ -1038,7 +1085,7 @@ public class LaunchFragment extends Fragment {
         UiText.format(
             UiText.choose("本机访问\n%s\n\n%s", "On this phone\n%s\n\n%s"),
             local.isEmpty()
-                ? UiText.choose("启动 DSH 并等待就绪后显示本机地址。", "Start DSH and wait for its local URL.")
+                ? UiText.choose("启动就绪后显示本机地址", "Start DSH and wait for its local URL.")
                 : local,
             lanStatusForDisplay(access)));
     if (accessLanButton != null)
@@ -1050,7 +1097,7 @@ public class LaunchFragment extends Fragment {
       boolean lanReady = access.state == LanAccessPresentation.State.READY;
       accessCopyButton.setText(
           lanReady
-              ? UiText.choose("复制局域网链接", "Copy LAN link")
+              ? UiText.choose("复制链接", "Copy LAN link")
               : UiText.choose("复制本机地址", "Copy local URL"));
       accessCopyButton.setEnabled(lanReady || !local.isEmpty());
     }

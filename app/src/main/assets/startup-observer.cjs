@@ -43,6 +43,11 @@ function requireFrom(anchor) {
   return requireAnchors.get(anchor);
 }
 let yaml, yamlSchema;
+// T116：sharp（附件图片）若先于 node-pty 加载，pty.node 会注册成 sharp 的导出，终端随后抛
+// pty.fork is not a function。这里在插件加载前固定 node-pty；失败静默，不影响启动。
+try {
+  requireFrom(path.join(installation, 'package.json'))('node-pty');
+} catch (_) { }
 function bundleEntries(patches, patchFile, output) {
   // 只解析普通数据；!!js 保留为不透明标记，绝不执行表达式或插件。
   if (!yaml) {

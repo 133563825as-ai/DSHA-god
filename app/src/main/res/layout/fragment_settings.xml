@@ -4,28 +4,24 @@
   - settings_tabs 仍由 SettingsFragment 注入四个模块入口，保留原有 id 与点击语义；
   - 语言 / 悬浮条 / 省电 / 更新 / 自检 / 关于全部沿用真实功能，不新增伪状态。
 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/shell_bg" android:clipToPadding="false" android:fillViewport="true">
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/settings_scroll" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/shell_bg" android:clipToPadding="false" android:fillViewport="true">
 
   <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="@dimen/shell_page_pad" android:paddingTop="@dimen/shell_page_top" android:paddingEnd="@dimen/shell_page_pad" android:paddingBottom="@dimen/shell_page_bottom">
 
     <TextView style="@style/ShellPageTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_settings" />
 
-    <TextView android:id="@+id/settings_page_hint" style="@style/ShellPageDescription" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/ui2_settings_hint" />
-
-    <TextView style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_environment" />
+    <TextView android:id="@+id/settings_section_environment" style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_environment" />
 
     <LinearLayout android:id="@+id/settings_tabs" style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content" />
 
-    <TextView style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_experience" />
+    <TextView android:id="@+id/settings_section_experience" style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_experience" />
 
-    <LinearLayout style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content">
+    <LinearLayout android:id="@+id/settings_group_experience" style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content">
 
       <LinearLayout android:id="@+id/settings_theme" style="@style/ShellRow" android:layout_width="match_parent" android:layout_height="wrap_content" android:focusable="true">
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui2_auto" />
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
-          <TextView android:id="@+id/settings_theme_title" style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="" />
-          <TextView android:id="@+id/settings_theme_sub" style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="" />
-        </LinearLayout>
+        <TextView android:id="@+id/settings_theme_title" style="@style/ShellRowTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:text="" />
+        <TextView android:id="@+id/settings_theme_sub" style="@style/ShellRowValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginEnd="6dp" android:ellipsize="end" android:maxLines="1" android:text="" />
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>
 
@@ -33,10 +29,8 @@
 
       <LinearLayout android:id="@+id/settings_appearance" style="@style/ShellRow" android:layout_width="match_parent" android:layout_height="wrap_content" android:focusable="true">
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui_language" />
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
-          <TextView style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui_language_title" />
-          <TextView android:id="@+id/settings_language" style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="" />
-        </LinearLayout>
+        <TextView style="@style/ShellRowTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:text="@string/ui_language_title" />
+        <TextView android:id="@+id/settings_language" style="@style/ShellRowValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginEnd="6dp" android:ellipsize="end" android:maxLines="1" android:text="" />
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>
 
@@ -46,7 +40,6 @@
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui_chat" />
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
           <TextView style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_overlay" />
-          <TextView style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/ui2_overlay_sub" />
         </LinearLayout>
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>
@@ -57,7 +50,6 @@
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui_keep_screen_on" />
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
           <TextView android:id="@+id/settings_keep_screen_on_title" style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="" />
-          <TextView android:id="@+id/settings_keep_screen_on_hint" style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="" />
         </LinearLayout>
         <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/settings_keep_screen_on_switch" style="@style/ShellSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" android:showText="false" />
       </LinearLayout>
@@ -83,17 +75,27 @@
         </LinearLayout>
         <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/settings_hidden_recents_switch" style="@style/ShellSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" android:showText="false" />
       </LinearLayout>
+
+      <View android:id="@+id/settings_hidden_recents_strict_divider" style="@style/ShellDivider" />
+
+      <LinearLayout android:id="@+id/settings_hidden_recents_strict" style="@style/ShellRow" android:layout_width="match_parent" android:layout_height="wrap_content">
+        <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui2_recents_strict" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
+          <TextView android:id="@+id/settings_hidden_recents_strict_title" style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" />
+          <TextView android:id="@+id/settings_hidden_recents_strict_hint" style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" />
+        </LinearLayout>
+        <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/settings_hidden_recents_strict_switch" style="@style/ShellSwitch" android:layout_width="wrap_content" android:layout_height="wrap_content" android:showText="false" />
+      </LinearLayout>
     </LinearLayout>
 
-    <TextView style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_support" />
+    <TextView android:id="@+id/settings_section_support" style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_support" />
 
-    <LinearLayout style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content">
+    <LinearLayout android:id="@+id/settings_group_support" style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content">
 
       <LinearLayout android:id="@+id/settings_update" style="@style/ShellRow" android:layout_width="match_parent" android:layout_height="wrap_content">
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_recovery_refresh" />
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
           <TextView style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_updates" />
-          <TextView style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/ui2_updates_sub" />
         </LinearLayout>
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>
@@ -104,7 +106,6 @@
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_ui_shield" />
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
           <TextView style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_diagnostics" />
-          <TextView style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/ui2_diagnostics_sub" />
         </LinearLayout>
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>
@@ -115,7 +116,6 @@
         <ImageView style="@style/ShellRowIcon" android:layout_width="@dimen/shell_row_icon" android:layout_height="@dimen/shell_row_icon" android:contentDescription="@null" android:src="@drawable/ic_about" />
         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
           <TextView style="@style/ShellRowTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_about" />
-          <TextView style="@style/ShellRowSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/ui2_about_sub" />
         </LinearLayout>
         <ImageView android:layout_width="@dimen/shell_row_chevron" android:layout_height="@dimen/shell_row_chevron" android:contentDescription="@null" android:src="@drawable/ic_ui2_chevron" app:tint="@color/shell_text_muted" />
       </LinearLayout>

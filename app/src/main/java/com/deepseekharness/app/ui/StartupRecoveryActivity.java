@@ -19,7 +19,8 @@ import org.json.*;
 
 /**
  * Web 无法加载时仍可使用的原生恢复工作台（方案 A）。顶部状态卡只给一个结论（StartupRecoveryState），
- * 对症主操作在卡内；其余操作逐行说明效果，不可用时写明原因。所有写操作仍经 BackupTask 与既有确认。
+ * 对症主操作在卡内；其余操作每行只有动作，效果说明收进行尾 ⓘ，不可用时写明原因。所有写操作仍经
+ * BackupTask 与既有确认。
  */
 public final class StartupRecoveryActivity extends AppCompatActivity {
   private HarnessController controller;
@@ -68,6 +69,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     }
     layout = new StartupRecoveryLayout(this, this::finish, () -> model.load());
     setContentView(layout.root);
+    PressFeedback.attachButtons(findViewById(android.R.id.content));
     progress = layout.progress;
     layout.attemptsToggle.setOnClickListener(
         v -> {
@@ -229,10 +231,18 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
             + showAllAttempts;
     if (key.equals(renderedKey)) return;
     renderedKey = key;
+    int scrollY = layout.root.getScrollY();
     renderStatus(kind, failure, taskBusy, healthy, stage);
     renderActions(kind, failure, taskBusy, healthy);
     renderAttempts();
     renderSnapshots(kind, taskBusy);
+    // 列表整块重建时给 150ms 淡入并恢复滚动位置，避免状态刷新把页面顶回顶部（审计 B-04）。
+    UiMotion.reveal(layout.recovery);
+    UiMotion.reveal(layout.tools);
+    UiMotion.reveal(layout.attempts);
+    UiMotion.reveal(layout.snapshots);
+    if (layout.root.getScrollY() != scrollY)
+      layout.root.post(() -> layout.root.scrollTo(0, scrollY));
   }
 
   private String meta(Kind kind, StartupHistoryStore.Entry entry, String stage) {
@@ -339,14 +349,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     String why = blocked(act, kind, taskBusy, healthy);
     // 「回滚未完成的修复」只在确有待处理修复时出现，不再常驻。
     if (act.guard == Guard.PENDING_ONLY && kind != Kind.PENDING) return;
-    layout.action(
-        parent,
-        act.label,
-        why.isEmpty() ? act.effect : why,
-        !why.isEmpty(),
-        act.icon,
-        act.run,
-        true);
+    layout.action(parent, act.label, act.effect, why, !why.isEmpty(), act.icon, act.run, true);
   }
 
   // ---------------------------------------------------------------- 动作
@@ -669,7 +672,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
     if (!controller.isEnvironmentReady()) {
       status(
           t(
-              "运行环境尚未就绪，可先修复配置或导出数据，再进入安装与修复。",
+              "环境未就绪，可先修复或导出数据",
               "The runtime is not ready. Repair configuration or export data, then open installation and repair."));
       return;
     }
@@ -721,7 +724,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
           attempts,
           controller.startupDiagnostics().historyError().isEmpty()
               ? t(
-                  "还没有启动记录。下一次启动会自动记录。",
+                  "还没有启动记录；下次启动自动记录",
                   "No startup records yet. The next start will be recorded automatically.")
               : t("启动记录暂不可用：", "Startup records are currently unavailable: ")
                   + controller.startupDiagnostics().historyError());
@@ -817,7 +820,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
       layout.note(
           layout.snapshots,
           t(
-              "还没有快照。下一次无错误的启动会自动保存。",
+              "还没有快照；下次启动自动保存",
               "No snapshots yet. The next error-free start saves one automatically."));
     renderPlugins(kind, taskBusy);
   }
@@ -843,10 +846,13 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
         if (BuiltinPlugins.internal(name)) continue;
         count++;
         // 行文字保持「名称 · 卸载」：StartupRecoveryAudit 按此查找可点行。
+        String note =
+            !why.isEmpty() ? why : name.equals(failing) ? t("本次启动报错", "Failed in this start") : "";
         layout.action(
             layout.plugins,
             name + " · " + t("卸载", "Remove"),
-            !why.isEmpty() ? why : name.equals(failing) ? t("本次启动报错", "Failed in this start") : "",
+            "",
+            note,
             !why.isEmpty(),
             0,
             () -> confirmUninstall(name),
@@ -858,7 +864,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
       layout.note(
           layout.plugins,
           t(
-                  "插件清单暂不可读；可先恢复或新建配置。\n",
+                  "插件清单暂不可读；可恢复或新建配置",
                   "Cannot read the plugin list. Restore or create configuration first.\n")
               + readable(contents.optString("pluginError")));
   }
@@ -885,7 +891,7 @@ public final class StartupRecoveryActivity extends AppCompatActivity {
   private String readable(String value) {
     if (value.contains("RECOVERY_PENDING"))
       return t(
-          "配置修复未完成，请使用“回滚未完成的修复”。",
+          "配置修复未完成，请使用「回滚未完成的修复」。",
           "Configuration repair is incomplete. Select Roll back the unfinished repair.");
     if (value.contains("RECOVERY_BUSY"))
       return t("环境任务正在执行，完成后刷新即可。", "An environment task is running. Refresh when it finishes.");

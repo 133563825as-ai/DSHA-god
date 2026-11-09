@@ -234,7 +234,8 @@ public final class TerminalOutputDialog extends DialogFragment {
     model.pendingText = selected().text();
     model.state.setValue("picking");
     try {
-      saveDocument.launch("terminal-output-" + System.currentTimeMillis() + ".txt");
+      RecentsPrivacyGuard.launch(
+          saveDocument, "terminal-output-" + System.currentTimeMillis() + ".txt");
     } catch (RuntimeException error) {
       model.pendingText = null;
       model.state.setValue("idle");
