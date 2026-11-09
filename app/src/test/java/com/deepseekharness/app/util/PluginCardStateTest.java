@@ -46,6 +46,30 @@ public final class PluginCardStateTest {
   }
 
   @Test
+  public void configBadgeToneSeparatesEnabledDisabledAndBlockingStates() {
+    assertEquals(Tone.GOOD, PluginCardState.configTone(false, true, true, false, false, false));
+    assertEquals(Tone.MUTED, PluginCardState.configTone(false, true, false, false, false, false));
+    assertEquals(Tone.WARN, PluginCardState.configTone(true, true, true, false, false, false));
+    assertEquals(Tone.WARN, PluginCardState.configTone(false, false, true, false, false, false));
+    assertEquals(Tone.WARN, PluginCardState.configTone(false, true, true, false, false, true));
+    assertEquals(Tone.ACCENT, PluginCardState.configTone(false, true, false, true, false, false));
+    assertEquals(Tone.MUTED, PluginCardState.configTone(false, true, false, false, true, false));
+  }
+
+  @Test
+  public void runtimeBadgeToneNeverTreatsUnknownAsLoadedOrFailed() {
+    assertEquals(Tone.GOOD, PluginCardState.runtimeTone("loaded", false));
+    assertEquals(Tone.GOOD, PluginCardState.runtimeTone("running", false));
+    assertEquals(Tone.MUTED, PluginCardState.runtimeTone("stopped", false));
+    assertEquals(Tone.MUTED, PluginCardState.runtimeTone("unloaded", false));
+    assertEquals(Tone.ACCENT, PluginCardState.runtimeTone("loading", false));
+    assertEquals(Tone.BAD, PluginCardState.runtimeTone("failed", false));
+    assertEquals(Tone.WARN, PluginCardState.runtimeTone("unknown", false));
+    assertEquals(Tone.WARN, PluginCardState.runtimeTone("loaded", true));
+    assertEquals(Tone.WARN, PluginCardState.runtimeTone(null, false));
+  }
+
+  @Test
   public void notesKeepOrderAndHideUpdateWhilePending() {
     assertEquals(
         List.of(Note.RESTART, Note.UPDATE, Note.MESSAGE),

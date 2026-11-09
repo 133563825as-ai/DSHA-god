@@ -203,6 +203,30 @@
         <item name="android:lineSpacingExtra">2dp</item>
     </style>
 
+    <!--
+      插件卡片徽章：来源 / 版本 / 配置 / 当前 Web 共用一枚胶囊，底色与文字色由 PluginFragment 按语义 tone tint，
+      不在布局里写死颜色；放不下时由 PluginFlowRow 整枚换行，不压缩、不省略关键状态词。
+    -->
+    <style name="ShellPluginBadge" parent="">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/shell_text_secondary</item>
+        <item name="android:background">@drawable/bg_plugin_badge</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">3</item>
+        <item name="android:ellipsize">none</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 版本徽章保留等宽字特征但去掉粗体，避免 rc 标签在胶囊里显得拥挤。 -->
+    <style name="ShellPluginBadgeMono" parent="ShellPluginBadge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
     <style name="ShellSwitch" parent="Widget.DSHA.Switch">
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/shell_text</item>

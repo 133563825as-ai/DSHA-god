@@ -84,6 +84,41 @@ public final class PluginCardState {
   }
 
   /**
+   * 配置徽章的语义语气：只决定配色，不改写文案，也不参与「当前 Web 是否已加载」的判定。
+   *
+   * <p>已启用用成功色、已禁用用中性色；排队、实体缺失与元数据错误用警示色；可开启用强调色。
+   */
+  public static Tone configTone(
+      boolean pending,
+      boolean available,
+      boolean enabled,
+      boolean detected,
+      boolean dynamic,
+      boolean metadataError) {
+    if (pending || !available || metadataError) return Tone.WARN;
+    if (dynamic) return Tone.MUTED;
+    if (enabled) return Tone.GOOD;
+    return detected ? Tone.ACCENT : Tone.MUTED;
+  }
+
+  /**
+   * 当前 Web 徽章的语义语气：已加载成功、未加载中性、待核验/未知警示、加载失败危险。
+   *
+   * <p>这里只根据既有结论着色；待核验与未知不会被当成已加载，也不会被当成失败。
+   */
+  public static Tone runtimeTone(String runtimeState, boolean stale) {
+    if (stale) return Tone.WARN;
+    if (runtimeState == null) return Tone.WARN;
+    return switch (runtimeState) {
+      case "loaded", "running", "active" -> Tone.GOOD;
+      case "failed" -> Tone.BAD;
+      case "pending", "waiting", "loading" -> Tone.ACCENT;
+      case "stopped", "unloaded", "disabled", "inactive" -> Tone.MUTED;
+      default -> Tone.WARN;
+    };
+  }
+
+  /**
    * 提示条按「需要用户处理的程度」排序：重启生效 → 可更新 → 最近一次操作消息。
    *
    * <p>排队中不提示更新，避免与正在执行的任务并列出现两个可点的变更入口。
