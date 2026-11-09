@@ -17,9 +17,11 @@ import android.widget.TextView;
 import androidx.appcompat.widget.AppCompatButton;
 import com.deepseekharness.app.DshaApp;
 import com.deepseekharness.app.R;
+import com.deepseekharness.app.util.UiText;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -48,13 +50,23 @@ public final class WaveBComponentsTest {
 
   private ContentResolver resolver;
   private ContextThemeWrapper context;
+  private String previousLanguage;
 
   @Before
   public void setUp() {
+    // UiText 是测试 JVM 内的全局静态：其他类（含启动真实 DshaApp 的类）可能把语言留成系统
+    // 语言（CI 为 en），这里固定中文断言环境并在 @After 还原，避免依赖执行顺序。
+    previousLanguage = UiText.language();
+    UiText.setLanguage("zh");
     resolver = RuntimeEnvironment.getApplication().getContentResolver();
     animationScales(1f);
     context =
         new ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_DeepseekHarness);
+  }
+
+  @After
+  public void tearDown() {
+    UiText.setLanguage(previousLanguage);
   }
 
   private void animationScales(float value) {
