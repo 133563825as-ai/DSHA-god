@@ -1,10 +1,12 @@
 package com.deepseekharness.app.ui;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -44,12 +46,17 @@ public final class SafAccessFragment extends Fragment {
   private final Handler main = new Handler(Looper.getMainLooper());
   private long renderGeneration;
 
+  /** 明确交给系统 DocumentsUI 的选择器；默认处理程序被厂商改写时用它绕开。 */
   private final ActivityResultLauncher<Uri> picker =
-      registerForActivityResult(
-          new ActivityResultContracts.OpenDocumentTree(),
-          uri -> {
-            if (uri != null) addGrant(uri);
-          });
+      registerForActivityResult(new SystemDocumentPicker.TreeContract(), this::treeChosen);
+
+  /** 系统默认选择器；用户明确选择继续用厂商界面时才走这里。 */
+  private final ActivityResultLauncher<Uri> defaultPicker =
+      registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::treeChosen);
+
+  private void treeChosen(Uri uri) {
+    if (uri != null) addGrant(uri);
+  }
 
   @Nullable
   @Override
@@ -78,7 +85,7 @@ public final class SafAccessFragment extends Fragment {
 
     limit = root.findViewById(R.id.saf_limit);
     ((Button) root.findViewById(R.id.saf_add)).setText(UiText.choose("选择文件夹", "Choose folder"));
-    root.findViewById(R.id.saf_add).setOnClickListener(button -> picker.launch(null));
+    root.findViewById(R.id.saf_add).setOnClickListener(button -> chooseFolder());
 
     grants = root.findViewById(R.id.saf_grants);
     return root;
@@ -170,6 +177,70 @@ public final class SafAccessFragment extends Fragment {
     return grant.writable
         ? UiText.choose("可读写", "Read and write")
         : UiText.choose("只读（已关闭助手写入）", "Read only (assistant writes off)");
+  }
+
+  /**
+   * 选择文件夹：优先系统 DocumentsUI。
+   *
+   * <p>厂商文件管理器常把 {@code ACTION_OPEN_DOCUMENT_TREE} 的默认处理程序改成自家界面，
+   * 那种界面看不到 SD 卡 / U 盘等存储挂载点。检测到接管时先说清楚，再让用户选系统选择器、
+   * 去应用信息清除默认设置，或明确继续用默认界面；没有系统选择器时保持原行为。
+   */
+  private void chooseFolder() {
+    Context ctx = requireContext();
+    SystemDocumentPicker.Status status = SystemDocumentPicker.inspect(ctx);
+    if (!status.hasSystem()) {
+      launch(defaultPicker, ctx);
+      return;
+    }
+    if (!status.overridden()) {
+      launch(picker, ctx);
+      return;
+    }
+    new DshaDialogBuilder(ctx)
+        .setTitle(UiText.choose("选择文件夹", "Choose folder"))
+        .setMessage(
+            UiText.format(
+                UiText.choose(
+                    "系统当前默认用「%s」打开文件夹选择，它可能看不到 SD 卡、U 盘等存储挂载点。建议改用系统文件选择器；也可以在它的应用信息里清除默认设置。",
+                    "Your system currently opens folder selection with \"%s\", which may not show storage mounts such as SD cards or USB drives. Use the system file picker instead, or clear that app's default in its app info."),
+                status.defaultName()))
+        .setPositiveButton(
+            UiText.choose("系统文件选择器", "System picker"), (dialog, which) -> launch(picker, ctx))
+        .setNeutralButton(
+            UiText.choose("更改默认应用", "Change default app"),
+            (dialog, which) -> openDefaultApp(ctx, status.defaultPackage))
+        .setNegativeButton(
+            UiText.choose("继续用默认", "Keep default"), (dialog, which) -> launch(defaultPicker, ctx))
+        .show();
+  }
+
+  private void launch(ActivityResultLauncher<Uri> launcher, Context ctx) {
+    try {
+      // 结果型外部选择器在途时不能结束 UI 任务（T124 严格模式守卫）。
+      RecentsPrivacyGuard.launch(launcher, null);
+    } catch (RuntimeException missing) {
+      toast(UiText.text("没有可用的文件选择器"));
+    }
+  }
+
+  /** 跳到接管者的应用信息页，用户可在「默认打开」里清除；入口不可用时退回系统设置。 */
+  private void openDefaultApp(Context ctx, String packageName) {
+    try {
+      if (packageName != null) {
+        startActivity(
+            new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName)));
+      } else {
+        startActivity(new Intent(Settings.ACTION_SETTINGS));
+      }
+    } catch (RuntimeException missing) {
+      try {
+        startActivity(new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS));
+      } catch (RuntimeException ignored) {
+        toast(UiText.choose("无法打开系统设置", "Cannot open system settings"));
+      }
+    }
   }
 
   /**

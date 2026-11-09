@@ -48,6 +48,10 @@
         <intent><action android:name="rikka.shizuku.intent.action.REQUEST_BINDER" /></intent>
         <intent><action android:name="android.intent.action.OPEN_DOCUMENT" /><data android:mimeType="*/*" /></intent>
         <intent><action android:name="android.intent.action.GET_CONTENT" /><data android:mimeType="*/*" /></intent>
+        <!-- SAF 目录选择要显式指向系统 DocumentsUI；包可见性缺失会让查询看不到它。 -->
+        <package android:name="com.android.documentsui" />
+        <package android:name="com.google.android.documentsui" />
+        <intent><action android:name="android.intent.action.OPEN_DOCUMENT_TREE" /></intent>
     </queries>
 
     <application

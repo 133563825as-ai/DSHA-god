@@ -161,6 +161,8 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
+    // 手机任务期间的活动摘要：有界内存记录，任务结束/暂停/断开即清空；没有记录任务时零成本返回，不读节点。
+    com.deepseekharness.app.screen.ScreenActivityRecorder.recordAccessibilityEvent(event);
     // 动作等待只借事件判断“界面动过没有”，不读节点、不缓存内容；没有等待者时这里零成本返回。
     if (event != null && SCREEN_EVENTS.watching())
       SCREEN_EVENTS.record(
@@ -591,6 +593,7 @@ public class DshaAccessibilityService extends AccessibilityService {
   @Override
   protected void onServiceConnected() {
     super.onServiceConnected();
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     CONNECTION.connect(this);
     instance = this;
     var ownLease = CONNECTION.snapshot();
@@ -617,6 +620,7 @@ public class DshaAccessibilityService extends AccessibilityService {
     if (!CONNECTION.disconnect(this)) return;
     if (instance == this) instance = null;
     MAIN_SCREEN.revoke();
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     // Platform disconnect always fences old screen authority, including our own planned disable.
     HttpShellService.revokeDisconnectedScreenGrant(this);
     com.deepseekharness.app.screen.AccessibilityRepairOwner.platformDisconnected();

@@ -115,19 +115,26 @@ public final class PhoneControlCoordinator {
   public void completeLocal(ControlTaskAuthority.Binding binding) {
     turnGrants.clear();
     capabilityGrants.clear();
-    if (authority.completeLocal(binding)) fence(false, null);
+    boolean ended = authority.completeLocal(binding);
+    // 只结束该任务的记录；别的会话的延迟 task-end 不能清掉当前任务的活动。
+    if (ended)
+      com.deepseekharness.app.screen.ScreenActivityRecorder.clearIfTask(binding.identity());
+    if (ended) fence(false, null);
   }
 
   public void pause(String reason) {
     turnGrants.clear();
     capabilityGrants.clear();
     var previous = authority.pause(reason);
+    // 暂停立即清空内存活动：用户已经接管屏幕，旧摘要不能继续被当成当前上下文。
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     fence(true, previous);
   }
 
   public boolean pauseCurrent(ControlTaskAuthority.Lease lease, String reason) {
     var previous = authority.pauseCurrent(lease, reason);
     if (previous == null) return false;
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     fence(true, previous);
     return true;
   }
@@ -142,6 +149,7 @@ public final class PhoneControlCoordinator {
     turnGrants.clear();
     capabilityGrants.clear();
     var previous = authority.stop(reason);
+    com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     fence(true, previous);
   }
 

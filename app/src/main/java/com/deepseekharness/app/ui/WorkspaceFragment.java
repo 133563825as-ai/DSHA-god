@@ -48,7 +48,7 @@ public class WorkspaceFragment extends Fragment {
 
   private final androidx.activity.result.ActivityResultLauncher<android.net.Uri> backupDirectory =
       registerForActivityResult(
-          new androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+          new SystemDocumentPicker.TreeContract(),
           uri -> {
             if (oneClick != null) oneClick.directoryResult(uri);
           });
@@ -336,7 +336,7 @@ public class WorkspaceFragment extends Fragment {
 
   private void pickBackupDirectory() {
     if (isResumed() && oneClick != null && oneClick.claimDirectoryPicker())
-      backupDirectory.launch(null);
+      RecentsPrivacyGuard.launch(backupDirectory, null);
   }
 
   private void taskRejected() {
@@ -423,10 +423,12 @@ public class WorkspaceFragment extends Fragment {
       }
     }
     // 完成 / 取消后的一键备份结果（含保存路径）附在说明后，不吞掉原有提示。
-    if (level != BackupHealth.Level.RUNNING && !nativeStatus.isEmpty())
-      detail = detail + "\n\n" + nativeStatus;
+    // NEVER：旧回执与「还没有导出过备份」矛盾，不叠加；成功回执本应先刷新 lastBackupSuccess。
+    if (level != BackupHealth.Level.RUNNING
+        && level != BackupHealth.Level.NEVER
+        && !nativeStatus.isEmpty()) detail = detail + "\n\n" + nativeStatus;
 
-    // 卡内收起为一句结论 + 一行后果；保存路径 / 原生任务详情（多行）展开后才创建（B1/B4）。
+    // 收起只留首句；展开区放首句之后的剩余文字，避免展开后整段重复（B1/B4）。
     TextView heroTitle = view.findViewById(R.id.workspace_hero_title);
     TextView heroDetail = view.findViewById(R.id.workspace_backup_status);
     heroDetail.setTextIsSelectable(false);
@@ -435,16 +437,8 @@ public class WorkspaceFragment extends Fragment {
     FadeSwap.text(heroDetail, split.summary);
     DisclosureCard.Model model = new DisclosureCard.Model();
     model.key = "backup-status";
-    model.detail = detail;
-    model.consequence = split.hasMore ? split.full.substring(split.summary.length()).trim() : "";
-    model.consequenceTone =
-        level == BackupHealth.Level.FAILED || level == BackupHealth.Level.STALE
-            ? R.color.shell_warn
-            : R.color.shell_text_secondary;
-    model.defaultExpanded =
-        level == BackupHealth.Level.FAILED
-            || level == BackupHealth.Level.STALE
-            || level == BackupHealth.Level.NEVER;
+    model.detail = split.hasMore ? split.full.substring(split.summary.length()).trim() : "";
+    model.defaultExpanded = level == BackupHealth.Level.FAILED || level == BackupHealth.Level.STALE;
     DisclosureCard.bind(heroDetail, model, disclosure, null);
     tintHero(view, level, icon);
     view.findViewById(R.id.workspace_hero_progress)

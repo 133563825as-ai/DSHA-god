@@ -313,7 +313,7 @@ final class PermissionChannelCard {
   private static String adbStatus(Context app) {
     try {
       if (!com.deepseekharness.app.DeviceBridgeService.isAdbEnabled(app))
-        return UiText.text("ADB 已关闭。开启后才会保持连接。");
+        return UiText.text("ADB 已关闭");
       String bridge = com.deepseekharness.app.DeviceBridgeService.adbState;
       if ("need_pair".equals(bridge)) return UiText.text("配对已失效，请重新配对。");
       if ("reconnecting".equals(bridge)) return UiText.format("正在重连无线调试…%s", "");

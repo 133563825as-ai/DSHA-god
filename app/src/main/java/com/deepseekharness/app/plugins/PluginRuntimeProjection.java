@@ -66,13 +66,17 @@ public final class PluginRuntimeProjection {
       JSONObject observed = ambiguous.contains(key) ? null : installed.get(key);
       if (observed != null && "application".equals(item.scope)) {
         String version = observed.optString("version"), state = observed.optString("state");
-        if (!version.isEmpty() && version.equals(item.version) && confirmedState(state)) {
+        // 历史包装壳只由 patch 插入官方包：快照里的壳版本永远对不上官方包版本，不能据此判旧模块冒充。
+        boolean legacyShim = PluginIdentity.legacyShim(item.name, observed.optString("name"));
+        if (!version.isEmpty()
+            && (legacyShim || version.equals(item.version))
+            && confirmedState(state)) {
           next = item.withRuntime(state, generation, false);
           if (!"queued".equals(item.loadState)
               && ((item.enabled && "loaded".equals(state))
                   || (!item.enabled && ("unloaded".equals(state) || "disabled".equals(state)))))
             next = next.withRestartRequired(false);
-        } else if (!version.isEmpty() && !version.equals(item.version)) {
+        } else if (!version.isEmpty() && !legacyShim && !version.equals(item.version)) {
           // 当前进程仍持有前一版模块；不能让相同名字替新版领取加载成功。
           next = item.withRuntime("unknown", generation, true).withRestartRequired(true);
         }

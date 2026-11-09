@@ -81,21 +81,21 @@ public final class GrantsAccordionTest {
   }
 
   @Test
-  public void openingAFileAccessNoteClosesTheChannelsNote() {
+  public void openingOneNoteClosesTheOther() {
     View page = page();
     TextView channels = page.findViewById(R.id.grants_channels_label);
-    TextView allFiles = page.findViewById(R.id.config_all_files_status);
+    TextView policy = page.findViewById(R.id.screen_policy_status);
     assertNotNull(channels);
-    assertNotNull(allFiles);
+    assertNotNull(policy);
 
     channels.performClick();
     settle();
     assertEquals(View.VISIBLE, detailVisibility(channels));
     assertEquals("已展开", channels.getStateDescription().toString());
 
-    allFiles.performClick();
+    policy.performClick();
     settle();
-    assertEquals(View.VISIBLE, detailVisibility(allFiles));
+    assertEquals(View.VISIBLE, detailVisibility(policy));
     assertEquals(View.GONE, detailVisibility(channels));
     assertEquals("已收起", channels.getStateDescription().toString());
   }
@@ -103,14 +103,14 @@ public final class GrantsAccordionTest {
   @Test
   public void collapsingTheOpenNoteDoesNotOpenAnother() {
     View page = page();
-    TextView allFiles = page.findViewById(R.id.config_all_files_status);
+    TextView policy = page.findViewById(R.id.screen_policy_status);
     TextView channels = page.findViewById(R.id.grants_channels_label);
-    allFiles.performClick();
+    policy.performClick();
     settle();
-    assertEquals(View.VISIBLE, detailVisibility(allFiles));
-    allFiles.performClick();
+    assertEquals(View.VISIBLE, detailVisibility(policy));
+    policy.performClick();
     settle();
-    assertEquals(View.GONE, detailVisibility(allFiles));
+    assertEquals(View.GONE, detailVisibility(policy));
     assertEquals(View.GONE, detailVisibility(channels));
   }
 
@@ -146,6 +146,15 @@ public final class GrantsAccordionTest {
   /** 摘要后面由 DisclosureCard 插入的详情容器第二格是详情本体。 */
   private static int detailVisibility(TextView summary) {
     if (!(summary.getParent() instanceof LinearLayout line)) return -1;
+    if (line.getOrientation() == LinearLayout.HORIZONTAL) {
+      // 状态胶囊与标题同一行时，详情容器由 DisclosureCard 插在这一行之后。
+      if (!(line.getParent() instanceof LinearLayout outer)) return -1;
+      int lineIndex = outer.indexOfChild(line);
+      if (lineIndex < 0 || lineIndex + 1 >= outer.getChildCount()) return -1;
+      if (!(outer.getChildAt(lineIndex + 1) instanceof LinearLayout holder)) return -1;
+      if (holder.getChildCount() < 2) return -1;
+      return holder.getChildAt(1).getVisibility();
+    }
     int index = line.indexOfChild(summary);
     if (index < 0 || index + 1 >= line.getChildCount()) return -1;
     if (!(line.getChildAt(index + 1) instanceof LinearLayout holder)) return -1;

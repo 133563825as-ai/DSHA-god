@@ -284,7 +284,7 @@ node tools/render.cjs --variant proposal --profiles phone-landscape,tablet-lands
 
 | 形态 | 条件 | 宽 | 高上限 | 页脚 |
 |---|---|---|---|---|
-| A 贴底 | W<600 且 H>480 | 整宽 | 0.9·H，不再抬高 74dp | ≤2 个按钮横排，≥3 竖排 |
+| A 贴底 | W<600 且 H>480 | 整宽 | 0.9·(H−lift)；动作抽屉 0.72·(H−lift) | ≤2 个按钮横排，≥3 竖排 |
 | B 居中 | W≥600 且 H>480 | 按内容档：s/对话框 400、m 480、l 640（W≥840 时 720） | min(H−80, 800) | 横排，主按钮在右 |
 | C 紧凑 | H≤480，s/m 档或对话框 | min(W−32, 400 / 480) | H−24 | 横排；标题 18sp |
 | D 分栏 | H≤480，l 档且 W≥600 | min(W−48, 680) | H−24 | 左栏（36%）放标题、说明和竖排操作，右栏正文滚动 |
@@ -293,6 +293,8 @@ node tools/render.cjs --variant proposal --profiles phone-landscape,tablet-lands
 - s：选择列表 ≤4 项，例如 `CardSheet.choices`「备份时机」。
 - m：说明文字或短列表，例如 `CardSheet.show`「设备通道状态」、副本操作。
 - l：多段表单，例如快捷按键、显示设置。
+
+贴底动作抽屉（`BottomSheetCard`，例如插件「更多操作」的入口列表）单独把首屏上限收紧到 **0.72×可用高度**（可用高度 = H−lift，lift 是主界面悬浮胶囊的抬高量）：6 行左右的入口列表按 0.9 会被内容撑到屏幕上半区；收紧后超出部分在抽屉内滚动、页脚常驻。`CardSheet` 的 A 形态仍保持 0.9（说明 / 选择 / 长表单调用面广，长表单也需要更多正文高度），两者由 `SheetGeometry` 的两个方法区分，短屏（H≤480）行为不变（整屏可滚动）。
 
 ### 9.3 审计对比（弹层相关 6 屏 × 4 档）
 
@@ -308,5 +310,6 @@ node tools/render.cjs --variant proposal --profiles phone-landscape,tablet-lands
 - `CardSheet.onMeasure` 的 `limit` 改用 `screenHeightDp` 计算，替换现在的 `heightPixels × .84/.86`。后者含系统栏，在横屏上偏大。
 - 页脚横排：`CardPage.footer` 在 A（≤2 个按钮）/ B / C 下改为 `HORIZONTAL`、权重 1、主按钮在后。D 模式由 `CardSheet` 组装两列，`CardPage` 本身不用改。
 - 贴底弹层的 `lp.y`：只有宿主是带胶囊的 `MainActivity` 才抬高；终端和独立 Activity 设为 0。
+- 贴底动作抽屉（`BottomSheetCard`）的首屏上限用 `SheetGeometry.bottomDrawerMaxHeight`（0.72）；`CardSheet` 的 BOTTOM 继续用 `SheetGeometry.maxHeight`（0.9），不合并成一个常量。
 - `DshaDialogBuilder.sizeOnce` 的宽度上限 560 改成 400，短屏 maxHeight 继续用 `H−24`。build296 的 InfoSurface 已经通过 `keepWindowSize()` 按形态自定尺寸（平板气泡、手机横屏紧凑弹窗、竖屏底部面板），可以作为 `SheetGeometry` 的先例，两者的规则应合并到一处。
 - 落地后用 `LayoutAuditInstrumentation` 补手机横屏档（例如 780×360）和平板档（800×1280、1280×800）。现在审计里只有手机竖屏和短屏，所以这类问题没被发现。

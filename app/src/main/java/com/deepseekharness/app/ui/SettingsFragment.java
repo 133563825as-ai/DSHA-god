@@ -25,13 +25,12 @@ import java.util.function.Supplier;
 public class SettingsFragment extends Fragment {
 
   private static final TabOption[] TAB_OPTIONS = {
-    new TabOption("安装", "安装与修复运行环境", InstallFragment::new, R.drawable.ic_ui2_box),
-    new TabOption("配置", "接口、显示与运行", ConfigFragment::new, R.drawable.ic_settings),
-    new TabOption("数据与备份", "备份恢复 · 文件共享", WorkspaceFragment::new, R.drawable.ic_ui2_folder),
-    new TabOption(
-        "设备能力授权", "Root · Shizuku · ADB · 权限", DeviceGrantsFragment::new, R.drawable.ic_ui_shield),
-    new TabOption("任务状态上岛", "状态栏胶囊 · 灵动岛 · 实时活动", IslandFragment::new, R.drawable.ic_ui2_box),
-    new TabOption("GitHub 登录", "账号 · 授权 · 登录状态", GitHubLoginFragment::new, R.drawable.ic_ui_link),
+    new TabOption("安装", "", InstallFragment::new, R.drawable.ic_ui2_box),
+    new TabOption("配置", "", ConfigFragment::new, R.drawable.ic_settings),
+    new TabOption("数据与备份", "", WorkspaceFragment::new, R.drawable.ic_ui2_folder),
+    new TabOption("设备能力授权", "", DeviceGrantsFragment::new, R.drawable.ic_ui_shield),
+    new TabOption("任务状态上岛", "", IslandFragment::new, R.drawable.ic_ui2_box),
+    new TabOption("GitHub 登录", "", GitHubLoginFragment::new, R.drawable.ic_ui_link),
   };
 
   private static final String STATE_SELECTED = "settings_selected";
@@ -50,6 +49,9 @@ public class SettingsFragment extends Fragment {
 
   /** 分组吸顶与折叠状态（F4）：设置页三组，收起后正文不进读屏。 */
   private GroupedList.Memory groups = new GroupedList.Memory();
+
+  /** 屏幕常亮/省电模式互斥的编程式开关同步；置位期间不再触发持久化、服务刷新与提示。 */
+  private boolean syncingPowerSwitches;
 
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
@@ -113,56 +115,85 @@ public class SettingsFragment extends Fragment {
     }
     com.deepseekharness.app.core.ConfigStore config =
         HarnessController.get(requireContext()).config();
+    com.google.android.material.materialswitch.MaterialSwitch eco =
+        v.findViewById(R.id.settings_eco);
+    com.google.android.material.materialswitch.MaterialSwitch keepOn =
+        v.findViewById(R.id.settings_keep_screen_on_switch);
+
     TextView powerTitle = v.findViewById(R.id.settings_power_title);
     powerTitle.setText(com.deepseekharness.app.util.UiText.text("省电模式"));
     TextView powerHint = v.findViewById(R.id.settings_power_hint);
-    com.google.android.material.materialswitch.MaterialSwitch eco =
-        v.findViewById(R.id.settings_eco);
     eco.setContentDescription(com.deepseekharness.app.util.UiText.text("省电模式"));
     eco.setChecked(config.isEcoMode());
-    java.util.function.Consumer<Boolean> describe =
-        enabled ->
-            // 开关切换时副标题换句走 150ms 淡入（审计 A-05），不再瞬切。
-            UiMotion.crossFadeText(
-                powerHint,
-                enabled
-                    ? com.deepseekharness.app.util.UiText.text("熄屏 1 分钟后减少保活")
-                    : com.deepseekharness.app.util.UiText.text("持续保持运行，适合长时间任务。"));
-    describe.accept(config.isEcoMode());
-    eco.setOnCheckedChangeListener(
-        (button, checked) -> {
-          config.setEcoMode(checked);
-          com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
-          describe.accept(checked);
-        });
+    // 行高恒定：副标题不再随开关出现/消失，避免开关在行内上下漂移。
+    if (powerHint != null) powerHint.setVisibility(View.GONE);
 
     TextView keepTitle = v.findViewById(R.id.settings_keep_screen_on_title);
     keepTitle.setText(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
-    TextView keepHint = v.findViewById(R.id.settings_keep_screen_on_hint);
-    keepHint.setText(com.deepseekharness.app.util.UiText.text("不自动息屏；网页与终端适用"));
-    com.google.android.material.materialswitch.MaterialSwitch keepOn =
-        v.findViewById(R.id.settings_keep_screen_on_switch);
     keepOn.setContentDescription(com.deepseekharness.app.util.UiText.text("屏幕常亮"));
     keepOn.setChecked(config.isKeepScreenOn());
+
+    // 两个开关硬互斥：开启任一边都会强制关闭另一边；关闭只改自己，不误伤另一边。
+    eco.setOnCheckedChangeListener(
+        (button, checked) -> {
+          if (syncingPowerSwitches) return;
+          applyPowerDecision(
+              config,
+              eco,
+              keepOn,
+              com.deepseekharness.app.util.PowerModePolicy.afterEcoModeToggle(
+                  config.isKeepScreenOn(), config.isEcoMode(), checked));
+        });
     keepOn.setOnCheckedChangeListener(
         (button, checked) -> {
-          config.setKeepScreenOn(checked);
-          android.app.Activity activity = getActivity();
-          if (activity != null) ModernAndroidUi.applyKeepScreenOn(activity);
+          if (syncingPowerSwitches) return;
+          applyPowerDecision(
+              config,
+              eco,
+              keepOn,
+              com.deepseekharness.app.util.PowerModePolicy.afterKeepScreenOnToggle(
+                  config.isKeepScreenOn(), config.isEcoMode(), checked));
         });
 
     // 隐藏后台：只改最近任务可见性，不动常驻通知、前台服务与 ADB 保活。
     TextView hiddenTitle = v.findViewById(R.id.settings_hidden_recents_title);
     hiddenTitle.setText(com.deepseekharness.app.util.UiText.text("隐藏后台"));
     TextView hiddenHint = v.findViewById(R.id.settings_hidden_recents_hint);
-    hiddenHint.setText(com.deepseekharness.app.util.UiText.text("从最近任务中隐藏 DSHA"));
+    hiddenHint.setText(com.deepseekharness.app.util.UiText.text("离开后从最近任务移除；系统保留当前卡片时不显示内容"));
     com.google.android.material.materialswitch.MaterialSwitch hiddenSwitch =
         v.findViewById(R.id.settings_hidden_recents_switch);
     hiddenSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("隐藏后台"));
     hiddenSwitch.setChecked(config.isHideFromRecents());
+
+    // 严格模式是「隐藏后台」的实验性子项：离开应用即结束 UI 任务，当前卡片也不再保留；
+    // dsh 进程、终端会话、ADB 保活与常驻通知都不受影响。放在父开关关闭时隐藏。
+    TextView strictTitle = v.findViewById(R.id.settings_hidden_recents_strict_title);
+    strictTitle.setText(com.deepseekharness.app.util.UiText.text("严格模式（实验）"));
+    TextView strictHint = v.findViewById(R.id.settings_hidden_recents_strict_hint);
+    strictHint.setText(com.deepseekharness.app.util.UiText.text("离开应用即结束界面，卡片不再保留；重新打开会重建页面"));
+    com.google.android.material.materialswitch.MaterialSwitch strictSwitch =
+        v.findViewById(R.id.settings_hidden_recents_strict_switch);
+    strictSwitch.setContentDescription(com.deepseekharness.app.util.UiText.text("严格模式（实验）"));
+    strictSwitch.setChecked(config.isHideRecentsStrict());
+    View strictRow = v.findViewById(R.id.settings_hidden_recents_strict);
+    View strictDivider = v.findViewById(R.id.settings_hidden_recents_strict_divider);
+    Runnable applyStrictVisibility =
+        () -> {
+          int visibility = config.isHideFromRecents() ? View.VISIBLE : View.GONE;
+          strictRow.setVisibility(visibility);
+          strictDivider.setVisibility(visibility);
+        };
+    applyStrictVisibility.run();
+    strictSwitch.setOnCheckedChangeListener(
+        (button, checked) -> config.setHideRecentsStrict(checked));
+    strictRow.setOnClickListener(x -> strictSwitch.toggle());
+
     hiddenSwitch.setOnCheckedChangeListener(
         (button, checked) -> {
           config.setHideFromRecents(checked);
+          // 截图遮挡跟随父开关立即重放；任务排除结果回读失败时提示下次生效。
+          RecentsPrivacyGuard.refreshAll();
+          applyStrictVisibility.run();
           if (!BrowserTasks.applyRecentsPreference(requireContext()))
             android.widget.Toast.makeText(
                     requireContext(),
@@ -199,18 +230,11 @@ public class SettingsFragment extends Fragment {
     v.findViewById(R.id.settings_selftest).setOnClickListener(x -> runSelftest());
 
     // 语言入口：标题在中文界面下也带英文「Language」（只写「语言 · 简体中文」时，
-    // 非中文用户根本认不出这是语言开关）；摘要直接显示当前生效语言。
-    // 放在「常用设置」分组最前面，不用滚动就能看到。
+    // 非中文用户根本认不出这是语言开关）；右侧只显示当前生效语言，不常显「跟随系统」说明。
     String preference = config.getUiLanguagePreference();
-    boolean followSystem =
-        com.deepseekharness.app.util.UiLanguagePreference.followsSystem(preference);
     String effective = config.getUiLanguage();
-    // 摘要始终显示当前**生效**语言的名字：跟随系统时补上来由，用户一眼能看出实际结果。
     String currentLabel = com.deepseekharness.app.util.UiLanguagePreference.nativeName(effective);
-    String summary =
-        followSystem
-            ? com.deepseekharness.app.util.UiText.format("跟随系统 · %s", currentLabel)
-            : currentLabel;
+    String summary = currentLabel;
     LinearLayout appearance = v.findViewById(R.id.settings_appearance);
     TextView languageSummary = v.findViewById(R.id.settings_language);
     languageSummary.setText(summary);
@@ -267,14 +291,10 @@ public class SettingsFragment extends Fragment {
   private void renderThemeSummary(View root) {
     TextView sub = root.findViewById(R.id.settings_theme_sub);
     if (sub == null) return;
-    String preference = ThemeController.preference(requireContext());
     String dark = com.deepseekharness.app.util.UiText.text("深色");
     String light = com.deepseekharness.app.util.UiText.text("浅色");
-    String mode =
-        com.deepseekharness.app.util.UiThemePreference.SYSTEM.equals(preference)
-            ? com.deepseekharness.app.util.UiText.format(
-                "跟随系统 · %s", ThemeController.isDark(requireContext()) ? dark : light)
-            : com.deepseekharness.app.util.UiThemePreference.DARK.equals(preference) ? dark : light;
+    // 右侧只显示当前生效明暗，不常显「跟随系统」说明；偏好本身在主题页可见。
+    String mode = ThemeController.isDark(requireContext()) ? dark : light;
     String palette = ThemeController.palette(requireContext());
     // 标准色不重复写出，其余配色附在明暗后面。
     sub.setText(
@@ -461,7 +481,8 @@ public class SettingsFragment extends Fragment {
     sub.setLayoutParams(slp);
 
     body.addView(title);
-    body.addView(sub);
+    // 入口行只保留名称；状态摘要（主题/语言）与开关行以外的说明文案不再常显。
+    if (!opt.sub.isEmpty()) body.addView(sub);
 
     android.widget.ImageView icon = new android.widget.ImageView(requireContext());
     icon.setImageResource(opt.icon);
@@ -497,6 +518,46 @@ public class SettingsFragment extends Fragment {
           }
         });
     return row;
+  }
+
+  /**
+   * 落地屏幕常亮/省电模式互斥决策：先写持久化，再同步两个开关与服务/窗口。
+   * 编程式 setChecked 只在 {@link #syncingPowerSwitches} 保护下执行，不会再次进入本方法或刷新服务。
+   */
+  private void applyPowerDecision(
+      com.deepseekharness.app.core.ConfigStore config,
+      com.google.android.material.materialswitch.MaterialSwitch eco,
+      com.google.android.material.materialswitch.MaterialSwitch keepOn,
+      com.deepseekharness.app.util.PowerModePolicy.Decision decision) {
+    if (!decision.changed()) return;
+    if (decision.keepScreenOn != decision.previousKeepScreenOn)
+      config.setKeepScreenOn(decision.keepScreenOn);
+    if (decision.ecoMode != decision.previousEcoMode) config.setEcoMode(decision.ecoMode);
+    syncingPowerSwitches = true;
+    try {
+      eco.setChecked(decision.ecoMode);
+      keepOn.setChecked(decision.keepScreenOn);
+    } finally {
+      syncingPowerSwitches = false;
+    }
+    if (decision.keepScreenOn != decision.previousKeepScreenOn) {
+      android.app.Activity activity = getActivity();
+      if (activity != null) ModernAndroidUi.applyKeepScreenOn(activity);
+    }
+    if (decision.ecoMode != decision.previousEcoMode)
+      com.deepseekharness.app.HarnessService.refreshPowerMode(requireContext());
+    if (decision.disabledEcoMode)
+      android.widget.Toast.makeText(
+              requireContext(),
+              com.deepseekharness.app.util.UiText.choose("已关闭省电模式", "Eco mode turned off"),
+              android.widget.Toast.LENGTH_SHORT)
+          .show();
+    else if (decision.disabledKeepScreenOn)
+      android.widget.Toast.makeText(
+              requireContext(),
+              com.deepseekharness.app.util.UiText.choose("已关闭屏幕常亮", "Keep screen on turned off"),
+              android.widget.Toast.LENGTH_SHORT)
+          .show();
   }
 
   private View divider() {

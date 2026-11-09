@@ -124,10 +124,32 @@ public final class BottomSheetCardLayoutTest {
     try {
       View container = sheet.container();
       measure(container, 360, 740);
-      // 普通屏幕：按内容收紧（不超过 90% 上限），不强行铺满。
+      // 普通屏幕：按内容收紧（不超过 72% 首屏上限），不强行铺满。
       assertTrue(container.getMeasuredHeight() > 0);
       assertTrue(container.getMeasuredHeight() < 740);
       assertFits(container, 360, "tall");
+    } finally {
+      sheet.dismiss();
+      controller.pause().stop().destroy();
+    }
+  }
+
+  @Test
+  public void tallContentIsCappedAt72PercentOfAvailableHeight() {
+    ActivityController<ZoomedHost> controller = host();
+    ZoomedHost activity = controller.get();
+    CardPage page = tallPage(activity);
+    BottomSheetCard.Sheet sheet = BottomSheetCard.show(activity, page);
+    try {
+      View container = sheet.container();
+      measure(container, 360, 740);
+      // 宿主不是 MainActivity（没有悬浮胶囊，lift=0）：首屏上限 0.72×740 = 533dp。
+      assertEquals(533, container.getMeasuredHeight());
+      assertEquals(533, page.root.getHeight());
+      assertTrue("正文滚动区必须有高度", page.scroll.getHeight() > 0);
+      assertTrue("内容高于首屏上限时可滚动", page.content.getHeight() > page.scroll.getHeight());
+      assertTrue("页脚常驻在首屏内", page.footer.getBottom() <= container.getHeight());
+      assertFits(container, 360, "capped");
     } finally {
       sheet.dismiss();
       controller.pause().stop().destroy();

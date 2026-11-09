@@ -703,7 +703,8 @@ public class PluginFragment extends Fragment {
     }
     repository.selectionMessage(com.deepseekharness.app.util.UiText.text("请选择插件包"));
     try {
-      importPicker.launch(PluginFilePicker.intent(requireContext(), alternative));
+      RecentsPrivacyGuard.launch(
+          importPicker, PluginFilePicker.intent(requireContext(), alternative));
     } catch (android.content.ActivityNotFoundException error) {
       if (!alternative) {
         chooseImport(true);
@@ -1065,7 +1066,7 @@ public class PluginFragment extends Fragment {
     String stamp =
         new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new java.util.Date());
     try {
-      exportPicker.launch(name + "-" + stamp + ".tar.gz");
+      RecentsPrivacyGuard.launch(exportPicker, name + "-" + stamp + ".tar.gz");
     } catch (Exception error) {
       pendingExports.clear();
       toast(com.deepseekharness.app.util.UiText.text("无法打开保存位置选择器"));
@@ -1579,13 +1580,12 @@ public class PluginFragment extends Fragment {
     ((TextView) card.findViewById(R.id.pluginName)).setText(item.name);
     TextView badge = card.findViewById(R.id.pluginBadge);
     badge.setText(kindLabel(kind));
-    badge.setTextColor(
-        requireContext().getColor(neutral ? R.color.shell_text_secondary : R.color.shell_accent));
-    badge.setBackgroundTintList(
-        android.content.res.ColorStateList.valueOf(
-            requireContext().getColor(neutral ? R.color.shell_raised : R.color.shell_accent_soft)));
+    // 来源徽章统一中性色；语义区分留给配置与当前 Web 两枚状态徽章。
+    applyBadge(badge, com.deepseekharness.app.util.PluginCardState.Tone.MUTED);
     TextView version = card.findViewById(R.id.pluginVersion);
     version.setText(com.deepseekharness.app.util.UiText.raw(item.version));
+    // 版本徽章同样用中性色，只保留等宽字与胶囊外形。
+    applyBadge(version, com.deepseekharness.app.util.PluginCardState.Tone.MUTED);
     version.setVisibility(item.version.isEmpty() ? View.GONE : View.VISIBLE);
     TextView description = card.findViewById(R.id.pluginDesc);
     String text = descriptionText(item);
@@ -1661,18 +1661,18 @@ public class PluginFragment extends Fragment {
   private void bindCardStatus(
       View card, PluginListPresenter.Row<PluginRepository.Item> row, CardDensity density) {
     PluginRepository.Item item = row.entry.value;
-    int tone = toneColor(cardTone(row));
     String configured = configuredText(row);
     String runtime = runtimeText(item);
     TextView state = card.findViewById(R.id.pluginStatus);
     state.setText(configured);
-    state.setTextColor(requireContext().getColor(tone));
+    applyBadge(state, configBadgeTone(row));
     TextView runtimeView = card.findViewById(R.id.pluginRuntime);
     runtimeView.setText(runtime);
     runtimeView.setVisibility(runtime.isEmpty() ? View.GONE : View.VISIBLE);
-    card.findViewById(R.id.pluginStatusDot)
-        .setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(requireContext().getColor(tone)));
+    applyBadge(
+        runtimeView,
+        com.deepseekharness.app.util.PluginCardState.runtimeTone(
+            item.runtimeState, item.runtimeStale));
     PluginTaskProgress progress = card.findViewById(R.id.pluginProgress);
     if (row.pending()) progress.setTask(row.operation.percent, configured + "\n" + runtime);
     else progress.hide();
@@ -1681,18 +1681,37 @@ public class PluginFragment extends Fragment {
     card.findViewById(R.id.pluginDelete).setEnabled(!row.pending());
   }
 
-  private com.deepseekharness.app.util.PluginCardState.Tone cardTone(
+  /** 配置徽章的语义语气；是否已加载由独立的当前 Web 徽章表达。 */
+  private com.deepseekharness.app.util.PluginCardState.Tone configBadgeTone(
       PluginListPresenter.Row<PluginRepository.Item> row) {
     PluginRepository.Item item = row.entry.value;
-    return com.deepseekharness.app.util.PluginCardState.tone(
+    return com.deepseekharness.app.util.PluginCardState.configTone(
         row.pending(),
         item.available,
         item.enabled,
+        item.detected,
         item.dynamic,
-        com.deepseekharness.app.util.PluginCardState.runtimeLoaded(
-            item.runtimeState, item.runtimeStale),
-        com.deepseekharness.app.util.PluginCardState.runtimeFailed(
-            item.runtimeState, item.runtimeStale));
+        !item.metadataError.isEmpty());
+  }
+
+  /**
+   * 徽章统一着色入口：背景取 shell_*_soft（中性用 raised），文字取对应语义色。
+   *
+   * <p>配置徽章的圆点是 TextView 的 compound drawable，随文字色一起 tint，不会单独进入无障碍焦点。
+   */
+  private void applyBadge(TextView view, com.deepseekharness.app.util.PluginCardState.Tone tone) {
+    int text = requireContext().getColor(badgeTextColor(tone));
+    view.setTextColor(text);
+    view.setBackgroundTintList(
+        android.content.res.ColorStateList.valueOf(requireContext().getColor(toneSoftColor(tone))));
+    view.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(text));
+  }
+
+  /** 中性徽章文字用 secondary 而不是 muted：raised 底上 muted 的对比度偏弱。 */
+  private static int badgeTextColor(com.deepseekharness.app.util.PluginCardState.Tone tone) {
+    return tone == com.deepseekharness.app.util.PluginCardState.Tone.MUTED
+        ? R.color.shell_text_secondary
+        : toneColor(tone);
   }
 
   private static int toneColor(com.deepseekharness.app.util.PluginCardState.Tone tone) {
@@ -1746,13 +1765,9 @@ public class PluginFragment extends Fragment {
     for (var note : notes) {
       switch (note) {
         case RESTART ->
-            addNote(
+            addRestartChip(
                 container,
-                com.deepseekharness.app.util.PluginCardState.Tone.WARN,
-                R.drawable.ic_plugin_restart,
-                com.deepseekharness.app.util.UiText.choose("重启 Web 后生效。", "Restart Web to apply."),
-                null,
-                null);
+                com.deepseekharness.app.util.UiText.choose("重启 Web 后生效。", "Restart Web to apply."));
         case UPDATE ->
             addNote(
                 container,
@@ -1796,6 +1811,26 @@ public class PluginFragment extends Fragment {
       button.setVisibility(View.VISIBLE);
     }
     container.addView(note);
+  }
+
+  /** 重启待办单独渲染为警示胶囊：与「可更新 / 最近操作消息」两类提示条区分，只占内容宽度。 */
+  private void addRestartChip(LinearLayout container, String text) {
+    View chip = getLayoutInflater().inflate(R.layout.item_plugin_state_chip, container, false);
+    int textColor = requireContext().getColor(R.color.shell_warn);
+    TextView label = chip.findViewById(R.id.pluginChipText);
+    label.setText(text);
+    label.setTextColor(textColor);
+    android.widget.ImageView icon = chip.findViewById(R.id.pluginChipIcon);
+    icon.setImageResource(R.drawable.ic_plugin_restart);
+    icon.setImageTintList(android.content.res.ColorStateList.valueOf(textColor));
+    chip.setBackgroundTintList(
+        android.content.res.ColorStateList.valueOf(
+            requireContext().getColor(R.color.shell_warn_soft)));
+    LinearLayout.LayoutParams params =
+        new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+    params.topMargin = dp(8);
+    container.addView(chip, params);
   }
 
   /** 展开后的属性表：版本 / 位置 / 来源，路径与来源可复制（复用「已复制」提示）。 */

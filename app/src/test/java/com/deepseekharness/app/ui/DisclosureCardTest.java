@@ -101,6 +101,45 @@ public final class DisclosureCardTest {
     assertNull(findText(host, "完整说明"));
   }
 
+  /**
+   * 展开→收起→再展开：动作视图由宿主复用，重新挂载前必须先脱离旧容器。真机「点徽章」第二次展开抛
+   * IllegalStateException 的回归用例。
+   */
+  @Test
+  public void actionsCanBeAttachedAgainAfterCollapse() {
+    animationScales(0f);
+    DisclosureCard.Model model = model("完整说明");
+    TextView action = new TextView(context);
+    action.setText("去系统设置");
+    model.actions = new View[] {action};
+    DisclosureCard.bind(summary, model, new DisclosureCard.Memory(), null);
+    summary.performClick();
+    assertNotNull(findText(host, "去系统设置"));
+    summary.performClick();
+    assertNull(findText(host, "去系统设置"));
+    summary.performClick();
+    assertNotNull("再次展开仍要挂上动作", findText(host, "去系统设置"));
+    assertTrue(action.getParent() instanceof ViewGroup);
+  }
+
+  /** 展开状态下说明变化（例如从系统设置返回、状态翻转）重新渲染，动作同样不能重复挂父级。 */
+  @Test
+  public void changedDetailWhileExpandedRerendersActions() {
+    animationScales(0f);
+    DisclosureCard.Model model = model("说明一");
+    TextView action = new TextView(context);
+    action.setText("去系统设置");
+    model.actions = new View[] {action};
+    DisclosureCard.Memory state = new DisclosureCard.Memory();
+    DisclosureCard.bind(summary, model, state, null);
+    summary.performClick();
+    assertNotNull(findText(host, "去系统设置"));
+    model.detail = "说明二";
+    DisclosureCard.bind(summary, model, state, null);
+    assertNotNull(findText(host, "说明二"));
+    assertNotNull("改说明后动作仍在", findText(host, "去系统设置"));
+  }
+
   @Test
   public void collapseWithAnimationsStillRemovesDetail() {
     DisclosureCard.bind(summary, model("完整说明"), new DisclosureCard.Memory(), null);

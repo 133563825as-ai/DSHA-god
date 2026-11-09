@@ -247,6 +247,130 @@ public final class PluginFragmentRenderingTest {
   }
 
   @Test
+  public void badgesSeparateSourceVersionConfigAndRuntimeTones() throws Exception {
+    var loaded =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "a-loaded")
+                .put("available", true)
+                .put("enabled", true)
+                .put("runtimeProvided", true)
+                .put("version", "0.2.2-rc.1")
+                .put("runtimeState", "loaded")
+                .put("runtimeStale", false));
+    var disabled =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "b-disabled")
+                .put("available", true)
+                .put("version", "1.0")
+                .put("runtimeState", "stopped")
+                .put("runtimeStale", false));
+    var unconfirmed =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "c-unconfirmed")
+                .put("available", true)
+                .put("enabled", true)
+                .put("version", "1.0")
+                .put("runtimeState", "unknown"));
+    mount(state(catalog(List.of(loaded, disabled, unconfirmed)), List.of(), false, "", -1));
+
+    View loadedRow = rowAt(1);
+    assertBadge(
+        loadedRow,
+        R.id.pluginBadge,
+        "Provided by DSH",
+        R.color.shell_text_secondary,
+        R.color.shell_raised);
+    assertBadge(
+        loadedRow,
+        R.id.pluginVersion,
+        "0.2.2-rc.1",
+        R.color.shell_text_secondary,
+        R.color.shell_raised);
+    assertBadge(
+        loadedRow,
+        R.id.pluginStatus,
+        "Configuration: enabled",
+        R.color.shell_good,
+        R.color.shell_good_soft);
+    String loadedRuntime = text(loadedRow.findViewById(R.id.pluginRuntime));
+    assertTrue(loadedRuntime.contains("Current Web: loaded"));
+    assertBadge(
+        loadedRow, R.id.pluginRuntime, loadedRuntime, R.color.shell_good, R.color.shell_good_soft);
+
+    View disabledRow = rowAt(2);
+    assertBadge(
+        disabledRow,
+        R.id.pluginBadge,
+        "Third-party",
+        R.color.shell_text_secondary,
+        R.color.shell_raised);
+    assertBadge(
+        disabledRow,
+        R.id.pluginStatus,
+        "Configuration: disabled",
+        R.color.shell_text_secondary,
+        R.color.shell_raised);
+    String unloadedRuntime = text(disabledRow.findViewById(R.id.pluginRuntime));
+    assertTrue(unloadedRuntime.contains("Current Web: not loaded"));
+    assertBadge(
+        disabledRow,
+        R.id.pluginRuntime,
+        unloadedRuntime,
+        R.color.shell_text_secondary,
+        R.color.shell_raised);
+
+    View unconfirmedRow = rowAt(3);
+    assertBadge(
+        unconfirmedRow,
+        R.id.pluginStatus,
+        "Configuration: enabled",
+        R.color.shell_good,
+        R.color.shell_good_soft);
+    String unconfirmedRuntime = text(unconfirmedRow.findViewById(R.id.pluginRuntime));
+    assertTrue(unconfirmedRuntime.contains("Current Web: load unconfirmed"));
+    assertBadge(
+        unconfirmedRow,
+        R.id.pluginRuntime,
+        unconfirmedRuntime,
+        R.color.shell_warn,
+        R.color.shell_warn_soft);
+  }
+
+  @Test
+  public void restartRequirementRendersWarningChipBesidesTheFourBadges() throws Exception {
+    var pending =
+        new PluginRepository.Item(
+            new JSONObject()
+                .put("name", "restart-plugin")
+                .put("available", true)
+                .put("enabled", true)
+                .put("version", "1.0")
+                .put("runtimeState", "loaded")
+                .put("runtimeStale", false)
+                .put("restartRequired", true));
+    mount(state(catalog(List.of(pending)), List.of(), false, "", -1));
+    View row = rowAt(1);
+    for (int id :
+        new int[] {R.id.pluginBadge, R.id.pluginVersion, R.id.pluginStatus, R.id.pluginRuntime})
+      assertEquals(View.VISIBLE, row.findViewById(id).getVisibility());
+
+    TextView chipText = row.findViewById(R.id.pluginChipText);
+    assertNotNull("重启待办必须渲染为警示胶囊", chipText);
+    assertEquals("Restart Web to apply.", text(chipText));
+    assertEquals(View.VISIBLE, row.findViewById(R.id.pluginNotes).getVisibility());
+    assertEquals(
+        page.requireContext().getColor(R.color.shell_warn), chipText.getCurrentTextColor());
+    View chip = (View) chipText.getParent();
+    assertNotNull(chip.getBackgroundTintList());
+    assertEquals(
+        page.requireContext().getColor(R.color.shell_warn_soft),
+        chip.getBackgroundTintList().getDefaultColor());
+  }
+
+  @Test
   public void headerOnlyStateChangesRenderWithoutAnyAdapterNotification() throws Exception {
     PluginRegistry.Snapshot catalog = catalog(List.of(item("alpha"), item("beta")));
     mount(state(catalog, List.of(), false, "", -1));
@@ -740,6 +864,19 @@ public final class PluginFragmentRenderingTest {
     return text(row.findViewById(R.id.pluginStatus))
         + "\n"
         + text(row.findViewById(R.id.pluginRuntime));
+  }
+
+  /** 徽章必须可见、文字完整、文字色与底色都取自声明的 shell_* 语义 token。 */
+  private void assertBadge(View row, int id, String expectedText, int textColor, int background) {
+    TextView badge = row.findViewById(id);
+    assertEquals(expectedText, text(badge));
+    assertEquals(View.VISIBLE, badge.getVisibility());
+    assertEquals(page.requireContext().getColor(textColor), badge.getCurrentTextColor());
+    assertNotNull("徽章必须有胶囊背景", badge.getBackground());
+    assertNotNull("徽章底色必须由语义 token tint", badge.getBackgroundTintList());
+    assertEquals(
+        page.requireContext().getColor(background),
+        badge.getBackgroundTintList().getDefaultColor());
   }
 
   private Notifications observe() {

@@ -1704,6 +1704,7 @@ public final class HttpShellService {
             "tree",
             "senseState",
             "node",
+            "history",
             "task-begin",
             "task-end")
         .contains(operation)) return "[ERR] UNKNOWN_ROUTE";
@@ -1728,7 +1729,6 @@ public final class HttpShellService {
           return "[ERR] AMBIGUOUS_SCREEN_ACTION";
         operation = "tapText";
       }
-      var coordinator = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx);
       var runtime = com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx);
       // The bridge runtime identifies a connection, never a conversation. Both
       // caller IDs must be supplied by the actual tool execution transport.
@@ -1737,158 +1737,189 @@ public final class HttpShellService {
       if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
       String taskSessionId = arguments.getString("taskSessionId");
       String turnId = arguments.getString("turnId");
-      long actualTurn = com.deepseekharness.app.control.ControlTaskAuthority.localTurn(turnId);
       var binding =
           new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
               com.deepseekharness.app.control.ControlTaskAuthority.Owner.LOCAL_DSH,
               scope.run.runId + ":" + runtime.instanceId,
               taskSessionId,
               turnId);
-      if (operation.equals("task-end")) {
-        if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-        coordinator.completeLocal(binding);
-        // finishLocalTask rechecks the exact controller on the UI thread. A user-expanded and
-        // paused task stays attached for explicit Continue/Stop; ordinary completion is retired.
-        com.deepseekharness.app.assistant.AssistantService.finishLocalTask(ctx, binding);
-        return "OK";
-      }
-      // A turn/end HTTP notification can race the next turn. Its completion
-      // evidence is also sent with the next actual execution, scoped to the
-      // same full conversation, never a global last-active turn.
-      if (arguments.has("completedTurnId")) {
-        String completed = arguments.getString("completedTurnId");
-        if (com.deepseekharness.app.control.ControlTaskAuthority.localTurn(completed) >= actualTurn)
-          return "[ERR] CONTROL_TURN_INVALID";
-        if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-        coordinator.completeLocal(
-            new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
-                binding.owner(), binding.connection(), taskSessionId, completed));
-      }
-      var taskUi = com.deepseekharness.app.assistant.AssistantService.ensureLocalTask(ctx, binding);
-      if (!taskUi.ready()) return taskUi.failureReply();
-      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
-      if (operation.equals("task-begin")) {
-        if (!com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding))
-          return new com.deepseekharness.app.assistant.AssistantService.TaskUiResult(
-                  false, "ASSISTANT_STOP_NOTIFICATION_REQUIRED")
-              .failureReply();
-        coordinator.begin(binding);
-        return com.deepseekharness.app.screen.ScreenReply.completed()
-            .put("needsObservation", true)
-            .toString();
-      }
-      boolean observing =
-          java.util.Set.of("dump", "tree", "screenshot", "senseState").contains(operation);
-      var compose = coordinator.compose();
-      if (!observing) {
-        // 用户正在给 AI 输入消息：动作停在原地等，不取消对话、不结束本轮。读屏不受影响。
-        java.util.function.BooleanSupplier taskLive =
-            () -> {
-              var state = coordinator.snapshot();
-              return !state.paused()
-                  && binding.equals(state.binding())
-                  && screenBridgeCurrent(scope);
-            };
-        com.deepseekharness.app.util.ComposeGate.Outcome waited;
-        try {
-          waited =
-              compose.await(com.deepseekharness.app.util.ComposeGate.DEFAULT_WAIT_MILLIS, taskLive);
-        } catch (InterruptedException interrupted) {
-          Thread.currentThread().interrupt();
-          return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED")
-              .toString();
-        }
-        if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.MESSAGE_ARRIVED)
-          return com.deepseekharness.app.screen.ScreenReply.refused("USER_MESSAGE_ARRIVED")
-              .put("userMessage", true)
-              .put(
-                  "guidance",
-                  com.deepseekharness.app.assistant.AssistantService.taskGuidance(
-                      "USER_MESSAGE_ARRIVED"))
-              .put("actionExecuted", false)
-              .put("nextAction", "READ_THE_NEW_USER_MESSAGE_THEN_OBSERVE_THE_SCREEN_AGAIN")
-              .put("automaticRetry", false)
-              .toString();
-        if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.STILL_COMPOSING)
-          return com.deepseekharness.app.screen.ScreenReply.refused("USER_COMPOSING")
-              .put("userComposing", true)
-              .put(
-                  "guidance",
-                  com.deepseekharness.app.assistant.AssistantService.taskGuidance("USER_COMPOSING"))
-              .put("actionExecuted", false)
-              .put("nextAction", "WAIT_FOR_THE_USER_MESSAGE_DO_NOT_ACT")
-              .put("automaticRetry", false)
-              .toString();
-        // INTERRUPTED 落到下面原有的暂停 / 换轮检查，给出原来的拒绝原因。
-      }
-      var screenUi =
-          com.deepseekharness.app.assistant.AssistantService.prepareScreenOperation(
-              ctx, binding, observing);
-      if (!screenUi.ready()) return screenUi.failureReply();
-      var taskLease = coordinator.begin(binding);
-      if (!observing && !coordinator.actionAllowed(taskLease))
-        return com.deepseekharness.app.screen.ScreenReply.refused(
-                "FRESH_SCREEN_OBSERVATION_REQUIRED")
-            .toString();
-      long observationSequence = observing ? coordinator.beginObservation(taskLease) : 0;
-      if (observing && observationSequence < 0)
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
-      var observed =
-          DshaAccessibilityService.observeTargetForRequest(
-              () ->
-                  com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(
-                          ctx, binding)
-                      && screenBridgeCurrent(scope)
-                      && coordinator.current(taskLease));
-      if (observed.target == null) return observed.failure().toString();
-      var target = observed.target;
-      if (!observing && !coordinator.checkActionTarget(taskLease, target))
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_TARGET_CHANGED")
-            .toString();
-      var capability = screenRequest(scope, operation, target);
-      coordinator.bindRequest(capability, taskLease);
-      ScreenAuthorization authorization =
-          screenAuthorization(scope, operation, target.packageName, target, capability);
-      if (authorization != ScreenAuthorization.ALLOWED)
-        return "[ERR] "
-            + (authorization == ScreenAuthorization.DENIED
-                ? "USER_REJECTED"
-                : authorization == ScreenAuthorization.NO_ANSWER
-                    ? "USER_NO_ANSWER"
-                    : "USER_CONFIRM_UNAVAILABLE");
-      var controller = HarnessController.get(ctx);
-      java.util.function.BooleanSupplier live =
-          () ->
-              com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
-                  && screenBridgeCurrent(scope)
-                  && coordinator.current(taskLease)
-                  && (observing || coordinator.actionAllowed(taskLease, target))
-                  && (observing || !compose.composing())
-                  && !com.deepseekharness.app.control.OwnedScreenOverlay.expanded()
-                  && capability.runtime.equals(
-                      com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx))
-                  && controller.isWebRunning()
-                  && !controller.isStarting()
-                  && !controller.isStopping()
-                  && !controller.isUserStopped();
-      String reply =
-          DshaAccessibilityService.execute(
-              DshaApp.from(ctx).capabilityBroker(), capability, live, operation, arguments);
-      if (observing && compose.composing()) {
-        // 读屏照常返回，但明确告诉 AI 用户正在输入，下一步动作会先等待。
-        var annotated = new org.json.JSONObject(reply);
-        annotated.put("userComposing", true);
-        reply = annotated.toString();
-      }
-      if (observing
-          && new org.json.JSONObject(reply).optString("state").equals("COMPLETED")
-          && !coordinator.observed(taskLease, observationSequence, target))
-        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_OBSERVATION_SUPERSEDED")
-            .toString();
-      return reply;
+      // 统一包装点：同一任务的所有 JSON 回执（含拒绝与 history）都附带最近活动摘要。
+      String reply = appUiBound(scope, operation, arguments, binding);
+      return com.deepseekharness.app.screen.ScreenActivityRecorder.attach(reply, binding);
     } catch (Exception error) {
       return "[ERR] " + safeError(error);
     }
+  }
+
+  /**
+   * 绑定任务后的 /app/ui/* 执行体。由 {@link #appUi} 统一调用后再经
+   * {@link com.deepseekharness.app.screen.ScreenActivityRecorder#attach} 附最近活动，保证每条 JSON 回执
+   * （包括拒绝和 history）只有一个包装点。
+   */
+  private String appUiBound(
+      RequestScope scope,
+      String operation,
+      org.json.JSONObject arguments,
+      com.deepseekharness.app.control.ControlTaskAuthority.Binding binding)
+      throws Exception {
+    var coordinator = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx);
+    String taskSessionId = binding.taskSessionId();
+    long actualTurn =
+        com.deepseekharness.app.control.ControlTaskAuthority.localTurn(binding.turnId());
+    if (operation.equals("task-end")) {
+      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+      coordinator.completeLocal(binding);
+      // finishLocalTask rechecks the exact controller on the UI thread. A user-expanded and
+      // paused task stays attached for explicit Continue/Stop; ordinary completion is retired.
+      com.deepseekharness.app.assistant.AssistantService.finishLocalTask(ctx, binding);
+      return "OK";
+    }
+    // A turn/end HTTP notification can race the next turn. Its completion
+    // evidence is also sent with the next actual execution, scoped to the
+    // same full conversation, never a global last-active turn.
+    if (arguments.has("completedTurnId")) {
+      String completed = arguments.getString("completedTurnId");
+      if (com.deepseekharness.app.control.ControlTaskAuthority.localTurn(completed) >= actualTurn)
+        return "[ERR] CONTROL_TURN_INVALID";
+      if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+      coordinator.completeLocal(
+          new com.deepseekharness.app.control.ControlTaskAuthority.Binding(
+              binding.owner(), binding.connection(), taskSessionId, completed));
+    }
+    // 活动历史是内存里的只读事实，不要求任务窗可见；未开始/结束/暂停时返回空记录。
+    if (operation.equals("history")) return appUiHistory(arguments, binding);
+    var taskUi = com.deepseekharness.app.assistant.AssistantService.ensureLocalTask(ctx, binding);
+    if (!taskUi.ready()) return taskUi.failureReply();
+    if (!screenBridgeCurrent(scope)) return "[ERR] BRIDGE_RUN_CHANGED";
+    if (operation.equals("task-begin")) {
+      if (!com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding))
+        return new com.deepseekharness.app.assistant.AssistantService.TaskUiResult(
+                false, "ASSISTANT_STOP_NOTIFICATION_REQUIRED")
+            .failureReply();
+      coordinator.begin(binding);
+      com.deepseekharness.app.screen.ScreenActivityRecorder.observeTask(ctx, binding);
+      return com.deepseekharness.app.screen.ScreenReply.completed()
+          .put("needsObservation", true)
+          .toString();
+    }
+    boolean observing =
+        java.util.Set.of("dump", "tree", "screenshot", "senseState").contains(operation);
+    var compose = coordinator.compose();
+    if (!observing) {
+      // 用户正在给 AI 输入消息：动作停在原地等，不取消对话、不结束本轮。读屏不受影响。
+      java.util.function.BooleanSupplier taskLive =
+          () -> {
+            var state = coordinator.snapshot();
+            return !state.paused() && binding.equals(state.binding()) && screenBridgeCurrent(scope);
+          };
+      com.deepseekharness.app.util.ComposeGate.Outcome waited;
+      try {
+        waited =
+            compose.await(com.deepseekharness.app.util.ComposeGate.DEFAULT_WAIT_MILLIS, taskLive);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
+      }
+      if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.MESSAGE_ARRIVED)
+        return com.deepseekharness.app.screen.ScreenReply.refused("USER_MESSAGE_ARRIVED")
+            .put("userMessage", true)
+            .put(
+                "guidance",
+                com.deepseekharness.app.assistant.AssistantService.taskGuidance(
+                    "USER_MESSAGE_ARRIVED"))
+            .put("actionExecuted", false)
+            .put("nextAction", "READ_THE_NEW_USER_MESSAGE_THEN_OBSERVE_THE_SCREEN_AGAIN")
+            .put("automaticRetry", false)
+            .toString();
+      if (waited == com.deepseekharness.app.util.ComposeGate.Outcome.STILL_COMPOSING)
+        return com.deepseekharness.app.screen.ScreenReply.refused("USER_COMPOSING")
+            .put("userComposing", true)
+            .put(
+                "guidance",
+                com.deepseekharness.app.assistant.AssistantService.taskGuidance("USER_COMPOSING"))
+            .put("actionExecuted", false)
+            .put("nextAction", "WAIT_FOR_THE_USER_MESSAGE_DO_NOT_ACT")
+            .put("automaticRetry", false)
+            .toString();
+      // INTERRUPTED 落到下面原有的暂停 / 换轮检查，给出原来的拒绝原因。
+    }
+    var screenUi =
+        com.deepseekharness.app.assistant.AssistantService.prepareScreenOperation(
+            ctx, binding, observing);
+    if (!screenUi.ready()) return screenUi.failureReply();
+    var taskLease = coordinator.begin(binding);
+    // 只有真正拿到当前任务的租约才开始记录；同一任务重复调用不会重置已有摘要。
+    com.deepseekharness.app.screen.ScreenActivityRecorder.observeTask(ctx, binding);
+    if (!observing && !coordinator.actionAllowed(taskLease))
+      return com.deepseekharness.app.screen.ScreenReply.refused("FRESH_SCREEN_OBSERVATION_REQUIRED")
+          .toString();
+    long observationSequence = observing ? coordinator.beginObservation(taskLease) : 0;
+    if (observing && observationSequence < 0)
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_RUN_CHANGED").toString();
+    var observed =
+        DshaAccessibilityService.observeTargetForRequest(
+            () ->
+                com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
+                    && screenBridgeCurrent(scope)
+                    && coordinator.current(taskLease));
+    if (observed.target == null) return observed.failure().toString();
+    if (!observing && !coordinator.checkActionTarget(taskLease, observed.target))
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_TARGET_CHANGED").toString();
+    var target = observed.target;
+    var capability = screenRequest(scope, operation, target);
+    coordinator.bindRequest(capability, taskLease);
+    ScreenAuthorization authorization =
+        screenAuthorization(scope, operation, target.packageName, target, capability);
+    if (authorization != ScreenAuthorization.ALLOWED)
+      return "[ERR] "
+          + (authorization == ScreenAuthorization.DENIED
+              ? "USER_REJECTED"
+              : authorization == ScreenAuthorization.NO_ANSWER
+                  ? "USER_NO_ANSWER"
+                  : "USER_CONFIRM_UNAVAILABLE");
+    var controller = HarnessController.get(ctx);
+    java.util.function.BooleanSupplier live =
+        () ->
+            com.deepseekharness.app.assistant.AssistantService.stopChannelCurrent(ctx, binding)
+                && screenBridgeCurrent(scope)
+                && coordinator.current(taskLease)
+                && (observing || coordinator.actionAllowed(taskLease, target))
+                && (observing || !compose.composing())
+                && !com.deepseekharness.app.control.OwnedScreenOverlay.expanded()
+                && capability.runtime.equals(
+                    com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx))
+                && controller.isWebRunning()
+                && !controller.isStarting()
+                && !controller.isStopping()
+                && !controller.isUserStopped();
+    String reply =
+        DshaAccessibilityService.execute(
+            DshaApp.from(ctx).capabilityBroker(), capability, live, operation, arguments);
+    if (observing && compose.composing()) {
+      // 读屏照常返回，但明确告诉 AI 用户正在输入，下一步动作会先等待。
+      var annotated = new org.json.JSONObject(reply);
+      annotated.put("userComposing", true);
+      reply = annotated.toString();
+    }
+    if (observing
+        && new org.json.JSONObject(reply).optString("state").equals("COMPLETED")
+        && !coordinator.observed(taskLease, observationSequence, target))
+      return com.deepseekharness.app.screen.ScreenReply.refused("SCREEN_OBSERVATION_SUPERSEDED")
+          .toString();
+    return reply;
+  }
+
+  /** 内存活动历史只属于当前任务；别的任务、暂停或结束状态一律返回空记录。 */
+  private String appUiHistory(
+      org.json.JSONObject arguments,
+      com.deepseekharness.app.control.ControlTaskAuthority.Binding binding) {
+    var state = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).snapshot();
+    String identity =
+        state.binding() != null && state.binding().equals(binding) && !state.paused()
+            ? binding.identity()
+            : null;
+    return com.deepseekharness.app.screen.ScreenActivityRecorder.history(
+        arguments.optString("since"), arguments.optString("limit"), identity);
   }
 
   /**
@@ -2325,6 +2356,10 @@ public final class HttpShellService {
         com.deepseekharness.app.util.UiText.choose(
             "\n== 当前对话手机任务 ==\n用户明确要求手机操作时，先 /app/ui/task-begin；包括只启动应用的任务。每次请求携带真实工具环境的 taskSessionId=$DSH_PHONE_SESSION_ID 与 turnId=$DSH_PHONE_TURN_ID；不猜测或复制其它会话身份。begin 只显示当前对话状态和建立任务围栏，不授予系统权限、不自动批准动作。需要读屏再 dump/tree/screenshot；任务窗口会先隐藏，窗口可见状态变化后必须重新观察。成功 begin 后，任务完成或放弃时在 finally 收尾中调用一次 /app/ui/task-end，完成围栏；正常完成会关闭任务窗口，但用户在本机展开并暂停的任务会保留控制窗供明确继续或停止，不取消模型对话；本轮结束后不再重新 begin。完成收尾不证明 UNKNOWN 动作已成功或已退出，不自动重放。普通讨论、引用或翻译不开始手机任务。\n",
             "\n== Phone task in the current conversation ==\nWhen the user explicitly requests phone actions, call /app/ui/task-begin first, including app-launch-only tasks. Every request carries the real tool environment taskSessionId=$DSH_PHONE_SESSION_ID and turnId=$DSH_PHONE_TURN_ID; never invent or copy another conversation identity. Begin displays this conversation state and establishes the task boundary; it grants no system permission or automatic approval. Read dump/tree/screenshot when observation is needed; the task window is hidden first, and any visibility change requires a fresh observation. After successful begin, call /app/ui/task-end once in final cleanup when the task is completed or abandoned. End finishes this task and normally closes its window without cancelling the model conversation; if the user expanded and paused the task locally, the control window remains for an explicit Continue or Stop; do not begin again in the same finished turn. Cleanup does not prove an UNKNOWN action succeeded or exited; never replay automatically. Discussion, quotations and translations do not start phone tasks.\n");
+    String historyHelp =
+        com.deepseekharness.app.util.UiText.choose(
+            "\n== 屏幕活动历史（仅实体主屏手机任务） ==\n/app/ui/history?taskSessionId=...&turnId=...&since=&limit=20\n手机任务期间自动在内存记录实体主屏活动：目标切换、用户点按/滚动、内容变化与助手动作；约 120 秒 / 64 条，任务结束、暂停或无障碍断开立即清空，不落盘、不进备份或诊断日志。任务未开始、已结束或暂停时 events 为空。since 传上次返回的 nextSince 增量续读（事件序号，不是毫秒时间戳），limit 默认 20、最大 100；truncated=true 表示后面还有。M1 不返回图片，frames 为空数组。每个 /app/ui/* 的 JSON 回执自动附带 recentActivity（上次回执之后最多 3 条）；任务未开始时为空数组。\n",
+            "\n== Screen activity history (physical main screen, phone task only) ==\n/app/ui/history?taskSessionId=...&turnId=...&since=&limit=20\nWhile the phone task is active the app keeps an in-memory record of physical-screen activity: target changes, user taps and scrolls, content changes and assistant actions; about 120 seconds / 64 events, cleared immediately on task-end, pause or accessibility disconnect, and never written to disk, backups or diagnostic logs. events is empty when the task has not started, has ended or is paused. Pass the previous nextSince as since for incremental reads (event sequence, not a millisecond timestamp); limit defaults to 20 and maxes out at 100; truncated=true means more events remain. M1 returns no images; frames is an empty array. Every JSON /app/ui/* receipt automatically includes recentActivity (at most 3 events since the previous receipt); it is an empty array when no task has started.\n");
     String safHelp =
         com.deepseekharness.app.util.UiText.choose(
             "\n== 跨应用文件访问（SAF；先到 设置→设备能力授权→跨应用文件访问 授权）==\n/app/saf/trees   已授权目录：id / app / label / readable / writable / valid\n/app/saf/ls?tree=$ID&path=/files&limit=200\n/app/saf/stat?tree=$ID&path=/files/x.db\n/app/saf/read?tree=$ID&path=/files/x.txt&max=262144&offset=0   文本原样返回；二进制加 base64=1；offset 越界返回 OFFSET_OUT_OF_RANGE\n/app/saf/write?tree=$ID&path=/files/x.txt&text=…      小文本直接写（≤16 KiB；更大的用 push）\n/app/saf/push?tree=$ID&path=/files/x.db&src=/root/x.db    容器文件→目标（≤32 MiB）\n/app/saf/pull?tree=$ID&path=/files/x.db&dest=/root/x.db   目标→容器文件（≤32 MiB）\n/app/saf/mkdir?tree=$ID&path=/files/new   ·   /app/saf/rm?tree=$ID&path=/files/x.txt&confirm=1\n只认 /app/saf/trees 里的 id，不接受直接给 URI/authority。写与删要求该目录在设置里开着「允许写入」，否则 READ_ONLY；只给写权限的树会被拒绝（WRITE_ONLY，路径解析需要读权限）。rm 是两段式 + 一次性 token：先不带 confirm 调用获取 NEEDS_CONFIRM、目标/子项数与 token，再对同一路径带 confirm=<token>（60 秒有效）才会删除；confirm=1 一律返回 CONFIRM_REQUIRED，未知 token 同样 CONFIRM_REQUIRED。\n目标应用没启动/无响应时返回 PROVIDER_ERROR 或 TIMEOUT：先请用户打开那个应用再试。授权失效返回 PERMISSION_DENIED，让用户回设置页移除后重选。\n路径一律相对授权根；不许 ..；大文件先 pull 到容器改完再 push，别直接手改二进制。\n",
@@ -2335,6 +2370,7 @@ public final class HttpShellService {
             .replace("3090", Integer.toString(bridgePort))
         + modeHelp
         + taskHelp
+        + historyHelp
         + installHelp
         + senseHelp
         + netHelp

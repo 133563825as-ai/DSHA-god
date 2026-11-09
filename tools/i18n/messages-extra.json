@@ -15977,5 +15977,46 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
     ]
+  },
+  {
+    "id": "x2100106",
+    "zh": "系统当前默认用「%s」打开文件夹选择，它可能看不到 SD 卡、U 盘等存储挂载点。建议改用系统文件选择器；也可以在它的应用信息里清除默认设置。",
+    "en": "Your system currently opens folder selection with \"%s\", which may not show storage mounts such as SD cards or USB drives. Use the system file picker instead, or clear that app's default in its app info.",
+    "uiFormat": true,
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
+  },
+  {
+    "id": "x2100107",
+    "zh": "系统文件选择器",
+    "en": "System picker",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
+  },
+  {
+    "id": "x2100108",
+    "zh": "更改默认应用",
+    "en": "Change default app",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
+  },
+  {
+    "id": "x2100109",
+    "zh": "继续用默认",
+    "en": "Keep default",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
+  },
+  {
+    "id": "x2100110",
+    "zh": "无法打开系统设置",
+    "en": "Cannot open system settings",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/SafAccessFragment.java"
+    ]
   }
 ]

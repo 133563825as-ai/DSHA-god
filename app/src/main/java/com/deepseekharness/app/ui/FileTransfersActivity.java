@@ -1480,7 +1480,7 @@ public final class FileTransfersActivity extends AppCompatActivity
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
     try {
-      savePicker.launch(picker);
+      RecentsPrivacyGuard.launch(savePicker, picker);
       showNotice(t("请选择保存位置。", "Choose a save destination."));
     } catch (RuntimeException unavailable) {
       pendingSaveId = null;

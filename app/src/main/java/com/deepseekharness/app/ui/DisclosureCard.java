@@ -243,6 +243,8 @@ final class DisclosureCard {
         UiMotion.conceal(
             details,
             () -> {
+              // 收起动画期间又点开：以新状态为准，不能把刚渲染的详情清掉。
+              if (expanded) return;
               clearDetails();
               details.setVisibility(View.GONE);
             });
@@ -274,22 +276,39 @@ final class DisclosureCard {
         OnboardingKit.FlowRow actions =
             new OnboardingKit.FlowRow(context, dp(context, 8), dp(context, 8), Gravity.START);
         actions.setPadding(0, dp(context, 6), 0, 0);
-        for (View action : model.actions)
-          if (action != null)
-            actions.addView(
-                action, new ViewGroup.LayoutParams(-2, ViewGroup.LayoutParams.WRAP_CONTENT));
+        for (View action : model.actions) {
+          if (action == null) continue;
+          // 动作视图由宿主创建、跨多次渲染复用：先脱离旧容器，否则 addView 抛
+          // IllegalStateException「already has a parent」（真机点徽章崩溃的根因）。
+          detach(action);
+          actions.addView(
+              action, new ViewGroup.LayoutParams(-2, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         details.addView(actions, new LinearLayout.LayoutParams(-1, -2));
       }
     }
 
     private void clearDetails() {
       details.animate().cancel();
+      detachAllActions();
       details.removeAllViews();
       renderedDetail = null;
       renderedActions = new View[0];
     }
 
+    /** 收起后把动作视图从旧 FlowRow 摘下，下一次展开才能重新 addView。 */
+    private void detachAllActions() {
+      if (model == null) return;
+      for (View action : model.actions) detach(action);
+    }
+
+    private static void detach(View action) {
+      if (action != null && action.getParent() instanceof ViewGroup parent)
+        parent.removeView(action);
+    }
+
     void release() {
+      detachAllActions();
       ViewGroup parent = (ViewGroup) holder.getParent();
       if (parent != null) parent.removeView(holder);
       summary.setOnClickListener(null);

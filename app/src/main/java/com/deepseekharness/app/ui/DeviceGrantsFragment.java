@@ -65,7 +65,6 @@ public final class DeviceGrantsFragment extends Fragment {
   private final DisclosureCard.Model channelsModel = new DisclosureCard.Model();
   private final DisclosureCard.Model screenLabelModel = new DisclosureCard.Model();
   private final DisclosureCard.Model screenPolicyModel = new DisclosureCard.Model();
-  private final DisclosureCard.Model allFilesModel = new DisclosureCard.Model();
 
   /** B2：同屏四段折叠说明只允许一段展开；仍走 DisclosureCard 的后果行与读屏语义。 */
   private Accordion accordion;
@@ -118,7 +117,6 @@ public final class DeviceGrantsFragment extends Fragment {
     accordion.register("global-confirm", () -> fullPermissions.refresh());
     bindChannelsDisclosure(ctx, view);
     bindScreenLabelDisclosure(ctx, view);
-    bindAllFilesDisclosure(ctx, view);
     View.OnClickListener setup =
         button -> startActivity(new Intent(requireContext(), AccessibilitySetupActivity.class));
     android.widget.Button setupButton = view.findViewById(R.id.computer_use_accessibility);
@@ -140,8 +138,7 @@ public final class DeviceGrantsFragment extends Fragment {
       ((TextView) view.findViewById(R.id.screen_virtual_sub))
           .setText(
               com.deepseekharness.app.util.UiText.choose(
-                  "独立屏幕操作 · 需已连接通道",
-                  "Operate apps on a separate screen · needs a connected device channel"));
+                  "独立屏幕操作", "Operate apps on a separate screen"));
       view.findViewById(R.id.screen_virtual_row)
           .setOnClickListener(
               row ->
@@ -281,11 +278,8 @@ public final class DeviceGrantsFragment extends Fragment {
                 .show();
           } else startActivity(new Intent(ctx, AdbPairActivity.class));
         });
-    // 全部文件访问改为折叠披露：收起只留状态词与一行后果，展开后才是完整范围与「去设置」。
-    View allFilesRow = view.findViewById(R.id.config_all_files);
-    allFilesRow.setClickable(false);
-    allFilesRow.setFocusable(false);
-    view.findViewById(R.id.config_all_files_chevron).setVisibility(View.GONE);
+    // 全部文件访问：整行与状态词都直接打开系统「所有文件访问」页（与其它系统权限行一致）。
+    view.findViewById(R.id.config_all_files).setOnClickListener(v -> openAllFilesAccess(ctx));
     // 跨应用文件访问：授权管理在子页，行上只报数量与失效数。
     ((TextView) view.findViewById(R.id.config_saf_access_title))
         .setText(com.deepseekharness.app.util.UiText.choose("跨应用文件访问", "Cross-app files"));
@@ -295,6 +289,9 @@ public final class DeviceGrantsFragment extends Fragment {
                 SettingsPanes.open(
                     this, new com.deepseekharness.app.ui.SafAccessFragment(), "saf-access"));
     view.findViewById(R.id.config_battery_opt).setOnClickListener(button -> openBatteryOpt(ctx));
+    // 电池优化行只留标题，说明收进系统设置页。
+    View batteryHint = view.findViewById(R.id.config_battery_opt_hint);
+    if (batteryHint != null) batteryHint.setVisibility(View.GONE);
     sms = view.findViewById(R.id.device_sms);
     smsStatus = view.findViewById(R.id.device_sms_status);
     sms.setOnCheckedChangeListener(
@@ -347,7 +344,7 @@ public final class DeviceGrantsFragment extends Fragment {
     String titleText =
         com.deepseekharness.app.util.UiText.choose("外接设备（实验性）", "External device (experimental)");
     title.setText(titleText);
-    title.setMaxLines(1);
+    title.setMaxLines(2);
     text.addView(title, new android.widget.LinearLayout.LayoutParams(-2, -2));
     bindLabelInfo(
         title,
@@ -357,9 +354,10 @@ public final class DeviceGrantsFragment extends Fragment {
             "Experimental, not yet device-verified. Authorize another phone (USB or wireless debugging); once bound it allows controlled debugging, reboot and confirmed installs. Flashing is read-only preflight only."),
         false);
     title.setMinHeight(0);
-    externalDeviceStatus = new TextView(ctx, null, 0, R.style.ShellRowSub);
+    // 状态与标题叠成左列：开关先量，状态胶囊在剩余宽度内换行，长译文不会把开关挤出屏幕（T125）。
+    externalDeviceStatus = new TextView(ctx, null, 0, R.style.ShellChannelStatusPill);
     android.widget.LinearLayout.LayoutParams statusParams =
-        new android.widget.LinearLayout.LayoutParams(-1, -2);
+        new android.widget.LinearLayout.LayoutParams(-2, -2);
     statusParams.topMargin = dp(3);
     text.addView(externalDeviceStatus, statusParams);
     row.addView(text, new android.widget.LinearLayout.LayoutParams(0, -2, 1f));
@@ -424,15 +422,12 @@ public final class DeviceGrantsFragment extends Fragment {
                     state.optBoolean("enabled", false)
                         ? state.optBoolean("rootVerified", false)
                             ? state.optBoolean("bound", false)
-                                ? com.deepseekharness.app.util.UiText.format(
-                                    "已开启 · 已绑定 %s · 刷机执行关闭", state.optString("serial", ""))
-                                : com.deepseekharness.app.util.UiText.text("已开启 · 尚未绑定目标 · 刷机执行关闭")
-                            : com.deepseekharness.app.util.UiText.text("已开启 · root 尚未验证 · 不会执行目标操作")
-                        : com.deepseekharness.app.util.UiText.text("已关闭 · 不读取或操作外接目标");
+                                ? com.deepseekharness.app.util.UiText.choose("已绑定", "Bound")
+                                : com.deepseekharness.app.util.UiText.choose("未绑定", "Not bound")
+                            : com.deepseekharness.app.util.UiText.choose("未验证", "Unverified")
+                        : com.deepseekharness.app.util.UiText.choose("已关闭", "Off");
               } catch (Throwable error) {
-                text =
-                    com.deepseekharness.app.util.UiText.format(
-                        "状态不可用：%s", error.getClass().getSimpleName());
+                text = com.deepseekharness.app.util.UiText.choose("状态不可用", "Unavailable");
               }
               final String displayText = text;
               main.post(
@@ -486,7 +481,7 @@ public final class DeviceGrantsFragment extends Fragment {
       case OFF:
         return UiText.choose("关闭，不显示预览", "Off, no preview");
       default:
-        return UiText.choose("提示条（顶部蓝色呼吸条）", "Strip (blue breathing bar at top)");
+        return UiText.choose("提示条", "Strip");
     }
   }
 
@@ -563,12 +558,13 @@ public final class DeviceGrantsFragment extends Fragment {
     label.setText(UiText.choose("识屏模式", "Screen mode"));
     label.setTextSize(13);
     row.addView(label, new android.widget.LinearLayout.LayoutParams(-2, -2));
-    screenModeStatus = new TextView(ctx, null, 0, R.style.ShellStatusText);
+    android.widget.Space spacer = new android.widget.Space(ctx);
+    row.addView(spacer, new android.widget.LinearLayout.LayoutParams(0, -2, 1));
+    screenModeStatus = new TextView(ctx, null, 0, R.style.ShellStatusPill);
     screenModeStatus.setId(R.id.screen_mode_status);
-    screenModeStatus.setGravity(android.view.Gravity.END);
     screenModeStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
     android.widget.LinearLayout.LayoutParams statusParams =
-        new android.widget.LinearLayout.LayoutParams(0, -2, 1);
+        new android.widget.LinearLayout.LayoutParams(-2, -2);
     statusParams.setMarginStart(dp(12));
     row.addView(screenModeStatus, statusParams);
     row.setOnClickListener(v -> chooseScreenMode(ctx));
@@ -587,9 +583,7 @@ public final class DeviceGrantsFragment extends Fragment {
           parts.add(UiText.choose("无障碍", "accessibility"));
           break;
         case com.deepseekharness.app.util.ScreenCapabilityGate.MISSING_DEVICE_CHANNEL:
-          parts.add(
-              UiText.choose(
-                  "可用的 Root / Shizuku / ADB 通道", "a usable Root / Shizuku / ADB channel"));
+          parts.add(UiText.choose("设备通道", "device channel"));
           break;
         case com.deepseekharness.app.util.ScreenCapabilityGate.MISSING_API:
           parts.add("Android 11+");
@@ -975,13 +969,10 @@ public final class DeviceGrantsFragment extends Fragment {
         badge.isEmpty()
             ? screenModeDescription(selected)
             : UiText.format("%s · %s", screenModeDescription(selected), badge);
-    // 全局权限开启时规则暂不生效：说明行首句换成提示，原规则说明仍在 ⓘ 全文里。
+    // 全局权限开启时规则本就不生效：说明行只留提示，不再叠一层模式描述。
     if (global)
       summary =
-          UiText.format(
-              "%s\n%s",
-              UiText.choose("全局权限开启中，以下规则暂不生效", "Global permission is on; these rules are paused"),
-              summary);
+          UiText.choose("全局权限开启中，以下规则暂不生效", "Global permission is on; these rules are paused");
     // 收起态保留安全后果；「全部允许」属于放宽档位，默认展开完整规则（B4）。
     boolean allowAll =
         policy.mode == com.deepseekharness.app.util.ScreenConfirmationPolicy.Mode.ALLOW_ALL;
@@ -990,13 +981,12 @@ public final class DeviceGrantsFragment extends Fragment {
         UiText.choose(
             "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许包含敏感界面；自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。",
             "These rules only control DSHA confirmations and do not grant system permissions. Allow all includes sensitive screens. Unconfigured apps still ask in custom mode. Rules stay on this device and are excluded from backups.");
+    // 收起态不再常显安全说明（已收进展开区 detail）；仅放宽档位保留一句后果。
     screenPolicyModel.consequence =
         allowAll
             ? UiText.choose(
                 "全部允许时，敏感界面也不再逐次询问", "Allow all also skips confirmations on sensitive screens")
-            : UiText.choose(
-                "仅控制 DSHA 确认，不授予系统权限",
-                "Only controls DSHA confirmations; grants no system permissions");
+            : null;
     screenPolicyModel.consequenceTone = allowAll ? R.color.shell_warn : R.color.shell_text_muted;
     screenPolicyModel.defaultExpanded = allowAll;
     screenPolicyStatus.setText(summary);
@@ -1268,10 +1258,12 @@ public final class DeviceGrantsFragment extends Fragment {
     if (page == null) return;
     TextView shizuku = page.findViewById(R.id.workspace_shizuku_status);
     TextView root = page.findViewById(R.id.device_root_status);
-    if (shizuku.getTag() == null)
+    if (shizuku.getTag() == null) {
+      String fullShizuku = ShizukuShell.userStatus(requireContext());
       shizuku.setText(
-          com.deepseekharness.app.util.UiStateText.render(
-              ShizukuShell.userStatus(requireContext())));
+          com.deepseekharness.app.util.UiStateText.render(shortenChannelStatus(fullShizuku)));
+      shizuku.setContentDescription(fullShizuku);
+    }
     // 识别到 Stellar（Shizuku 兼容管理器）时按实际管理器命名；协议仍是 Shizuku 兼容层。
     boolean stellar = com.deepseekharness.app.ShizukuManagerCompat.isStellar(requireContext());
     // 行内按钮只放短动词；完整含义（验证 Stellar 连接 / 授权 Shizuku …）交给读屏。
@@ -1297,11 +1289,20 @@ public final class DeviceGrantsFragment extends Fragment {
     refreshRootPolicy();
   }
 
+  /** 通道状态行只显示短状态；完整原因放在读屏描述里，避免长句在两行里挤满。 */
+  private static String shortenChannelStatus(String full) {
+    if (full == null) return "";
+    if (full.contains("兼容层") || full.contains("compatibility layer"))
+      return UiText.choose("已安装 Stellar · 兼容层未连接", "Stellar installed · layer not connected");
+    return full;
+  }
+
   /**
    * RootShell.status 末行是拦截档位；本页档位已单独显示，这里去掉重复的那一行。紧凑行只显示一行，
    * 剩余各行用「 · 」接成一行，避免「su 路径」占满后把授权状态截掉；点按仍看全文。
    */
   private static String rootStatusWithoutPolicy(Context ctx) {
+    if (!RootShell.enabled(ctx)) return UiText.choose("未启用", "Not enabled");
     String status = RootShell.status(ctx);
     int cut = status.lastIndexOf('\n');
     String shown = RootShell.enabled(ctx) && cut > 0 ? status.substring(0, cut) : status;
@@ -1456,11 +1457,8 @@ public final class DeviceGrantsFragment extends Fragment {
             : getString(R.string.ui134_shizuku_hint);
     String full =
         UiText.format(
-            "Root: %s\n\n%s\n\n%s\n\nShizuku: %s\n\nADB: %s",
+            "Root: %s\n\n%s\n\nShizuku: %s\n\nADB: %s",
             getString(R.string.ui134_root_hint),
-            UiText.choose(
-                "手机已 root 时可直接使用 su，无需 ADB 配对。首次执行请在 root 管理器中授权 DSHA；命令拦截档位可在下方选择，短信等原生闸门在三档都生效。",
-                "On a rooted phone, use su directly without ADB pairing. Authorize DSHA in your root manager on first use. Choose the command interception mode below; native gates such as SMS reading apply in all three modes."),
             UiText.choose(
                 "命令拦截档位仅对 root 通道生效；Shizuku/ADB 通用执行器仍按严格档。",
                 "Command filtering levels apply only to the root channel; Shizuku/ADB general executors stay strict."),
@@ -1468,7 +1466,8 @@ public final class DeviceGrantsFragment extends Fragment {
             getString(R.string.ui134_adb_hint));
     channelsModel.key = "channels";
     channelsModel.detail = full;
-    channelsModel.defaultExpanded = new ConfigStore(ctx).isRootShellAllowed();
+    // 默认收起：正文只留通道行与单行状态，长说明点标签再展开。
+    channelsModel.defaultExpanded = false;
     DisclosureCard.bind(
         label, channelsModel, accordion.state(), () -> accordion.onToggle("channels"));
     accordion.register("channels", () -> bindChannelsDisclosure(ctx, page));
@@ -1509,25 +1508,6 @@ public final class DeviceGrantsFragment extends Fragment {
     accordion.open("channels");
     DisclosureCard.bind(
         label, channelsModel, accordion.state(), () -> accordion.onToggle("channels"));
-  }
-
-  /** 全部文件访问：收起=状态词+一行后果，展开=完整范围与系统设置入口。 */
-  private void bindAllFilesDisclosure(Context ctx, View page) {
-    TextView status = page.findViewById(R.id.config_all_files_status);
-    if (status == null) return;
-    var settings = new androidx.appcompat.widget.AppCompatButton(ctx);
-    settings.setText(UiText.choose("去系统设置", "System settings"));
-    settings.setTextSize(13f);
-    settings.setAllCaps(false);
-    settings.setMinHeight(dp(40));
-    settings.setMinimumHeight(dp(40));
-    settings.setPadding(dp(12), 0, dp(12), 0);
-    settings.setBackgroundResource(R.drawable.bg_btn);
-    settings.setTextColor(ctx.getColorStateList(R.color.button_text));
-    settings.setOnClickListener(v -> openAllFilesAccess(ctx));
-    allFilesModel.key = "all-files";
-    allFilesModel.actions = new View[] {settings};
-    refreshAllFilesStatus(status);
   }
 
   @Override
@@ -2001,7 +1981,7 @@ public final class DeviceGrantsFragment extends Fragment {
     updating = false;
     clipboardStatus.setText(
         switch (mode) {
-          case OFF -> UiText.choose("已关闭 · 读取会被阻止", "Off · reads are blocked");
+          case OFF -> UiText.choose("已关闭", "Off");
           case ASK -> UiText.choose("每次读取前询问", "Ask before each read");
           case ALLOW -> UiText.choose("已预授权 · 可随时撤销", "Pre-authorized · revocable");
         });
@@ -2096,9 +2076,7 @@ public final class DeviceGrantsFragment extends Fragment {
           var grants = com.deepseekharness.app.saf.SafGrants.list(app);
           String text;
           if (grants.isEmpty()) {
-            text =
-                com.deepseekharness.app.util.UiText.choose(
-                    "未授权：选一个应用文件夹，助手即可读写", "Not granted: pick a folder for the assistant");
+            text = com.deepseekharness.app.util.UiText.choose("未授权", "Not granted");
           } else {
             int valid = 0, writable = 0, stale = 0;
             for (var grant : grants) {
@@ -2233,7 +2211,7 @@ public final class DeviceGrantsFragment extends Fragment {
   private String computeAdbStatus(Context app) {
     try {
       if (!pref(app, "adb_enabled", false))
-        return com.deepseekharness.app.util.UiText.text("ADB 已关闭。开启后才会保持连接。");
+        return com.deepseekharness.app.util.UiText.text("ADB 已关闭");
       String bridge = DeviceBridgeService.adbState;
       String detail = DeviceBridgeService.adbDetail == null ? "" : DeviceBridgeService.adbDetail;
       HarnessController hc = HarnessController.get(app);
@@ -2345,31 +2323,6 @@ public final class DeviceGrantsFragment extends Fragment {
       granted = true;
     }
     status.setText(granted ? UiText.choose("已开启", "On") : UiText.choose("未开启", "Off"));
-    allFilesModel.consequence =
-        granted
-            ? UiText.choose("其他应用私有目录仍受系统限制", "Other apps' private directories stay restricted")
-            : UiText.choose("仅能访问应用私有目录", "Only app-private storage is accessible");
-    allFilesModel.consequenceTone = granted ? R.color.shell_text_muted : R.color.shell_warn;
-    allFilesModel.detail =
-        granted
-            ? UiText.format(
-                "%s\n\n%s",
-                UiText.choose(
-                    "已开启：可读写系统允许的共享存储；其他应用私有目录仍受系统限制",
-                    "Allowed: shared storage permitted by Android; other apps' private directories remain restricted"),
-                UiText.choose(
-                    "存储权限已授予，容器可访问手机存储",
-                    "Storage permission granted. The container can access phone storage."))
-            : UiText.choose(
-                "未开启：仅能访问应用私有目录；去系统设置开启后可访问全部文件",
-                "Disabled: only app-private storage is accessible. Enable all files access in system settings for other files.");
-    if (accordion == null) {
-      DisclosureCard.bind(status, allFilesModel, disclosure, null);
-    } else {
-      DisclosureCard.bind(
-          status, allFilesModel, accordion.state(), () -> accordion.onToggle("all-files"));
-      accordion.register("all-files", () -> refreshAllFilesStatus(status));
-    }
     try {
       status.setTextColor(
           granted

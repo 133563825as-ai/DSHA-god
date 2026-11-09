@@ -526,7 +526,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
     }
     pendingLogExport = new PendingLogExport(include, include ? selected : "");
     try {
-      logExporter.launch(com.deepseekharness.app.core.ErrorLogRepository.filename());
+      RecentsPrivacyGuard.launch(
+          logExporter, com.deepseekharness.app.core.ErrorLogRepository.filename());
     } catch (RuntimeException error) {
       pendingLogExport = null;
       Toast.makeText(this, UiText.text("无法打开文件管理器，请下载到默认目录"), Toast.LENGTH_LONG).show();
@@ -535,7 +536,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
 
   private void exportText() {
     try {
-      exporter.launch(
+      RecentsPrivacyGuard.launch(
+          exporter,
           "DSHA-diagnostic-"
               + new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT)
                   .format(new java.util.Date())
