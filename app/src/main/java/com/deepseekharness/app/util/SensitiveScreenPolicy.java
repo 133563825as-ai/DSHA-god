@@ -50,9 +50,6 @@ public final class SensitiveScreenPolicy {
     HANDOFF
   }
 
-  /** 交接后的下一步（助手工具词表）；放在本类里，避免与窗口证据任务改同一提示类。 */
-  public static final String NEXT_ACTION_HANDOFF_TO_USER = "HANDOFF_TO_USER";
-
   public static final int MAX_APPS_PER_LIST = 64;
   static final int MAX_ENCODED = 100_000;
   private static final String SCHEMA = "1";
@@ -99,7 +96,13 @@ public final class SensitiveScreenPolicy {
     return handoffApps;
   }
 
-  /** 应用名单优先于类别；名单只改变确认方式，密码文本硬阻断不在这里。 */
+  /**
+   * 应用名单优先于类别；名单只改变确认方式，密码文本硬阻断不在这里。
+   *
+   * <p>{@code category == null} 只表示「调用方还没有分类结果 / 不需要分类」，返回 {@link Decision#ALLOW}
+   * 表示本层不接管，沿用普通屏幕确认策略；它**不是**「已确认安全」。调用方必须先判定类别，只有拿到具体类别
+   * 才调用本方法；不支持用 null 表示「跳过确认」。
+   */
   public Decision decide(Category category, String packageName) {
     if (category == null) return Decision.ALLOW;
     if (packageName != null && trustApps.contains(packageName)) return Decision.ALLOW;
