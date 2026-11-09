@@ -36,6 +36,7 @@
 | [ADB 通道原生化设计（T42）](design/adb-native-20261103/README.md) | ADB 配对、私钥与客户端移到安卓壳，容器只经桥提交命令；含用户 Q1–Q9 决定与 E1–E4 取证，未实现 |
 | [GitHub 凭据原生化设计（T50）](design/github-credential-native.md) | 壳内 OAuth Device Flow 登录、token 存 Keystore、容器经桥按需取 access token；待确认，未实现 |
 | [物理屏两套观察路径设计（T107）](design/physical-screen-observation-20261107.md) | 无障碍动作 + 特权镜像读屏 + evdev 用户操作检测；A/B/C 对比、接口/授权/兼容/回退与 M1–M3 计划；未实现 |
+| [build351 覆盖升级首启失败排查（T133）](design/build351-first-start-registration-20261110.md) | 插件注册 90s 超时 + 残留 profile 锁 + 「原因未分类」的源码级归因（③ 机制为主、① 锁生命周期与首启重复覆盖层加重、② 语义不足），含最小修复与复现/取证清单；只排查未改代码 |
 
 ## 用户操作与开发入口
 
