@@ -87,6 +87,9 @@ android {
         minSdk 30
         targetSdk 37
         buildConfigField 'String', 'BUNDLED_PNPM_VERSION', '"' + bundledTools.pnpm.version + '"'
+        // 测试包标记：只有显式测试变体（.test/.debug/.dev）为 true。正式包恒为 false，
+        // 用于只在测试包显示「反馈与诊断」导出入口；不得改为运行时猜测包名。
+        buildConfigField 'boolean', 'TEST_PACKAGE', (sunsetTest || debugPackage || devPackage) ? 'true' : 'false'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
         // 显示名随发布身份（DSH-A-Su / DSHA）；测试变体加后缀，便于桌面上区分两个包。
         resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : releaseIdentity.appName

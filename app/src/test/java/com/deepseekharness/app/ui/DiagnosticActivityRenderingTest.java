@@ -174,6 +174,18 @@ public final class DiagnosticActivityRenderingTest {
     assertEquals(View.GONE, findByText(sheet, "Save to Downloads").getVisibility());
   }
 
+  @Test
+  @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi")
+  public void feedbackExportEntryIsHiddenForNonTestPackages() {
+    DiagnosticActivity page = open();
+    // 单测构建是 standardDebug 且未开测试包开关：正式包路径必须不显示入口，也不占分隔线。
+    assertFalse(com.deepseekharness.app.BuildConfig.TEST_PACKAGE);
+    assertEquals(View.GONE, page.findViewById(R.id.diagnostic_feedback_export).getVisibility());
+    assertEquals(
+        View.GONE, page.findViewById(R.id.diagnostic_feedback_export_divider).getVisibility());
+    assertEquals(View.GONE, page.findViewById(R.id.diagnostic_feedback_status).getVisibility());
+  }
+
   // ---------- helpers ----------
 
   private DiagnosticActivity open() {
