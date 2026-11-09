@@ -144,7 +144,9 @@ public final class EnvironmentMaintenance {
                     controller.context(),
                     controller.proot(),
                     control,
-                    () -> validateRuntime(controller.proot(), false),
+                    // 维护 5/5 完成与启动等价的注册：受管资产身份变化后的首启不再独自
+                    // 承担共享依赖链接修复；失败时在切换校验内回滚，不提交半套运行时。
+                    () -> validateRuntime(controller.proot(), true),
                     controller.runtimeHostPorts().browserProbe());
             controller.proot().confirmRuntimeHealth(proof);
             if (!controller.isEnvironmentReady()) throw new IOException("RUNTIME_READINESS_FAILED");
@@ -450,7 +452,20 @@ public final class EnvironmentMaintenance {
         readCheckedProot(proot, com.deepseekharness.app.util.InstallProbe.script(checks), 30_000);
     for (String line : probe.split("\\r?\\n")) checked.accept(line);
     if (!checked.ok(6)) throw new IOException("RUNTIME_PATCH_CHECK_FAILED:" + checked.detail(6));
-    if (register) readCheckedProot(proot, "python3 /root/.dsh/register-builtin-plugins.py", 30_000);
+    if (register) {
+      // 与启动路径等价：宽预算由 GuestPluginScripts 按受管资产身份选择，回执必须是完成态。
+      try {
+        var result = proot.registerBuiltinPluginsResult();
+        String output =
+            com.deepseekharness.app.util.GuestCommandOutcome.requireCompleted(
+                result, "BUILTIN_REGISTER");
+        if (!output.contains("BUILTIN_REGISTER_OK"))
+          throw new IOException("BUILTIN_REGISTER_RECEIPT_MISSING");
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new java.io.InterruptedIOException("BUILTIN_REGISTER_INTERRUPTED");
+      }
+    }
   }
 
   private static String readCheckedProot(
