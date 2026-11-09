@@ -76,7 +76,7 @@
 - **假成功校验**：`BrowserTasks.applyRecentsPreference` 刷完立即回读 `getAppTasks()` 的 root Intent 标志，任务列表为空或标志不符时写 `DiagnosticLog` 并返回失败，不再把「枚举不到任务」当成功。
 - **设置页**：主开关补副标题（离开后移除、当前卡片不显示内容）；新增「严格模式（实验）」子行，父开关关闭时隐藏。
 - **文案**：`tools/i18n/messages.json` 新增 `m9500`–`m9502`，8 个翻译文件补齐十语；语言字节钉同步刷新。
-- **运行时描述**：`ConfigStore.java` / `DshaApp.java` 属于 descriptor `launcherSources`，已重算 `runtimeId`（T124 分支原为 `20c94c58…`，合入 build346 基线后最终为 `28dc573a…`，以仓库内 `app/src/main/assets/runtime-descriptor.json` 为准），合入/发版须带该文件。
+- **运行时描述**：`ConfigStore.java` / `DshaApp.java` 属于 descriptor `launcherSources`，已重算 `runtimeId`（T124 分支原为 `20c94c58…`，合入 build346 基线后为 `28dc573a…`，T128 插件 launcher 源变化后最终为 `5fec6de5…`，以仓库内 `app/src/main/assets/runtime-descriptor.json` 为准），合入/发版须带该文件。
 
 ### 6.3 门禁与验证
 
