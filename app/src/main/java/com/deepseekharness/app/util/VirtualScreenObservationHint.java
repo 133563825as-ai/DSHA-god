@@ -104,7 +104,8 @@ public final class VirtualScreenObservationHint {
     return hasPackage ? WindowState.PRESENT : WindowState.UNKNOWN;
   }
 
-  private static String evidence(Accessibility accessibility, String windowDiagnostic) {
+  /** 窗口状态来自无障碍窗口清单还是 Core 的任务提示；只是证据来源，不是窗口身份。 */
+  public static String windowEvidence(Accessibility accessibility, String windowDiagnostic) {
     return accessibility == Accessibility.CONNECTED
             && windowDiagnostic != null
             && !windowDiagnostic.equals("ACCESSIBILITY_UNAVAILABLE")
@@ -125,7 +126,7 @@ public final class VirtualScreenObservationHint {
       long sinceStartMs) {
     if (!FRAME_NOT_READY.equals(coreError)) return null;
     WindowState state = windowState(accessibility, windowDiagnostic, foregroundPackage);
-    String source = evidence(accessibility, windowDiagnostic);
+    String source = windowEvidence(accessibility, windowDiagnostic);
     if (state == WindowState.NONE)
       return new Hint(NO_WINDOW, state, source, LAUNCH_APP_FIRST, true);
     if (state == WindowState.UNKNOWN)
@@ -162,6 +163,12 @@ public final class VirtualScreenObservationHint {
   public static final String ASK_USER_TO_CLOSE = "ASK_USER_TO_CLOSE";
   public static final String CREATE_FIRST = "CREATE_FIRST";
 
+  /** 多个应用窗口并列（分屏/悬浮窗）：语义路径拒绝自动选一个，用户收起分屏或只保留一个应用后重看。 */
+  public static final String ASK_USER_TO_CLOSE_SPLIT_SCREEN = "ASK_USER_TO_CLOSE_SPLIT_SCREEN";
+
+  /** 语义路径的多窗口歧义原因码；与 READABLE 等诊断码同词表，不新起状态机。 */
+  public static final String VSCREEN_WINDOW_AMBIGUOUS = "VSCREEN_WINDOW_AMBIGUOUS";
+
   /**
    * 现有 Core 的请求在发送前发现 status 本身失败时的下一步。待清理（START_UNKNOWN / DISCONNECTED / CLOSING /
    * CLOSE_UNKNOWN）不能靠重看或重建解决：先告诉用户，经同意后用同一 coreInstance 显式 close；绝不自动重建。
@@ -180,14 +187,30 @@ public final class VirtualScreenObservationHint {
     return "VSCREEN_GENERATION_CHANGED".equals(code) ? SEE_AGAIN : CHECK_STATUS;
   }
 
-  /** tree / node / editor 因拿不到虚拟屏窗口而未发送时的下一步建议。 */
+  /** tree / node / editor 因拿不到虚拟屏窗口而未发送时的下一步建议；没有证据时按旧行为重看。 */
   public static String semanticNextAction(Accessibility accessibility, String windowDiagnostic) {
+    return semanticNextAction(accessibility, windowDiagnostic, null);
+  }
+
+  /**
+   * 带窗口证据的下一步建议。{@code NO_UNIQUE_APPLICATION_WINDOW} 有两种原因：多个应用窗口并列（分屏/
+   * 悬浮窗），或该显示根本没有应用窗口。只有证据能区分：前者不能靠重看或重试解决，必须请用户收起分屏
+   * 或只保留一个应用；后者应先启动应用。没有证据时仍回 {@code SEE_AGAIN}（可安全重看）。
+   */
+  public static String semanticNextAction(
+      Accessibility accessibility,
+      String windowDiagnostic,
+      VirtualScreenWindowEvidence.Snapshot evidence) {
     // 没有可用显示与无障碍无关：先查 status，而不是重看同一块不存在的屏。
     if ("DISPLAY_UNAVAILABLE".equals(windowDiagnostic)) return CHECK_STATUS;
     if (accessibility == Accessibility.NOT_ENABLED) return ENABLE_ACCESSIBILITY;
     if (accessibility != Accessibility.CONNECTED) return WAIT_ACCESSIBILITY_RECONNECT;
     if ("NO_WINDOWS".equals(windowDiagnostic)) return LAUNCH_APP_FIRST;
     if ("ROOT_UNAVAILABLE".equals(windowDiagnostic)) return WAIT_AND_SEE_AGAIN;
+    if ("NO_UNIQUE_APPLICATION_WINDOW".equals(windowDiagnostic) && evidence != null) {
+      if (evidence.applicationWindows == 0) return LAUNCH_APP_FIRST;
+      if (evidence.ambiguous) return ASK_USER_TO_CLOSE_SPLIT_SCREEN;
+    }
     return SEE_AGAIN;
   }
 
@@ -198,5 +221,15 @@ public final class VirtualScreenObservationHint {
     if (accessibility != Accessibility.CONNECTED) return "ACCESSIBILITY_NOT_CONNECTED";
     if ("NO_WINDOWS".equals(windowDiagnostic)) return NO_WINDOW;
     return "VSCREEN_WINDOW_UNREADABLE";
+  }
+
+  /** 带窗口证据的原因码：只有歧义与「无应用窗口」两种 NO_UNIQUE 才能被区分。 */
+  public static String semanticReason(
+      Accessibility accessibility,
+      String windowDiagnostic,
+      VirtualScreenWindowEvidence.Snapshot evidence) {
+    if ("NO_UNIQUE_APPLICATION_WINDOW".equals(windowDiagnostic) && evidence != null)
+      return evidence.ambiguous ? VSCREEN_WINDOW_AMBIGUOUS : NO_WINDOW;
+    return semanticReason(accessibility, windowDiagnostic);
   }
 }

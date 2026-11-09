@@ -383,6 +383,7 @@ Manager `closeExpected()` 核对 Core UUID，`detachLocked()` 先令旧请求失
 | CLOSE_UNKNOWN | release ACK、出生 proof、journal commit 和 cleanup reason | 仅因画面消失就宣布 STOPPED |
 | FRAME_NOT_READY / STALE_FRAME | generation、最新帧、是否刚从无帧恢复、采用回调 | 保图同时继续开放触摸 |
 | 助手 see：VSCREEN_NO_WINDOW / FRAME_PENDING / FRAME_STALLED | windowState、windowEvidence、foregroundPackage、sinceReadyOrLaunchMs、nextAction | 空屏时等待或重建；无障碍不可用时把 UNKNOWN 当成空屏 |
+| 助手 tree：NO_UNIQUE_APPLICATION_WINDOW | applicationWindowCount、windowAmbiguous、focusedWindowId、windowDiagnostic | 自动选一个应用窗口继续；对同一歧义屏反复重看 |
 | FRAME_NOT_OBSERVED / FRAME_EXPIRED | requested/current/observed frame 字段及 TTL | 用 status 的新帧号替换旧图帧号 |
 | STALE_TREE / STALE_NODE | 实际窗口/包、服务状态和树期限 | 自动刷新并补发旧业务动作 |
 | NATIVE_CONTROL_REVOKED | 页面是否已暂停、面板是否已取消、Core 是否变更 | 重新激活旧 owner |
@@ -396,6 +397,28 @@ Manager `closeExpected()` 核对 Core UUID，`detachLocked()` 先令旧请求失
 Native `lastStartOutcome()` / `safeStartOutcome()` 提供去除秘密和图像的启动技术摘要。
 读日志前先确定它对应的源码、APK、flavor 与运行阶段；不要把另一包的 PASS 移植过来。
 
+### 12.1 最小窗口证据与多窗口可行动提示（T98）
+
+失败回复只做纯增量，不改变 `windowState` / `windowEvidence` / `windowDiagnostic` 既有语义，也不新增授权面
+（`util/VirtualScreenWindowEvidence`，纯逻辑）：
+
+- `see` 的 `FRAME_NOT_READY` 细分、tree/node/editor/anchor 的窗口不可用回复，在无障碍可读时附
+  `applicationWindowCount` / `systemWindowCount` / `inputMethodWindowCount`、`focusedWindowId` /
+  `activeWindowId`、`windowAmbiguous`；窗口唯一时再附 `targetWindowDisplayId` / `targetWindowId` /
+  `targetWindowType` / `targetWindowLayer` / `targetWindowBounds` / `targetWindowFocused` /
+  `targetWindowActive` / `targetWindowTitle` / `targetWindowPackage`。
+- 字段只来自无障碍窗口清单：标题去掉控制字符、折叠空白并截断到 64 码点，包名按包名格式校验后保留，其余
+  不合格值直接省略；不含节点文本、控件内容、截图或完整窗口清单。窗口 id 会复用，不能当长期身份。
+- `NO_UNIQUE_APPLICATION_WINDOW` 用计数区分两种原因：多个应用窗口并列（分屏/悬浮窗）→
+  `reason=VSCREEN_WINDOW_AMBIGUOUS`、`nextAction=ASK_USER_TO_CLOSE_SPLIT_SCREEN`；只有系统/输入法窗口、
+  没有应用窗口 → `reason=VSCREEN_NO_WINDOW`、`nextAction=LAUNCH_APP_FIRST`。拿不到证据时仍回
+  `SEE_AGAIN`，不凭空提示用户去关分屏。
+- 证据只用于解释失败与下一步，不参与授权、选择或重试：语义路径仍然只认
+  `VirtualScreenWindowPolicy.selectDetailed` 的唯一结果，锚点路径只认原观察携带的 windowId（同 id 重复
+  按 `ANCHOR_WINDOW_AMBIGUOUS` 拒绝），不会因为“多窗口”自动换一个窗口。
+- 真机验收：多窗口/分屏（应提示收起分屏而不是自动选窗）、IME 存在（只进 `inputMethodWindowCount`，不误判
+  为应用窗口）、FLAG_SECURE 页面（截图失败时窗口证据仍只含元数据，不泄露内容）。
+
 ## 13. 修改指南与回归定位
 
 | 修改范围 | 必须一起检查的实现 | 首选回归类或脚本 |
@@ -407,6 +430,7 @@ Native `lastStartOutcome()` / `safeStartOutcome()` 提供去除秘密和图像�
 | 采集、预览与手势 | Pixels、Previews、PreviewView、PreviewInputGate | PixelsTest、PreviewContinuityTest、PreviewAdoptionTest、PreviewInputGateTest、NativeInputFrameBoundaryTest |
 | 节点与原生面板 | Accessibility、NativeControls、Activity、NativeScreenControlLease | VirtualScreenNativeControlsTest、ActivityNodeControlsTest、ActivityLayoutTest |
 | 原图锚点 | ObservedPixels、ObservedControl、AnchorProof | VirtualScreenObservedPixelsTest、VirtualScreenAnchoredChainTest；test-vscreen-anchored.mjs |
+| 窗口证据与多窗口提示 | WindowPolicy、WindowEvidence、ScreenTargetResolver、ObservationHint、Manager/HttpShellService | VirtualScreenWindowPolicyTest、VirtualScreenWindowEvidenceTest、VirtualScreenObservationHintTest、ScreenTargetResolverEvidenceTest |
 | DSH 工具/bridge | server.cjs、VscreenBridgeRequest、HttpShellService | VscreenBridgeRequestTest、VscreenAnchoredGrammarTest；test-vscreen-bundle.mjs、test-vscreen-manager-http.py |
 
 表中省略共同前缀的测试类，位于 [vscreen 测试目录][tests] 或 [util 测试目录][util-tests]。

@@ -1925,12 +1925,19 @@ public final class HttpShellService {
   /**
    * 虚拟屏语义动作拿不到窗口目标时的只读失败：error 保留 ACCESSIBILITY_UNAVAILABLE 兼容旧调用方，
    * reason / nextAction 区分无障碍未开启、未连接、显示里没有窗口和窗口不可读。请求未发送，可安全重新观察。
+   *
+   * <p>T98：额外附最小窗口证据（目标窗口字段、应用/系统/输入法窗口计数、歧义标记）。多应用窗口并列时
+   * reason=VSCREEN_WINDOW_AMBIGUOUS、nextAction=ASK_USER_TO_CLOSE_SPLIT_SCREEN；证据只用于解释，不参与授权。
    */
   private String vscreenSemanticUnavailable(int display, boolean notSent)
       throws org.json.JSONException {
     // 没有可用显示时本次请求不会解析窗口，线程局部诊断可能残留上一次请求的值，不能当成空屏证据。
-    String diagnostic =
-        display > 0 ? DshaAccessibilityService.windowDiagnostic() : "DISPLAY_UNAVAILABLE";
+    var window =
+        display > 0
+            ? DshaAccessibilityService.displayWindowSnapshot(display)
+            : new com.deepseekharness.app.screen.ScreenTargetResolver.Diagnostics(
+                "DISPLAY_UNAVAILABLE", null);
+    String diagnostic = window.diagnostic;
     var accessibility =
         com.deepseekharness.app.util.VirtualScreenObservationHint.Accessibility.of(
             DshaAccessibilityService.isConnected(), DshaAccessibilityService.enabledState(ctx));
@@ -1939,15 +1946,23 @@ public final class HttpShellService {
             .put("ok", false)
             .put("error", "ACCESSIBILITY_UNAVAILABLE")
             .put("treeUnavailable", diagnostic)
+            .put("windowDiagnostic", diagnostic)
+            .put(
+                "windowEvidence",
+                com.deepseekharness.app.util.VirtualScreenObservationHint.windowEvidence(
+                    accessibility, diagnostic))
             .put(
                 "reason",
                 com.deepseekharness.app.util.VirtualScreenObservationHint.semanticReason(
-                    accessibility, diagnostic))
+                    accessibility, diagnostic, window.evidence))
             .put(
                 "nextAction",
                 com.deepseekharness.app.util.VirtualScreenObservationHint.semanticNextAction(
-                    accessibility, diagnostic))
+                    accessibility, diagnostic, window.evidence))
             .put("retryable", true);
+    if (window.evidence != null)
+      for (var field : window.evidence.fields().entrySet())
+        value.put(field.getKey(), field.getValue());
     if (notSent) value.put("state", "NOT_SENT");
     return value.toString();
   }
