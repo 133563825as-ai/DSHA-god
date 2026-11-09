@@ -437,7 +437,8 @@ public final class AgentTaskNotifications {
                           UiText.choose("已选 %d 项：%s", "Selected %d: %s"),
                           chosen.size(),
                           selectionText))
-              // 轮次已由 subText 展示，展开态不再重复；运行中不写秒数，避免每秒重绘吞掉点击。
+              // 轮次已由 subText 展示，展开态不再重复；运行中不写秒数，避免每秒重绘替换
+              // PendingIntent 吞掉按钮点击（内容签名由 collapsed/subText/chronometer 保持稳定）。
               + (row.active()
                   ? ""
                   : "\n" + UiText.format(UiText.choose("总耗时 %s", "Total %s"), total));
@@ -676,7 +677,6 @@ public final class AgentTaskNotifications {
             .putExtra("token", quick.token)
             .putExtra("callId", quick.callId)
             .putExtra("questionId", quick.questionId)
-            .putExtra("rowAction", row.action())
             .putExtra("label", quick.labels[option]);
     return PendingIntent.getBroadcast(
         context,

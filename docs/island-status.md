@@ -2,7 +2,7 @@
 
 > build209 起上岛能力已并入正式包，不再有独立上岛包（`dsha.islandEdition`、`.island` 包名与 `BuildConfig.ISLAND_EDITION` 均已删除）。本文其余内容保留 build205 历史实现记录。
 
-核验日期：2026-10-27。参考基线：build205 源码（`0.2.1-rc.3-20261027.1312`）。
+核验日期：2026-10-27。参考基线：build205 源码（`0.2.1-rc.3-20261027.1312`）。2026-11-08 起补记支持矩阵与回答链路，补记不改变原核验范围。
 
 本页说明 DSHA 如何把「任务正在执行」的阶段性状态显示在系统状态栏胶囊 / 灵动岛 / 流体云上，
 以及它为什么不需要 root、不需要白名单，什么情况下会静默退回普通通知。
@@ -20,19 +20,19 @@
 | 展开态详情 | 阶段、工具与目标、轮次（由 subText 展示，只出现一次）、结束后总耗时；运行中不写秒数，避免心跳重建通知吞掉按钮点击；锁屏公开版本只显示阶段，不含工具与标题 |
 | 失败行为 | 任何异常都返回原通知，功能退化为普通通知，不影响任务本身 |
 
-支持的平台：原生 Android 16+、小米澎湃 OS 3.0.300+/4、ColorOS 16、OriginOS 6/7，以及后续跟进同一接口的厂商。
+代码覆盖的平台：原生 Android 16+、小米澎湃 OS 3.0.300+/4、ColorOS 16、OriginOS 6/7，以及后续跟进同一接口的厂商；实际验证状态见下表。
 
 | 平台 | 系统基线 | 提升写法 | 验证状态 |
 |---|---|---|---|
 | 原生 Android 16（36.0） | Android 16 | `android.colorized=true` | 支持（按平台分支） |
-| 原生 Android 16 QPR1+ / 17 | 36.1+ | `android.requestPromotedOngoing=true` + `colorized=false` | 支持（按平台分支） |
-| 小米澎湃 OS 3.0.300+ / 4 | Android 16 / 17 | 按平台分支 | HyperOS 4 真机验证 |
+| 原生 Android 16 QPR1+ / 17 | 36.1+ | `android.requestPromotedOngoing=true` + `colorized=false` | 代码支持，未上机 |
+| 小米澎湃 OS 3.0.300+ / 4 | Android 16 / 17 | 按平台分支 | 贡献者真机观察（build332 / Android 17），未入库 |
 | ColorOS 16 | Android 16 | 旧模型 | 公开资料，未上机 |
 | OriginOS 6 | Android 16 | 按平台分支 | 公开资料，未上机 |
 | **OriginOS 7** | **Android 17** | **新模型** | **预期支持；仓库尚无上机记录，实测后更新** |
 
-OriginOS 7 于 2026-09 发布、基于 Android 17，仍保留 Origin Island（原子岛）。只要系统继续渲染 AOSP
-promoted ongoing 通知，L1 路径即可显示原子岛，不需要 vivo 私有 SDK 或白名单；若 vivo 只认自家接入，
+OriginOS 7 基于 Android 17，仍保留 Origin Island（原子岛）。只要系统继续渲染 AOSP
+promoted ongoing 通知，该路径即可显示原子岛，不需要 vivo 私有 SDK 或白名单；若 vivo 只认自家接入，
 则退化为普通通知，任务本身不受影响。
 更老系统与鸿蒙只显示普通通知 —— 这是系统能力差异，不是开关失效。
 
