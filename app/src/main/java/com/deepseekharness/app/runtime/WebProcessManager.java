@@ -362,9 +362,14 @@ public class WebProcessManager {
 
   private com.deepseekharness.app.util.WebForceStop.Evidence forceEvidence() throws IOException {
     if (records != null) throw new IOException("WEB_FORCE_TRIAL_FORBIDDEN");
-    File physical = RuntimeAssetFiles.root(proot.ctx, proot.getRootfsDir());
     var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
-    File home = fs.child(physical, "root");
+    File home;
+    if (NativeRuntime.lastWebWasNative(proot.ctx)) {
+      home = NativeRuntime.stateDirectory(proot.ctx).getCanonicalFile();
+    } else {
+      File physical = RuntimeAssetFiles.root(proot.ctx, proot.getRootfsDir());
+      home = fs.child(physical, "root");
+    }
     File pidPath = fs.child(home, ".dsha-web.pid"), bornPath = fs.child(home, ".dsha-web.identity");
     String record = new String(fs.small(pidPath, 32), StandardCharsets.US_ASCII);
     String born = new String(fs.small(bornPath, 128), StandardCharsets.US_ASCII);
@@ -416,15 +421,19 @@ public class WebProcessManager {
   }
 
   File root() {
-    return records == null ? new File(proot.getRootfsDir(), "root") : records;
+    if (records != null) return records;
+    // 按"上次实际启动的运行环境"选状态目录（启动前已记录），不按当前设置：设置可能在运行中被改过。
+    if (NativeRuntime.lastWebWasNative(proot.ctx)) return NativeRuntime.stateDirectory(proot.ctx);
+    return com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(
+        proot.getRootfsDir());
   }
 
   private File pidFile() {
-    return new File(root(), ".dsha-web.pid");
+    return com.deepseekharness.app.util.EngineStateFiles.pid(root());
   }
 
   private File identityFile() {
-    return new File(root(), ".dsha-web.identity");
+    return com.deepseekharness.app.util.EngineStateFiles.identity(root());
   }
 
   /**
@@ -471,7 +480,7 @@ public class WebProcessManager {
 
   private void sentinel() throws IOException {
     ensureRootWritable();
-    File file = new File(root(), ".dsha-stopped");
+    File file = com.deepseekharness.app.util.EngineStateFiles.stopSentinel(root());
     if (Compat.isSymbolicLink(file) || !file.exists() && !file.createNewFile())
       throw new WebStopException(Code.SENTINEL_UNWRITABLE);
   }
@@ -957,9 +966,11 @@ public class WebProcessManager {
       String[] argv = value.command.split("\u0000");
       if (argv.length == 0) throw new IOException("WEB_SESSION_LAUNCHER_COMMAND_UNREADABLE");
       String name = new File(argv[0]).getName();
+      // 原生运行环境没有启动器，node 本身就是 Web：同名进程一律当作可能仍在运行（只读，不发信号）。
       if (!(name.startsWith("libproot")
           || name.startsWith("libproroot")
-          || name.startsWith("libdsha-proroot"))) continue;
+          || name.startsWith("libdsha-proroot")
+          || name.equals("libnode.so"))) continue;
       // 此处只证明“没有”，不授予signal权限。旧记录缺少可信标记时，
       // 同UID的任何此类启动器都保留屏障；不能把未识别的终端或旧argv当作已经退出。
       return false;

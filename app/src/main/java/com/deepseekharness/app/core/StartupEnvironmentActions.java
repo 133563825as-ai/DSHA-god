@@ -1,7 +1,6 @@
 package com.deepseekharness.app.core;
 
 import com.deepseekharness.app.util.Compat;
-import com.deepseekharness.app.util.WebProcSel;
 import java.io.File;
 import java.io.IOException;
 import java.util.function.Consumer;
@@ -81,8 +80,16 @@ final class StartupEnvironmentActions implements StartupPipeline.Actions {
     synchronized (state.lifecycle) {
       if (!current()) return false;
       File root = owner.proot().getRootfsDir();
-      File sentinel = new File(root, WebProcSel.pidFileRel(WebProcSel.STOP_SENTINEL));
+      File sentinel =
+          com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
+              com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(root));
       if (sentinel.exists() && !sentinel.delete())
+        throw new IOException(com.deepseekharness.app.util.UiText.text("无法清除停止标记"));
+      // 停止时两个运行环境的标记都会写；启动时一起清掉，否则切换运行环境后另一个仍被拦住。
+      File nativeSentinel =
+          com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
+              com.deepseekharness.app.runtime.NativeRuntime.stateDirectory(owner.context()));
+      if (nativeSentinel.exists() && !nativeSentinel.delete())
         throw new IOException(com.deepseekharness.app.util.UiText.text("无法清除停止标记"));
       try {
         Compat.write(new File(root, "root/dsh-web.log"), new byte[0]);

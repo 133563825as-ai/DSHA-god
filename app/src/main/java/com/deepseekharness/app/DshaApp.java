@@ -251,10 +251,14 @@ public class DshaApp extends Application
     com.deepseekharness.app.backup.AutomaticBackups.schedule(this);
     com.deepseekharness.app.backup.PostUpgradeCleanupService.schedule(this);
     com.deepseekharness.app.core.DiagnosticLog.installCrashHandler(this);
+    // 壳级常驻性能探针（ADR-0002）：测试/调试构建启动即 1 Hz 采样；正式包/稳定版内部 no-op。
+    com.deepseekharness.app.probe.ProbeController.get().start(this);
     // 调色板叠加须早于各页 onCreate 解析主题属性。
     registerActivityLifecycleCallbacks(
         new com.deepseekharness.app.ui.ThemeController.PaletteHook());
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.ModernAndroidUi());
+    // 全应用高刷：各页面回到前台时按设备允许的最高刷新率申请（Web 工作台自管）。
+    com.deepseekharness.app.ui.WebFrameRate.register(this);
     registerActivityLifecycleCallbacks(new ForegroundActivity());
     // 「隐藏后台」截图守卫与实验性严格模式：所有界面都要重放，不能只靠设置页开关。
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.RecentsPrivacyGuard());

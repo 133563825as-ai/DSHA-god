@@ -85,6 +85,7 @@ public final class WebProcSel {
    */
   public static boolean looksLikeWeb(String cmdline) {
     if (cmdline == null || cmdline.isEmpty()) return false;
+    if (nativeWeb(cmdline)) return true;
     // proroot 的 bridge 是 guest 可执行程序本身，父进程 libproroot.so 才是启动器。
     // 只接受已知的 Node + dsh web 参数序列，不能因命令中带有 bridge 名称就放行。
     String[] argv =
@@ -220,6 +221,31 @@ public final class WebProcSel {
     return normalized;
   }
 
+  /** 本进程登记的原生运行环境路径；未登记时原生规则不生效（容器行为不变）。 */
+  private static final java.util.concurrent.atomic.AtomicReference<String[]> NATIVE =
+      new java.util.concurrent.atomic.AtomicReference<>();
+
+  /**
+   * 登记原生运行环境的 node 与 bin.js 完整路径（由宿主在启动、停止、扫描前调用）。
+   *
+   * <p>只用于识别：命令必须与 {@link NativeWebLaunch#argv} 完全相同才算我们的 Web。后登记的覆盖先登记的；
+   * 换路径（例如原生运行时更新）须先确认旧 Web 已停止，否则旧进程将不再被识别。
+   */
+  public static void registerNative(String node, String entry) {
+    if (node == null || entry == null || !node.startsWith("/") || !entry.startsWith("/"))
+      throw new IllegalArgumentException("NATIVE_WEB_PATHS");
+    NATIVE.set(new String[] {node, entry});
+  }
+
+  static void clearNativeForTest() {
+    NATIVE.set(null);
+  }
+
+  private static boolean nativeWeb(String cmdline) {
+    String[] registered = NATIVE.get();
+    return registered != null && NativeWebLaunch.matches(cmdline, registered[0], registered[1]);
+  }
+
   private static boolean isNode(String path) {
     String name = basename(path);
     return name.equals("node") || name.equals("nodejs");
@@ -232,6 +258,7 @@ public final class WebProcSel {
   /** 发信号须是直接运行 dsh web 的 Node，不能命中 shell 参数中的文本。 */
   public static boolean maySignalWeb(String cmdline) {
     if (cmdline == null || cmdline.isEmpty()) return false;
+    if (nativeWeb(cmdline)) return true;
     String[] args =
         cmdline.indexOf('\0') >= 0 ? cmdline.split("\u0000") : cmdline.trim().split("\\s+");
     args = directProrootPreloads(args);

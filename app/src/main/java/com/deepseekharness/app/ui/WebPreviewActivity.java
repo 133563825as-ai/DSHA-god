@@ -98,6 +98,8 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
   private boolean forwardedDuplicate;
   private PreviewPageSession.Identity pendingIdentity;
   private PreviewPageSession.Identity startupIdentity;
+  // 仅测试包：性能采样入口；正式包恒为 null。
+  private WebPerfProbe perfProbe;
   private final Runnable runtimeChanged =
       () ->
           runOnUiThread(
@@ -434,6 +436,17 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     if (restoreIdentity == null) restoreState = null;
     setContentView(R.layout.activity_web_preview);
     WebFullscreenUi.install(this);
+    perfProbe =
+        WebPerfProbe.install(
+            this,
+            () ->
+                webView != null
+                        && retained.ready
+                        && !pageFailed
+                        && isCurrentPage(webView)
+                        && WebPreviewPolicy.sameService(baseUrl, webView.getUrl())
+                    ? webView
+                    : null);
     container = findViewById(R.id.web_container);
     errorPanel = findViewById(R.id.web_error_panel);
     errorTitle = findViewById(R.id.web_error_title);
@@ -1117,6 +1130,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
     @Override
     public void onPageStarted(WebView view, String url, Bitmap favicon) {
       if (!isCurrentPage(view)) return;
+      if (perfProbe != null) perfProbe.pageNavigated();
       WebFullscreenUi.cancelIme(WebPreviewActivity.this);
       retained.pageNavigation++;
       retained.themeGate =
@@ -1848,11 +1862,20 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
 
   @Override
   protected void onPause() {
+    // 离开前台（含进入画中画）即结束采样，避免把后台数据混进结果。
+    if (perfProbe != null) perfProbe.stop("paused");
     WebFullscreenUi.cancelIme(this);
     browserResumed = false;
     com.deepseekharness.app.core.PluginRepository.get(this).invalidateInstalledState();
     if (!pictureInPictureActiveOrTransitioning()) WebFrameRate.clear(this, webView);
     super.onPause();
+  }
+
+  @Override
+  public void onPictureInPictureModeChanged(
+      boolean inPicture, android.content.res.Configuration config) {
+    super.onPictureInPictureModeChanged(inPicture, config);
+    if (perfProbe != null) perfProbe.setHidden(inPicture);
   }
 
   @Override
@@ -2096,6 +2119,7 @@ public class WebPreviewActivity extends PictureInPictureActivity implements WebF
       super.onDestroy();
       return;
     }
+    if (perfProbe != null) perfProbe.destroy();
     hidePageBoot();
     BrowserConversationRoute.unregister(this);
     com.deepseekharness.app.core.HarnessController.get(this)

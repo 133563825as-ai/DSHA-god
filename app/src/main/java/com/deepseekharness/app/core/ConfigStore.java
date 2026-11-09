@@ -452,6 +452,23 @@ public class ConfigStore {
     prefs.edit().putString(Constants.KEY_CONTAINER_RUNTIME, v ? "proroot" : "proot").apply();
   }
 
+  /** 保存运行环境选择；下次启动 Web 生效（正在运行的 Web 按它启动时的运行环境停止）。 */
+  public void setDshEngine(boolean nativeEngine) {
+    prefs
+        .edit()
+        .putString(
+            Constants.KEY_DSH_ENGINE,
+            nativeEngine
+                ? com.deepseekharness.app.util.DshEngineChoice.NATIVE
+                : com.deepseekharness.app.util.DshEngineChoice.UBUNTU)
+        .apply();
+  }
+
+  /** 用户选择的 DSH 运行环境；缺省与不认识的值都按容器处理（见 DshEngineChoice）。 */
+  public com.deepseekharness.app.util.DshEngineChoice dshEngine() {
+    return com.deepseekharness.app.util.DshEngineChoice.parse(text(Constants.KEY_DSH_ENGINE, ""));
+  }
+
   /** 首次安装同样默认稳定 proot；只由用户显式选择启用 proroot。 */
   public boolean preferFastColdMode() {
     return preferFastColdModeFrom(prefs.getAll());

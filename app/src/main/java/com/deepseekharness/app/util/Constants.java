@@ -118,6 +118,9 @@ public final class Constants {
   /** 容器运行时：proroot / proot。 */
   public static final String KEY_CONTAINER_RUNTIME = "container_runtime";
 
+  /** DSH 运行环境：ubuntu（容器，缺省）/ native（Android 原生）；取值见 DshEngineChoice。 */
+  public static final String KEY_DSH_ENGINE = "dsh_engine";
+
   /** 历史自动备份键，仅供升级时移除。 */
   public static final String KEY_AUTO_BACKUP = "auto_backup_launches";
 

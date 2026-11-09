@@ -68,6 +68,12 @@ if (releaseIdentity.schema != 1 || releaseIdentity.identity != releaseIdentityNa
         || !(releaseIdentity.appName instanceof String) || releaseIdentity.appName.trim().isEmpty())
     throw new GradleException("RELEASE_IDENTITY_INVALID: ${releaseIdentityFile}")
 ext.dshaReleaseIdentity = releaseIdentity
+// 稳定版（日常使用）：-Pdsha.stableBuild=N。独立包名 .stable，与正式包、测试包共存、数据隔离；
+// 只在用户决定升级时才换新版本，测试版怎么覆盖都不影响它。与测试变体互斥。
+def stableBuild = (project.findProperty('dsha.stableBuild') ?: '').toString()
+if (!stableBuild.isEmpty() && !(stableBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.stableBuild 只能是数字')
+def stableChannel = !stableBuild.isEmpty()
+if (stableChannel && sunsetTest) throw new GradleException('dsha.stableBuild 与 dsha.sunsetTest 不能同时使用')
 // 只有源码 CI 可显式允许缺少真实测试夹具；完整测试默认要求固定输入齐备。
 def sourceOnlyTests = providers.gradleProperty('dsha.sourceOnlyTests').orElse('false').get()
 if (!(sourceOnlyTests in ['true', 'false']))
@@ -87,9 +93,16 @@ android {
         minSdk 30
         targetSdk 37
         buildConfigField 'String', 'BUNDLED_PNPM_VERSION', '"' + bundledTools.pnpm.version + '"'
+        // 测试版留痕：只在测试包里写署名与测试版号（-Pdsha.testBuild=N）；正式包两者为空，界面不显示。
+        def testBuild = (project.findProperty('dsha.testBuild') ?: '').toString()
+        if (!testBuild.isEmpty() && !(testBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.testBuild 只能是数字')
+        buildConfigField 'String', 'TEST_SIGNATURE', (sunsetTest || stableChannel) ? '"南街小一"' : '""'
+        buildConfigField 'String', 'TEST_BUILD',
+                stableChannel ? '"s' + stableBuild + '"'
+                        : (sunsetTest && !testBuild.isEmpty()) ? '"t' + testBuild + '"' : '""'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
-        // 显示名随发布身份（DSH-A-Su / DSHA）；测试变体加后缀，便于桌面上区分两个包。
-        resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : releaseIdentity.appName
+        // 显示名随发布身份（DSH-A-Su / DSHA）；测试/开发/稳定变体加后缀。
+        resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : stableChannel ? releaseIdentity.appName + ' Stable' : releaseIdentity.appName
         versionCode 350
         // DSHA 修订号 + 固定的北京时间戳 + 内置 DSH 版本；同一交付重建不变。
         versionName "0.2.1-rc.5-20261109.2300-dsh0.2.2-rc.1"
@@ -114,6 +127,9 @@ android {
                 // 开发环境测试包：mod = .dev，upstream = .SunsetDev（见身份文件 devSuffix）。
                 applicationIdSuffix releaseIdentity.devSuffix
                 versionNameSuffix '-SunsetDev'
+            } else if (stableChannel) {
+                applicationIdSuffix '.stable'
+                versionNameSuffix '-Stable' + stableBuild
             }
         }
     }
@@ -170,6 +186,8 @@ android {
             useLegacyPackaging = true
             // 应急启动器按签名 APK 中的完整字节校验，禁止打包阶段再改写这两份 ELF。
             keepDebugSymbols += ['**/libproot.so', '**/libprootloader.so']
+            // 原生运行环境的 node 与 ripgrep 取自 Termux 锁定包，按原字节运行，不让打包阶段改写。
+            keepDebugSymbols += ['**/libnode.so', '**/librg.so']
             // 使用 app 自带的同版本 16 KB JNI，覆盖 terminal-emulator AAR 中的旧库。
             pickFirsts += ['**/libtermux.so']
             excludes += ['**/x86/**', '**/x86_64/**', '**/armeabi/**', '**/armeabi-v7a/**']
@@ -185,7 +203,7 @@ android {
     androidResources {
         // 'bin' 是离线 rootfs：aapt 会把 .tar.gz 静默解成 .tar，所以打包前改名 .bin，
         // 保持 STORED（不 deflate），避免对已经压缩的离线运行时再压缩一次。
-        noCompress += ['gz', 'xz', 'bin', 'ja', 'tar', 'whl']
+        noCompress += ['gz', 'xz', 'bin', 'ja', 'tar', 'whl', 'zip']
     }
 
     compileOptions {
@@ -210,11 +228,18 @@ android {
 
     sourceSets {
         main.assets.setSrcDirs([layout.buildDirectory.dir("generated/standardAssets").get().asFile,
-                layout.buildDirectory.dir("generated/recoveryAssets").get().asFile])
+                layout.buildDirectory.dir("generated/recoveryAssets").get().asFile,
+                layout.buildDirectory.dir("generated/nativeRuntime/assets").get().asFile])
+        // 原生运行环境的 node / ripgrep 是生成物，不进 src/main/jniLibs：
+        // 那棵树整体计入容器运行时描述符，放进去会无谓地改变容器的 runtimeId。
+        main.jniLibs.srcDir(layout.buildDirectory.dir("generated/nativeRuntime/jniLibs").get().asFile)
         main.java.srcDir(layout.buildDirectory.dir("generated/uiLanguage").get().asFile)
         // Both browser test entry points load one test-only HTML fixture.
         debug.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
         androidTest.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
+        // 测试包的无障碍服务名加 Test（flavor 资源覆盖 main）；正式包不受影响。
+        if (sunsetTest) standard.res.srcDir(file("src/sunsetTestLabels/res"))
+        if (stableChannel) standard.res.srcDir(file("src/stableLabels/res"))
     }
 }
 
@@ -344,6 +369,26 @@ def prepareStandardAssets = tasks.register("prepareStandardAssets", Exec) {
             rootProject.file("tools/prepare-standard-assets.py").absolutePath,
             "--source", file("src/main/assets").absolutePath,
             "--output", layout.buildDirectory.dir("generated/standardAssets").get().asFile.absolutePath)
+}
+// 原生运行环境（不经 proot 的 Android Node）：只读本地缓存的 Termux 锁定包与本 APK 的 dsh-runtime.bin，
+// 生成 libnode.so / librg.so 与 native-runtime.zip。缓存缺包时失败，提示用 --fetch 显式下载。
+def prepareNativeRuntime = tasks.register("prepareNativeRuntime", Exec) {
+    inputs.file(rootProject.file("tools/prepare-native-runtime.py"))
+    inputs.dir(rootProject.file("tools/native-runtime"))
+    inputs.file(file("src/main/assets/dsh-runtime.bin"))
+    inputs.dir(file("src/main/assets/destructive-policy"))
+    inputs.file(file("src/main/assets/ca-certificates.crt"))
+    inputs.files(file("src/main/assets/native-consent.cjs"), file("src/main/assets/bridge-port.cjs"))
+    inputs.file(file("src/main/assets/managed-runtime-inputs.json"))
+    inputs.dir(file("src/main/assets/builtin-plugins"))
+    outputs.dir(layout.buildDirectory.dir("generated/nativeRuntime"))
+    commandLine(System.getenv("DSHA_PYTHON") ?: "python3", "-B",
+            rootProject.file("tools/prepare-native-runtime.py").absolutePath,
+            "--output", layout.buildDirectory.dir("generated/nativeRuntime").get().asFile.absolutePath)
+}
+tasks.configureEach {
+    if (name.matches("merge.*Assets") || name.matches("merge.*JniLibFolders") || name.matches("merge.*NativeLibs"))
+        dependsOn(prepareNativeRuntime)
 }
 def prepareBackupAssets = tasks.register("prepareBackupAssets", Exec) {
     inputs.file(rootProject.file("tools/prepare-backup-assets.py"))

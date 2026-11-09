@@ -17,22 +17,26 @@ public final class WebPageScripts {
   }
 
   public static String compatibility(Context context) {
-    return "window.__DSHA_NATIVE_PLUGINS__=true;\n"
-        + read(context, "web-integration/safe-area.js")
-        + "\n"
-        + language(context)
-        + "\n"
-        + theme(context)
-        + "\n"
-        + read(context, "web-integration/es-compat.js")
-        + "\n"
-        + read(context, "web-integration/compat.js")
-        + "\n"
-        + read(context, "web-integration/files.js")
-        + "\n"
-        + read(context, "bridge-token-compat.cjs")
-        + "\n"
-        + read(context, "web-integration/startup.js");
+    String combined =
+        "window.__DSHA_NATIVE_PLUGINS__=true;\n"
+            + read(context, "web-integration/safe-area.js")
+            + "\n"
+            + language(context)
+            + "\n"
+            + theme(context)
+            + "\n"
+            + read(context, "web-integration/es-compat.js")
+            + "\n"
+            + read(context, "web-integration/compat.js")
+            + "\n"
+            + read(context, "web-integration/files.js")
+            + "\n"
+            + read(context, "bridge-token-compat.cjs")
+            + "\n"
+            + read(context, "web-integration/startup.js");
+    // 仅测试包：给整段注入脚本命名，性能采样里长帧可归因；顺序与正式包完全相同。
+    if (!WebPerfProbe.enabled()) return combined;
+    return combined + "\n//# sourceURL=dsha-injected/compatibility.js\n";
   }
 
   public static String compatibility(
@@ -108,9 +112,21 @@ public final class WebPageScripts {
 
   public static String presentation(
       Context context, com.deepseekharness.app.util.BrowserThemeGate gate) {
-    return read(context, "web-integration/ime.js")
+    String ime = read(context, "web-integration/ime.js");
+    String page = read(context, "web-integration/page.js");
+    if (WebPerfProbe.enabled()) {
+      ime =
+          "eval("
+              + org.json.JSONObject.quote(ime + "\n//# sourceURL=dsha-injected/ime.js\n")
+              + ");";
+      page =
+          "eval("
+              + org.json.JSONObject.quote(page + "\n//# sourceURL=dsha-injected/page.js\n")
+              + ");";
+    }
+    return ime
         + "\n"
-        + read(context, "web-integration/page.js")
+        + page
         + "\nwindow.__dshaNativePresentation.install("
         + presentationBinding(gate).toString()
         + ");";

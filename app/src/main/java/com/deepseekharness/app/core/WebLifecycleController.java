@@ -9,7 +9,6 @@ import com.deepseekharness.app.runtime.ProotBootstrap;
 import com.deepseekharness.app.runtime.WebProcessManager;
 import com.deepseekharness.app.util.DshAuthUrl;
 import com.deepseekharness.app.util.WebLifecycle;
-import com.deepseekharness.app.util.WebProcSel;
 
 import java.io.File;
 import java.io.IOException;
@@ -110,6 +109,10 @@ final class WebLifecycleController {
     this.config = owner.config();
     this.proot = owner.proot();
     this.webProc = new WebProcessManager(proot);
+    // 进程重建后要能认出、停止上一次留下的原生 Web；只登记路径，不解压、不启动。
+    com.deepseekharness.app.runtime.NativeRuntime installedNative =
+        com.deepseekharness.app.runtime.NativeRuntime.of(ctx);
+    if (installedNative != null) installedNative.registerForRecognition();
     this.state = state;
     this.lifecycle = state.lifecycle;
     this.io = state.io;
@@ -831,6 +834,84 @@ final class WebLifecycleController {
         config.isConfirmShell(), config.getUiLanguage(), profile, listenPort, generation);
   }
 
+  /** 本 APK 没有原生运行时（或引擎在排队期间被切换）时的拒绝原因；明确告知，不静默改用容器。 */
+  private static String nativeEngineUnavailable() {
+    return com.deepseekharness.app.util.UiText.choose(
+        "所选的 Android 原生运行环境在此安装包中不可用，请在运行环境设置中改回容器后再启动。",
+        "The selected Android native runtime is not available in this package. Switch back to the container runtime, then start again.");
+  }
+
+  /**
+   * 原生运行环境的启动准备：替代容器的 StartupPipeline（迁移、插件注册等 guest 脚本第一版不做）。
+   *
+   * @return 启动路径；不能启动时已报告原因并返回 null
+   */
+  private com.deepseekharness.app.util.NativeWebLaunch.Paths prepareNative(
+      long generation,
+      Consumer<String> onStatus,
+      boolean safeMode,
+      boolean compatible,
+      com.deepseekharness.app.runtime.NativeRuntime runtime)
+      throws Exception {
+    if (safeMode || compatible) {
+      reportStatus(
+          generation,
+          onStatus,
+          com.deepseekharness.app.util.UiText.choose(
+              "原生运行环境暂不支持配置安全启动与兼容重试，请改用容器运行环境。",
+              "Safe configuration start and compatibility retry are not available in the native runtime yet. Use the container runtime."));
+      return null;
+    }
+    StartupEnvironmentActions actions =
+        new StartupEnvironmentActions(
+            owner,
+            state,
+            processes,
+            generation,
+            stage -> setWebStage(generation, stage),
+            status -> reportStatus(generation, onStatus, status));
+    // 与容器流水线同一步：旧 Web 与启动器必须确认退出并释放记录，否则不启动第二个。
+    actions.releasePrior();
+    if (!runtime.installed()) {
+      setWebStage(
+          generation,
+          com.deepseekharness.app.util.UiText.choose("正在准备原生运行环境", "Preparing the native runtime"));
+      reportStatus(
+          generation,
+          onStatus,
+          com.deepseekharness.app.util.UiText.choose(
+              "首次使用原生运行环境，正在解压（约 330 MB，需要几秒）…",
+              "First use of the native runtime: unpacking (about 330 MB, a few seconds)…"));
+    }
+    runtime.ensureInstalled(null);
+    runtime.registerForRecognition();
+    if (!actions.unlockStartup()) return null;
+    // 内置插件登记进原生 web profile（替代容器的 register-builtin-plugins.py）；失败不阻止启动，只是没有插件。
+    try {
+      java.util.List<String> enabled =
+          com.deepseekharness.app.runtime.NativePlugins.register(
+              runtime.home().getCanonicalFile(), runtime.installDirectory(), runtime.plugins());
+      state.diagnostics.message(generation, "NATIVE_PLUGINS:" + String.join(",", enabled));
+    } catch (java.io.IOException failure) {
+      state.diagnostics.message(
+          generation,
+          "NATIVE_PLUGINS_FAILED:"
+              + com.deepseekharness.app.util.SensitiveData.redact(String.valueOf(failure)));
+      reportStatus(
+          generation,
+          onStatus,
+          com.deepseekharness.app.util.UiText.choose(
+              "内置插件登记失败，本次将不带插件启动",
+              "Built-in plugins could not be registered; starting without them"));
+    }
+    var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
+    File files =
+        com.deepseekharness.app.util.ColdInstallPackages.privateFiles(
+            fs, new File(ctx.getApplicationInfo().dataDir), ctx.getFilesDir());
+    File bridgeState = new com.deepseekharness.app.backup.UserDataLayout(fs, files).current();
+    return runtime.paths(bridgeState);
+  }
+
   /**
    * 后台启动 dsh：先清残留进程（避免端口冲突），确保运行时与 rootfs 就绪后拉起 dsh web，
    * 独立线程捕获 BrowserAuth 鉴权链接。
@@ -966,6 +1047,12 @@ final class WebLifecycleController {
     // 尚未尝试的新受管候选必须先走维护事务；否则看门狗会用兼容但过期的
     // 运行时重新拉起 Web，令本 APK 的运行补丁和系统插件尚未落地。
     // 已经尝试失败的候选仍可使用通过健康确认的兼容前代。
+    if (!config.dshEngine().isContainer()
+        && com.deepseekharness.app.runtime.NativeRuntime.of(ctx) == null) {
+      if (onStatus != null) onStatus.accept(nativeEngineUnavailable());
+      return StartAdmission.REJECTED;
+    }
+    // 原生运行环境第一版仍要求容器环境已部署：设备桥凭据、用户数据目录与维护屏障都以它为准。
     if (!proot.isEnvironmentReady() || EnvironmentAccess.requiresMaintenanceBeforeStart(owner)) {
       if (onStatus != null)
         onStatus.accept(
@@ -1045,6 +1132,7 @@ final class WebLifecycleController {
                     ? "proroot"
                     : "proot"));
         new File(proot.getRootfsDir(), "root/.dsha-web-activity.json").delete();
+        com.deepseekharness.app.runtime.NativeRuntime.activityFile(ctx).delete();
         final long queuedAt = System.nanoTime();
         io.execute(
             () -> {
@@ -1101,29 +1189,51 @@ final class WebLifecycleController {
     WebRun run = webRuns.get(generation);
     if (run == null) return;
     ProotBootstrap boot = compatible ? new ProotBootstrap(ctx, true) : proot;
+    // 唯一的执行接缝：命令与环境照旧组装，只把"在哪里执行"交给运行环境。
+    boolean nativeEngine = !config.dshEngine().isContainer();
+    com.deepseekharness.app.runtime.NativeRuntime nativeRuntime =
+        nativeEngine ? com.deepseekharness.app.runtime.NativeRuntime.of(ctx) : null;
+    com.deepseekharness.app.runtime.DshEngine engine =
+        nativeEngine
+            ? (nativeRuntime == null
+                ? null
+                : new com.deepseekharness.app.runtime.NativeDshEngine(ctx, nativeRuntime))
+            : com.deepseekharness.app.runtime.ContainerDshEngine.of(boot);
     boolean draining = false;
     try (com.deepseekharness.app.runtime.RuntimeHostPorts.Scope invocation =
         owner.runtimeHostPorts().open()) {
       if (!lifecycle.isCurrent(generation)
           || com.deepseekharness.app.core.MaintenanceCoordinator.isExclusive()) return;
+      // 入队后用户可能改了运行环境；按此刻的选择执行，选择不可用就报错，不静默改用另一个。
+      if (engine == null || nativeEngine != !config.dshEngine().isContainer()) {
+        reportStatus(generation, onStatus, nativeEngineUnavailable());
+        return;
+      }
       if (com.deepseekharness.app.core.MaintenanceCoordinator.pending(owner)) {
         reportStatus(
             generation, onStatus, com.deepseekharness.app.util.UiText.text("存在未完成的环境维护，请先恢复中断维护"));
         return;
       }
       processes.loadStopEvidence();
-      String startupProfile =
-          new StartupPipeline(config, boot, proot, webProc, state.diagnostics)
-              .prepare(
-                  generation,
-                  safeMode,
-                  new StartupEnvironmentActions(
-                      owner,
-                      state,
-                      processes,
-                      generation,
-                      stage -> setWebStage(generation, stage),
-                      status -> reportStatus(generation, onStatus, status)));
+      com.deepseekharness.app.util.NativeWebLaunch.Paths nativePaths = null;
+      String startupProfile;
+      if (nativeEngine) {
+        nativePaths = prepareNative(generation, onStatus, safeMode, compatible, nativeRuntime);
+        if (nativePaths == null) return;
+        startupProfile = "web";
+      } else
+        startupProfile =
+            new StartupPipeline(config, boot, proot, webProc, state.diagnostics)
+                .prepare(
+                    generation,
+                    safeMode,
+                    new StartupEnvironmentActions(
+                        owner,
+                        state,
+                        processes,
+                        generation,
+                        stage -> setWebStage(generation, stage),
+                        status -> reportStatus(generation, onStatus, status)));
       if (startupProfile == null) return;
       // 准备流水线已分别确认旧guest与启动器全部退出；只有真实退休才可替换旧实例记录。
       storedSession.clear();
@@ -1165,9 +1275,23 @@ final class WebLifecycleController {
         launchEnvironment.putAll(run.registration.launchEnvironment());
         launchEnvironment.put("DSHA_WEB_GENERATION", Long.toString(generation));
       }
+      // 先记下本次用哪个运行环境，停止与恢复据此找状态目录。
+      com.deepseekharness.app.runtime.NativeRuntime.recordActiveEngine(ctx, engine.id());
       Process p =
-          boot.execRootfs(
-              runCoreCommand(startupProfile, ports.listen, generation), launchEnvironment);
+          nativeEngine
+              ? ((com.deepseekharness.app.runtime.NativeDshEngine) engine)
+                  .launchWeb(
+                      com.deepseekharness.app.util.NativeWebLaunch.argv(nativePaths, ports.listen),
+                      com.deepseekharness.app.util.NativeWebLaunch.environment(
+                          nativePaths,
+                          launchEnvironment,
+                          config.isConfirmShell(),
+                          config.getUiLanguage(),
+                          config.getDnsMode(),
+                          generation),
+                      new File(nativePaths.home))
+              : engine.launch(
+                  runCoreCommand(startupProfile, ports.listen, generation), launchEnvironment);
       run.launcher = p;
       setWebStage(generation, com.deepseekharness.app.util.UiText.text("等待鉴权链接"));
       // 3090 桥就绪：agent 在容器里调设备能力（/exec /confirm /status）走这条通道。
@@ -1702,8 +1826,9 @@ final class WebLifecycleController {
       notifyReadyWebPageChanged();
       // 宿主直接写小标记，不等可能仍在解压/注册插件的串行任务。
       try {
-        File sentinel = stopSentinel();
-        if (sentinel.getParentFile().isDirectory()) sentinel.createNewFile();
+        // 两个运行环境都写：停止请求不依赖"上次用的是哪个"判断是否准确。
+        for (File sentinel : stopSentinels())
+          if (sentinel.getParentFile().isDirectory()) sentinel.createNewFile();
       } catch (Exception e) {
         Log.w("DSHA", com.deepseekharness.app.util.UiText.text("写停止标记失败，将由停止脚本重试"), e);
       }
@@ -1825,11 +1950,23 @@ final class WebLifecycleController {
   }
 
   private File stopSentinel() {
-    return new File(proot.getRootfsDir(), WebProcSel.pidFileRel(WebProcSel.STOP_SENTINEL));
+    return com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
+        com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(
+            proot.getRootfsDir()));
   }
 
   private boolean hasStopSentinel() {
-    return stopSentinel().exists();
+    for (File sentinel : stopSentinels()) if (sentinel.exists()) return true;
+    return false;
+  }
+
+  /** 容器与原生运行环境各自的停止标记。 */
+  private File[] stopSentinels() {
+    return new File[] {
+      stopSentinel(),
+      com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
+          com.deepseekharness.app.runtime.NativeRuntime.stateDirectory(ctx))
+    };
   }
 
   public boolean isStarting() {
