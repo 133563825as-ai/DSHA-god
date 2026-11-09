@@ -522,7 +522,9 @@ public final class DeviceGrantsLayoutTest {
     status.performClick();
     assertTrue(DisclosureCard.expanded(status));
     assertNotNull(
-        findText(page, "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许包含敏感界面；自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。"));
+        findText(
+            page,
+            "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许只省普通确认，敏感界面仍按「敏感界面交接」询问或交接，密码文本读写始终阻断。自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。"));
   }
 
   private static String findText(View view, String target) {

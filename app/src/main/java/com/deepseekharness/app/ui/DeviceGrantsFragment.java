@@ -44,6 +44,7 @@ public final class DeviceGrantsFragment extends Fragment {
   private android.widget.RadioGroup screenSegment;
   private android.widget.RadioButton[] screenModeButtons;
   private TextView screenGlobalBanner, screenRulesRow;
+  private TextView sensitivePolicyRow;
   private android.widget.RadioGroup rootModes;
   private android.widget.RadioButton[] rootModeButtons;
   private View[] pillDots;
@@ -784,6 +785,18 @@ public final class DeviceGrantsFragment extends Fragment {
     screenRulesRow.setBackgroundResource(R.drawable.bg_action_plain);
     screenRulesRow.setOnClickListener(v -> showScreenRules());
     host.addView(screenRulesRow, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    // 敏感界面交接（T119）：独立一行，不依赖「按应用」确认方式是否启用。
+    sensitivePolicyRow = new TextView(ctx);
+    sensitivePolicyRow.setTextSize(13);
+    sensitivePolicyRow.setTextColor(ctx.getColor(R.color.shell_accent));
+    sensitivePolicyRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+    sensitivePolicyRow.setMinHeight(dp(40));
+    sensitivePolicyRow.setPadding(dp(4), 0, dp(8), 0);
+    sensitivePolicyRow.setBackgroundResource(R.drawable.bg_action_plain);
+    sensitivePolicyRow.setContentDescription(
+        UiText.choose("敏感界面处理方式", "Sensitive screen handling"));
+    sensitivePolicyRow.setOnClickListener(v -> showSensitiveScreenPolicy());
+    host.addView(sensitivePolicyRow, new android.widget.LinearLayout.LayoutParams(-1, -2));
     android.widget.Button revoke = page.findViewById(R.id.screen_revoke);
     revoke.setText(UiText.choose("撤销预授权", "Revoke"));
     revoke.setContentDescription(
@@ -798,7 +811,8 @@ public final class DeviceGrantsFragment extends Fragment {
       case 1 -> UiText.choose("指定应用免确认，其他应用仍询问", "Chosen apps skip confirmation; others still ask");
       default ->
           UiText.choose(
-              "所有应用免确认，含敏感界面", "No confirmation for any app, including sensitive screens");
+              "所有应用免确认，但敏感界面仍按「敏感界面交接」处理",
+              "No confirmation for any app, but sensitive screens still follow sensitive screen handling");
     };
   }
 
@@ -903,8 +917,8 @@ public final class DeviceGrantsFragment extends Fragment {
     showRedConfirm(
         com.deepseekharness.app.util.UiText.choose("全部允许屏幕操作？", "Allow all screen actions?"),
         com.deepseekharness.app.util.UiText.choose(
-            "助手将可在任何应用里读屏、点击和输入且不再询问，包括支付、密码和聊天等敏感界面。",
-            "The assistant can observe, tap and type in any app without asking, including sensitive screens such as payments, passwords and chats."),
+            "助手将可在绝大多数应用里读屏、点击和输入且不再询问；敏感界面（密码、验证码、支付、系统安全）仍按「敏感界面交接」处理，密码文本读写始终阻断。",
+            "The assistant can observe, tap and type in most apps without asking; sensitive screens (passwords, one-time codes, payments, system security) still follow sensitive screen handling, and password text read/write stays blocked."),
         com.deepseekharness.app.util.UiText.choose(
             "可随时改回全部手动，或用暂停开关立即停止。",
             "You can switch back to confirming every action, or pause at any time."),
@@ -918,8 +932,8 @@ public final class DeviceGrantsFragment extends Fragment {
         com.deepseekharness.app.util.UiText.choose(
             "暂停并撤销全部预授权？", "Pause and revoke all preauthorizations?"),
         com.deepseekharness.app.util.UiText.choose(
-            "立即暂停助手屏幕操作，确认方式改回全部手动，并清空已保存的应用规则。",
-            "Screen actions pause now, confirmation returns to every action, and saved app rules are cleared."),
+            "立即暂停助手屏幕操作，确认方式改回全部手动，清空已保存的应用规则，敏感界面恢复默认询问。",
+            "Screen actions pause now, confirmation returns to every action, saved app rules are cleared, and sensitive screens return to asking."),
         com.deepseekharness.app.util.UiText.choose(
             "无障碍等系统权限不受影响；之后可关闭暂停开关继续。",
             "Accessibility and other Android permissions are unaffected. Turn off the pause switch to continue later."),
@@ -927,9 +941,10 @@ public final class DeviceGrantsFragment extends Fragment {
         () -> {
           boolean persisted =
               new DeviceGrants(ctx)
-                  .setScreenPolicy(
-                      com.deepseekharness.app.util.ScreenConfirmationPolicy.Mode.MANUAL,
-                      java.util.Map.of());
+                      .setScreenPolicy(
+                          com.deepseekharness.app.util.ScreenConfirmationPolicy.Mode.MANUAL,
+                          java.util.Map.of())
+                  && new DeviceGrants(ctx).resetSensitiveScreenPolicy();
           com.deepseekharness.app.HttpShellService.setScreenPaused(ctx, true);
           com.deepseekharness.app.HttpShellService.revokeScreenGrant(ctx);
           refreshScreenPolicy();
@@ -979,13 +994,14 @@ public final class DeviceGrantsFragment extends Fragment {
     screenPolicyModel.key = "screen-policy";
     screenPolicyModel.detail =
         UiText.choose(
-            "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许包含敏感界面；自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。",
-            "These rules only control DSHA confirmations and do not grant system permissions. Allow all includes sensitive screens. Unconfigured apps still ask in custom mode. Rules stay on this device and are excluded from backups.");
+            "仅设置 DSHA 的屏幕确认；不会授予系统权限。全部允许只省普通确认，敏感界面仍按「敏感界面交接」询问或交接，密码文本读写始终阻断。自定义中未配置的应用仍询问。规则保存在本机，不随备份迁移。",
+            "These rules only control DSHA confirmations and do not grant system permissions. Allow all skips ordinary confirmations only; sensitive screens still ask or hand off, and password text read/write stays blocked. Unconfigured apps still ask in custom mode. Rules stay on this device and are excluded from backups.");
     // 收起态不再常显安全说明（已收进展开区 detail）；仅放宽档位保留一句后果。
     screenPolicyModel.consequence =
         allowAll
             ? UiText.choose(
-                "全部允许时，敏感界面也不再逐次询问", "Allow all also skips confirmations on sensitive screens")
+                "敏感界面仍按「敏感界面交接」处理，密码文本读写保持阻断",
+                "Sensitive screens still follow sensitive screen handling and password text stays blocked")
             : null;
     screenPolicyModel.consequenceTone = allowAll ? R.color.shell_warn : R.color.shell_text_muted;
     screenPolicyModel.defaultExpanded = allowAll;
@@ -1007,6 +1023,7 @@ public final class DeviceGrantsFragment extends Fragment {
     updating = false;
     View page = getView();
     if (page != null) refreshA11yStatus(page.findViewById(R.id.config_a11y_status));
+    refreshSensitivePolicy();
   }
 
   private void refreshNativePolicyControls() {
@@ -1032,6 +1049,296 @@ public final class DeviceGrantsFragment extends Fragment {
     return rule == com.deepseekharness.app.util.ScreenConfirmationPolicy.Rule.ALLOW
         ? com.deepseekharness.app.util.UiText.choose("允许", "Allow")
         : com.deepseekharness.app.util.UiText.choose("询问", "Ask");
+  }
+
+  /** 敏感界面行摘要：默认全询问；只有用户改过交接或名单时才列出非默认项。 */
+  private void refreshSensitivePolicy() {
+    if (sensitivePolicyRow == null || !isAdded()) return;
+    Context ctx = requireContext();
+    var policy = new DeviceGrants(ctx).sensitiveScreenPolicy();
+    java.util.List<String> handoffCategories = new java.util.ArrayList<>();
+    for (var category : com.deepseekharness.app.util.SensitiveScreenPolicy.Category.values())
+      if (policy.mode(category) == com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.HANDOFF)
+        handoffCategories.add(sensitiveCategoryName(category));
+    java.util.List<String> parts = new java.util.ArrayList<>();
+    if (!handoffCategories.isEmpty())
+      parts.add(
+          UiText.format(
+              UiText.choose("%s 交接", "%s hand off"),
+              String.join(UiText.choose("、", ", "), handoffCategories)));
+    if (!policy.handoffApps().isEmpty())
+      parts.add(
+          UiText.format(
+              UiText.choose("强制交接 %s 个应用", "%s apps always hand off"),
+              String.valueOf(policy.handoffApps().size())));
+    if (!policy.trustApps().isEmpty())
+      parts.add(
+          UiText.format(
+              UiText.choose("免交接 %s 个应用", "%s apps skip hand off"),
+              String.valueOf(policy.trustApps().size())));
+    String text =
+        parts.isEmpty()
+            ? UiText.choose(
+                "敏感界面默认询问 · 密码文本读写阻断 ›",
+                "Sensitive screens ask by default · password text blocked ›")
+            : UiText.format(
+                UiText.choose("敏感界面：%s ›", "Sensitive screens: %s ›"),
+                String.join(UiText.choose(" · ", " · "), parts));
+    sensitivePolicyRow.setText(text);
+  }
+
+  private static String sensitiveCategoryName(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category) {
+    switch (category) {
+      case PASSWORD:
+        return UiText.choose("密码", "password");
+      case OTP:
+        return UiText.choose("验证码", "one-time code");
+      case PAYMENT:
+        return UiText.choose("支付", "payment");
+      case SYSTEM_SECURITY:
+        return UiText.choose("系统安全", "system security");
+      case SECURE_UNKNOWN:
+      default:
+        return UiText.choose("无法识别", "unverified");
+    }
+  }
+
+  private static String sensitiveModeName(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Mode mode) {
+    return mode == com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.HANDOFF
+        ? UiText.choose("交接", "Hand off")
+        : UiText.choose("询问", "Ask");
+  }
+
+  /** 敏感界面处理：类别逐项选择询问/交接，并可维护强制交接与信任应用名单。 */
+  private void showSensitiveScreenPolicy() {
+    if (!isAdded()) return;
+    final Context ctx = requireContext();
+    final boolean global = new DeviceGrants(ctx).consentPolicy().globalAllow();
+    var policy = new DeviceGrants(ctx).sensitiveScreenPolicy();
+    androidx.appcompat.app.AlertDialog[] holder = new androidx.appcompat.app.AlertDialog[1];
+    var content = new android.widget.LinearLayout(ctx);
+    content.setOrientation(android.widget.LinearLayout.VERTICAL);
+    content.setPadding(dp(20), dp(4), dp(20), 0);
+    TextView note = new TextView(ctx);
+    note.setTextSize(12);
+    note.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+    note.setPadding(0, 0, 0, dp(8));
+    note.setText(
+        UiText.choose(
+            "敏感界面默认先询问。设为「交接」会暂停助手，由你本人在手机上完成；恢复后助手必须重新观察，不会重放上一动作。密码文本读写始终阻断，全部允许也不能解除。",
+            "Sensitive screens ask before each action by default. Hand off pauses the assistant so you can act on the phone yourself; after resuming, the assistant must observe again and never replays the previous action. Password text read/write stays blocked, even with Allow all."));
+    content.addView(note, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    for (var category : com.deepseekharness.app.util.SensitiveScreenPolicy.Category.values()) {
+      TextView row =
+          sensitiveDialogRow(
+              ctx, sensitiveCategoryName(category), sensitiveModeName(policy.mode(category)));
+      row.setOnClickListener(
+          v -> {
+            if (holder[0] != null) holder[0].dismiss();
+            chooseSensitiveMode(category);
+          });
+      content.addView(row, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    }
+    TextView handoffAppsRow =
+        sensitiveDialogRow(
+            ctx,
+            UiText.choose("强制交接的应用", "Always hand off"),
+            UiText.format(
+                UiText.choose("%s 个 ›", "%s ›"), String.valueOf(policy.handoffApps().size())));
+    handoffAppsRow.setOnClickListener(
+        v -> {
+          if (holder[0] != null) holder[0].dismiss();
+          showSensitiveAppList(true);
+        });
+    content.addView(handoffAppsRow, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    TextView trustAppsRow =
+        sensitiveDialogRow(
+            ctx,
+            UiText.choose("免交接的应用", "Skip hand off"),
+            UiText.format(
+                UiText.choose("%s 个 ›", "%s ›"), String.valueOf(policy.trustApps().size())));
+    trustAppsRow.setOnClickListener(
+        v -> {
+          if (holder[0] != null) holder[0].dismiss();
+          showSensitiveAppList(false);
+        });
+    content.addView(trustAppsRow, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    if (global) {
+      TextView warning = new TextView(ctx);
+      warning.setTextSize(12);
+      warning.setTextColor(ctx.getColor(R.color.shell_warn));
+      warning.setPadding(0, dp(8), 0, 0);
+      warning.setText(
+          UiText.choose(
+              "全局权限开启中：「全部允许」不会关闭这里的敏感界面确认，也不会解除密码文本阻断。",
+              "Global permission is on: Allow all does not disable these sensitive-screen confirmations or password text blocking."));
+      content.addView(warning, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    }
+    var scroll = new android.widget.ScrollView(ctx);
+    scroll.setFillViewport(true);
+    scroll.addView(content);
+    holder[0] =
+        new DshaDialogBuilder(ctx)
+            .setTitle(UiText.choose("敏感界面交接", "Sensitive screen handling"))
+            .setView(scroll)
+            .setNegativeButton(UiText.choose("关闭", "Close"), null)
+            .show();
+  }
+
+  private TextView sensitiveDialogRow(Context ctx, String title, String value) {
+    TextView row = new TextView(ctx);
+    row.setText(UiText.format(UiText.choose("%s：%s ›", "%s: %s ›"), title, value));
+    row.setTextSize(15);
+    row.setTextColor(ctx.getColor(R.color.shell_text));
+    row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+    row.setMinHeight(dp(48));
+    row.setPadding(dp(4), dp(6), dp(4), dp(6));
+    row.setBackgroundResource(R.drawable.bg_action_plain);
+    row.setClickable(true);
+    row.setFocusable(true);
+    return row;
+  }
+
+  private void chooseSensitiveMode(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category) {
+    if (!isAdded()) return;
+    final Context ctx = requireContext();
+    var modes = com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.values();
+    var current = new DeviceGrants(ctx).sensitiveScreenPolicy().mode(category);
+    CharSequence[] items = {
+      UiText.choose("询问\n每次动作前确认", "Ask\nConfirm before each action"),
+      UiText.choose("交接\n暂停助手，由你本人操作", "Hand off\nPause the assistant and act yourself")
+    };
+    new DshaDialogBuilder(ctx)
+        .setTitle(
+            UiText.format(UiText.choose("%s处理方式", "%s handling"), sensitiveCategoryName(category)))
+        .setSingleChoiceItems(
+            items,
+            current.ordinal(),
+            (dialog, which) -> {
+              dialog.dismiss();
+              if (!isAdded()) return;
+              Context context = requireContext();
+              if (!new DeviceGrants(context).setSensitiveScreenMode(category, modes[which]))
+                toast(UiText.choose("策略保存失败，请重试", "Could not save the policy; try again"));
+              refreshSensitivePolicy();
+            })
+        .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+        .show();
+  }
+
+  /** 维护某个名单：点应用移出，「添加应用」走应用选择器，也可手动输入包名。 */
+  private void showSensitiveAppList(boolean handoff) {
+    if (!isAdded()) return;
+    final Context ctx = requireContext();
+    var policy = new DeviceGrants(ctx).sensitiveScreenPolicy();
+    var apps = handoff ? policy.handoffApps() : policy.trustApps();
+    androidx.appcompat.app.AlertDialog[] holder = new androidx.appcompat.app.AlertDialog[1];
+    var list = new android.widget.LinearLayout(ctx);
+    list.setOrientation(android.widget.LinearLayout.VERTICAL);
+    list.setPadding(dp(20), dp(4), dp(20), dp(4));
+    if (apps.isEmpty()) {
+      TextView empty = new TextView(ctx);
+      empty.setTextSize(13);
+      empty.setTextColor(ctx.getColor(R.color.shell_text_secondary));
+      empty.setPadding(0, dp(8), 0, dp(8));
+      empty.setText(
+          UiText.choose(
+              "尚未添加应用；这里只改变敏感界面的处理方式，不授予任何权限。",
+              "No apps yet. This only changes how sensitive screens are handled; it grants no permission."));
+      list.addView(empty);
+    }
+    for (String pkg : apps) {
+      View row =
+          ScreenAppPicker.row(
+              ctx, ScreenAppPicker.describe(ctx, pkg), UiText.choose("移出", "Remove"), this::dp);
+      row.setOnClickListener(
+          v -> {
+            var grants = new DeviceGrants(ctx);
+            var current = grants.sensitiveScreenPolicy();
+            var nextTrust = new java.util.LinkedHashSet<>(current.trustApps());
+            var nextHandoff = new java.util.LinkedHashSet<>(current.handoffApps());
+            if (handoff) nextHandoff.remove(pkg);
+            else nextTrust.remove(pkg);
+            if (!grants.setSensitiveScreenApps(nextTrust, nextHandoff))
+              toast(UiText.choose("应用名单保存失败，请重试", "Could not save the app list; try again"));
+            if (holder[0] != null) holder[0].dismiss();
+            refreshSensitivePolicy();
+          });
+      list.addView(row, new android.widget.LinearLayout.LayoutParams(-1, -2));
+    }
+    var scroll = new android.widget.ScrollView(ctx);
+    scroll.addView(list);
+    int height = Math.round(getResources().getDisplayMetrics().heightPixels * 0.45f);
+    var container = new android.widget.FrameLayout(ctx);
+    container.addView(scroll, new android.widget.FrameLayout.LayoutParams(-1, height));
+    holder[0] =
+        new DshaDialogBuilder(ctx)
+            .setTitle(
+                handoff
+                    ? UiText.choose("强制交接的应用", "Apps that always hand off")
+                    : UiText.choose("免交接的应用", "Apps that skip hand off"))
+            .setView(container)
+            .setNegativeButton(
+                UiText.choose("添加应用", "Add app"), (dialog, which) -> pickSensitiveApp(handoff))
+            .setPositiveButton(UiText.choose("关闭", "Close"), null)
+            .show();
+  }
+
+  private void pickSensitiveApp(boolean handoff) {
+    if (!isAdded()) return;
+    var policy = new DeviceGrants(requireContext()).sensitiveScreenPolicy();
+    java.util.Map<String, String> badges = new java.util.HashMap<>();
+    for (String pkg : handoff ? policy.handoffApps() : policy.trustApps())
+      badges.put(pkg, UiText.choose("已添加", "Added"));
+    ScreenAppPicker.show(
+        requireContext(),
+        badges,
+        pkg -> addSensitiveApp(handoff, pkg),
+        () -> manualSensitiveApp(handoff));
+  }
+
+  private void addSensitiveApp(boolean handoff, String pkg) {
+    if (!isAdded() || pkg == null || pkg.isEmpty()) return;
+    Context ctx = requireContext();
+    var policy = new DeviceGrants(ctx).sensitiveScreenPolicy();
+    var trust = new java.util.LinkedHashSet<>(policy.trustApps());
+    var handoffApps = new java.util.LinkedHashSet<>(policy.handoffApps());
+    if (handoff) {
+      trust.remove(pkg);
+      handoffApps.add(pkg);
+    } else {
+      handoffApps.remove(pkg);
+      trust.add(pkg);
+    }
+    if (!new DeviceGrants(ctx).setSensitiveScreenApps(trust, handoffApps))
+      toast(UiText.choose("应用名单保存失败，请重试", "Could not save the app list; try again"));
+    refreshSensitivePolicy();
+  }
+
+  private void manualSensitiveApp(boolean handoff) {
+    if (!isAdded()) return;
+    Context ctx = requireContext();
+    var input = new androidx.appcompat.widget.AppCompatEditText(ctx);
+    input.setSingleLine(true);
+    input.setHint(UiText.choose("精确应用包名", "Exact app package name"));
+    new DshaDialogBuilder(ctx)
+        .setTitle(UiText.choose("输入包名", "Enter package name"))
+        .setView(input)
+        .setPositiveButton(
+            UiText.choose("保存", "Save"),
+            (dialog, which) -> {
+              String pkg = input.getText().toString().trim();
+              if (!com.deepseekharness.app.util.ScreenConfirmationPolicy.validPackage(pkg)) {
+                toast(UiText.choose("应用包名无效，未保存", "Invalid package name; not saved"));
+                return;
+              }
+              addSensitiveApp(handoff, pkg);
+            })
+        .setNegativeButton(UiText.choose("取消", "Cancel"), null)
+        .show();
   }
 
   /** 已配置的应用规则：图标 + 名称 + 包名 + 当前规则；点行编辑，「添加应用」打开应用选择器。 */
@@ -1120,7 +1427,8 @@ public final class DeviceGrantsFragment extends Fragment {
     var allow = new MaterialSwitch(ctx);
     allow.setText(
         com.deepseekharness.app.util.UiText.choose(
-            "允许该应用免确认（含敏感界面）", "Allow this app without confirmation, including sensitive screens"));
+            "允许该应用免确认（敏感界面仍按「敏感界面交接」处理）",
+            "Allow this app without confirmation (sensitive screens still follow sensitive screen handling)"));
     allow.setChecked(
         fresh
             || new DeviceGrants(ctx).screenPolicy().rules.get(existing)

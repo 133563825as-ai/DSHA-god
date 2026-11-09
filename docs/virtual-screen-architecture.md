@@ -241,6 +241,47 @@ Core 消费观察后复位；不能把同一 `frameSeq` 当作可无限连点的
 限制：这是宿主侧最佳努力检查，不是内核沙箱；检查与 Core 注入之间存在时间窗，自定义控件不暴露
 `isPassword()` 时只能按不可读处理；无障碍关闭时保护降级；同 UID 的插件/终端可以绕开受管入口（见安全模型）。
 
+### 6.2 敏感界面分档与交接（T119）
+
+在 6.1 的密码焦点硬守卫之外，宿主对虚拟屏的**整屏**做一次保守分类：命中密码框、验证码关键词、金融应用或
+支付关键词、系统安全页面关键词，或已知敏感应用但树读不出来时，按类别交给
+`util/SensitiveScreenPolicy`（纯逻辑）与 `util/SensitiveScreenClassifier`（纯逻辑）决策。分类只读当前显示的
+无障碍树，预算 600 个节点 / 40 层，只保留类别与依据码，不把界面文本写进回执或日志。
+
+| 类别 | 默认 | 说明 |
+|---|---|---|
+| `PASSWORD` | 整屏 `ASK`；文本读写**硬阻断不变** | 密码框存在即整屏按密码界面处理；6.1 的输入层拒绝不因确认而解除 |
+| `OTP` | `ASK` | 可编辑控件出现验证码/动态码/OTP 等关键词 |
+| `PAYMENT` | `ASK` | 金融类应用包名，或任意应用页面出现支付/收银台/转账等关键词（微信等通用应用只按关键词判） |
+| `SYSTEM_SECURITY` | `ASK` | 设置/权限/系统界面 + 无障碍、开发者、账户、锁屏、安全等页面关键词 |
+| `SECURE_UNKNOWN` | `ASK` | 已知敏感应用但窗口树读不出来；空屏/取不到包名不做无目标分类 |
+
+- **存储与修订**：独立键 `sensitive_screen_v1`（`DeviceGrants`），严格解码、损坏回默认 ASK；应用名单精确包名、
+  各自上限 64、默认空，两名单互斥。保存先失效旧请求/旧弹窗，再提交并回读。屏幕授权的 `policyRevision`
+  使用 `screen_confirmation_v1` 与 `sensitive_screen_v1` 两个修订号之和，任一保存都让旧确认与在途请求失效；
+  进程内还有单调下限，记录损坏被解码成默认值也不会把修订号退回旧值。
+- **`ASK` 强制确认**：`ScreenConfirmationPolicy.ALLOW_ALL`、按应用 `ALLOW`、以及「本轮允许此应用」的 5 次内存
+  都不能跳过敏感类别的确认；只有显式的信任名单才放行。敏感确认一次一授权，不写入本轮记忆。
+- **`HANDOFF` 交接**：在派发任何输入前暂停助手（`PhoneControlCoordinator.pause("SENSITIVE_SCREEN_<类别>")`），
+  撤销在途请求并丢弃观察，返回 `ok:false`、`state=NOT_SENT`、`error=SENSITIVE_SCREEN_HANDOFF`、
+  `sensitivity=<类别>`、`readOnly:true`、`retryable:false`、`nextAction=HANDOFF_TO_USER`。
+  不改屏幕模式、不关闭 Core；用户恢复后助手必须重新 `see`，**不自动重放**上一动作（ADR0003 的 UNKNOWN 不重放
+  同样适用于策略拒绝）。
+- **确认后复核**：会注入输入的端点（`tap/swipe/touch/key/type/node/edit/submit/anchored-click`）在确认结束后、
+  真正派发前再读一次分类；读不出返回 `SENSITIVE_SCREEN_UNVERIFIED`，类别变化返回 `SENSITIVE_SCREEN_CHANGED`，
+  两者都是未发送、`retryable=true`、`nextAction=SEE_AGAIN`。读端点（`see/tree/editor/anchor`）与写端点都参与
+  分类；生命周期端点（`status/close/create/launch/preview`）不分类。
+- **密码文本路径**：`PASSWORD` 的 `type`/`edit`/`node set_text` 不先弹确认，直接交给 6.1/无障碍层的
+  `PASSWORD_INPUT_UNAVAILABLE` 硬拒绝；密码页上的点按、按键等非文本动作仍按策略 `ASK`/`HANDOFF`。
+- **设置入口**：设置 → 设备能力授权 → 识屏 → 敏感界面交接；逐类别选择询问/交接，维护强制交接与信任应用名单。
+  文案明确「全部允许不解除密码文本阻断」「交接后不会重放」。
+
+误伤与限制：包名子串与关键词会命中测试应用或无关页面；方向是「多问一次 / 交给用户」，不是永久拒绝，用户可把
+应用加入信任名单或暂停助手。无障碍关闭时没有语义证据通道，不做分类（保护降级，不宣称安全）；自定义控件、
+Canvas、语言与 ROM 差异可能漏判；检查与注入之间存在时间窗；同 UID 的插件/终端可以绕开受管入口 —— 这不是
+内核沙箱，与 `docs/security-model.md` 的边界一致。真机验收需覆盖：正常页面不误弹、密码页只硬阻断文本、
+支付/验证码默认多问一次、交接后暂停且恢复后必须重看、名单两向生效、短屏/大字体下设置页可滚动。
+
 ## 7. 三种显式语义操作
 
 ### 7.1 DSH tree / node / editor

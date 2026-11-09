@@ -1547,7 +1547,7 @@ public final class HttpShellService {
             DshaApp.from(ctx).installationId(),
             scope.run.runId,
             evidence,
-            new com.deepseekharness.app.core.DeviceGrants(ctx).screenPolicy().revision,
+            new com.deepseekharness.app.core.DeviceGrants(ctx).screenAuthorityRevision(),
             broker.epoch("screen"),
             android.os.SystemClock.elapsedRealtime() + 65000);
     scope.capability = request;
@@ -1581,10 +1581,27 @@ public final class HttpShellService {
       String pkg,
       com.deepseekharness.app.util.ScreenTarget target,
       com.deepseekharness.app.capabilities.CapabilityRequest capability) {
+    return screenAuthorization(scope, action, pkg, target, capability, null, false);
+  }
+
+  /**
+   * 屏幕授权。{@code sensitivity} 是已识别的敏感界面类别（虚拟屏），{@code sensitiveAsk} 表示该类别策略为
+   * ASK：跳过「全部允许」与本轮应用记忆，本次动作必须再确认；密码文本读写不走这里（输入层硬阻断）。
+   */
+  private ScreenAuthorization screenAuthorization(
+      RequestScope scope,
+      String action,
+      String pkg,
+      com.deepseekharness.app.util.ScreenTarget target,
+      com.deepseekharness.app.capabilities.CapabilityRequest capability,
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivity,
+      boolean sensitiveAsk) {
     boolean sensitive = isSensitiveApp(pkg);
     var controller = com.deepseekharness.app.core.HarnessController.get(ctx);
     var grants = new com.deepseekharness.app.core.DeviceGrants(ctx);
     long generation = controller.getWebGeneration(), revision = uiGrant.revision();
+    // 合并修订号：确认方式或敏感界面策略任一保存都会让旧确认/旧请求失效。
+    long policyRevision = grants.screenAuthorityRevision();
     if (!screenBridgeCurrent(scope)
         || uiGrant.paused()
         || !controller.isWebRunning()
@@ -1593,7 +1610,7 @@ public final class HttpShellService {
         || controller.isUserStopped()
         || generation <= 0) return ScreenAuthorization.UNAVAILABLE;
     var policy = grants.effectiveScreenPolicy();
-    if (policy.allows(pkg)) {
+    if (!sensitiveAsk && policy.allows(pkg)) {
       boolean granted =
           uiGrant.completeConfirmation(
               true,
@@ -1601,7 +1618,7 @@ public final class HttpShellService {
               com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx),
               scope.run.runId,
               revision,
-              policy.revision,
+              policyRevision,
               screenBridgeCurrent(scope)
                   && controller.isWebRunning()
                   && !controller.isStarting()
@@ -1619,8 +1636,8 @@ public final class HttpShellService {
         com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).snapshot().binding();
     String turnKey = turnTask == null ? null : turnTask.identity();
     var turnGrants = com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx).turnGrants();
-    long confirmRevision = grants.screenPolicy().revision;
-    if (turnGrants.allows(turnKey, pkg, sensitive, confirmRevision)) {
+    long confirmRevision = policyRevision;
+    if (!sensitiveAsk && turnGrants.allows(turnKey, pkg, sensitive, confirmRevision)) {
       boolean remembered =
           uiGrant.completeConfirmation(
               true,
@@ -1638,11 +1655,19 @@ public final class HttpShellService {
         return ScreenAuthorization.ALLOWED;
     }
     String where = pkg.isEmpty() ? com.deepseekharness.app.util.UiText.text("当前界面") : pkg;
-    String why =
-        sensitive
-            ? com.deepseekharness.app.util.UiText.format(
-                "在【%s】里：%s  # 当前确认策略要求你确认，界面可能涉及支付或隐私", where, action)
-            : com.deepseekharness.app.util.UiText.format("%s  # 仅批准本次操作；可在设备能力授权中设置确认策略", action);
+    String why;
+    if (sensitiveAsk) {
+      // 敏感类别：说明这是「识别到的类别」，仍是一次性确认；密码文本硬阻断不因确认而解除。
+      why =
+          com.deepseekharness.app.util.UiText.format(
+              "在【%s】里：%s  # 已识别为%s；本次仍需你确认。密码文本读写始终阻断", where, action, sensitiveLabel(sensitivity));
+    } else {
+      why =
+          sensitive
+              ? com.deepseekharness.app.util.UiText.format(
+                  "在【%s】里：%s  # 当前确认策略要求你确认，界面可能涉及支付或隐私", where, action)
+              : com.deepseekharness.app.util.UiText.format("%s  # 仅批准本次操作；可在设备能力授权中设置确认策略", action);
+    }
     boolean[] rememberTurn = new boolean[1];
     ConfirmationOutcome outcome =
         confirmOutcome(scope, capability, why, true, target, rememberTurn);
@@ -1655,14 +1680,14 @@ public final class HttpShellService {
             com.deepseekharness.app.core.ScreenRuntimeIdentity.epoch(ctx),
             scope.run.runId,
             revision,
-            grants.screenPolicy().revision,
+            policyRevision,
             screenBridgeCurrent(scope)
                 && !controller.isStopping()
                 && !controller.isUserStopped()
                 && DshaApp.from(ctx).capabilityBroker().current(capability),
             false);
     if (granted && DshaApp.from(ctx).capabilityBroker().authorize(capability)) {
-      if (rememberTurn[0]) {
+      if (!sensitiveAsk && rememberTurn[0]) {
         turnGrants.remember(turnKey, pkg, confirmRevision);
         // 敏感应用：这一次已用掉一次额度。
         if (sensitive) turnGrants.allows(turnKey, pkg, true, confirmRevision);
@@ -1672,6 +1697,27 @@ public final class HttpShellService {
     if (outcome == ConfirmationOutcome.DENIED) return ScreenAuthorization.DENIED;
     if (outcome == ConfirmationOutcome.NO_ANSWER) return ScreenAuthorization.NO_ANSWER;
     return ScreenAuthorization.UNAVAILABLE;
+  }
+
+  /** 敏感类别的人类可读名称；只用于已本地化的确认文案。 */
+  private static String sensitiveLabel(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category) {
+    if (category == null)
+      return com.deepseekharness.app.util.UiText.choose("敏感界面", "sensitive screen");
+    switch (category) {
+      case PASSWORD:
+        return com.deepseekharness.app.util.UiText.choose("密码界面", "password screen");
+      case OTP:
+        return com.deepseekharness.app.util.UiText.choose("验证码界面", "one-time code screen");
+      case PAYMENT:
+        return com.deepseekharness.app.util.UiText.choose("支付界面", "payment screen");
+      case SYSTEM_SECURITY:
+        return com.deepseekharness.app.util.UiText.choose("系统安全界面", "system security screen");
+      case SECURE_UNKNOWN:
+      default:
+        return com.deepseekharness.app.util.UiText.choose(
+            "无法确认的敏感界面", "unverified sensitive screen");
+    }
   }
 
   private static String shortText(String s) {
@@ -2038,6 +2084,34 @@ public final class HttpShellService {
       // 宿主自身不能启动到虚拟屏（系统会复用运行中的本进程，副屏 WebView 崩溃，T76）：
       // 连授权询问都不发起，直接回明确未发送。
       if (selfLaunch != null) return vscreenNotSent(selfLaunch);
+      // 敏感界面分档（T119）：只读分类绑定当前显示；HANDOFF 在派发任何输入前暂停助手。
+      // 分类失败不宣称安全：无障碍关闭时不做分类（保护降级），已知敏感应用读不出树时按 ASK 处理。
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivity = null;
+      String sensitivityBasis = "";
+      boolean sensitiveAsk = false;
+      if (com.deepseekharness.app.util.VirtualScreenRoutes.classified(operation) && display > 0) {
+        var evidence =
+            com.deepseekharness.app.vscreen.VirtualScreenSensitiveProbe.read(display, pkg);
+        if (evidence.targetChanged) return vscreenNotSent("SCREEN_TARGET_CHANGED");
+        sensitivity = evidence.category;
+        sensitivityBasis = evidence.basis;
+        if (sensitivity != null) {
+          var sensitivePolicy =
+              new com.deepseekharness.app.core.DeviceGrants(ctx).sensitiveScreenPolicy();
+          var decision = sensitivePolicy.decide(sensitivity, pkg);
+          if (decision == com.deepseekharness.app.util.SensitiveScreenPolicy.Decision.HANDOFF)
+            return sensitiveScreenHandoff(sensitivity, sensitivityBasis);
+          if (decision == com.deepseekharness.app.util.SensitiveScreenPolicy.Decision.ASK)
+            sensitiveAsk = true;
+        }
+        // 密码界面的文本写入由输入层硬阻断；不先弹一个注定会被拒绝的确认。
+        if (sensitivity == com.deepseekharness.app.util.SensitiveScreenPolicy.Category.PASSWORD
+            && writesText(request, operation)) sensitiveAsk = false;
+      }
+      final com.deepseekharness.app.util.SensitiveScreenPolicy.Category sensitivityForResult =
+          sensitivity;
+      final String sensitivityBasisForResult = sensitivityBasis;
+      final boolean sensitiveAskForResult = sensitiveAsk;
       var capability =
           existingCore || !callerCore.isEmpty()
               ? screenRequestEvidence(
@@ -2058,7 +2132,9 @@ public final class HttpShellService {
               com.deepseekharness.app.util.UiText.format("操作独立虚拟屏：%s", route),
               pkg,
               promptTarget,
-              capability);
+              capability,
+              sensitivityForResult,
+              sensitiveAskForResult);
       if (authorization != ScreenAuthorization.ALLOWED)
         // "用户还没点允许"与"用户拒绝了"必须给不同的码：前者调用方应等一会儿再问，
         // 后者不该重试（issue #123 的 60 秒挂起）。
@@ -2121,6 +2197,16 @@ public final class HttpShellService {
             if (!live.getAsBoolean()
                 || bindWindow && !DshaAccessibilityService.matchesTarget(target))
               return "{\"ok\":false,\"error\":\"SCREEN_TARGET_CHANGED\"}";
+            // 确认期间页面可能已换到另一个敏感类别：执行前再读一次证据。读不出就不派发（可能已换屏）。
+            if (sensitivityForResult != null && VirtualScreenRoutes.mutates(operation)) {
+              var fresh =
+                  com.deepseekharness.app.vscreen.VirtualScreenSensitiveProbe.read(
+                      confirmedDisplay, confirmedPackage);
+              if (fresh.targetChanged || !fresh.readable)
+                return vscreenSensitivityNotSent("SENSITIVE_SCREEN_UNVERIFIED");
+              if (fresh.category != sensitivityForResult)
+                return vscreenSensitivityNotSent("SENSITIVE_SCREEN_CHANGED");
+            }
             dispatched[0] = true;
             String result =
                 com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
@@ -2131,6 +2217,8 @@ public final class HttpShellService {
                         () ->
                             live.getAsBoolean()
                                 && (!bindWindow || DshaAccessibilityService.matchesTarget(target)));
+            if (sensitivityForResult != null)
+              result = annotateSensitivity(result, sensitivityForResult, sensitivityBasisForResult);
             receipt[0] = result;
             boolean targetChanged = bindWindow && !DshaAccessibilityService.matchesTarget(target);
             boolean runChanged = !live.getAsBoolean();
@@ -2235,6 +2323,76 @@ public final class HttpShellService {
     } catch (org.json.JSONException invalid) {
       return result;
     }
+  }
+
+  /**
+   * 敏感界面交接（T119）：暂停助手并把界面交给用户，不派发任何输入。沿用现有暂停语义（清本轮授权、
+   * 撤销在途请求、取消当前轮），并丢弃虚拟屏观察，用户恢复后必须重新 see，不自动重放。
+   */
+  private String sensitiveScreenHandoff(
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category, String basis) {
+    com.deepseekharness.app.control.PhoneControlCoordinator.get(ctx)
+        .pause("SENSITIVE_SCREEN_" + category.name());
+    com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx).discardObservations();
+    try {
+      return new org.json.JSONObject()
+          .put("ok", false)
+          .put("state", "NOT_SENT")
+          .put("error", "SENSITIVE_SCREEN_HANDOFF")
+          .put("code", "SENSITIVE_SCREEN_HANDOFF")
+          .put("sensitivity", category.name())
+          .put("sensitivityBasis", basis == null ? "" : basis)
+          .put("readOnly", true)
+          .put("retryable", false)
+          .put("actionExecuted", false)
+          .put(
+              "nextAction",
+              com.deepseekharness.app.util.VirtualScreenObservationHint.HANDOFF_TO_USER)
+          .toString();
+    } catch (org.json.JSONException invalid) {
+      return vscreenNotSent("SENSITIVE_SCREEN_HANDOFF");
+    }
+  }
+
+  /** 敏感证据在确认后失效或类别变化：动作未派发，重新观察后可安全重试。 */
+  private static String vscreenSensitivityNotSent(String code) {
+    try {
+      return new org.json.JSONObject()
+          .put("ok", false)
+          .put("state", "NOT_SENT")
+          .put("error", code)
+          .put("code", code)
+          .put("retryable", true)
+          .put("actionExecuted", false)
+          .put("nextAction", com.deepseekharness.app.util.VirtualScreenObservationHint.SEE_AGAIN)
+          .toString();
+    } catch (org.json.JSONException invalid) {
+      return "{\"ok\":false,\"state\":\"NOT_SENT\",\"error\":\"SENSITIVE_SCREEN_UNVERIFIED\"}";
+    }
+  }
+
+  /** 只回类别与依据码，绝不回界面文本；成功/失败回执都不改变原有字段。 */
+  private static String annotateSensitivity(
+      String json,
+      com.deepseekharness.app.util.SensitiveScreenPolicy.Category category,
+      String basis) {
+    if (json == null || category == null) return json;
+    try {
+      var value = new org.json.JSONObject(json);
+      value.put("sensitivity", category.name());
+      if (basis != null && !basis.isEmpty()) value.put("sensitivityBasis", basis);
+      return value.toString();
+    } catch (org.json.JSONException invalid) {
+      return json;
+    }
+  }
+
+  /** 该请求是否会写入文本（含 node 的 set_text）；密码界面的这类请求交给输入层硬阻断。 */
+  private static boolean writesText(
+      com.deepseekharness.app.util.VscreenBridgeRequest request, String operation) {
+    if (com.deepseekharness.app.util.VirtualScreenRoutes.writesText(operation)) return true;
+    return operation.equals("node")
+        && "set_text".equals(request.parameters.getOrDefault("action", ""));
   }
 
   private static String vscreenNotSent(String code) {
