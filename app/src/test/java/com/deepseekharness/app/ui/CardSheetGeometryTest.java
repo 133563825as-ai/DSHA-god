@@ -40,6 +40,24 @@ public final class CardSheetGeometryTest {
     return new CardPage(c, "快捷按键", "应用于 PTY 会话。", true);
   }
 
+  /** 内容远高于屏幕，用来核对 CardSheet 的贴底 0.9 上限。 */
+  private static CardPage tallPage(Context c) {
+    CardPage page = page(c);
+    for (int card = 0; card < 3; card++) {
+      LinearLayout group = page.card();
+      for (int row = 0; row < 7; row++) page.kv(group, "项目" + (card + 1) + "." + (row + 1), "值");
+    }
+    page.button(page.footer, "关闭", false, () -> {});
+    return page;
+  }
+
+  private static void measure(View view, int width, int height) {
+    view.measure(
+        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST));
+    view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
+  }
+
   private static int windowWidth(AlertDialog dialog) {
     return dialog.getWindow().getAttributes().width;
   }
@@ -54,6 +72,19 @@ public final class CardSheetGeometryTest {
     assertEquals(-1, lp.width);
     // 不是 MainActivity：没有悬浮胶囊，不再抬高 74dp（旧实现在终端里露出一条背景）。
     assertEquals(0, lp.y);
+  }
+
+  @Test
+  @Config(qualifiers = "zh-rCN-w360dp-h740dp-mdpi")
+  public void bottomCardSheetKeeps90PercentCapWhileActionDrawerUses72() {
+    Context c = context();
+    CardPage page = tallPage(c);
+    CardSheet.create(c, page, SheetGeometry.Size.M);
+    View container = (View) page.root.getParent();
+    measure(container, 360, 740);
+    // CardSheet 的贴底形态仍是 0.9×可用高（740 → 666）；动作抽屉单独收紧到 0.72（533）。
+    assertEquals(666, container.getMeasuredHeight());
+    assertEquals(533, SheetGeometry.bottomDrawerMaxHeight(740, 0));
   }
 
   @Test

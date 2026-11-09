@@ -28,7 +28,7 @@ import com.deepseekharness.app.util.UiText;
  *   <li>点遮罩只关闭抽屉，不执行任何动作；破坏性动作仍走各自的确认弹窗，且只能由用户
  *       显式点按按钮触发（遮罩 / 拖动 / 返回都只是取消）。
  *   <li>短屏（高度 &lt; 480dp，例如手机横屏）抽屉占满可用高度，正文滚动、页脚常驻；
- *       普通屏幕按内容收紧，超过上限才滚动。
+ *       普通屏幕按内容收紧，但首屏不超过可用高度的约 72%，超出才滚动、页脚常驻。
  *   <li>动效统一走 {@link UiMotion}；系统关闭动画时直接落到终态。
  * </ul>
  */
@@ -100,10 +100,8 @@ final class BottomSheetCard {
                 dp(context, 240),
                 dp(
                     context,
-                    SheetGeometry.maxHeight(
-                        SheetGeometry.Mode.BOTTOM,
-                        Math.round(screenHeight / density),
-                        Math.round(lift / density))));
+                    SheetGeometry.bottomDrawerMaxHeight(
+                        Math.round(screenHeight / density), Math.round(lift / density))));
 
     page.root.setBackgroundResource(R.drawable.bg_shell_sheet);
     page.root.setClipToOutline(true);

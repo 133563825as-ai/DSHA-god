@@ -22,6 +22,9 @@ public final class SheetGeometry {
   public static final int WIDE_MIN_WIDTH = 600;
   public static final int TALL_MIN_HEIGHT = InfoSurfacePolicy.TALL_MIN_HEIGHT;
 
+  /** 贴底动作抽屉（BottomSheetCard）的首屏高度上限，约为可用高度的 0.72。 */
+  public static final float BOTTOM_DRAWER_HEIGHT_RATIO = 0.72f;
+
   /** 宽 ≥ 840（设置双栏、layout-w840dp 同一判据）时长表单可再加宽。 */
   public static final int EXPANDED_MIN_WIDTH = 840;
 
@@ -80,6 +83,21 @@ public final class SheetGeometry {
       default:
         return Math.max(0, h - 24);
     }
+  }
+
+  /**
+   * 贴底动作抽屉（BottomSheetCard）的首屏高度上限：约 0.72 × 可用高度（可用高度 = 屏幕高 − lift）。
+   *
+   * <p>与 {@link #maxHeight(Mode, int, int)} 的 BOTTOM 档（0.9，CardSheet 的通用贴底卡片）分开：动作抽屉
+   * 是多行入口列表，内容很容易堆到 0.9 上限，把抽屉顶到屏幕上半区；首屏收矮后，超出部分在抽屉内滚动、
+   * 页脚常驻。CardSheet 的贴底说明 / 选择 / 长表单仍用 0.9（调用面广，长表单也需要更多正文高度），不在
+   * 本次动作抽屉修复里一并收紧。短屏（高度 &lt; 480dp）不走这里，由调用方保持整屏可滚动。
+   *
+   * @param liftDp 贴底弹层的抬高量，非主界面传 0
+   */
+  public static int bottomDrawerMaxHeight(int heightDp, int liftDp) {
+    return Math.max(
+        0, Math.round((Math.max(0, heightDp) - Math.max(0, liftDp)) * BOTTOM_DRAWER_HEIGHT_RATIO));
   }
 
   /** SIDE 左栏（标题、说明与竖排操作）宽度，约占卡片 36%。 */
