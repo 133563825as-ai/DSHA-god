@@ -24,7 +24,7 @@
 | Python / Node | 生成器 Python 3.9+，CI 锁定版本见 `ci/toolchain.lock.json`；Node 24 |
 | Standard | minSdk 30，系统 WebView，arm64-v8a（唯一变体） |
 
-当前只有一条 Standard 构建线；测试变体仅通过 `-Pdsha.sunsetTest=true` 改包名/版本名（`io.github.sunsetrne.dsha.test`），与正式包并存、数据隔离。原 `dsh.android.client` 与更早的 `com.dsh.client` 均为独立包名，本 Mod 与之互不覆盖。
+当前只有一条 Standard 构建线；测试变体通过 `-Pdsha.sunsetTest=true`（`.test`）、`-Pdsha.debugPackage=true`（`.debug`，debuggable 的 debug 构建）或 `-Pdsha.devPackage=true`（`.dev`，release 构建）改包名/版本名，与正式包并存、数据隔离；三个变体互斥，且必须配合 `-Pdsha.unsignedPackage=true` 由测试证书签名。原 `dsh.android.client` 与更早的 `com.dsh.client` 均为独立包名，本 Mod 与之互不覆盖。
 
 配置本机 `local.properties` 的 `sdk.dir`，并将 JAVA_HOME、ANDROID_SDK_ROOT/ANDROID_HOME、DSHA_PYTHON 指向已有工具。不要复制开发者的绝对工具链目录。版本与固定 APK 文件名由 `app/build.gradle` 的 `versionCode`、`versionName` 和 `dshaApkNameVersion` 定义，不在本页再维护另一组当前数字。
 
@@ -113,7 +113,7 @@ python3 tools/release-identity.py --check                      # 两套身份互
 | [release-production.yml](.github/workflows/release-production.yml) | `-Pdsha.identity=mod` | `SunsetRNE/DSHA-Sunset-mod` 的 `main` | `dsha-a-su-build<code>-YYYYMMDD-HHMMSS` |
 | [release-upstream.yml](.github/workflows/release-upstream.yml) | `-Pdsha.identity=upstream` | `ym2025szz/DSHA-prerelase`（私有）的 `codex/prerelease-190` | `dsha-build<code>-YYYYMMDD-HHMMSS` |
 
-两者共用同一组门禁节点（契约、格式、主机回归、固定输入、完整单测、Lint），只有 `build-signed` 读取各自仓库的签名 Secrets。[test-package.yml](.github/workflows/test-package.yml) 的 `identity` 输入（默认 `mod`）选择测试包身份，测试证书必须与两个正式证书都不同。
+两者共用同一组门禁节点（契约、格式、主机回归、固定输入、完整单测、Lint），只有 `build-signed` 读取各自仓库的签名 Secrets。[test-package.yml](.github/workflows/test-package.yml) 的 `identity` 输入（默认 `mod`）选择历史 `.test` 测试包身份；[test-package-variants.yml](.github/workflows/test-package-variants.yml) 在同一 run 内用 matrix 分别构建 `.debug`（debuggable）与 `.dev`（非 debug）两个共存测试包，并额外产出正式包名的 unsigned 验证包。两者都只上传 Actions artifact，不创建 tag/Release；测试证书必须与两个正式证书都不同。
 
 ## 手机与历史范围
 

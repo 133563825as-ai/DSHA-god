@@ -115,3 +115,15 @@ aapt2 dump badging dsha-a-su-<commit8>.apk | head -3      # io.github.sunsetrne.
 本地 `./gradlew :app:assembleStandardRelease` 与 CI 使用相同的 `verifyPublishCertificate` 与
 `ci/release-identity.json`，但 CI 额外要求固定输入、完整单测、Lint、格式与证据归档全部通过。
 本地中间包、未签名 CI 包（`-Pdsha.unsignedPackage=true`）不得当作正式交付。
+
+## 8. 测试包变体（on demand）
+
+[test-package-variants.yml](../.github/workflows/test-package-variants.yml) 只由 `workflow_dispatch` 触发，只上传 Actions artifact（14 天），不创建 tag/Release，也不读取正式签名私钥：
+
+| 目标 | 包名 | 说明 |
+|---|---|---|
+| `prod-unsigned` | `io.github.sunsetrne.dsha`（upstream：`dsh.android.client`） | 正式包名 unsigned 验证包，**不可安装**，不接触正式签名 |
+| `debug` | 正式包名 + `.debug` | `debuggable=true` 的 debug 构建，测试证书签名，供开发调试 |
+| `dev` | 正式包名 + `.dev` | release 构建、非 debuggable，测试证书签名，供开发/测试环境覆盖升级 |
+
+输入：`identity`（mod/upstream）、`targets`（all/debug/dev/prod-unsigned）、`run_unit_tests`、`quick`（跳过完整单测与 patch-chains，仅用于 dev 迭代）。两个测试包共用 `SUNSET_TEST_KEYSTORE_B64`；未配置时使用一次性密钥，只能全新安装，不能覆盖升级。测试证书必须与两个正式证书都不同；`prod-unsigned` 的产物不得签名或安装。
