@@ -312,6 +312,7 @@ jobs:
         env:
           APK_URL: ${{ steps.upload_apk.outputs.artifact-url }}
           EVIDENCE_URL: ${{ steps.upload_evidence.outputs.artifact-url }}
+          PACKAGE: ${{ steps.sign.outputs.package }}
         run: |
           {
             echo "### $VARIANT 测试包（非正式发布、未安装）"
@@ -449,6 +450,7 @@ jobs:
         env:
           APK_URL: ${{ steps.upload_apk.outputs.artifact-url }}
           EVIDENCE_URL: ${{ steps.upload_evidence.outputs.artifact-url }}
+          PACKAGE: ${{ steps.verify.outputs.package }}
         run: |
           {
             echo "### prod-unsigned 验证包（不可安装、非发布）"

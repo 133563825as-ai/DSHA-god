@@ -226,12 +226,32 @@ class SourceAndServices(unittest.TestCase):
     def test_only_test_package_and_release_sign(self):
         for path in WORKFLOWS.glob("*.yml"):
             source = path.read_text(encoding="utf-8")
-            if path.name in ("release-production.yml", "release-upstream.yml", "test-package.yml"):
+            if path.name in ("release-production.yml", "release-upstream.yml", "test-package.yml",
+                             "test-package-variants.yml"):
                 continue
             with self.subTest(file=path.name):
                 self.assertNotIn("apksigner", source)
                 self.assertNotIn("secrets.", source)
                 self.assertNotIn("contents: write", source)
+
+    def test_test_package_variants_signs_only_test_packages(self):
+        source = text("test-package-variants.yml")
+        self.assertIn("-Pdsha.debugPackage=true -Pdsha.unsignedPackage=true", source)
+        self.assertIn("-Pdsha.devPackage=true -Pdsha.unsignedPackage=true", source)
+        self.assertIn("SUNSET_TEST_KEYSTORE_B64", source)
+        self.assertNotIn("DSHA_KEYSTORE", source)
+        self.assertIn('test "$cert" != "$production"', source)
+        self.assertIn('test "$cert" != "$upstream"', source)
+        self.assertIn("application-debuggable", source)
+        self.assertEqual(source.count('"$apksigner" sign'), 1)
+        self.assertNotIn("gh release", source)
+        self.assertNotIn("contents: write", source)
+        self.assertIn("permissions:\n  contents: read", source)
+        prod = jobs(source)["package-prod-unsigned"]
+        self.assertIn("-Pdsha.unsignedPackage=true", prod)
+        self.assertNotIn('"$apksigner" sign', prod)
+        self.assertNotIn("SUNSET_TEST_KEYSTORE_B64", prod)
+        self.assertIn("UNSIGNED_PACKAGE_MUST_NOT_VERIFY", prod)
 
     def test_test_package_identity_is_never_the_production_certificate(self):
         source = text("test-package.yml")
