@@ -46,8 +46,9 @@ Git保存应用源码、资源、锁、recipe、校验脚本及必要且有notic
 公开仓库的正式成品由 [release-production.yml](../.github/workflows/release-production.yml) 构建与发布：
 `workflow_dispatch` 绑定精确 commit，从公开预发布资产还原固定输入，跑完整单测/Java 格式/Lint/文档门禁，
 用仓库 Secrets 中的 Mod 发布证书签名正式包，核验 `ci/release-identity.json` 的证书 SHA-256 与包名后
-创建 tag + prerelease，并上传 APK、证据 zip、`build-info.json` 与 `SHA256SUMS`。触发参数、Secrets、
-产物与核验命令见 [CI 构建与发布](ci-release.md)；固定输入见 [固定构建输入](fixed-build-inputs.md)。
+创建 tag + prerelease，并上传 APK、证据 zip、`build-info.json` 与 `SHA256SUMS`；默认同 run 另附 `.debug` / `.dev`
+共存测试包与公开测试证书（`test_packages=none` 时不附），`dry_run=true` 只构建校验、不建 tag/Release。
+触发参数、Secrets、产物与核验命令见 [CI 构建与发布](ci-release.md)；固定输入见 [固定构建输入](fixed-build-inputs.md)。
 CI 通过只证明该 commit 在托管 runner 上的编译/门禁/签名/发布流程，不代替真机安装、覆盖升级与长期运行验收。
 
 ## 测试数字如何读
