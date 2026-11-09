@@ -2347,7 +2347,7 @@ public final class HttpShellService {
           .put("actionExecuted", false)
           .put(
               "nextAction",
-              com.deepseekharness.app.util.VirtualScreenObservationHint.HANDOFF_TO_USER)
+              com.deepseekharness.app.util.SensitiveScreenPolicy.NEXT_ACTION_HANDOFF_TO_USER)
           .toString();
     } catch (org.json.JSONException invalid) {
       return vscreenNotSent("SENSITIVE_SCREEN_HANDOFF");

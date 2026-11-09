@@ -1057,10 +1057,19 @@ public final class DeviceGrantsFragment extends Fragment {
     Context ctx = requireContext();
     var policy = new DeviceGrants(ctx).sensitiveScreenPolicy();
     java.util.List<String> handoffCategories = new java.util.ArrayList<>();
-    for (var category : com.deepseekharness.app.util.SensitiveScreenPolicy.Category.values())
+    java.util.List<String> offCategories = new java.util.ArrayList<>();
+    for (var category : com.deepseekharness.app.util.SensitiveScreenPolicy.Category.values()) {
       if (policy.mode(category) == com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.HANDOFF)
         handoffCategories.add(sensitiveCategoryName(category));
+      else if (policy.mode(category) == com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.OFF)
+        offCategories.add(sensitiveCategoryName(category));
+    }
     java.util.List<String> parts = new java.util.ArrayList<>();
+    if (!offCategories.isEmpty())
+      parts.add(
+          UiText.format(
+              UiText.choose("%s 不启用", "%s off"),
+              String.join(UiText.choose("、", ", "), offCategories)));
     if (!handoffCategories.isEmpty())
       parts.add(
           UiText.format(
@@ -1106,9 +1115,15 @@ public final class DeviceGrantsFragment extends Fragment {
 
   private static String sensitiveModeName(
       com.deepseekharness.app.util.SensitiveScreenPolicy.Mode mode) {
-    return mode == com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.HANDOFF
-        ? UiText.choose("交接", "Hand off")
-        : UiText.choose("询问", "Ask");
+    switch (mode) {
+      case HANDOFF:
+        return UiText.choose("交接", "Hand off");
+      case OFF:
+        return UiText.choose("不启用", "Off");
+      case ASK:
+      default:
+        return UiText.choose("询问", "Ask");
+    }
   }
 
   /** 敏感界面处理：类别逐项选择询问/交接，并可维护强制交接与信任应用名单。 */
@@ -1127,8 +1142,8 @@ public final class DeviceGrantsFragment extends Fragment {
     note.setPadding(0, 0, 0, dp(8));
     note.setText(
         UiText.choose(
-            "敏感界面默认先询问。设为「交接」会暂停助手，由你本人在手机上完成；恢复后助手必须重新观察，不会重放上一动作。密码文本读写始终阻断，全部允许也不能解除。",
-            "Sensitive screens ask before each action by default. Hand off pauses the assistant so you can act on the phone yourself; after resuming, the assistant must observe again and never replays the previous action. Password text read/write stays blocked, even with Allow all."));
+            "敏感界面默认先询问。设为「交接」会暂停助手，由你本人在手机上完成；恢复后助手必须重新观察，不会重放上一动作。设为「不启用」只关闭整屏分档，回到普通确认策略，密码文本读写仍始终阻断；全部允许也不能解除。",
+            "Sensitive screens ask before each action by default. Hand off pauses the assistant so you can act on the phone yourself; after resuming, the assistant must observe again and never replays the previous action. Off only disables tiered sensitive-screen handling and returns to ordinary confirmations; password text read/write stays blocked, even with Allow all."));
     content.addView(note, new android.widget.LinearLayout.LayoutParams(-1, -2));
     for (var category : com.deepseekharness.app.util.SensitiveScreenPolicy.Category.values()) {
       TextView row =
@@ -1205,18 +1220,27 @@ public final class DeviceGrantsFragment extends Fragment {
       com.deepseekharness.app.util.SensitiveScreenPolicy.Category category) {
     if (!isAdded()) return;
     final Context ctx = requireContext();
-    var modes = com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.values();
+    var modes =
+        new com.deepseekharness.app.util.SensitiveScreenPolicy.Mode[] {
+          com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.ASK,
+          com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.HANDOFF,
+          com.deepseekharness.app.util.SensitiveScreenPolicy.Mode.OFF
+        };
     var current = new DeviceGrants(ctx).sensitiveScreenPolicy().mode(category);
+    int selected = 0;
+    for (int i = 0; i < modes.length; i++) if (modes[i] == current) selected = i;
     CharSequence[] items = {
       UiText.choose("询问\n每次动作前确认", "Ask\nConfirm before each action"),
-      UiText.choose("交接\n暂停助手，由你本人操作", "Hand off\nPause the assistant and act yourself")
+      UiText.choose("交接\n暂停助手，由你本人操作", "Hand off\nPause the assistant and act yourself"),
+      UiText.choose(
+          "不启用\n只关闭整屏分档，密码文本仍阻断", "Off\nDisable tiered handling only; password text stays blocked")
     };
     new DshaDialogBuilder(ctx)
         .setTitle(
             UiText.format(UiText.choose("%s处理方式", "%s handling"), sensitiveCategoryName(category)))
         .setSingleChoiceItems(
             items,
-            current.ordinal(),
+            selected,
             (dialog, which) -> {
               dialog.dismiss();
               if (!isAdded()) return;

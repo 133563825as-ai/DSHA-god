@@ -36,9 +36,6 @@ public final class VirtualScreenObservationHint {
   public static final String WAIT_ACCESSIBILITY_RECONNECT = "WAIT_ACCESSIBILITY_RECONNECT";
   public static final String SEE_AGAIN = "SEE_AGAIN";
 
-  /** 敏感界面交接：助手已暂停，由用户本人完成；用户恢复后必须重新观察，不自动重放上一个动作。 */
-  public static final String HANDOFF_TO_USER = "HANDOFF_TO_USER";
-
   /** 首帧等待期：超过后有窗口仍无帧才判停滞。启动/创建/旋转都会重新计时。 */
   public static final long FRAME_PENDING_MS = 10_000L;
 

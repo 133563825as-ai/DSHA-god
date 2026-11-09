@@ -14,6 +14,7 @@ import java.util.Set;
  *   <li>密码文本读写是硬阻断，不能由本策略关闭；本策略只决定「整屏如何应对」。
  *   <li>验证码 / 支付 / 系统安全 / 无法识别的敏感界面默认 {@link Mode#ASK}：本次动作仍需显式确认。
  *   <li>可配置为 {@link Mode#HANDOFF}：暂停助手并把界面交给用户本人操作，不派发输入。
+ *   <li>{@link Mode#OFF} 只关闭整屏分档，回到普通屏幕确认策略；密码文本读写硬阻断不受影响。
  *   <li>应用名单默认空；精确包名，有上限；名单只改变确认/交接方式，不解除密码文本硬阻断。
  *   <li>「全部允许」（{@code ScreenConfirmationPolicy.ALLOW_ALL}）只省普通确认，不能把 ASK 降成静默放行。
  * </ul>
@@ -32,8 +33,12 @@ public final class SensitiveScreenPolicy {
     SECURE_UNKNOWN
   }
 
-  /** 整屏应对方式；没有 OFF/ALLOW，避免把敏感界面配置成静默放行。 */
+  /**
+   * 整屏应对方式。{@link #OFF} 只关闭「整屏分档/交接」这一层，按普通屏幕确认策略处理；密码文本读写硬阻断
+   * 由输入层执行，与本开关无关。默认 {@link #ASK}，没有「静默放行敏感类」的档位。
+   */
   public enum Mode {
+    OFF,
     ASK,
     HANDOFF
   }
@@ -44,6 +49,9 @@ public final class SensitiveScreenPolicy {
     ASK,
     HANDOFF
   }
+
+  /** 交接后的下一步（助手工具词表）；放在本类里，避免与窗口证据任务改同一提示类。 */
+  public static final String NEXT_ACTION_HANDOFF_TO_USER = "HANDOFF_TO_USER";
 
   public static final int MAX_APPS_PER_LIST = 64;
   static final int MAX_ENCODED = 100_000;
@@ -96,7 +104,15 @@ public final class SensitiveScreenPolicy {
     if (category == null) return Decision.ALLOW;
     if (packageName != null && trustApps.contains(packageName)) return Decision.ALLOW;
     if (packageName != null && handoffApps.contains(packageName)) return Decision.HANDOFF;
-    return mode(category) == Mode.HANDOFF ? Decision.HANDOFF : Decision.ASK;
+    switch (mode(category)) {
+      case OFF:
+        return Decision.ALLOW;
+      case HANDOFF:
+        return Decision.HANDOFF;
+      case ASK:
+      default:
+        return Decision.ASK;
+    }
   }
 
   /** 改一个类别的应对方式；修订号递增，供授权请求与一次性确认失效。 */

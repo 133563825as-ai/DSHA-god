@@ -145,6 +145,7 @@ public final class DeviceGrantsSensitiveScreenTest {
     for (String label : new String[] {"密码", "验证码", "支付", "系统安全", "无法识别"})
       assertTrue(label, content.contains(label));
     assertTrue(content, content.contains("暂停助手"));
+    assertTrue("off must be explained separately", content.contains("不启用"));
     assertTrue(content, content.contains("不会重放"));
     assertNotNull(
         "policy content must scroll on short screens",
@@ -194,6 +195,29 @@ public final class DeviceGrantsSensitiveScreenTest {
         new DeviceGrants(RuntimeEnvironment.getApplication())
             .sensitiveScreenPolicy()
             .mode(SensitiveScreenPolicy.Category.OTP));
+
+    // 第三档「不启用」只关闭整屏策略；密码文本硬阻断仍由输入层独立执行。
+    TextView paymentRow = findText(page(), "支付 交接");
+    assertNotNull(paymentRow);
+    paymentRow.performClick();
+    ShadowLooper.shadowMainLooper().idle();
+    TextView paymentAgain = findText(latestDialog().getWindow().getDecorView(), "支付");
+    assertNotNull(paymentAgain);
+    paymentAgain.performClick();
+    ShadowLooper.shadowMainLooper().idle();
+    AlertDialog offDialog = latestDialog();
+    android.widget.ListView offList = offDialog.getListView();
+    var offListener = offList.getOnItemClickListener();
+    assertNotNull(offListener);
+    // 显示顺序固定为 询问 / 交接 / 不启用。
+    offListener.onItemClick(offList, null, 2, 2);
+    ShadowLooper.shadowMainLooper().idle();
+    assertEquals(
+        SensitiveScreenPolicy.Mode.OFF,
+        new DeviceGrants(RuntimeEnvironment.getApplication())
+            .sensitiveScreenPolicy()
+            .mode(SensitiveScreenPolicy.Category.PAYMENT));
+    assertNotNull("row summary must reflect off", findText(page(), "支付 不启用"));
   }
 
   private static void collect(View view, StringBuilder out) {

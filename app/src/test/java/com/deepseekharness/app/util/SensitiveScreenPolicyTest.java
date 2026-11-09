@@ -23,6 +23,25 @@ public final class SensitiveScreenPolicyTest {
   }
 
   @Test
+  public void offOnlyDisablesTieredHandlingNotPackageLists() {
+    var policy =
+        SensitiveScreenPolicy.defaults()
+            .withMode(SensitiveScreenPolicy.Category.PAYMENT, SensitiveScreenPolicy.Mode.OFF);
+    assertEquals(
+        SensitiveScreenPolicy.Decision.ALLOW,
+        policy.decide(SensitiveScreenPolicy.Category.PAYMENT, "com.bank.app"));
+    // 显式名单优先于类别 OFF：用户主动列出的应用仍交接。
+    var withHandoff = policy.withApps(Set.of(), Set.of("com.example.shop"));
+    assertEquals(
+        SensitiveScreenPolicy.Decision.HANDOFF,
+        withHandoff.decide(SensitiveScreenPolicy.Category.PAYMENT, "com.example.shop"));
+    // OFF 只影响该类别；其它类别默认询问。
+    assertEquals(
+        SensitiveScreenPolicy.Decision.ASK,
+        policy.decide(SensitiveScreenPolicy.Category.OTP, "com.example.app"));
+  }
+
+  @Test
   public void handoffModeAndPackageListsBecomeDecisions() {
     var policy =
         SensitiveScreenPolicy.defaults()
@@ -53,6 +72,7 @@ public final class SensitiveScreenPolicyTest {
                 SensitiveScreenPolicy.Category.SYSTEM_SECURITY, SensitiveScreenPolicy.Mode.HANDOFF)
             .withMode(
                 SensitiveScreenPolicy.Category.SECURE_UNKNOWN, SensitiveScreenPolicy.Mode.HANDOFF)
+            .withMode(SensitiveScreenPolicy.Category.OTP, SensitiveScreenPolicy.Mode.OFF)
             .withApps(Set.of("com.example.trusted"), Set.of("com.example.bank"));
     var decoded = SensitiveScreenPolicy.decode(policy.encode());
     assertEquals(policy.encode(), decoded.encode());

@@ -66,6 +66,13 @@ public final class DeviceGrantsSensitiveScreenTest {
     assertEquals(
         SensitiveScreenPolicy.Mode.ASK,
         grants.sensitiveScreenPolicy().mode(SensitiveScreenPolicy.Category.OTP));
+    // OFF 也能持久化；它只关闭整屏分档，密码文本硬阻断由输入层独立执行。
+    assertTrue(
+        grants.setSensitiveScreenMode(
+            SensitiveScreenPolicy.Category.SYSTEM_SECURITY, SensitiveScreenPolicy.Mode.OFF));
+    assertEquals(
+        SensitiveScreenPolicy.Mode.OFF,
+        grants.sensitiveScreenPolicy().mode(SensitiveScreenPolicy.Category.SYSTEM_SECURITY));
   }
 
   @Test

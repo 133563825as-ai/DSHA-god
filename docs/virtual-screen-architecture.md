@@ -262,6 +262,9 @@ Core 消费观察后复位；不能把同一 `frameSeq` 当作可无限连点的
   进程内还有单调下限，记录损坏被解码成默认值也不会把修订号退回旧值。
 - **`ASK` 强制确认**：`ScreenConfirmationPolicy.ALLOW_ALL`、按应用 `ALLOW`、以及「本轮允许此应用」的 5 次内存
   都不能跳过敏感类别的确认；只有显式的信任名单才放行。敏感确认一次一授权，不写入本轮记忆。
+- **`OFF` 只关闭整屏分档**：该类别回到普通屏幕确认策略（`全部手动` / `按应用` / `全部允许` 按原语义生效），
+  不进入敏感分类的强制确认或交接；密码文本读写仍由输入层硬阻断，与 `OFF` 无关。默认所有类别 `ASK`，
+  `OFF` 需要用户显式选择。
 - **`HANDOFF` 交接**：在派发任何输入前暂停助手（`PhoneControlCoordinator.pause("SENSITIVE_SCREEN_<类别>")`），
   撤销在途请求并丢弃观察，返回 `ok:false`、`state=NOT_SENT`、`error=SENSITIVE_SCREEN_HANDOFF`、
   `sensitivity=<类别>`、`readOnly:true`、`retryable:false`、`nextAction=HANDOFF_TO_USER`。
@@ -273,7 +276,7 @@ Core 消费观察后复位；不能把同一 `frameSeq` 当作可无限连点的
   分类；生命周期端点（`status/close/create/launch/preview`）不分类。
 - **密码文本路径**：`PASSWORD` 的 `type`/`edit`/`node set_text` 不先弹确认，直接交给 6.1/无障碍层的
   `PASSWORD_INPUT_UNAVAILABLE` 硬拒绝；密码页上的点按、按键等非文本动作仍按策略 `ASK`/`HANDOFF`。
-- **设置入口**：设置 → 设备能力授权 → 识屏 → 敏感界面交接；逐类别选择询问/交接，维护强制交接与信任应用名单。
+- **设置入口**：设置 → 设备能力授权 → 识屏 → 敏感界面交接；逐类别选择询问/交接/不启用，维护强制交接与信任应用名单。
   文案明确「全部允许不解除密码文本阻断」「交接后不会重放」。
 
 误伤与限制：包名子串与关键词会命中测试应用或无关页面；方向是「多问一次 / 交给用户」，不是永久拒绝，用户可把
