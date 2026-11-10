@@ -1029,7 +1029,7 @@ public class LaunchFragment extends Fragment {
                   com.deepseekharness.app.util.WebStopBudget.FORCE_RETRY_MILLIS));
     else
       builder.setPositiveButton(
-          com.deepseekharness.app.util.UiText.choose("重新核验", "Re-verify"),
+          com.deepseekharness.app.util.UiText.choose("重试", "Retry"),
           (dialog, which) -> requestStop(activity, root, status));
     builder.show();
   }

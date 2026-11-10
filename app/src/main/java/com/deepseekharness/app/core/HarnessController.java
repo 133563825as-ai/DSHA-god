@@ -49,10 +49,6 @@ public class HarnessController {
     return proot;
   }
 
-  public ProotBootstrap getProot() {
-    return proot;
-  }
-
   public RuntimeHostPorts runtimeHostPorts() {
     return proot.hostPorts();
   }
