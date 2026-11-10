@@ -8,8 +8,6 @@
 
   <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="@dimen/shell_page_pad" android:paddingTop="@dimen/shell_page_top" android:paddingEnd="@dimen/shell_page_pad" android:paddingBottom="@dimen/shell_page_bottom">
 
-    <TextView style="@style/ShellPageTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/ui2_settings" />
-
     <TextView android:id="@+id/settings_section_environment" style="@style/ShellSectionLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/shell_section_gap" android:layout_marginBottom="@dimen/shell_section_margin" android:text="@string/ui2_environment" />
 
     <LinearLayout android:id="@+id/settings_tabs" style="@style/ShellGroup" android:layout_width="match_parent" android:layout_height="wrap_content" />
