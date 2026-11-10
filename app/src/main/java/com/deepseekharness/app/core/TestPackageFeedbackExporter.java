@@ -105,7 +105,8 @@ public final class TestPackageFeedbackExporter {
     captureExtra.put("redaction", "SensitiveData.RULES");
     captureExtra.put("logcat", new ArrayList<>(logcat));
     status.put("testPackageDiagnostics", captureExtra);
-    File folder = new File(context.getCacheDir(), "diagnostic-exports");
+    // 缓存目录也按 canonical 形态创建，避免 staged 文件带 /data/user/0 系统别名。
+    File folder = new File(context.getCacheDir().getCanonicalFile(), "diagnostic-exports");
     if (!folder.isDirectory() && !folder.mkdirs())
       throw new IOException("FEEDBACK_EXPORT_DIRECTORY");
     pruneStaged(folder);
@@ -120,12 +121,16 @@ public final class TestPackageFeedbackExporter {
   /** 把已生成的归档写入用户选择的 SAF 位置，并回读校验字节。 */
   public static void writeTo(Context context, Uri destination, File staged) throws IOException {
     if (destination == null || staged == null) throw new IOException("FEEDBACK_EXPORT_DESTINATION");
+    // Android 16 的 getCacheDir() 返回 /data/user/0 别名（系统符号链接，指向 /data/data）。
+    // AndroidBackupFileSystem 逐段 NOFOLLOW 打开，会把合法别名判成 PARENT_LINK；读取前先规范化。
+    // 只规范化本进程刚生成的缓存归档，用户文件与 guest 路径的防逃逸检查保持不变。
+    File source = staged.getCanonicalFile();
     AndroidBackupFileSystem fs = new AndroidBackupFileSystem();
-    var identity = fs.stat(staged);
+    var identity = fs.stat(source);
     if (!"FILE".equals(identity.type)) throw new IOException("FEEDBACK_EXPORT_STAGED");
     BackupControl control = new BackupControl(null);
     FileIntegrity.Result written;
-    try (InputStream input = fs.read(staged, identity);
+    try (InputStream input = fs.read(source, identity);
         OutputStream output =
             DocumentStreams.output(context.getContentResolver(), destination, control)) {
       if (output == null) throw new IOException(UiText.text("无法写入所选位置"));
@@ -469,7 +474,12 @@ public final class TestPackageFeedbackExporter {
     }
     File dshHome = null;
     try {
-      dshHome = new UserDataLayout(new AndroidBackupFileSystem(), context.getFilesDir()).current();
+      // getFilesDir() 同样可能返回 /data/user/0 别名；UserDataLayout 会用 NOFOLLOW 文件系统
+      // 读数据位置记录，不规范化会把 dsh-home 采集降级成 PARENT_LINK 失败。
+      dshHome =
+          new UserDataLayout(
+                  new AndroidBackupFileSystem(), context.getFilesDir().getCanonicalFile())
+              .current();
     } catch (IOException | RuntimeException unavailable) {
       capture.fail("dsh-home", stableError(unavailable));
     }
