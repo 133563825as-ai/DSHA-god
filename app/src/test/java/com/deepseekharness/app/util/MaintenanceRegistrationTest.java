@@ -51,6 +51,7 @@ public class MaintenanceRegistrationTest {
 
   @Test
   public void nullMessageFallsBackToExceptionType() {
-    assertTrue(MaintenanceRegistration.reason(new IllegalStateException()).contains("IllegalState"));
+    assertTrue(
+        MaintenanceRegistration.reason(new IllegalStateException()).contains("IllegalState"));
   }
 }

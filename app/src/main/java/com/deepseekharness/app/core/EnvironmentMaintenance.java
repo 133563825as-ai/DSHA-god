@@ -54,11 +54,7 @@ public final class EnvironmentMaintenance {
           com.deepseekharness.app.util.UiText.choose("检查启动配置…", "Checking startup configuration…"));
       var proof =
           com.deepseekharness.app.runtime.RuntimeTrial.verify(
-              context,
-              boot,
-              control,
-              () -> validateRuntime(boot),
-              boot.hostPorts().browserProbe());
+              context, boot, control, () -> validateRuntime(boot), boot.hostPorts().browserProbe());
       boot.hostPorts().confirmColdRuntime(boot.getRootfsDir(), proof);
       boot.confirmRuntimeHealth(proof);
       if (!boot.isEnvironmentReady()) throw new IOException("RUNTIME_READINESS_FAILED");
