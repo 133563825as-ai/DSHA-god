@@ -112,7 +112,10 @@ final class QuickActionsBubble {
     int launchOnly = launchPage ? View.VISIBLE : View.GONE;
     root.findViewById(R.id.quick_action_environment).setVisibility(launchOnly);
     root.findViewById(R.id.quick_action_address).setVisibility(launchOnly);
-    root.findViewById(R.id.quick_action_divider).setVisibility(launchOnly);
+    // 每两项之间都画一条分隔线；非启动页只有两项，只保留第一根。
+    root.findViewById(R.id.quick_action_divider_downloads).setVisibility(View.VISIBLE);
+    root.findViewById(R.id.quick_action_divider_about).setVisibility(launchOnly);
+    root.findViewById(R.id.quick_action_divider_environment).setVisibility(launchOnly);
   }
 
   private static void bindRow(

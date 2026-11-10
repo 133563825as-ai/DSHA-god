@@ -64,7 +64,11 @@ public final class QuickActionsBubbleTest {
     assertEquals("查看本机与局域网地址", label(root, R.id.quick_action_address_sub));
     assertEquals(View.VISIBLE, root.findViewById(R.id.quick_action_environment).getVisibility());
     assertEquals(View.VISIBLE, root.findViewById(R.id.quick_action_address).getVisibility());
-    assertEquals(View.VISIBLE, root.findViewById(R.id.quick_action_divider).getVisibility());
+    assertEquals(
+        View.VISIBLE, root.findViewById(R.id.quick_action_divider_downloads).getVisibility());
+    assertEquals(View.VISIBLE, root.findViewById(R.id.quick_action_divider_about).getVisibility());
+    assertEquals(
+        View.VISIBLE, root.findViewById(R.id.quick_action_divider_environment).getVisibility());
 
     root.findViewById(R.id.quick_action_downloads).performClick();
     root.findViewById(R.id.quick_action_address).performClick();
@@ -79,7 +83,12 @@ public final class QuickActionsBubbleTest {
 
     assertEquals(View.GONE, root.findViewById(R.id.quick_action_environment).getVisibility());
     assertEquals(View.GONE, root.findViewById(R.id.quick_action_address).getVisibility());
-    assertEquals(View.GONE, root.findViewById(R.id.quick_action_divider).getVisibility());
+    // 两项之间保留一根分隔线，末项之后不再有。
+    assertEquals(
+        View.VISIBLE, root.findViewById(R.id.quick_action_divider_downloads).getVisibility());
+    assertEquals(View.GONE, root.findViewById(R.id.quick_action_divider_about).getVisibility());
+    assertEquals(
+        View.GONE, root.findViewById(R.id.quick_action_divider_environment).getVisibility());
     assertEquals("下载记录", label(root, R.id.quick_action_downloads_label));
     assertEquals("关于 DSHA", label(root, R.id.quick_action_about_label));
   }

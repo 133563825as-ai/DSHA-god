@@ -35,6 +35,14 @@
                 style="@style/ShellQuickActionLabel" />
         </LinearLayout>
 
+        <View
+            android:id="@+id/quick_action_divider_downloads"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="14dp"
+            android:layout_marginEnd="14dp"
+            android:background="@color/shell_line" />
+
         <LinearLayout
             android:id="@+id/quick_action_about"
             style="@style/ShellQuickActionRow">
@@ -50,13 +58,12 @@
         </LinearLayout>
 
         <View
-            android:id="@+id/quick_action_divider"
+            android:id="@+id/quick_action_divider_about"
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginStart="14dp"
             android:layout_marginEnd="14dp"
-            android:background="@color/shell_line"
-            android:visibility="gone" />
+            android:background="@color/shell_line" />
 
         <LinearLayout
             android:id="@+id/quick_action_environment"
@@ -72,6 +79,14 @@
                 android:id="@+id/quick_action_environment_label"
                 style="@style/ShellQuickActionLabel" />
         </LinearLayout>
+
+        <View
+            android:id="@+id/quick_action_divider_environment"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="14dp"
+            android:layout_marginEnd="14dp"
+            android:background="@color/shell_line" />
 
         <LinearLayout
             android:id="@+id/quick_action_address"
