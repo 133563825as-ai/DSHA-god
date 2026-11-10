@@ -124,6 +124,11 @@ public class HarnessController {
     return web.lastStopResult();
   }
 
+  /** 停止阶段与已用预算的展示文本；空串表示不在停止中。 */
+  public String stopProgressText() {
+    return web.stopProgressText();
+  }
+
   public int getWebPort() {
     return web.getWebPort();
   }
