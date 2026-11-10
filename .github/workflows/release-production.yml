@@ -423,7 +423,9 @@ jobs:
       variants: ${{ inputs.test_packages }}
       release_identity: mod
       handoff: ${{ needs.inputs.outputs.artifact }}
-      fixture: false
+      # verify-dsh-upgrade-apk 等测试包校验需要 prepare-test-runtime.py 生成的
+      # 测试运行时夹具（与 test-package-variants.yml 的 fixture: true 一致）。
+      fixture: true
       asset_sha: ${{ needs.inputs.outputs.sha256 }}
       asset_format: ${{ needs.inputs.outputs.format }}
       unit_tests_run: true
