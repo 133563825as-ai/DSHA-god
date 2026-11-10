@@ -176,14 +176,20 @@ public final class DiagnosticActivityRenderingTest {
 
   @Test
   @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi")
-  public void feedbackExportEntryIsHiddenForNonTestPackages() {
+  public void feedbackExportEntryFollowsTestPackageBuildFlag() {
     DiagnosticActivity page = open();
-    // 单测构建是 standardDebug 且未开测试包开关：正式包路径必须不显示入口，也不占分隔线。
-    assertFalse(com.deepseekharness.app.BuildConfig.TEST_PACKAGE);
-    assertEquals(View.GONE, page.findViewById(R.id.diagnostic_feedback_export).getVisibility());
+    // 入口只由构建标志决定：CI 全量单测用 -Pdsha.sunsetTest=true（TEST_PACKAGE=true），
+    // 本机普通构建为 false；不能按包名或运行时状态猜测。
+    int expected = com.deepseekharness.app.BuildConfig.TEST_PACKAGE ? View.VISIBLE : View.GONE;
+    assertEquals(expected, page.findViewById(R.id.diagnostic_feedback_export).getVisibility());
     assertEquals(
-        View.GONE, page.findViewById(R.id.diagnostic_feedback_export_divider).getVisibility());
+        expected, page.findViewById(R.id.diagnostic_feedback_export_divider).getVisibility());
     assertEquals(View.GONE, page.findViewById(R.id.diagnostic_feedback_status).getVisibility());
+    if (expected == View.VISIBLE) {
+      android.widget.TextView title = page.findViewById(R.id.diagnostic_feedback_title);
+      assertNotNull(title);
+      assertTrue(title.getText().length() > 0);
+    }
   }
 
   // ---------- helpers ----------
