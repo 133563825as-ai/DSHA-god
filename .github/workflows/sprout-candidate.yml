@@ -17,8 +17,6 @@ jobs:
     timeout-minutes: 180
     env:
       GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-ci
-      DSHA_ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-deps
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/sprout-browsers
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,6 +33,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "DSHA_ROBOLECTRIC_DEPENDENCY_DIR=$RUNNER_TEMP/robolectric-deps" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/sprout-browsers" >> "$GITHUB_ENV"
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/sprout-browsers"
           mkdir -p out/sprout
           git rev-parse HEAD > out/sprout/source-commit.txt
           python3 tools/sunset-ci-inputs.py --github-output > out/sprout/input-lock.txt
