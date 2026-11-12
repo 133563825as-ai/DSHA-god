@@ -4,6 +4,14 @@
 > 首次来源冻结参考build359/`92acaa0408cb7b031ee3036c6116c6463ae6b62e`。候选门禁/构建进行中，未真机、未发布；CI无正式密钥，只在全部所需门禁通过后上传unsigned产物，不能直接安装。参考后续Bug选择性跟进，不反复整版追新。
 > 下文是**保留的来源359说明**，其中Mod身份/签名/已发布状态描述来源工程，不表示本候选使用该身份或已通过同等验收。候选构建须显式`-Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true`；仅非调试release候选，无旧测试后缀、无官方自更新。原版权与第三方许可保留。
 
+## 协作准备与版本记录
+
+- [新生计划协作入口](docs/sprout/README.md)：先读范围、决策、门禁和版本台账，再参与修改。
+- [基线与CI台账](docs/sprout/baseline-and-validation.md)：明确共同分支与候选分支不是同一个版本，失败和未验证不计通过。
+- [协作与接口约定 v0.2](docs/sprout/collaboration-contract-v0.2.md)、[首包门禁](docs/sprout/first-candidate-gates.md)：已确认约束与待冻结提案分开。
+
+默认共同分支是 `integration/sprout`；开发者从精确基线建立任务分支并提PR，CI不代替人工审查。此文档批次不合并尚未验收的功能分支，不改变正式身份、用户数据或发布权限。
+
 ## 来源工程说明（历史，不是候选身份）
 
 > 基于 [DSH-APP/DSHA](https://github.com/DSH-APP/DSHA) 的第三方 **Mod 版本**，不是 DSHA 官方发行版。

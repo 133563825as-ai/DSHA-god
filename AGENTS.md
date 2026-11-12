@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **新生协作入口优先**：[docs/sprout/README.md](docs/sprout/README.md)。默认共同分支为 `integration/sprout`；下方 Mod 身份、main、发布约束是保留的来源359上下文，不得据此改回候选包名或使用来源发布私钥。Rebirth身份、门禁、提案与实时验证范围以新生专区的精确基线记录为准；原工程与安全约束未被静默取消。
+
 
 > **当前状态**：`0.2.1-rc.5-20261111.1200-dsh0.2.2-rc.1` / build359 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
 > 主线分支 `main`；Android 11+（API 30）/ arm64；proot 默认、proroot 可选；内置 DSH 0.2.2-rc.1。
