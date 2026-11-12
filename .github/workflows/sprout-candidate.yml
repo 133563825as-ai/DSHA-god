@@ -51,7 +51,8 @@ jobs:
           cat > "$RUNNER_TEMP/sprout-host-deps.init.gradle" <<'GRADLE'
           allprojects {
             if (project.path == ':app') {
-              configurations.create('sproutHostFixtures')
+              // 仅为独立javac夹具取四个明确jar；不解析注解元数据的Kotlin传递运行库。
+              configurations.create('sproutHostFixtures') { transitive = false }
               dependencies {
                 sproutHostFixtures 'junit:junit:4.13.2'
                 sproutHostFixtures 'org.hamcrest:hamcrest-core:1.3'
