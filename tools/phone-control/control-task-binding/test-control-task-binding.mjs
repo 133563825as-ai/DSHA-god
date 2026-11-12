@@ -20,6 +20,7 @@ const pluginSource=join(root,'app/src/main/assets/builtin-plugins/dsh-computer-u
 const javaSource=join(root,'app/src/main/java/com/deepseekharness/app/control/ControlTaskAuthority.java')
 const classes=join(output,'classes');await mkdir(classes,{recursive:true})
 const built=spawnSync('javac',['--release','17','-d',classes,javaSource,
+  join(root,'app/src/main/java/com/deepseekharness/app/util/ScreenTarget.java'),
   join(root,'tools/phone-control/control-task-binding/AuthorityHost.java')],{encoding:'utf8',windowsHide:true})
 assert.equal(built.status,0,built.stderr)
 const host=spawn('java',['-cp',classes,'AuthorityHost'],{stdio:['ignore','pipe','pipe'],windowsHide:true})
@@ -42,9 +43,12 @@ try {
   try{await symlink(join(runtime,'node_modules'),join(output,'node_modules'),'junction')}catch(error){if(error.code!=='EEXIST')throw error}
   // Only token IO and destination port change; run the same exported MCP receive
   // loop, validation and request implementation used by the production entrypoint.
-  await writeFile(join(directory,'lib/server.cjs'),`const server=require(${JSON.stringify(join(pluginSource,'lib/server.cjs'))});
+  await writeFile(join(directory,'lib/server.cjs'),`const fs=require('node:fs'),lstat=fs.lstatSync;
+fs.lstatSync=(file,...args)=>{if(file==='/root/.dsh/.bridge_port')throw Object.assign(Error('fixture port unpublished'),{code:'ENOENT'});return lstat(file,...args);};
+process.env.DSHA_BRIDGE_PORT=${JSON.stringify(port)};
+const server=require(${JSON.stringify(join(pluginSource,'lib/server.cjs'))});
 server.startServer({fs:{async readFile(file){if(file!=='/root/.dsh/.bridge_token')throw Error('FIXTURE_PATH');return 'fixture-token';}},
-fetch(url,options){return fetch(${JSON.stringify(base)}+url.pathname+url.search,options);}});\n`)
+fetch(url,options){if(url.origin!==${JSON.stringify(base)})throw Error('FIXTURE_DESTINATION');return fetch(url,options);}});\n`)
   const modules=await Promise.all(['dsh-session','dsh-agent','dsh-session-projection','dsh-llm',
     'dsh-system-prompt','dsh-tools','dsh-agent-loop','dsh-computer-use'].map(load))
   for(let index=0;index<modules.length;index++)await context.plugin(modules[index].default,
@@ -128,6 +132,7 @@ fetch(url,options){return fetch(${JSON.stringify(base)}+url.pathname+url.search,
     assert.deepEqual(starts.map(event=>event.data.turn),[1,2]);assert.deepEqual(ends.map(event=>event.data.turn),[1,2])
   }
   const inputs=['app/src/main/java/com/deepseekharness/app/control/ControlTaskAuthority.java',
+    'app/src/main/java/com/deepseekharness/app/util/ScreenTarget.java',
     'app/src/main/assets/builtin-plugins/dsh-computer-use-android/lib/index.js',
     'app/src/main/assets/builtin-plugins/dsh-computer-use-android/lib/server.cjs',
     'app/src/main/assets/builtin-plugins/dsh-computer-use-android/lib/task-binding.js',

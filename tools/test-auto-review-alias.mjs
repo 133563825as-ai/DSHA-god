@@ -11,6 +11,8 @@ const requireRuntime=createRequire(path.join(raw,'package.json'));
 const load=name=>import(pathToFileURL(requireRuntime.resolve(name)));
 const {PluginManager}=await import(pathToFileURL(path.join(managed,'node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js')));
 const {loadProfileDirectory,composeEntries}=await load('@deepseek-ai/dsh-app-boot');
+const {Context}=await load('@deepseek-ai/cordis');
+const managerContext=new Context();managerContext.provide('loader',{entries:()=>[]});
 const aliases=['dsh-auto-review','@deepseek-ai/dsh-experimental-auto-review'];
 const owned=fs.mkdtempSync(path.join(os.tmpdir(),'dsha-auto-alias-'));
 const anchor=path.join(raw,'node_modules/@deepseek-ai/dsh/package.json');
@@ -29,7 +31,7 @@ const rows=dir=>{
 };
 const makeManager=dir=>{
   const manager=Object.create(PluginManager.prototype);
-  const ctx={get:()=>undefined,emit:()=>{},loader:{entries:()=>[]},logger:{warn:()=>{}}};
+  const ctx=managerContext;
   Object.defineProperty(manager,'ctx',{value:ctx});
   Object.assign(manager,{profile:{name:path.basename(dir),dir,home:owned,patchPath:path.join(dir,'cordis.patch.yml'),overlays:[],startedBundles:[],installAnchor:anchor},ownerContext:ctx,managementBundles:new Set(),installedFrom:new Map(),packageOperations:new Set(),installs:new Map(),abort:new AbortController(),lockWaitMs:1000});
   return manager;
@@ -70,7 +72,6 @@ try {
   assert.equal(fs.readFileSync(officialMarker,'utf8'),'native historical marker');
   console.log('PASS: actual Host list/toggle + real profile composition use one canonical row; both aliases turn OFF; web ON clears only its own marker; independent profiles are unchanged.');
 
-  const {Context}=await load('@deepseek-ai/cordis');
   const {default:Permissions}=await load('@deepseek-ai/dsh-permission-presets');
   const official=await load(aliases[1]);
   const ctx=new Context();let permissionUnit,reviews=0,next=0;
@@ -110,4 +111,4 @@ try {
     await run();assert.equal(reviews,1);await fiber.dispose();
     console.log('PASS: real official Cordis + PermissionPresets register/dispose Auto; an actual current-Auto tool gate reviews once; ordinary mode and plugin re-enable do not select Auto.');
   } finally {await ctx.fiber.dispose();}
-} finally {fs.rmSync(owned,{recursive:true,force:true});}
+} finally {await managerContext.fiber.dispose();fs.rmSync(owned,{recursive:true,force:true});}

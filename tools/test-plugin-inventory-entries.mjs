@@ -65,11 +65,11 @@ const installAnchor=path.join(owned,'installation.json');fs.writeFileSync(instal
 const profile={name:'web',dir:profileDir,home,patchPath:path.join(profileDir,'cordis.patch.yml'),overlays:[],startedBundles:['fixture-base-bundle'],installAnchor};
 fs.writeFileSync(path.join(profileDir,'package.json'),JSON.stringify({name:'entries-proof',private:true,dsh:{profile:{bundles:['fixture-base-bundle']}}}));fs.writeFileSync(profile.patchPath,'[]\n');
 const configPath=path.join(profileDir,'cordis.yml');fs.writeFileSync(configPath,'[]\n');
-const ctx=await boot('dsh',configPath,readProfilePatches('dsh',profile),async context=>{context.provide('profileContext',profile);context.provide('sessionProjections',{register(){}});context.provide('appReady',{onReady(fn){queueMicrotask(fn);return ()=>{};}});});
+const ctx=await boot('dsh',configPath,readProfilePatches('dsh',profile),async context=>{context.provide('profileContext',profile);context.provide('sessionProjections',{register(){}});context.provide('agents',{turnBoundaryOf(){throw Error('此清单测试不应选择真实 Agent 预设');}});context.provide('appReady',{onReady(fn){queueMicrotask(fn);return ()=>{};}});});
 const evidence={schema:1,owned,scope:'real host lifecycle and a controlled async Host-loading barrier; no device speed claim',sourceHashes:{inventory:sha(originalInventory),managerBefore:sha(beforeManager),inventoryAfter:sha(inventorySource),managerAfter:sha(afterManager)},cases:[]};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 try{
- await ctx.plugin(Timer,{});await ctx.plugin(Hmr,{base:pathToFileURL(owned+'/').href,root:[],ignored:[]});await ctx.plugin(After,{});await ctx.plugin(AgentPresetRegistry,{default:'fixture-preset'});await ctx.loader.await();
+ await ctx.plugin(Timer,{});await ctx.plugin(Hmr,{base:pathToFileURL(owned+'/').href,root:[],ignored:[]});await ctx.plugin(After,{});const registryFiber=ctx.plugin(AgentPresetRegistry,{default:'fixture-preset'});await registryFiber;assert.equal(registryFiber.state,2,'registry must activate with its current dependencies');await ctx.loader.await();
  await ctx.agentPresets.register({id:'fixture-preset',name:'Real pending preset',plugins:[{id:'preset-pending',name:pathToFileURL(pendingFile).href}]});
  const baseline=Object.create(Before.prototype);Object.defineProperty(baseline,'ctx',{value:ctx});Object.assign(baseline,{profile,ownerContext:ctx});
  const registry=ctx.agentPresets,composition=registry.compositionInventory;let audits=0;registry.compositionInventory=function(...args){audits++;return composition.apply(this,args);};

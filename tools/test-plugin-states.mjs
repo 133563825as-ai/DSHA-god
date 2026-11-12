@@ -1,6 +1,8 @@
 import {testRuntime} from './test-runtime-fixture.mjs';
 // 使用锁定的 Cordis 与可控桥 IO，覆盖真实状态变化、迟到的桥及卸载时序。
 import test from 'node:test';
+import fs from 'node:fs';
+import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
@@ -14,7 +16,18 @@ test('等待、卸载与未知状态不报错；一个失败实例不能被成�
   });
 });
 
-test('桥晚于启动可重试，状态变化串行发送并清除已恢复故障，卸载取消后续发送', async () => {
+test('桥晚于启动可重试，状态变化串行发送并清除已恢复故障，卸载取消后续发送', async t => {
+  const server=createServer(()=>assert.fail('状态夹具不得使用真实网络发送'));
+  await new Promise(done=>server.listen(0,'127.0.0.1',done));
+  t.after(()=>new Promise(done=>server.close(done)));
+  const originalLstat=fs.lstatSync;
+  t.mock.method(fs,'lstatSync',(file,...args)=>{
+    if(file==='/root/.dsh/.bridge_port')throw Object.assign(Error('fixture port unpublished'),{code:'ENOENT'});
+    return originalLstat(file,...args);
+  });
+  const previousPort=process.env.DSHA_BRIDGE_PORT;
+  delete process.env.DSHA_BRIDGE_PORT;
+  t.after(()=>{if(previousPort===undefined)delete process.env.DSHA_BRIDGE_PORT;else process.env.DSHA_BRIDGE_PORT=previousPort;});
   const handlers=new Map(), timers=new Map(), requests=[];
   let serial=0, token='', settle;
   const runtime={name:'test-plugin',fibers:[{state:3}]};
@@ -22,17 +35,23 @@ test('桥晚于启动可重试，状态变化串行发送并清除已恢复故�
   const io={token:()=>token,setTimeout:fn=>{timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),
     fetch:(url,options)=>{requests.push({url,options});return new Promise(done=>settle=done);}};
   const tick=()=>{const [id,fn]=timers.entries().next().value;timers.delete(id);return fn();};
-  const ok=()=>settle({ok:true,text:async()=> 'OK'});
+  const ok=(body='OK')=>settle({ok:true,text:async()=> body});
   reportPluginStates(ctx,io);await tick();assert.equal(requests.length,0);assert.equal(timers.size,1);
-  token='test-secret';const first=tick();assert.equal(requests.length,1);
+  token='test-secret';await tick();assert.equal(requests.length,0);assert.equal(timers.size,1);
+  process.env.DSHA_BRIDGE_PORT=String(server.address().port);
+  const first=tick();assert.equal(requests.length,1);
+  assert.equal(new URL(requests[0].url).origin,'http://127.0.0.1:'+server.address().port);
+  assert.equal(new URL(requests[0].url).pathname,'/app/plugins');
   assert.equal(new URL(requests[0].url).searchParams.get('token'),null);
   assert.equal(requests[0].options.headers['X-Token'],token);
+  ok('NO_PERMISSION');await first;const retry=tick();assert.equal(requests.length,2);
+  assert.equal(requests[1].url,requests[0].url,'失败响应不能缓存为已发送状态');
   runtime.fibers[0].state=2;handlers.get('internal/status')();assert.equal(timers.size,0);
-  ok();await first;const second=tick();assert.equal(requests.length,2);
-  assert.equal(new URL(requests[1].url).searchParams.get('failed'),'');
-  assert.equal(new URL(requests[1].url).searchParams.get('loaded'),'test-plugin');
-  ok();await second;await tick();assert.equal(requests.length,2);
-  runtime.fibers=[];handlers.get('internal/plugin')();const last=tick();assert.equal(requests.length,3);
+  ok();await retry;const second=tick();assert.equal(requests.length,3);
+  assert.equal(new URL(requests[2].url).searchParams.get('failed'),'');
+  assert.equal(new URL(requests[2].url).searchParams.get('loaded'),'test-plugin');
+  ok();await second;await tick();assert.equal(requests.length,3);
+  runtime.fibers=[];handlers.get('internal/plugin')();const last=tick();assert.equal(requests.length,4);
   handlers.get('dispose')();ok();await last;assert.equal(timers.size,0);
 });
 

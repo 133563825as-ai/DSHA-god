@@ -10,6 +10,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 import urllib.error
@@ -295,6 +296,16 @@ class FlowTest(unittest.TestCase):
 
 
 class NativeRouteTest(unittest.TestCase):
+    def setUp(self):
+        self.stack = contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        home = Path(tempfile.mkdtemp(prefix='dsha-adb-native-route-'))
+        print('isolated native-route HOME: %s' % home, file=sys.stderr)
+        self.stack.enter_context(patch.dict(adb.os.environ, {'HOME': str(home), 'DSHA_BRIDGE_PORT': ''}))
+        self.stack.enter_context(patch.object(adb, 'BRIDGE_PORT_FILE', str(home / '.bridge_port')))
+        self.stack.enter_context(patch('socket.socket', side_effect=AssertionError('真实 socket 被禁止')))
+        self.stack.enter_context(patch('socket.create_connection', side_effect=AssertionError('真实连接被禁止')))
+
     def test_root_or_shizuku_success_needs_no_adb_keys_or_dependencies(self):
         for code in (0, 17, 126):
             output = 'native result\n[EXIT=%d]' % code
@@ -320,12 +331,24 @@ class NativeRouteTest(unittest.TestCase):
         response.read.return_value = json.dumps({'result': json.dumps(value)}).encode()
         opener = Mock(); opener.open.return_value = response; opener.open.side_effect = error
         with patch.object(adb, 'open', return_value=io.StringIO('fake-token'), create=True), \
+             patch.dict(adb.os.environ, {'DSHA_BRIDGE_PORT': '39001'}), \
              patch.object(urllib.request, 'build_opener', return_value=opener):
             try:
                 return adb.request_native_execution('id')
             finally:
                 opener.open.assert_called_once()
-                self.assertNotIn('fake-token', opener.open.call_args.args[0].full_url)
+                request = opener.open.call_args.args[0]
+                self.assertTrue(request.full_url.startswith('http://127.0.0.1:39001/device/execute?'))
+                self.assertNotIn('fake-token', request.full_url)
+                self.assertEqual('fake-token', request.get_header('X-token'))
+
+    def test_missing_bridge_port_never_sends(self):
+        opener = Mock()
+        with patch.object(adb, 'open', return_value=io.StringIO('fake-token'), create=True), \
+             patch.object(urllib.request, 'build_opener', return_value=opener):
+            with self.assertRaisesRegex(adb.policy.Blocked, 'BRIDGE_PORT_UNAVAILABLE'):
+                adb.request_native_execution('id')
+        opener.open.assert_not_called()
 
     def test_only_explicit_plan_can_trigger_adb(self):
         plan = {'version': 1, 'kind': 'READ', 'argv': ['id'], 'su': False}

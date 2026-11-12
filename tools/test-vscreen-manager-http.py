@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import urllib.request
 import zipfile
@@ -69,6 +70,26 @@ def require_same_symbols(actual, expected, stage):
                            + ':extra=' + repr(sorted(actual - expected)[:8]))
 
 
+def current_agp_aapt2(cache):
+    agp = re.search(r"id 'com.android.application' version '([^']+)'", (ROOT / 'build.gradle').read_text(encoding='utf-8'))
+    if not agp:
+        raise RuntimeError('CURRENT_AAPT2_VERSION_REQUIRED')
+    wrapper = (ROOT / 'gradle/wrapper/gradle-wrapper.properties').read_text(encoding='utf-8')
+    gradle = re.search(r'^distributionUrl=.*/gradle-([0-9]+(?:\.[0-9]+)+)-(?:bin|all)\.zip$', wrapper, re.MULTILINE)
+    if not gradle:
+        raise RuntimeError('CURRENT_GRADLE_VERSION_REQUIRED')
+    classifier = {'linux': 'linux', 'darwin': 'osx', 'win32': 'windows'}.get(sys.platform)
+    if classifier is None:
+        raise RuntimeError('UNSUPPORTED_AAPT2_PLATFORM:' + sys.platform)
+    executable = 'aapt2.exe' if classifier == 'windows' else 'aapt2'
+    candidates = sorted(path for path in cache.glob(
+        'caches/' + gradle[1] + '/transforms/**/aapt2-' + agp[1] + '-*-' + classifier + '/' + executable)
+                        if path.is_file())
+    if not candidates or len({digest(path) for path in candidates}) != 1:
+        raise RuntimeError('CURRENT_AGP_AAPT2_REQUIRED')
+    return candidates[0]
+
+
 def verify_release_resource_symbols(work, cache, jdk):
     # AGP's compile R is the Java input; its zero IDs are deliberate. Runtime R
     # may retain older timestamps when resource values change but IDs do not.
@@ -78,13 +99,7 @@ def verify_release_resource_symbols(work, cache, jdk):
     artifacts = [resource, symbols, definitions]
     if not all(path.is_file() for path in artifacts):
         raise RuntimeError('CURRENT_STANDARD_RELEASE_COMPILE_RESOURCES_REQUIRED')
-    agp = re.search(r"id 'com.android.application' version '([^']+)'", (ROOT / 'build.gradle').read_text(encoding='utf-8'))
-    if not agp:
-        raise RuntimeError('CURRENT_AAPT2_VERSION_REQUIRED')
-    candidates = list(cache.glob('caches/9.3.1/transforms/**/aapt2-' + agp[1] + '-*/aapt2.exe'))
-    if not candidates or len({digest(path) for path in candidates}) != 1:
-        raise RuntimeError('CURRENT_AGP_AAPT2_REQUIRED')
-    aapt = candidates[0]
+    aapt = current_agp_aapt2(cache)
     files, inputs = release_resource_inputs()
     artifacts_before = {str(path.relative_to(ROOT)): digest(path) for path in artifacts}
 
@@ -180,13 +195,126 @@ def run_release_source_tests(current, work, cache, sdk, junit, hamcrest, host_js
     print('PASS current main/standard release source compilation and owned-state JUnit; Android framework construction is bypassed only in explicit host owner fixtures')
 
 
+def run_aapt2_helper_tests():
+    # 仅测试缓存工具选择；不执行 AAPT2/Java/Gradle，也不读取真实构建产物。
+    import unittest
+    from unittest.mock import patch
+
+    class Aapt2SelectionTest(unittest.TestCase):
+        def setUp(self):
+            temporary = tempfile.TemporaryDirectory(prefix='vscreen-aapt2-helper-')
+            self.addCleanup(temporary.cleanup)
+            root = Path(temporary.name)
+            self.cache = root / 'cache'
+            (root / 'build.gradle').write_text("plugins { id 'com.android.application' version '9.1.1' apply false }\n", encoding='utf-8')
+            wrapper = root / 'gradle/wrapper/gradle-wrapper.properties'
+            wrapper.parent.mkdir(parents=True)
+            wrapper.write_text('distributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-bin.zip\n', encoding='utf-8')
+            self.root = root
+            root_patch = patch.dict(globals(), ROOT=root)
+            root_patch.start()
+            self.addCleanup(root_patch.stop)
+
+        def candidate(self, slot='one', classifier='linux', executable=None, agp='9.1.1', gradle='9.3.1', data=b'locked-aapt2'):
+            if executable is None:
+                executable = 'aapt2.exe' if classifier == 'windows' else 'aapt2'
+            path = self.cache / ('caches/' + gradle + '/transforms/' + slot + '/transformed/aapt2-' + agp + '-123-' + classifier + '/' + executable)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            return path
+
+        def test_platform_selection_ignores_other_platform_hashes_and_executables(self):
+            linux = self.candidate(data=b'linux-aapt2')
+            macos = self.candidate(classifier='osx', data=b'osx-aapt2')
+            windows = self.candidate(classifier='windows', data=b'windows-aapt2')
+            self.candidate(slot='wrong-executable', executable='aapt2.exe', data=b'wrong-linux-aapt2')
+            self.candidate(slot='wrong-executable', classifier='osx', executable='aapt2.exe', data=b'wrong-osx-aapt2')
+            self.candidate(slot='wrong-executable', classifier='windows', executable='aapt2', data=b'wrong-windows-aapt2')
+            for platform, expected in [('linux', linux), ('darwin', macos), ('win32', windows)]:
+                with self.subTest(platform=platform), patch.object(sys, 'platform', platform):
+                    self.assertEqual(current_agp_aapt2(self.cache), expected)
+
+        def test_linux_rejects_macos_only_cache(self):
+            self.candidate(classifier='osx')
+            with patch.object(sys, 'platform', 'linux'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_macos_rejects_linux_only_cache(self):
+            self.candidate()
+            with patch.object(sys, 'platform', 'darwin'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_unknown_platform_is_rejected_even_with_cached_tools(self):
+            for classifier in ('linux', 'osx', 'windows'):
+                self.candidate(classifier=classifier)
+            with patch.object(sys, 'platform', 'freebsd14'), self.assertRaisesRegex(RuntimeError, '^UNSUPPORTED_AAPT2_PLATFORM:freebsd14$'):
+                current_agp_aapt2(self.cache)
+
+        def test_identical_duplicates_are_allowed(self):
+            expected = self.candidate()
+            self.candidate(slot='two')
+            with patch.object(sys, 'platform', 'linux'):
+                self.assertEqual(current_agp_aapt2(self.cache), expected)
+
+        def test_conflicting_hashes_are_rejected(self):
+            self.candidate()
+            self.candidate(slot='two', data=b'different-aapt2')
+            with patch.object(sys, 'platform', 'linux'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_no_candidate_is_rejected(self):
+            with patch.object(sys, 'platform', 'linux'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_directory_is_not_a_candidate(self):
+            path = self.cache / 'caches/9.3.1/transforms/one/transformed/aapt2-9.1.1-123-linux/aapt2'
+            path.mkdir(parents=True)
+            with patch.object(sys, 'platform', 'linux'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_wrong_versions_and_other_platform_are_not_fallbacks(self):
+            self.candidate(agp='9.0.0')
+            self.candidate(gradle='9.2.0')
+            self.candidate(classifier='windows')
+            with patch.object(sys, 'platform', 'linux'), self.assertRaisesRegex(RuntimeError, '^CURRENT_AGP_AAPT2_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_versions_follow_project_and_wrapper(self):
+            (self.root / 'build.gradle').write_text("plugins { id 'com.android.application' version '9.2.0' apply false }\n", encoding='utf-8')
+            (self.root / 'gradle/wrapper/gradle-wrapper.properties').write_text(
+                'distributionUrl=https\\://services.gradle.org/distributions/gradle-9.4.0-all.zip\n', encoding='utf-8')
+            self.candidate()
+            expected = self.candidate(agp='9.2.0', gradle='9.4.0')
+            with patch.object(sys, 'platform', 'linux'):
+                self.assertEqual(current_agp_aapt2(self.cache), expected)
+
+        def test_missing_agp_version_is_rejected(self):
+            (self.root / 'build.gradle').write_text('plugins {}\n', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, '^CURRENT_AAPT2_VERSION_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+        def test_missing_gradle_version_is_rejected(self):
+            (self.root / 'gradle/wrapper/gradle-wrapper.properties').write_text('distributionUrl=unknown\n', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, '^CURRENT_GRADLE_VERSION_REQUIRED$'):
+                current_agp_aapt2(self.cache)
+
+    result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(Aapt2SelectionTest))
+    return 0 if result.wasSuccessful() else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jdk", required=True)
-    parser.add_argument("--sdk", required=True)
-    parser.add_argument("--gradle-home", required=True)
+    parser.add_argument("--jdk")
+    parser.add_argument("--sdk")
+    parser.add_argument("--gradle-home")
+    parser.add_argument('--self-test', action='store_true', help='Test AAPT2 cache selection only; no Gradle, Java, resource compilation or real artifacts')
     parser.add_argument('--resource-gate-only', action='store_true', help='Verify current resource symbols without compiling/running the HTTP fixture')
     args = parser.parse_args()
+    if args.self_test:
+        return run_aapt2_helper_tests()
+    for name in ('jdk', 'sdk', 'gradle_home'):
+        if not getattr(args, name):
+            parser.error('the following argument is required: --' + name.replace('_', '-'))
     jdk, sdk, cache = map(lambda value: Path(value).resolve(), [args.jdk, args.sdk, args.gradle_home])
     os.environ.update(JAVA_HOME=str(jdk), ANDROID_SDK_ROOT=str(sdk), GRADLE_USER_HOME=str(cache),
                       LANG="C.UTF-8", LC_CTYPE="C.UTF-8", PYTHONIOENCODING="utf-8",

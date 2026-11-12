@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {createServer} from 'node:http';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {deflateSync} from 'node:zlib';
@@ -56,11 +57,24 @@ const http=createServer((req,res)=>{requests++;const url=new URL(req.url,'http:/
   res.writeHead(200,{'Content-Type':'application/json','Content-Length':body.length});res.end(body);});
 await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
 const server=resolve('app/src/main/assets/builtin-plugins/dsh-computer-use-android/lib/server.cjs');
-const bootstrap="const s=require(process.env.DSHA_IMAGE_TEST_SERVER);s.startServer({fs:{async readFile(){return 'fixture-token';}},fetch:(url,opts)=>fetch('http://127.0.0.1:'+process.env.DSHA_IMAGE_TEST_PORT+url.pathname+url.search,opts)});";
+const home=mkdtempSync(join(tmpdir(),'dsha-image-wire-'));
+console.log('isolated image-wire HOME: '+home);
+const bootstrap=`const fs=require('node:fs'),lstat=fs.lstatSync;
+fs.lstatSync=(file,...args)=>{if(file==='/root/.dsh/.bridge_port')throw Object.assign(Error('fixture port unpublished'),{code:'ENOENT'});return lstat(file,...args);};
+const s=require(process.env.DSHA_IMAGE_TEST_SERVER);
+s.startServer({fs:{async readFile(file){if(file!=='/root/.dsh/.bridge_token')throw Error('FIXTURE_PATH');return 'fixture-token';}},
+fetch:(url,opts)=>{if(url.origin!=='http://127.0.0.1:'+process.env.DSHA_IMAGE_TEST_PORT)throw Error('FIXTURE_DESTINATION');return fetch(url,opts);}});`;
+const env={...process.env,HOME:home,USERPROFILE:home,DSH_HOME:home,DSHA_IMAGE_TEST_SERVER:server,DSHA_IMAGE_TEST_PORT:String(http.address().port)};
+const missingClient=new Client({name:'dsha-image-missing-port-test',version:'1.0.0'},{capabilities:{}});
 const transport=new StdioClientTransport({command:process.execPath,args:['-e',bootstrap],maxBufferSize:24*1024*1024,
-  env:{...process.env,DSHA_IMAGE_TEST_SERVER:server,DSHA_IMAGE_TEST_PORT:String(http.address().port)}});
+  env:{...env,DSHA_BRIDGE_PORT:env.DSHA_IMAGE_TEST_PORT}});
 const client=new Client({name:'dsha-image-wire-test',version:'1.0.0'},{capabilities:{}});
 try{
+  try{
+    await missingClient.connect(new StdioClientTransport({command:process.execPath,args:['-e',bootstrap],env:{...env,DSHA_BRIDGE_PORT:''}}));
+    const missing=await missingClient.callTool({name:'android_read_image',arguments:{path:'/sdcard/Download/example.png'}},{timeout:30000});
+    assert.equal(missing.isError,true);assert.match(missing.content[0].text,/BRIDGE_PORT_UNAVAILABLE/);assert.equal(requests,0);
+  }finally{await missingClient.close();}
   await client.connect(transport);
   let saved=0;
   const attachments={async saveImages(values){saved++;assert.equal(values.length,1);assert.equal(values[0].mediaType,'image/png');assert.deepEqual(values[0].data,png);return [{attachmentId:'fixture-image',mediaType:'image/png'}];}};

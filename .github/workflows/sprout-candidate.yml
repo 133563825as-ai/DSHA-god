@@ -45,6 +45,10 @@ jobs:
           npm ci --prefix tools/ci-browser --ignore-scripts --no-audit --no-fund
           node tools/ci-browser/node_modules/playwright/cli.js install --with-deps chromium
           python3 tools/prepare-browser-react-reference.py
+          # 独立JVM夹具使用真实、固定摘要的framework/SnakeYAML；不靠单测缓存猜测。
+          python3 tools/prepare-sprout-host-jars.py --prepare
+          python3 tools/prepare-sprout-host-jars.py --check
+          python3 tools/test-vscreen-manager-http.py --self-test
           chmod +x gradlew
           ./gradlew --version --no-daemon
           # 只解析host所需已锁定依赖，不编译App、不执行Android单测，不伪称L2通过。

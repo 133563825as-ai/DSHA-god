@@ -2,6 +2,16 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-sprout-host-jars.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Fixed real host framework and SnakeYAML preparation contract; offline checks and synthetic download rejection controls never substitute real artifact bytes.",
+      "cli": "No arguments; no network or Android device in unit controls."
+    },
+    {
       "path": "tools/test-previous-module-boundary.py",
       "stage": "fast",
       "requires": ["python39", "jdk17"],
@@ -2116,21 +2126,18 @@
     {
       "path": "tools/test-browser-origin-server.py",
       "stage": "runtime",
-      "reason": "Actual Java HTTP handler, real loopback sockets and JVM filesystem; excludes Android syscall/UI execution",
+      "reason": "Actual Java HTTP handler, real loopback sockets and JVM filesystem; requires explicitly prepared pinned real host framework, excludes Android syscall/UI execution",
       "requires": [
         "python39",
-        "jdk17",
-        "toolchains"
+        "jdk17"
       ],
       "args": [
         "--jdk",
-        "{jdk}",
-        "--gradle-home",
-        "{gradleHome}"
+        "{jdk}"
       ],
       "timeoutSeconds": 300,
       "environment": {},
-      "cli": "--jdk --gradle-home; pinned real framework JSON and current release classes"
+      "cli": "--jdk [--framework pinned-jar]; offline checked default from prepare-sprout-host-jars.py and current release classes"
     },
     {
       "path": "tools/test-destructive-full-access.mjs",

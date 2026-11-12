@@ -11,6 +11,8 @@ import {preparePrivatePluginInventory} from './private-plugin-inventory-fixture.
 
 const S=path.resolve(import.meta.dirname,'..'),assets=path.join(S,'app/src/main/assets');
 const raw=testRuntime('raw'),sha=value=>createHash('sha256').update(value).digest('hex');
+const {Context}=await import(pathToFileURL(path.join(raw,'node_modules/@deepseek-ai/cordis/lib/index.js')));
+const managerContexts=[];
 const own='plugin-bundle-proof-workers-patch.json',moduleName='@deepseek-ai/dsh-plugin-manager/lib/index.js';
 let before=fs.readFileSync(path.join(raw,'node_modules',moduleName),'utf8').replaceAll('\r\n','\n');
 const canonical=sha(before),inputs={};
@@ -43,7 +45,7 @@ const manifestPath=path.join(profileDir,'package.json');fs.writeFileSync(manifes
 const proofFile=path.join(home,'managed-package-proofs.json');fs.writeFileSync(proofFile,JSON.stringify({version:1,packages:proofs}));
 const previous=process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=sha(fs.readFileSync(proofFile));
 const profile={name:'web',dir:profileDir,home,patchPath:path.join(profileDir,'cordis.patch.yml'),overlays:[],startedBundles:[],installAnchor:path.join(sdk,'package.json')};
-function manager(Type){const ctx={get:()=>undefined,emit(){},loader:{entries:()=>[]},logger:{warn(){}}},item=Object.create(Type.prototype);Object.defineProperty(item,'ctx',{value:ctx});Object.assign(item,{profile,ownerContext:ctx,managementBundles:new Set(),installedFrom:new Map(),packageOperations:new Set(),installs:new Map(),abort:new AbortController(),lockWaitMs:1000});return item;}
+function manager(Type){const ctx=new Context(),item=Object.create(Type.prototype);ctx.provide('loader',{entries:()=>[]});managerContexts.push(ctx);Object.defineProperty(item,'ctx',{value:ctx});Object.assign(item,{profile,ownerContext:ctx,managementBundles:new Set(),installedFrom:new Map(),packageOperations:new Set(),installs:new Map(),abort:new AbortController(),lockWaitMs:1000});return item;}
 const old=manager(Before),candidate=manager(After),originalOpen=fs.promises.open;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let measure=false,delay=0,mutation,readGate,stats;
@@ -90,6 +92,6 @@ try{
  const afterBurst=await candidate.listBundles();assert.deepEqual(afterBurst,expected,'overload rejection cannot poison later proof sessions');
  result.cases.push({name:'18-request-burst-remains-bounded-and-recovers',requests:18,accepted:settled.filter(row=>row.ok).length,busy:settled.filter(row=>!row.ok).length,maxActive:stats.maxActive,limitation:'two proof jobs per full request can exhaust the existing 32-waiter bound earlier; the bound is not enlarged'});
  delay=0;reset();const remove=await candidate.removeBundle(names[1]);assert.equal(remove.application,'failed');assert.equal(remove.error.code,'not-removable');assert.equal(stats.proofOpens,2);assert.deepEqual([...stats.packages],[1]);assert(stats.bytes>=2*1024*1024&&stats.bytes<3*1024*1024);assert.deepEqual(fs.readFileSync(manifestPath),beforeManifest);result.cases.push({name:'removal-still-authenticates-preflight-and-locked-target-only-recheck',...snapshot()});
-}finally{readGate?.resolve();measure=false;fs.promises.open=originalOpen;if(server)await new Promise(resolve=>server.close(resolve));if(previous===undefined)delete process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;else process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=previous;}
+}finally{readGate?.resolve();measure=false;fs.promises.open=originalOpen;if(server)await new Promise(resolve=>server.close(resolve));for(const ctx of managerContexts)await ctx.fiber.dispose();if(previous===undefined)delete process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;else process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=previous;}
 const report=process.env.DSHA_PLUGIN_WORKERS_REPORT;if(report){fs.mkdirSync(path.dirname(report),{recursive:true});fs.writeFileSync(report,JSON.stringify(result,null,2)+'\n');}
 console.log('PASS: same full provenance/row order, two bounded workers, fresh request proofs, target-only scans, integrity failures, cancellation/error draining and HTTP concurrency.');
