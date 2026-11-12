@@ -79,9 +79,9 @@ elif mode=='enable': assert r.enable_plugin('dsh-tool-vscreen')==0
     const sections=(await ctx.systemPrompt.assemble()).sections.filter(section=>section.name==='mcp:dsha-vscreen');
     assert.equal(sections.length,1,'the actual MCP initialization instructions must reach the model');
     const instructions=sections[0].text;
-    assert.match(instructions,/Cancellation, timeout or interruption/);assert.match(instructions,/SDK AbortError/);
-    assert.match(instructions,/can discard the server receipt and does not prove launch was not executed/);
-    assert.match(instructions,/inspect actual state before deciding and never replay automatically/);
+    assert.match(instructions,/取消、超时或中断/);assert.match(instructions,/SDK 抛出 AbortError/);
+    assert.match(instructions,/可能丢失回执，不证明动作或 launch 未执行/);
+    assert.match(instructions,/一律不自动重放，先观察实际状态/);
     await mounted.dispose();assert.equal(ctx.tools.schemas().length,0);
     await ctx.fiber.dispose();ctx=null;
   }
