@@ -8,7 +8,7 @@
 | 分支 | 本次文档整理时的提交 | 意义 |
 |---|---|---|
 | `integration/sprout`（默认） | `4027e4c8a84fa25b09d9b3d7e6b8f833b898dd1e` | 共同源码入口，完整门禁仍有失败 |
-| `feat/rebirth-identity` | `7c7406f309cf2a22546b4684ba820a3315ade2ce` | 后续已审测试修复，等待第九轮完整结论 |
+| `feat/rebirth-identity` | `f5ce9c6ecb41192efa5461a6b11f8532fc148747` | 后续已审浏览器测试修复，等待第十轮完整结论 |
 | `docs/sprout-preparation` | 基于4027e4c8，本文档批次 | 只整理公开准备材料，不捎带后续测试修复 |
 | `main`（保留） | `23a5b367b60726358c438d7b35eec1350d5ee925` | 原项目介绍历史，不覆盖、不强推 |
 
@@ -33,9 +33,10 @@
 | 6／0a86c652 | [43166385166](https://github.com/133563825as-ai/DSHA-god/actions/runs/43166385166) | fast98/98、unit4496通过、Lint0错误602警告；runtime96/128，真实历史212边界通过 | 32失败，software／包未跑 |
 | 7／4027e4c8 | [43174111479](https://github.com/133563825as-ai/DSHA-god/actions/runs/43174111479) | fast99/99、unit4496通过、Lint0错误602警告；runtime107/128，消除11项、无新增 | 21失败，software／包未跑 |
 | 8／4c8fe0ea | [43185258663](https://github.com/133563825as-ai/DSHA-god/actions/runs/43185258663) | fast99/99、unit4496通过、Lint0错误602警告；runtime113/128，消除6项、无新增 | 15失败，software／包未跑 |
-| 9／7c7406f3 | [43193401370](https://github.com/133563825as-ai/DSHA-god/actions/runs/43193401370) | 文档整理时进行中，L1通过、L2执行中 | 终态与计数待收，不能继承第八轮结果 |
+| 9／7c7406f3 | [43193401370](https://github.com/133563825as-ai/DSHA-god/actions/runs/43193401370) | fast99/99、unit4496通过、Lint0错误602警告；runtime116/128，消除pnpm／vscreen HTTP／Standard宿主3项、无新增 | 12失败，software／包未跑 |
+| 10／f5ce9c6e | [43200374634](https://github.com/133563825as-ai/DSHA-god/actions/runs/43200374634) | GitHub Ubuntu24.04执行中；新增有限资源负控，runtime选择数应按本轮报告对账 | 终态／各阶段计数待收，不继承前轮结果 |
 
-unit结果中的7个必需外部fixture在第3／5／6／7／8轮报告实际通过；这不代表全部host runtime通过。602警告尚未完整做同环境来源差异归因，不声称全为历史警告。默认单测编译链、显式候选行为测试和真正候选release编译是不同证据。
+unit结果中的7个必需外部fixture在第3／5／6／7／8／9轮报告实际通过；这不代表全部host runtime通过。602警告尚未完整做同环境来源差异归因，不声称全为历史警告。默认单测编译链、显式候选行为测试和真正候选release编译是不同证据。
 
 ### 已回收证据包标识
 
@@ -48,6 +49,7 @@ GitHub Actions日志／artifact有保留期限。以下摘要用于对账；本�
 | 6 | 13921248094 | `8dff4b711a91c168c752f2c34c8c4f8a2f7e10dcafb56b36c0296abe2877d45f` |
 | 7 | 13923963403 | `e9e287c8636812bc37a117b334207f3b1b207d2fd53010463ce2a2ba917664c8` |
 | 8 | 13928749883 | `9a25faf7f3688eb6244401a5cbe4643b8fe371628da60d16d4a4c330af3a1fad` |
+| 9 | 13933367762 | `b1cfd27dfafe3652f081c2ef260c2ba1d28d8bb525c903f4a7a7adbbf55285ae` |
 
 ## 关键修复提交地图
 
@@ -60,7 +62,8 @@ GitHub Actions日志／artifact有保留期限。以下摘要用于对账；本�
 | `0a86c652d4ecd5c381dcd6e022a3fcd8ec663dc2` | 旧212三个真实缺席模块边界 | 43历史bytes＋3明确probe，不造旧模块 |
 | `4027e4c8a84fa25b09d9b3d7e6b8f833b898dd1e` | 依赖、编译源、隔离端口／目录、jar／AAPT2准备 | 当前共同基线，未全绿 |
 | `4c8fe0eacbe3af2ffae54bb0785468d4d8022931` | native executor、真实历史材料、资源map与诚实生命周期测试 | 生产不改，web-search／overlay仍红 |
-| `7c7406f309cf2a22546b4684ba820a3315ade2ce` | pnpm负例PATH／fields、Standard语言桥测试、styleable结构校验 | 本地定向过，第九轮完整CI待收 |
+| `7c7406f309cf2a22546b4684ba820a3315ade2ce` | pnpm负例PATH／fields、Standard语言桥测试、styleable结构校验 | 第九轮三项真实通过，完整runtime仍12失败 |
+| `f5ce9c6ecb41192efa5461a6b11f8532fc148747` | 真实有限资源加载、共享fixture兼容／边界负控、账号测试依赖 | 五项本地定向通过，第十轮完整CI待收；不涉及真实账号或生产授权 |
 
 ## 更新台账的规则
 
