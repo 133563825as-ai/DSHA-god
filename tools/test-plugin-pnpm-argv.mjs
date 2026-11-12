@@ -98,15 +98,43 @@ const previousUnlocked = process.env.DSHA_PLUGIN_UNLOCKED;
 try {
     await check('negative: real bundled pnpm flags-before-view reproduces recursive exec failure with zero registry traffic', async () => {
         const dir = profile('negative-query');
+        // 负例必须使用只含受控 npm spy 的 PATH：pnpm 的 run→exec 回退会把 view 当程序执行。
+        // 宿主 PATH 若存在同名 view（例如 Ubuntu 自带的 vim 只读别名 /usr/bin/view），
+        // 它会取代 ENOENT 失败：受控 view stub 可复现 CI 的 exit 1/空 stdout；
+        // CI 尚缺子进程 stderr，不能据此确认当时实际命中 vim。无 view 时是 pnpm 自己的错误。隔离后
+        // view 一定不可解析，两种宿主得到同一可复核结果，也不会执行任何宿主二进制。
+        const negativeEnv = { ...env, PATH: bin };
         const result = spawnSync(process.execPath, [cli, '--config.update-notifier=false', 'view', 'dsh-market', 'name', 'version', 'description', 'dsh', '--json', '--config.fetch-retries=0'],
-            { cwd: dir, env, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+            { cwd: dir, env: negativeEnv, encoding: 'utf8', windowsHide: true, timeout: 15000 });
         fs.writeFileSync(path.join(out, 'negative-query.log'), (result.stdout ?? '') + (result.stderr ?? ''));
-        assert.equal(result.status, 1); assert.match(result.stdout, /ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL/); assert.match(result.stdout, /view/);
+        // 诊断只用于 CI 只保存空 stdout 断言时仍能看到子进程真实状态；不改变下面的门禁。
+        const diagnostic = { status: result.status, signal: result.signal,
+            error: result.error ? { code: result.error.code, message: result.error.message } : null,
+            stdout: result.stdout ?? '', stderr: result.stderr ?? '', spyInvoked: fs.existsSync(spyLog) };
+        fs.writeFileSync(path.join(out, 'negative-query-result.json'), JSON.stringify(diagnostic, null, 2) + '\n');
+        const bounded = text => ({ text: text.slice(0, 16384), truncated: text.length > 16384 });
+        console.error('PNPM_NEGATIVE_DIAGNOSTIC ' + JSON.stringify({ ...diagnostic,
+            stdout: bounded(diagnostic.stdout), stderr: bounded(diagnostic.stderr) }));
+        // 语义断言不变：pnpm 必须走 run→exec 回退并报 recursive exec 失败，且完全不碰 npm。
+        // 退出码改为锁定 pnpm 10.34.5 的真实映射：errorHandler 用底层 child error 的数字
+        // errno 退出，POSIX ENOENT(-2) 呈现为 254（不是 1）；Windows 的 errno 映射不同，
+        // 因此仍要求固定错误签名和非零失败。原断言 1 不代表此受控 ENOENT 路径；
+        // CI 的“1”是否来自宿主 view 仍需原始 stderr/命令解析证据。
+        assert.ok(Number.isInteger(result.status),
+            `bundled pnpm did not run: status=${result.status} signal=${result.signal} error=${result.error?.message}`);
+        if (process.platform === 'win32') assert.notEqual(result.status, 0);
+        else assert.equal(result.status, 254);
+        assert.equal(result.stderr, '');
+        assert.match(result.stdout, /ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL/);
+        assert.match(result.stdout, /Command "view" not found/);
         assert.equal(fs.existsSync(spyLog), false);
     });
     await check('real official registry inspection keeps view first and honors executable-prefix arguments', async () => {
         const dir = profile('positive-query');
-        const view = await after.viewProfilePackage(dir, 'dsha-registry-fixture', { command: process.execPath, args: [cli], env, timeoutMs: 15000, registry: 'https://registry.npmjs.org/' });
+        // 现行 API 要求调用方给出要打印的清单字段；取与生产 INSPECT_FIELDS 相同的四项，
+        // 让 spy 返回的元数据与真实 npm view 输出形状一致。
+        const view = await after.viewProfilePackage(dir, 'dsha-registry-fixture', { command: process.execPath, args: [cli],
+            fields: ['name', 'version', 'description', 'dsh'], env, timeoutMs: 15000, registry: 'https://registry.npmjs.org/' });
         fs.writeFileSync(path.join(out, 'positive-query.json'), JSON.stringify(view, null, 2));
         assert.equal(view.exitCode, 0, JSON.stringify(view)); assert.equal(JSON.parse(view.stdout).name, 'dsha-registry-fixture');
         const args = JSON.parse(fs.readFileSync(spyLog, 'utf8').trim().split('\n').at(-1));
