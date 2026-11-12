@@ -8,7 +8,7 @@
 | 分支 | 本次文档整理时的提交 | 意义 |
 |---|---|---|
 | `integration/sprout`（默认） | `4027e4c8a84fa25b09d9b3d7e6b8f833b898dd1e` | 共同源码入口，完整门禁仍有失败 |
-| `feat/rebirth-identity` | `3b4fa3d2800fb679d4d1db23e1d723ed7972fd05` | 欢迎弹窗定位修复，等待第十三轮完整结论；worker实验未纳入 |
+| `feat/rebirth-identity` | `3b4fa3d2800fb679d4d1db23e1d723ed7972fd05` | 第十三轮124/129、5失败；下一批仅overlay生命周期生产修复获单独批准，未提交 |
 | `docs/sprout-preparation` | 基于4027e4c8，本文档批次 | 只整理公开准备材料，不捎带后续测试修复 |
 | `main`（保留） | `23a5b367b60726358c438d7b35eec1350d5ee925` | 原项目介绍历史，不覆盖、不强推 |
 
@@ -37,9 +37,9 @@
 | 10／f5ce9c6e | [43200374634](https://github.com/133563825as-ai/DSHA-god/actions/runs/43200374634) | fast99/99、unit4496通过、Lint0错误602警告；runtime119/129，两个账号用例消除、新增资源测试通过、无新增失败 | 10失败，software／包未跑 |
 | 11／a6133683 | [43204430014](https://github.com/133563825as-ai/DSHA-god/actions/runs/43204430014) | fast99/99、unit4496通过、Lint0错误602警告；runtime120/129，锁顺序／来源证明消除 | 9失败；新增worker证明测试失败，不称无回归；software／包未跑 |
 | 12／532cc99a | [43209901981](https://github.com/133563825as-ai/DSHA-god/actions/runs/43209901981) | fast99/99、unit4496通过、Lint0错误602警告；runtime123/129，安全提示两项通过，worker本轮恢复通过 | 6失败；worker跨次时序敏感性尚未解决；software／包未跑 |
-| 13／3b4fa3d2 | [43214877965](https://github.com/133563825as-ai/DSHA-god/actions/runs/43214877965) | GitHub Ubuntu24.04执行中；仅欢迎弹窗作用域测试修复，本地三场景通过 | 完整结果待收，worker实验失败后已精确撤回，不在本提交 |
+| 13／3b4fa3d2 | [43214877965](https://github.com/133563825as-ai/DSHA-god/actions/runs/43214877965) | fast99/99、unit4496通过、Lint0错误602警告；runtime124/129，欢迎测试消除、无新增失败 | 5失败：overlay、迁移原件身份、mobile滚动、应急页面、web-search跨代链；software／包未跑 |
 
-unit结果中的7个必需外部fixture在第3／5／6／7／8／9／10／11／12轮报告实际通过；这不代表全部host runtime通过。602警告尚未完整做同环境来源差异归因，不声称全为历史警告。默认单测编译链、显式候选行为测试和真正候选release编译是不同证据。
+unit结果中的7个必需外部fixture在第3／5／6／7／8／9／10／11／12／13轮报告实际通过；这不代表全部host runtime通过。602警告尚未完整做同环境来源差异归因，不声称全为历史警告。默认单测编译链、显式候选行为测试和真正候选release编译是不同证据。
 
 ### 已回收证据包标识
 
@@ -56,6 +56,7 @@ GitHub Actions日志／artifact有保留期限。以下摘要用于对账；本�
 | 10 | 13935733601 | `e44a52629fd55d83497dcc8f3d144bb5fae44c289d32cfbc77511eda9c29f9bc` |
 | 11 | 13940975421 | `ae5d1774b2119cd09ca4e855b850158d25cd93dcb46c4a7b2dfab2e97155421d` |
 | 12 | 13941973247 | `ba68523ded480b566556fb5ef0ebbdb59756a5dccb0f5eba78eb5d9f4ce6bae4` |
+| 13 | 13944745350 | `a7e0f92174f7985a1c6c36b7377b8c5c5167b9fabdcb7a64257ca24c4aa799ad` |
 
 ## 关键修复提交地图
 
@@ -72,7 +73,7 @@ GitHub Actions日志／artifact有保留期限。以下摘要用于对账；本�
 | `f5ce9c6ecb41192efa5461a6b11f8532fc148747` | 真实有限资源加载、共享fixture兼容／边界负控、账号测试依赖 | 第十轮119/129，账号两项与资源测试过；不涉及真实账号或生产授权 |
 | `a613368347a69d277089b0dbfd941488cf774407` | 锁定HMR摘要及插件来源证明五态负控 | 第十一轮两项通过，不改变生产信任规则；完整runtime仍9失败 |
 | `532cc99a52ec0049cdddd1f324ebcbd1f362c28f` | 安全提示112条规则与逐条删除／超长负控、中文取消契约 | 第十二轮两项通过，生产文本不改，非SDK取消交付实测 |
-| `3b4fa3d2800fb679d4d1db23e1d723ed7972fd05` | 欢迎测试限定实际预览说明弹窗 | 已审且原runner通过，第十三轮待收；不关闭后续登录窗冒充保存成功 |
+| `3b4fa3d2800fb679d4d1db23e1d723ed7972fd05` | 欢迎测试限定实际预览说明弹窗 | 第十三轮真实通过，剩5项；不关闭后续登录窗冒充保存成功 |
 
 ## 更新台账的规则
 
