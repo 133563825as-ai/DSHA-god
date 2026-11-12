@@ -1,0 +1,162 @@
+name: Rebirth Sprout candidate gates
+
+# 仅自有仓库独立嫩芽分支；无发布密钥、无Release、无设备动作。
+on:
+  push:
+    branches: ['feat/rebirth-identity']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sprout-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/feat/rebirth-identity'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-ci
+      DSHA_ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-deps
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/sprout-browsers
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          gradle-cache: 'false'
+      - uses: ./.github/actions/android-sdk
+        with:
+          ndk: 'true'
+      - name: Frozen inputs and diagnostic host dependencies (not L2 acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/sprout
+          git rev-parse HEAD > out/sprout/source-commit.txt
+          python3 tools/sunset-ci-inputs.py --github-output > out/sprout/input-lock.txt
+          python3 tools/ci-assets.py --url 'https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261105e/dsha-a-su-fixed-inputs-20261105e.zip' --sha256 be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5
+          python3 tools/prepare-test-runtime.py
+          python3 tools/prepare-semver-reference.py
+          npm ci --prefix tools/ci-browser --ignore-scripts --no-audit --no-fund
+          node tools/ci-browser/node_modules/playwright/cli.js install --with-deps chromium
+          python3 tools/prepare-browser-react-reference.py
+          chmod +x gradlew
+          ./gradlew --version --no-daemon
+          # 只解析host所需已锁定依赖，不编译App、不执行Android单测，不伪称L2通过。
+          cat > "$RUNNER_TEMP/sprout-host-deps.init.gradle" <<'GRADLE'
+          allprojects {
+            if (project.path == ':app') {
+              configurations.create('sproutHostFixtures')
+              dependencies {
+                sproutHostFixtures 'junit:junit:4.13.2'
+                sproutHostFixtures 'org.hamcrest:hamcrest-core:1.3'
+                sproutHostFixtures 'com.google.code.gson:gson:2.13.1'
+                sproutHostFixtures 'androidx.annotation:annotation-jvm:1.9.1'
+              }
+              tasks.register('prepareSproutHostFixtures') {
+                doLast { configurations.sproutHostFixtures.files.each { println it } }
+              }
+            }
+          }
+          GRADLE
+          ./gradlew :app:prepareSproutHostFixtures -I "$RUNNER_TEMP/sprout-host-deps.init.gradle" --no-daemon --max-workers=2
+          mkdir -p "$RUNNER_TEMP/sprout-toolchains"
+          ln -s "$ANDROID_HOME" "$RUNNER_TEMP/sprout-toolchains/android-sdk"
+          ln -s "$GRADLE_USER_HOME" "$RUNNER_TEMP/sprout-toolchains/gradle-user-home"
+          # 只提取固定pnpm archive中单一工具前缀，路径和成员类型先验证。
+          python3 - <<'PY'
+          import os, pathlib, tarfile
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'sprout-pnpm'
+          out.mkdir()
+          prefix = 'usr/local/lib/dsha-pnpm/'
+          with tarfile.open('app/src/main/assets/pnpm-runtime.bin', 'r:gz') as archive:
+              for item in archive:
+                  name = item.name.removeprefix('./')
+                  if not name.startswith(prefix):
+                      continue
+                  relative = pathlib.PurePosixPath(name[len(prefix):])
+                  if relative.is_absolute() or '..' in relative.parts or item.issym() or item.islnk():
+                      raise SystemExit('UNSAFE_PNPM_MEMBER')
+                  if item.isfile():
+                      target = out / str(relative)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      with target.open('xb') as stream:
+                          stream.write(archive.extractfile(item).read())
+          if not (out / 'dist/pnpm.cjs').is_file():
+              raise SystemExit('PNPM_CLI_MISSING')
+          PY
+      - name: L1 source, identity and complete fast gates (sequential, fail closed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test-release-identity.py 2>&1 | tee out/sprout/identity-tests.log
+          python3 tools/release-identity.py --check
+          python3 tools/prepare-runtime-descriptor.py --check
+          python3 tools/run-host-tests.py --check-manifest
+          python3 tools/check-source-hygiene.py
+          python3 tools/check-ui-i18n.py
+          python3 tools/localize-android-ui.py --resources-only --check
+          python3 tools/generate-changelog.py --check
+          python3 tools/check-document-links.py
+          python3 tools/format-java.py --check --files app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java app/src/main/java/com/deepseekharness/app/ui/AboutFragment.java app/src/main/java/com/deepseekharness/app/ui/AboutDialog.java app/src/main/java/com/deepseekharness/app/DshaDocumentsProvider.java app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java app/src/test/java/com/deepseekharness/app/core/UpdateEngineCheckTest.java --report app/build/java-format/sprout-ci.json
+          python3 tools/run-host-tests.py --stage fast --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/sprout-toolchains" --pnpm-cli "$RUNNER_TEMP/sprout-pnpm/dist/pnpm.cjs" --output app/build/host-fast-sprout-ci 2>&1 | tee out/sprout/host-fast.log
+      - name: L2 full unit tests and Lint (only after L1)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/prepare-robolectric-sdks.py --dir "$DSHA_ROBOLECTRIC_DEPENDENCY_DIR"
+          ./gradlew :app:testStandardDebugUnitTest --rerun-tasks --no-daemon --max-workers=2 2>&1 | tee out/sprout/unit.log
+          python3 tools/verify-unit-results.py --mode full --require-fixtures --output out/sprout/unit-results.json
+          ./gradlew :app:lintStandardRelease --no-daemon --max-workers=2 2>&1 | tee out/sprout/lint.log
+      - name: Complete runtime and software gates (only after L2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 历史输入前置必须显式满足，不能让缺参数被当成环境豁免或跳过。
+          python3 - <<'PY'
+          import os, pathlib, re, hashlib
+          runner = pathlib.Path('tools/run-host-tests.py').read_text()
+          child = pathlib.Path('tools/test-build193-patch-chain.py').read_text()
+          expected = re.search(r'hexdigest\(\) != "([a-f0-9]{64})"', runner).group(1)
+          actual = re.search(r"OLD_APK_SHA = '([a-f0-9]{64})'", child).group(1)
+          if expected != actual:
+              raise SystemExit('BLOCKED_HISTORICAL_FIXTURE_CONTRACT: runner and patch-chain require different APK identities; no waiver')
+          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'sprout-previous-runtime.apk'
+          if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != expected:
+              raise SystemExit('BLOCKED_HISTORICAL_FIXTURE_MISSING: exact old APK required; no synthesized input or skip')
+          PY
+          python3 tools/run-host-tests.py --stage runtime --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/sprout-toolchains" --pnpm-cli "$RUNNER_TEMP/sprout-pnpm/dist/pnpm.cjs" --previous-runtime-apk "$RUNNER_TEMP/sprout-previous-runtime.apk" --playwright "$GITHUB_WORKSPACE/tools/ci-browser/node_modules/playwright" --browsers-path "$PLAYWRIGHT_BROWSERS_PATH" --output app/build/host-runtime-sprout-ci 2>&1 | tee out/sprout/host-runtime.log
+          # 标准Linux内串行调用原脚本；它内部再跑单测/Lint，不与其他Gradle并发。
+          python3 tools/verify-stability.py --stage software --java-home "$JAVA_HOME" --sdk "$ANDROID_HOME" --test-forks 1 2>&1 | tee out/sprout/software.log
+      - name: Compile isolated unsigned Rebirth release (only after software gates)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:printReleaseIdentity :app:assembleStandardRelease -Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true --no-daemon --max-workers=2 2>&1 | tee out/sprout/candidate-build.log
+          python3 tools/rebirth-apk-check.py --build-tools "$ANDROID_HOME/build-tools/36.0.0" --output out/sprout
+      - name: Upload unsigned candidate, never a release or installable signed build
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: SPROUT-UNSIGNED-NOT-FOR-INSTALLATION
+          path: out/sprout/*.apk*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload gate evidence including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sprout-gate-evidence
+          path: |
+            out/sprout
+            app/build/host-fast-sprout-ci
+            app/build/host-runtime-sprout-ci
+            app/build/test-results
+            app/build/reports
+            app/build/stability-acceptance
+          if-no-files-found: warn
+          retention-days: 14

@@ -100,7 +100,7 @@ class GradleContract(unittest.TestCase):
         self.assertIn('rootProject.file("ci/release-identity.${releaseIdentityName}.json")', self.gradle)
 
     def test_identity_fields_drive_package_name_suffix_alias_and_certificate(self):
-        self.assertIn("applicationId releaseIdentity.packageName", self.gradle)
+        self.assertIn("applicationId rebirthCandidate ? 'dsh.android.client.rebirth' : releaseIdentity.packageName", self.gradle)
         self.assertIn("applicationIdSuffix releaseIdentity.testSuffix", self.gradle)
         self.assertIn("applicationIdSuffix releaseIdentity.devSuffix", self.gradle)
         self.assertIn("applicationIdSuffix '.debug'", self.gradle)
@@ -113,6 +113,19 @@ class GradleContract(unittest.TestCase):
         self.assertNotIn('applicationId "', self.gradle)
         self.assertNotIn('"androiddebugkey"', self.gradle)
         self.assertNotIn('"dsha-a-su"', self.gradle)
+
+    def test_rebirth_is_explicit_fixed_unsigned_candidate_not_a_production_identity(self):
+        self.assertEqual(identity.IDENTITIES, ("mod", "upstream"))
+        for guard in ("REBIRTH_CANDIDATE_INVALID", "REBIRTH_CANDIDATE_REQUIRES_UPSTREAM_UNSIGNED_WITHOUT_SUFFIX",
+                      "REBIRTH_CANDIDATE_FORBIDS_PUBLISH_CREDENTIALS", "REBIRTH_CANDIDATE_RELEASE_ONLY"):
+            self.assertIn(guard, self.gradle)
+        self.assertIn("providers.gradleProperty('dsha.rebirthCandidate').orElse('false')", self.gradle)
+        self.assertIn("releaseIdentityName != 'upstream' || !unsignedPackage", self.gradle)
+        self.assertIn("|| sunsetTest || debugPackage || devPackage", self.gradle)
+        self.assertIn("rebirthCandidate ? 'DSHA 新生'", self.gradle)
+        self.assertIn("'REBIRTH_CANDIDATE', rebirthCandidate ? 'true' : 'false'", self.gradle)
+        self.assertIn("if (rebirthCandidate) versionNameSuffix '-Rebirth-Sprout.1'", self.gradle)
+        self.assertIn("if (rebirthCandidate || sunsetTest || debugPackage || devPackage)", self.gradle)
 
     def test_version_is_shared_by_both_identities(self):
         self.assertEqual(len(re.findall(r"(?m)^\s+versionCode \d+$", self.gradle)), 1)

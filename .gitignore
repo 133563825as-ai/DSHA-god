@@ -1,6 +1,7 @@
 # Gradle / Android 构建产物
 .gradle/
 .gradle-user-home/
+.gradle-ci/
 .pnpm-store/
 build/
 app/build/

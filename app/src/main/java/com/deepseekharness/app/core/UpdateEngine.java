@@ -36,6 +36,7 @@ public final class UpdateEngine {
   }
 
   private final Transport transport;
+  private final boolean rebirthCandidate;
 
   public static synchronized UpdateEngine get(android.content.Context context) {
     if (instance == null) instance = new UpdateEngine(context.getApplicationContext());
@@ -71,6 +72,11 @@ public final class UpdateEngine {
   }
 
   UpdateEngine(android.content.Context app, Transport source) {
+    this(app, source, BuildConfig.REBIRTH_CANDIDATE);
+  }
+
+  UpdateEngine(android.content.Context app, Transport source, boolean candidateBuild) {
+    rebirthCandidate = candidateBuild;
     context = app;
     transport = source == null ? this::connect : source;
     channel = prefs().getString("channel", UpdatePolicy.defaultChannel(BuildConfig.VERSION_NAME));
@@ -87,7 +93,7 @@ public final class UpdateEngine {
   }
 
   public boolean shouldResume() {
-    return currentCandidate() && "downloading".equals(phase);
+    return !rebirthCandidate && currentCandidate() && "downloading".equals(phase);
   }
 
   public LiveData<State> state() {
@@ -261,6 +267,19 @@ public final class UpdateEngine {
   }
 
   private void check(boolean startup) {
+    if (rebirthCandidate) {
+      state.setValue(
+          new State(
+              com.deepseekharness.app.util.UiText.choose(
+                  "新生候选请手动更新，不接入正式更新通道",
+                  "Rebirth candidates require manual updates; the official channel is disabled"),
+              false,
+              0,
+              0,
+              null,
+              null));
+      return;
+    }
     final String requestedChannel = channel;
     submit(
         checkingMessage(),
@@ -321,6 +340,7 @@ public final class UpdateEngine {
   }
 
   public void download() {
+    if (rebirthCandidate) return;
     if (!currentCandidate() || !candidate.valid() || !busy.compareAndSet(false, true)) return;
     cancelled = false;
     stopReason = "";
@@ -569,6 +589,7 @@ public final class UpdateEngine {
   }
 
   private void restore() {
+    if (rebirthCandidate) return;
     try {
       JSONObject doc = new JSONObject(prefs().getString("task", "{}"));
       if (!doc.has("code")) return;
@@ -616,6 +637,7 @@ public final class UpdateEngine {
   }
 
   public File installableApk() throws Exception {
+    if (rebirthCandidate) throw new IOException("REBIRTH_OFFICIAL_UPDATES_DISABLED");
     UpdatePolicy.Release release = candidate;
     File file = verifiedApk;
     String sourceChannel = candidateChannel;

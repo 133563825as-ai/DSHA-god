@@ -7,6 +7,7 @@ name: Source checks
 #              └─► host-fast（fast 阶段宿主回归，含 raw 夹具与 toolchains）
 on:
   push:
+    branches-ignore: ['feat/rebirth-identity']
   pull_request:
   workflow_dispatch:
 permissions:

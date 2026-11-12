@@ -25,7 +25,7 @@ public final class AboutDialog {
         android.view.LayoutInflater.from(ctx)
             .inflate(com.deepseekharness.app.R.layout.dialog_about, null);
     ((android.widget.TextView) content.findViewById(com.deepseekharness.app.R.id.about_version))
-        .setText(com.deepseekharness.app.util.UiText.format("DSHA v%s", version));
+        .setText(ctx.getString(com.deepseekharness.app.R.string.app_name) + " · " + version);
     android.widget.TextView repository =
         content.findViewById(com.deepseekharness.app.R.id.about_repository);
     repository.setText(Uri.parse(GITHUB_URL).getPath().substring(1));

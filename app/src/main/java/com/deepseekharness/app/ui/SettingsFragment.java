@@ -221,7 +221,11 @@ public class SettingsFragment extends Fragment {
         requireContext().getPackageName() + " · Android " + android.os.Build.VERSION.RELEASE;
     TechNote.bind(ver, tech, disclosure, null);
     TextView updateSub = v.findViewById(R.id.settings_update_sub);
-    updateSub.setText(com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
+    updateSub.setText(
+        com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE
+            ? com.deepseekharness.app.util.UiText.choose(
+                "新生候选 · 请手动更新", "Rebirth candidate · Manual updates only")
+            : com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
 
     View about = v.findViewById(R.id.settings_about);
     selectable.put(KEY_ABOUT, about);

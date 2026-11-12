@@ -1,4 +1,10 @@
-# DSH-A-Su · DSHA Sunset Mod
+# DSHA 新生 · Rebirth / Sprout
+
+> **新生计划，代号嫩芽。** 本分支是DSHA核心开发协作中的隔离候选，包名`dsh.android.client.rebirth`、应用名`DSHA 新生`，不覆盖正式包；工作与构建在[DSHA-god](https://github.com/133563825as-ai/DSHA-god)，最终成果面向[DSH-APP/DSHA](https://github.com/DSH-APP/DSHA)。
+> 首次来源冻结参考build359/`92acaa0408cb7b031ee3036c6116c6463ae6b62e`。候选门禁/构建进行中，未真机、未发布；CI无正式密钥，只在全部所需门禁通过后上传unsigned产物，不能直接安装。参考后续Bug选择性跟进，不反复整版追新。
+> 下文是**保留的来源359说明**，其中Mod身份/签名/已发布状态描述来源工程，不表示本候选使用该身份或已通过同等验收。候选构建须显式`-Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true`；仅非调试release候选，无旧测试后缀、无官方自更新。原版权与第三方许可保留。
+
+## 来源工程说明（历史，不是候选身份）
 
 > 基于 [DSH-APP/DSHA](https://github.com/DSH-APP/DSHA) 的第三方 **Mod 版本**，不是 DSHA 官方发行版。
 > 在 Android 手机上运行完整的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：免 ROOT、免 Termux，装完即用。

@@ -110,6 +110,72 @@ public final class UpdateEngineCheckTest {
   }
 
   @Test
+  public void rebirthCandidateNeverChecksRestoresDownloadsOrInstallsOfficialUpdates()
+      throws Exception {
+    String hash = "a".repeat(64);
+    org.json.JSONObject task =
+        new org.json.JSONObject()
+            .put("code", BuildConfig.VERSION_CODE + 1)
+            .put("version", "0.2.2-preview")
+            .put("channel", "preview")
+            .put("checkedChannel", "preview")
+            .put("flavor", "standard")
+            .put("minSdk", 30)
+            .put("abi", "arm64-v8a")
+            .put("url", "https://dsha.cc/downloads/next.apk")
+            .put("sha256", hash)
+            .put("bytes", 100)
+            .put("notes", "test")
+            .put("pageUrl", "https://dsha.cc/download/");
+    java.io.File restored = new java.io.File(app.getFilesDir(), "updates/" + hash + ".apk");
+    assertTrue(restored.getParentFile().isDirectory() || restored.getParentFile().mkdirs());
+    java.nio.file.Files.write(restored.toPath(), new byte[100]);
+    app.getSharedPreferences("dsha-updates", 0)
+        .edit()
+        .putString("phase", "ready")
+        .putString("task", task.toString())
+        .commit();
+    UpdateEngine ordinary = new UpdateEngine(app, null, false);
+    assertTrue("negative control must restore the valid old candidate", ordinary.hasTask());
+    assertNotNull(ordinary.state().getValue().release);
+    app.getSharedPreferences("dsha-updates", 0).edit().putString("phase", "downloading").commit();
+    UpdateEngine downloading = new UpdateEngine(app, null, false);
+    assertTrue("negative control must resume a valid download", downloading.shouldResume());
+    int[] requests = {0};
+    UpdateEngine engine =
+        new UpdateEngine(
+            app,
+            (url, offset) -> {
+              requests[0]++;
+              throw new AssertionError("Rebirth must not contact the official update feed");
+            },
+            true);
+    assertFalse("candidate must not restore downloading state", engine.hasTask());
+    assertNull(engine.state().getValue().release);
+    assertNull(engine.state().getValue().apk);
+    app.getSharedPreferences("dsha-updates", 0).edit().putString("phase", "ready").commit();
+    UpdateEngine candidateReady = new UpdateEngine(app, null, true);
+    assertFalse("candidate must not restore ready state", candidateReady.hasTask());
+    assertNull(candidateReady.state().getValue().release);
+    assertNull(candidateReady.state().getValue().apk);
+    engine.checkOnStartup(true);
+    engine.check();
+    engine.download();
+    engine.runDownload();
+    assertEquals(0, requests[0]);
+    assertFalse(engine.shouldResume());
+    assertFalse(engine.hasTask());
+    assertNull(engine.startupNotice());
+    assertNull(engine.state().getValue().release);
+    try {
+      engine.installableApk();
+      fail("candidate must reject official installation");
+    } catch (java.io.IOException expected) {
+      assertEquals("REBIRTH_OFFICIAL_UPDATES_DISABLED", expected.getMessage());
+    }
+  }
+
+  @Test
   public void absentFeedAndNoPublishedReleaseHaveNormalEmptyStates() throws Exception {
     for (int status : new int[] {404, 410, 200}) {
       Response source = new Response(status, feed("[]"));

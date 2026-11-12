@@ -33,6 +33,34 @@ public final class UpdateActivity extends AppCompatActivity {
     setContentView(R.layout.activity_update);
     PressFeedback.attachButtons(findViewById(android.R.id.content));
     repository = new ViewModelProvider(this).get(UpdateRepository.class);
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      CardPage page =
+          new CardPage(
+              this,
+              getString(R.string.app_name),
+              com.deepseekharness.app.util.UiText.choose(
+                  "新生候选 · 嫩芽 · 请手动更新", "Rebirth candidate · Sprout · Manual updates only"));
+      android.widget.LinearLayout details = page.card();
+      page.kv(details, "Version", BuildConfig.VERSION_NAME);
+      page.kv(details, "Package", BuildConfig.APPLICATION_ID);
+      page.button(
+          page.footer,
+          com.deepseekharness.app.util.UiText.choose("返回", "Back"),
+          true,
+          this::finish);
+      setContentView(page.root);
+      page.root.setOnApplyWindowInsetsListener(
+          (v, insets) -> {
+            android.graphics.Insets bars =
+                insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.displayCutout());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
+          });
+      page.root.requestApplyInsets();
+      return;
+    }
     resumeInstall = saved != null && saved.getBoolean("resumeInstall");
     repository.restoreInterruptedInstall(saved != null && saved.getBoolean("installPending"));
     versionExpanded = saved != null && saved.getBoolean("versionExpanded");

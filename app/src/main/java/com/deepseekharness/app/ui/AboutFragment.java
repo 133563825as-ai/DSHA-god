@@ -20,7 +20,7 @@ public final class AboutFragment extends Fragment {
     emblem.addView(
         mark, new android.widget.FrameLayout.LayoutParams(ui.dp(64), ui.dp(64), Gravity.CENTER));
     ui.content.addView(emblem, new LinearLayout.LayoutParams(-1, ui.dp(84)));
-    TextView brand = ui.text("DSHA", 30, R.color.text);
+    TextView brand = ui.text(getString(R.string.app_name), 30, R.color.text);
     brand.setTypeface(null, android.graphics.Typeface.BOLD);
     brand.setGravity(Gravity.CENTER);
     brand.setPadding(0, ui.dp(16), 0, ui.dp(10));

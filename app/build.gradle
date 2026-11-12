@@ -68,6 +68,18 @@ if (releaseIdentity.schema != 1 || releaseIdentity.identity != releaseIdentityNa
         || !(releaseIdentity.appName instanceof String) || releaseIdentity.appName.trim().isEmpty())
     throw new GradleException("RELEASE_IDENTITY_INVALID: ${releaseIdentityFile}")
 ext.dshaReleaseIdentity = releaseIdentity
+// 新生候选是固定隔离身份，不修改两套正式发布契约，也不接受任意 applicationId 覆盖。
+def rebirthCandidateValue = providers.gradleProperty('dsha.rebirthCandidate').orElse('false').get()
+if (!(rebirthCandidateValue in ['true', 'false']))
+    throw new GradleException('REBIRTH_CANDIDATE_INVALID: 只接受 true 或 false')
+def rebirthCandidate = rebirthCandidateValue == 'true'
+if (rebirthCandidate && (releaseIdentityName != 'upstream' || !unsignedPackage
+        || sunsetTest || debugPackage || devPackage))
+    throw new GradleException('REBIRTH_CANDIDATE_REQUIRES_UPSTREAM_UNSIGNED_WITHOUT_SUFFIX')
+if (rebirthCandidate && (['DSHA_KEYSTORE', 'DSHA_KEYSTORE_PASSWORD', 'DSHA_KEY_PASSWORD', 'DSHA_KEY_ALIAS']
+        .any { System.getenv(it) } || ['dsha.keystore', 'dsha.keystore.password', 'dsha.key.password', 'dsha.key.alias']
+        .any { project.findProperty(it) }))
+    throw new GradleException('REBIRTH_CANDIDATE_FORBIDS_PUBLISH_CREDENTIALS')
 // 只有源码 CI 可显式允许缺少真实测试夹具；完整测试默认要求固定输入齐备。
 def sourceOnlyTests = providers.gradleProperty('dsha.sourceOnlyTests').orElse('false').get()
 if (!(sourceOnlyTests in ['true', 'false']))
@@ -83,16 +95,17 @@ android {
     defaultConfig {
         // 包名随发布身份：mod = io.github.sunsetrne.dsha（与原版完全隔离，可并行安装），
         // upstream = dsh.android.client（只能用历史 E7E3 证书覆盖升级）。
-        applicationId releaseIdentity.packageName
+        applicationId rebirthCandidate ? 'dsh.android.client.rebirth' : releaseIdentity.packageName
         minSdk 30
         targetSdk 37
         buildConfigField 'String', 'BUNDLED_PNPM_VERSION', '"' + bundledTools.pnpm.version + '"'
         // 测试包标记：只有显式测试变体（.test/.debug/.dev）为 true。正式包恒为 false，
         // 用于只在测试包显示「反馈与诊断」导出入口；不得改为运行时猜测包名。
-        buildConfigField 'boolean', 'TEST_PACKAGE', (sunsetTest || debugPackage || devPackage) ? 'true' : 'false'
+        buildConfigField 'boolean', 'TEST_PACKAGE', (rebirthCandidate || sunsetTest || debugPackage || devPackage) ? 'true' : 'false'
+        buildConfigField 'boolean', 'REBIRTH_CANDIDATE', rebirthCandidate ? 'true' : 'false'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
         // 显示名随发布身份（DSH-A-Su / DSHA）；测试变体加后缀，便于桌面上区分两个包。
-        resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : releaseIdentity.appName
+        resValue 'string', 'app_name', rebirthCandidate ? 'DSHA 新生' : (testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : releaseIdentity.appName)
         versionCode 359
         // DSHA 修订号 + 固定的北京时间戳 + 内置 DSH 版本；同一交付重建不变。
         versionName "0.2.1-rc.5-20261111.1200-dsh0.2.2-rc.1"
@@ -163,6 +176,7 @@ android {
         }
         release {
             minifyEnabled false
+            if (rebirthCandidate) versionNameSuffix '-Rebirth-Sprout.1'
             if (!unsignedPackage) signingConfig signingConfigs.publish
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -223,7 +237,7 @@ android {
 
 def verifyPublishCertificate = tasks.register("verifyPublishCertificate") {
     doLast {
-        if (sunsetTest || debugPackage || devPackage)
+        if (rebirthCandidate || sunsetTest || debugPackage || devPackage)
             throw new GradleException('TEST_PACKAGE_REQUIRES_UNSIGNED: 测试包不能使用正式发布证书；请用 -Pdsha.unsignedPackage=true 由测试证书签名')
         def signing = android.signingConfigs.publish
         if (signing.storeFile == null || !signing.storeFile.isFile())
@@ -241,13 +255,25 @@ def verifyPublishCertificate = tasks.register("verifyPublishCertificate") {
             throw new GradleException("applicationId 与 ${identityFile} 记录不符，停止打包")
     }
 }
+// 候选交付只允许非调试 release 链；无安装任务时也明确拒绝直接安装请求。
+if (rebirthCandidate && gradle.startParameter.taskNames.any {
+    it.tokenize(':').last() ==~ /(?i)(install|uninstall|connected|signPublish).*/
+}) throw new GradleException('REBIRTH_CANDIDATE_RELEASE_ONLY')
+gradle.taskGraph.whenReady { graph ->
+    if (rebirthCandidate && graph.allTasks.any {
+        it.project == project && (it.name ==~ /(?i)(assemble|bundle|package|sign)StandardDebug(?:Bundle)?/
+            || it.name ==~ /(?i)extractApksForStandardDebug/
+            || it.name ==~ /(?i)(assemble|bundle|package).*AndroidTest.*/
+            || it.name ==~ /(?i)(install|connected|signPublish).*/)
+    }) throw new GradleException('REBIRTH_CANDIDATE_RELEASE_ONLY')
+}
 tasks.configureEach {
     if (!unsignedPackage && name.matches("(package|validateSigning|assemble)StandardRelease")) dependsOn(verifyPublishCertificate)
 }
 // 只读配置检查：打印解析出的发布身份，不读取密钥、不打包。
 tasks.register('printReleaseIdentity') {
     def summary = "releaseIdentity=${releaseIdentityName} applicationId=${android.defaultConfig.applicationId}" +
-            " appName=${releaseIdentity.appName} testSuffix=${releaseIdentity.testSuffix} devSuffix=${releaseIdentity.devSuffix}" +
+            " appName=${rebirthCandidate ? 'DSHA 新生' : releaseIdentity.appName} rebirthCandidate=${rebirthCandidate} testSuffix=${releaseIdentity.testSuffix} devSuffix=${releaseIdentity.devSuffix}" +
             " testVariant=${testVariantLabel.isEmpty() ? 'release' : testVariantLabel.toLowerCase()}" +
             " keyAlias=${android.signingConfigs.publish.keyAlias ?: releaseIdentity.keyAlias}" +
             " certificateSha256=${releaseIdentity.certificateSha256}"
