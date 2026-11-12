@@ -2,6 +2,16 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-browser-fixture-assets.mjs",
+      "stage": "runtime",
+      "requires": ["node24", "raw", "browser"],
+      "args": [],
+      "timeoutSeconds": 300,
+      "environment": {},
+      "reason": "Locked real browser module static assets, exact bytes and bounded read-only fixture routes; malformed paths, wrong modules and symlink escapes reject without account/device operations.",
+      "cli": "No arguments; runner supplies verified raw, Playwright and browser cache."
+    },
+    {
       "path": "tools/test-sprout-host-jars.py",
       "stage": "fast",
       "requires": ["python39"],
