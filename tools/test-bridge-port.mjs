@@ -88,8 +88,11 @@ async function loadPlugin(name, f) {
   await module.evaluate(); return module.namespace;
 }
 function context() {
-  const events = new Map();
+  const events = new Map(), cleanups = []; let disposed = false;
   return { events, on(name, fn) { const rows = events.get(name) ?? []; rows.push(fn); events.set(name, rows); },
+    // 这里只模拟本夹具所需的同步 effect 安装与一次性清理；真实 Cordis 卸载另有完整回归。
+    effect(setup) { assert.equal(disposed, false); const cleanup = setup(); assert.equal(typeof cleanup, 'function'); cleanups.push(cleanup); },
+    async dispose() { if (disposed) return; disposed = true; events.clear(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); },
     // No optional Host services exist in this bridge-consumer fixture, so
     // Cordis inject callbacks remain pending. Load the real adapter module;
     // its own pinned-runtime behavior is covered by test-local-session-adapter.
@@ -144,7 +147,9 @@ async function run() {
       await assert.rejects(reporter.transport('claim', {})); assert.equal(f.requests.length, 0); reporter.dispose(); }
     { const f = unpublished(); f.context.setTimeout = () => ({ unref() {} }); f.context.clearTimeout = () => {};
       const plugin = await loadPlugin('dsh-status-overlay', f), ctx = context(); plugin.apply(ctx);
-      ctx.emit('session/event', { id: 'fixture-session' }, { type: 'tool/call', data: { name: 'read' } }); await settle(); assert.equal(f.requests.length, 0); }
+      try { ctx.emit('session/event', { id: 'fixture-session' }, { type: 'tool/call', data: { name: 'read' } }); await settle(); assert.equal(f.requests.length, 0); }
+      finally { await ctx.dispose(); await settle(); }
+      assert.equal(f.requests.length, 0, '卸载也不能向未发布端口发送凭据'); }
     { const f = unpublished(), plugin = await loadPlugin('dsh-device-shell-guide', f), text = plugin.promptText('zh');
       assert(!/127\.0\.0\.1:30\d\d/.test(text), 'guide must not advertise a guessed bridge port');
       assert(text.includes('127.0.0.1:<PORT>/app/help')); assert(text.includes('BRIDGE_PORT') || text.includes('.bridge_port')); }
@@ -231,13 +236,20 @@ async function run() {
       const before = f.requests.length; await next(); assert.equal(f.requests.length, before + 1);
       f.status = 200; f.body = '{"result":"OK"}'; await next(); assert.equal(f.requests.length, before + 2);
     }
-    ctx.emit('dispose');
+    await ctx.dispose(); await ctx.dispose();
+    const count = f.requests.length; f.setPort('3095');
+    await next(); assert.equal(f.requests.length, count, '端口改变后旧状态回调仍不能越过清理重发');
   });
   await test('overlay content rereads port for each fresh event', async () => {
     const f = fixture(); f.context.setTimeout = () => ({ unref() {} }); f.context.clearTimeout = () => {};
     const plugin = await loadPlugin('dsh-status-overlay', f), ctx = context(); plugin.apply(ctx);
-    for (const port of ['3091', '3092']) { f.setPort(port); ctx.emit('session/event', { id: 'fixture-session' }, { type: 'tool/call', data: { name: 'read' } }); await settle(); assert.equal(f.requests.at(-1).port, Number(port)); }
-    assert.equal(f.requests.length, 2);
+    try {
+      for (const port of ['3091', '3092']) { f.setPort(port); ctx.emit('session/event', { id: 'fixture-session' }, { type: 'tool/call', data: { name: 'read' } }); await settle(); assert.equal(f.requests.at(-1).port, Number(port)); }
+      assert.equal(f.requests.length, 2);
+    } finally { await ctx.dispose(); await settle(); }
+    const count = f.requests.length;
+    ctx.emit('session/event', { id: 'fixture-session' }, { type: 'tool/call', data: { name: 'read' } });
+    await settle(); assert.equal(f.requests.length, count, '清理后旧事件不得再发送内容');
   });
   await test('task notifier rereads all four operations and rejects 401/legacy without replay', async () => {
     const f = fixture(), plugin = await loadPlugin('dsh-task-notifier', f), reporter = new plugin.TaskReporter({}, undefined, undefined, {});
