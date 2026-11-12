@@ -95,28 +95,22 @@ function toolDetail(argsJson) {
   }
 }
 
-let token
-let tokenReadAt = 0
-function bridgeToken() {
-  if (token !== undefined && Date.now() - tokenReadAt < 5000) return token
-  tokenReadAt = Date.now()
-  try {
-    token = readFileSync(TOKEN_PATH, 'utf8').trim()
-  } catch {
-    token = ''    // 桥没起来 / 桌面环境：整个功能静默停用
+function tokenReader() {
+  let token, tokenReadAt = 0
+  return function bridgeToken() {
+    if (token !== undefined && Date.now() - tokenReadAt < 5000) return token
+    tokenReadAt = Date.now()
+    try {
+      token = readFileSync(TOKEN_PATH, 'utf8').trim()
+    } catch {
+      token = ''    // 桥没起来 / 桌面环境：整个功能静默停用
+    }
+    return token
   }
-  return token
 }
 
-/** sessionKey → { line, timer, dirty } */
-const state = new Map()
-let cooldownUntil = 0
-/** App 侧回了 SKIP_REASONING（用户当时不想看思考过程）→ 暂停这一类到这个时间点。
- *  **带时效而不是永久**：开关是随时可改的，写成永久的话用户之后在配置页打开
- *  「显示思考过程」，插件仍然一条都不发，非得重启 dsh 才恢复 —— 真机上报的
- *  「思考内容无法显示」就是这个。 */
-let skipReasoningUntil = 0
-
+// 这里只共享同 session 的存活 owner，不共享正文、冷却、token 或异步状态。
+const sessionOwners = new Map()
 function sessionKey(session) {
   try {
     const raw = session?.id ?? session?.sessionId ?? session?.key ?? ''
@@ -165,70 +159,100 @@ function unwrap(raw) {
   return s
 }
 
-async function send(key, kind, text) {
-  const tok = bridgeToken()
-  if (!tok) return
-  if (Date.now() < cooldownUntil) return
-  try {
-    // 端口未发布时 bridgeBase 抛出，进入下方静默降级，不会产生未处理的 rejection。
-    const url = `${bridgeBase()}/app/overlay?kind=${encodeURIComponent(kind)}`
-      + `&session=${encodeURIComponent(key)}`
-      + `&text=${encodeURIComponent(text || '')}`
-    const res = await fetch(url, {
-      headers: { 'X-Token': tok },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
-    const body = unwrap(await res.text())
-    if (body === 'DISABLED' || body === 'NO_PERMISSION') {
-      // 用户没开这个功能或没授权 —— 进冷却，别一直敲一扇关着的门
-      cooldownUntil = Date.now() + COOLDOWN_MS
-    } else if (body === 'SKIP_REASONING') {
-      // 功能开着，只是这会儿不看思考过程：别整段冷却，只停这一类，而且**要带时效**
-      skipReasoningUntil = Date.now() + REASONING_RETRY_MS
-    }
-  } catch {
-    // 桥没起、超时、被拒：这功能不重要，静默降级
-    cooldownUntil = Date.now() + 5000
-  }
-}
-
-function bucket(key) {
-  let b = state.get(key)
-  if (!b) {
-    b = { line: '', think: '', timer: undefined, pending: false }
-    state.set(key, b)
-    // 会话数量不该无限涨（异常情况下也就几十个）
-    if (state.size > 16) {
-      const oldest = state.keys().next().value
-      if (oldest !== key) {
-        clearTimeout(state.get(oldest)?.timer)
-        state.delete(oldest)
-      }
-    }
-  }
-  return b
-}
-
-/** 合并窗口内只保留最后一次内容，窗口结束时发一次。
- *  getter 而不是直接传字符串：窗口这 120ms 里还会继续追加，要发的是**那一刻**的最新值。 */
-function schedule(key, kind, getter) {
-  const b = bucket(key)
-  if (b.timer) {
-    b.pending = true
-    return
-  }
-  b.timer = setTimeout(() => {
-    b.timer = undefined
-    b.pending = false
-    void send(key, kind, getter ? getter() : b.line)
-  }, FLUSH_MS)
-  // 让 dsh 能正常退出：这个定时器不该拖住事件循环
-  if (typeof b.timer?.unref === 'function') b.timer.unref()
-}
-
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 export function apply(ctx) {
+  const bridgeToken = tokenReader(), state = new Map(), owner = {}
+  const controller = new AbortController()
+  let disposed = false, cooldownUntil = 0, skipReasoningUntil = 0
+  const signal = () => AbortSignal.any([controller.signal, AbortSignal.timeout(TIMEOUT_MS)])
+  function release(key) {
+    const owners = sessionOwners.get(key)
+    owners?.delete(owner)
+    if (!owners?.size) sessionOwners.delete(key)
+  }
+  async function send(key, kind, text, cleanup = false) {
+    if (disposed && !cleanup) return
+    const tok = bridgeToken()
+    if (!tok) return
+    if (!cleanup && Date.now() < cooldownUntil) return
+    try {
+      // 端口未发布时 bridgeBase 抛出，进入下方静默降级，不会产生未处理的 rejection。
+      const url = `${bridgeBase()}/app/overlay?kind=${encodeURIComponent(kind)}`
+        + `&session=${encodeURIComponent(key)}`
+        + `&text=${encodeURIComponent(text || '')}`
+      const res = await fetch(url, {
+        headers: { 'X-Token': tok },
+        signal: cleanup ? AbortSignal.timeout(TIMEOUT_MS) : signal(),
+      })
+      const body = unwrap(await res.text())
+      if (disposed) return
+      if (body === 'DISABLED' || body === 'NO_PERMISSION') {
+        // 用户没开这个功能或没授权 —— 进冷却，别一直敲一扇关着的门
+        cooldownUntil = Date.now() + COOLDOWN_MS
+      } else if (body === 'SKIP_REASONING') {
+        // 功能开着，只是这会儿不看思考过程：别整段冷却，只停这一类，而且**要带时效**
+        skipReasoningUntil = Date.now() + REASONING_RETRY_MS
+      }
+    } catch {
+      // 桥没起、超时、被拒：这功能不重要，静默降级
+      if (!disposed) cooldownUntil = Date.now() + 5000
+    }
+  }
+
+  function bucket(key) {
+    let b = state.get(key)
+    if (!b) {
+      b = { line: '', think: '', timer: undefined, pending: false }
+      state.set(key, b)
+      if (!sessionOwners.has(key)) sessionOwners.set(key, new Set())
+      sessionOwners.get(key).add(owner)
+      // 会话数量不该无限涨（异常情况下也就几十个）
+      if (state.size > 16) {
+        const oldest = state.keys().next().value
+        if (oldest !== key) {
+          clearTimeout(state.get(oldest)?.timer)
+          state.delete(oldest)
+          release(oldest)
+        }
+      }
+    }
+    return b
+  }
+
+  /** 合并窗口内只保留最后一次内容，窗口结束时发一次。
+   *  getter 而不是直接传字符串：窗口这 120ms 里还会继续追加，要发的是**那一刻**的最新值。 */
+  function schedule(key, kind, getter) {
+    const b = bucket(key)
+    if (b.timer) {
+      b.pending = true
+      return
+    }
+    b.timer = setTimeout(() => {
+      b.timer = undefined
+      b.pending = false
+      if (disposed) return
+      void send(key, kind, getter ? getter() : b.line)
+    }, FLUSH_MS)
+    // 让 dsh 能正常退出：这个定时器不该拖住事件循环
+    if (typeof b.timer?.unref === 'function') b.timer.unref()
+  }
+
+  // effect disposer 是真实 fiber 卸载契约；普通 dispose 事件不会由 Cordis 派发。
+  ctx.effect(() => () => {
+    if (disposed) return
+    disposed = true
+    controller.abort()
+    for (const [key, b] of state) {
+      clearTimeout(b.timer)
+      release(key)
+      // clear 是有界的清理特例，不受旧业务冷却或已取消 signal 阻挡。
+      // 不等待网络：abort 不能撤回桥已经接受的请求，协议也无跨请求完成排序。
+      if (!sessionOwners.has(key)) void send(key, 'clear', '', true)
+    }
+    state.clear()
+  }, 'dsha overlay owner cleanup')
   installSessionAdapter(ctx, key => state.get(key)?.line || '', async ({ sessionId, turnId }) => {
+    if (disposed) return
     const tok = bridgeToken()
     if (!tok) return
     const url = new URL(bridgeBase() + '/app/ui/task-end')
@@ -236,13 +260,13 @@ export function apply(ctx) {
     url.searchParams.set('turnId', turnId)
     // Completion is exact and never cancellation. The next MCP call also carries
     // this session's actual completed turn, so notification latency cannot block it.
-    await fetch(url, { headers: { 'X-Token': tok }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+    await fetch(url, { headers: { 'X-Token': tok }, signal: signal() })
   })
   // 顺带把插件真实加载状态报给 App（见 reportPluginStates 的注释）
-  reportPluginStates(ctx)
+  reportPluginStates(ctx, { token: bridgeToken })
   const onEvent = (session, event) => {
     try {
-      if (!bridgeToken()) return
+      if (disposed || !bridgeToken()) return
       const key = sessionKey(session)
       const type = event?.type
       const data = event?.data
@@ -300,6 +324,7 @@ export function apply(ctx) {
         // 留着最后一句让它自然淡出（App 侧几秒后自己收起来）
         void send(key, 'done', b.line)
         state.delete(key)
+        release(key)
       }
     } catch {
       // 事件回调里抛异常会影响 agent 主链路，一律吞掉
@@ -309,7 +334,7 @@ export function apply(ctx) {
   // dsh 0.1.5 的增量属于进程内流，持久日志只在一次尝试结束时写完整 assistant/message。
   ctx.on('agent/assistant-stream', ({ agent, frame }) => {
     try {
-      if (!agent?.session || !frame) return
+      if (disposed || !bridgeToken() || !agent?.session || !frame) return
       const key = sessionKey(agent.session)
       if (frame.type === 'start') {
         const b = bucket(key)
@@ -321,17 +346,6 @@ export function apply(ctx) {
     } catch { /* 悬浮条不能中断模型流。 */ }
   })
 
-  ctx.on('dispose', () => {
-    try {
-      for (const [key, b] of state) {
-        if (b.timer) clearTimeout(b.timer)
-        void send(key, 'clear', '')
-      }
-      state.clear()
-    } catch {
-      // 卸载路径上的清理，失败无所谓
-    }
-  })
 }
 
 
@@ -381,7 +395,8 @@ export function collectPluginStates(ctx) {
 }
 
 export function reportPluginStates(ctx, io = {}) {
-  const getToken = io.token || bridgeToken, request = io.fetch || fetch
+  const getToken = io.token || tokenReader(), request = io.fetch || fetch
+  const controller = new AbortController()
   const later = io.setTimeout || setTimeout, cancel = io.clearTimeout || clearTimeout
   let timer, disposed = false, sending = false, dirty = false, previous
   function schedule(delay = 300) {
@@ -406,8 +421,9 @@ export function reportPluginStates(ctx, io = {}) {
         + '?loaded=' + encodeURIComponent(st.loaded.join(','))
         + '&failed=' + encodeURIComponent(st.failed.join(','))
         + '&pending=' + encodeURIComponent(st.pending.join(','))
-      const response = await request(url, { headers: { 'X-Token': T }, signal: AbortSignal.timeout(1500) })
-      if (response.ok && unwrap(await response.text()) === 'OK') previous = snapshot
+      const response = await request(url, { headers: { 'X-Token': T },
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(TIMEOUT_MS)]) })
+      if (response.ok && unwrap(await response.text()) === 'OK' && !disposed) previous = snapshot
     } catch (e) {
       // 上报失败不影响任何既有功能
     } finally {
@@ -417,6 +433,6 @@ export function reportPluginStates(ctx, io = {}) {
   }
   // 服务变化和 HMR 后重新采样；定期重试允许桥晚于插件启动。
   for (const event of ['internal/status', 'internal/plugin']) ctx.on(event, () => schedule())
-  ctx.on('dispose', () => { disposed = true; cancel(timer) })
+  ctx.effect(() => () => { disposed = true; cancel(timer); controller.abort() }, 'dsha plugin states cleanup')
   schedule(1000)
 }

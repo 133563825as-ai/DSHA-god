@@ -31,7 +31,8 @@ test('桥晚于启动可重试，状态变化串行发送并清除已恢复故�
   const handlers=new Map(), timers=new Map(), requests=[];
   let serial=0, token='', settle;
   const runtime={name:'test-plugin',fibers:[{state:3}]};
-  const ctx={registry:new Map([['test',runtime]]),on:(event,fn)=>handlers.set(event,fn)};
+  let dispose;
+  const ctx={registry:new Map([['test',runtime]]),on:(event,fn)=>handlers.set(event,fn),effect:setup=>{dispose=setup();}};
   const io={token:()=>token,setTimeout:fn=>{timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),
     fetch:(url,options)=>{requests.push({url,options});return new Promise(done=>settle=done);}};
   const tick=()=>{const [id,fn]=timers.entries().next().value;timers.delete(id);return fn();};
@@ -52,7 +53,30 @@ test('桥晚于启动可重试，状态变化串行发送并清除已恢复故�
   assert.equal(new URL(requests[2].url).searchParams.get('loaded'),'test-plugin');
   ok();await second;await tick();assert.equal(requests.length,3);
   runtime.fibers=[];handlers.get('internal/plugin')();const last=tick();assert.equal(requests.length,4);
-  handlers.get('dispose')();ok();await last;assert.equal(timers.size,0);
+  dispose();dispose();assert.equal(requests[3].options.signal.aborted,true);
+  ok();await last;assert.equal(timers.size,0);
+  handlers.get('internal/status')();assert.equal(timers.size,0);
+});
+
+test('真实 fiber 卸载取消 pending 上报且迟到响应不能重排 timer', async () => {
+  const {Context}=await import(pathToFileURL(resolve(testRuntime('raw'),'node_modules/@deepseek-ai/cordis/lib/index.js')));
+  const root=new Context(),timers=new Map(),requests=[];let serial=0,settle;
+  const io={token:()=> 'owned-status-token',setTimeout:fn=>{timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),
+    fetch:(url,options)=>{requests.push({url,options});return new Promise(done=>settle=done);}};
+  const original=fs.lstatSync,previous=process.env.DSHA_BRIDGE_PORT;
+  fs.lstatSync=(file,...args)=>{if(file==='/root/.dsh/.bridge_port')throw Error('owned-unpublished');return original(file,...args);};
+  process.env.DSHA_BRIDGE_PORT='41825';
+  try {
+    const fiber=root.plugin({name:'owned-status-lifecycle',apply:ctx=>reportPluginStates(ctx,io)});await fiber;
+    const [id,tick]=timers.entries().next().value;timers.delete(id);const pending=tick();
+    assert.equal(requests.length,1);await fiber.dispose();await fiber.dispose();
+    assert.equal(requests[0].options.signal.aborted,true);assert.equal(timers.size,0);
+    settle({ok:true,text:async()=> 'OK'});await pending;assert.equal(timers.size,0);
+    root.emit('internal/status');assert.equal(timers.size,0);
+  } finally {
+    await root.fiber.dispose();fs.lstatSync=original;
+    if(previous===undefined)delete process.env.DSHA_BRIDGE_PORT;else process.env.DSHA_BRIDGE_PORT=previous;
+  }
 });
 
 test('锁定 Cordis 实例：等待依赖、异步加载、实际失败和卸载的报告一致', async () => {

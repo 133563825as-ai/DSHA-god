@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "runtimeId": "4d55973d407c171909e76d07f0b681de4069613944fb05e29cd38908e0984a26",
+  "runtimeId": "460e209ecd7814e5a1be256287747066bd6f8d0524048a40147add4ec3b23ec0",
   "baseVersion": "10",
   "dshVersion": "0.2.2-rc.1",
   "launcherContract": "DSHA_ARM64_V2",
@@ -538,8 +538,8 @@
     "builtin-plugins/dsh-launch-target/package.json": "efaa9ff796952d8d6ea6ae400020e6d4e0face55d6089942ec9477db3b0174a4",
     "builtin-plugins/dsh-status-overlay/cordis.patch.yml": "b5bffe96400a2164f313f8c86b071840387015976796fdce1e3e476f233490bd",
     "builtin-plugins/dsh-status-overlay/lib/bridge-port.cjs": "be413341075a0c23b34314c9a85ebcc032cc9d3dbd83a9298b3f631733869dd0",
-    "builtin-plugins/dsh-status-overlay/lib/index.js": "f7de73c02273948b52bfd0d5de16852a675de029e04f88783607893efdafe351",
-    "builtin-plugins/dsh-status-overlay/lib/session-adapter.js": "cc47cff86cd838360aa249f692434c5b7ee838c178311700cb45809d7c91cf5e",
+    "builtin-plugins/dsh-status-overlay/lib/index.js": "a4df35f7daf015752e6b6db6a8223bb14c5c3d82ea2a5153dc593c3e05e97c1d",
+    "builtin-plugins/dsh-status-overlay/lib/session-adapter.js": "99ee92f07b5489287ec836a532ae9378bf9933fd459ec5342a7f423be5d074e3",
     "builtin-plugins/dsh-status-overlay/package.json": "85d452eb38380a4fe60e92b800f8ea6409926e351fe264b3f01d9113b796dc15",
     "builtin-plugins/dsh-task-notifier/cordis.patch.yml": "bdfd53321389b451a91a077aa12c07533a983f0534dccb63ff48979d8f07ee92",
     "builtin-plugins/dsh-task-notifier/lib/bridge-port.cjs": "be413341075a0c23b34314c9a85ebcc032cc9d3dbd83a9298b3f631733869dd0",

@@ -113,7 +113,8 @@ async function isolateOverlayIO(port) {
   const originals=new Map(),traffic=[],pending=new Set(),tokenFDs=new Set(),violations=[];
   const checked=fn=>{try{return fn();}catch(error){violations.push(error.message);throw error;}};
   const assertClean=()=>assert.deepEqual(violations,[],'被生产 catch 吞掉的 IO 违规也必须失败');
-  const fixtureToken='owned-fixture-token';let nextFD=1_000_000;
+  const fixtureToken='owned-fixture-token';let nextFD=1_000_000,tokenAvailable=true,hold=false;
+  const held=[],requests=[];
   const originalFetch=globalThis.fetch,expectedOrigin='http://127.0.0.1:'+port;
   const originalTimeout=globalThis.setTimeout,originalClear=globalThis.clearTimeout,timers=new Map();
   let stopping=false,cancelled=0;
@@ -132,7 +133,7 @@ async function isolateOverlayIO(port) {
     originals.set(method,fs[method]);
     fs[method]=function(file,...args) {
       if(method==='readFileSync'&&file==='/root/.dsh/.bridge_token') {
-        checked(()=>assert.equal(args[0],'utf8'));tokenReads++;return fixtureToken;
+        checked(()=>assert.equal(args[0],'utf8'));tokenReads++;return tokenAvailable?fixtureToken:'';
       }
       if(method==='openSync'&&file==='/root/.dsh/.bridge_token') {
         tokenReads++;const fd=nextFD++;tokenFDs.add(fd);return fd;
@@ -173,12 +174,19 @@ async function isolateOverlayIO(port) {
       return url;
     });
     traffic.push(url);
-    // 真正异步完成，确保 dispose 的 void send 不能越过恢复边界。
-    const request=new Promise(done=>setImmediate(()=>done(new Response(JSON.stringify({result:'OK'})))));
+    requests.push({url,options});
+    // 可故意忽略 abort 并迟到完成，用来证明旧响应不会改变新 owner。
+    const request=new Promise(done=>{
+      const finish=(body='OK')=>done(new Response(JSON.stringify({result:body})));
+      if(hold)held.push(finish);else setImmediate(finish);
+    });
     pending.add(request);request.then(()=>pending.delete(request),()=>pending.delete(request));
     return request;
   };
-  return {traffic,get tokenReads(){return tokenReads;},get portStats(){return portStats;},assertClean,
+  return {traffic,requests,get tokenReads(){return tokenReads;},get portStats(){return portStats;},assertClean,
+    tokenAvailable(value){tokenAvailable=value;},hold(){hold=true;},
+    settle(body='OK'){hold=false;for(const finish of held.splice(0))finish(body);},
+    overlayTimers(){return [...timers.values()].filter(timer=>timer.overlay).map(timer=>timer.delay);},
     assertDisposed(session,from){
       // 先取证，不能等 120ms timer 自然触发后再把残留当作已清理。
       const remaining=[...timers.values()].filter(timer=>timer.overlay).map(timer=>timer.delay);
@@ -226,7 +234,7 @@ async function isolateOverlayIO(port) {
       const attempt=async fn=>{try{await fn();}catch(error){errors.push(error);}};
       const cancelTimers=()=>{for(const timer of timers.keys()){originalClear(timer);cancelled++;}timers.clear();};
       // 只在验收结束后兜底。先停调度，fake IO 内 drain；即使 cleanup 报错也继续收尾。
-      stopping=true;cancelTimers();
+      stopping=true;cancelTimers();this.settle();
       try {
         await attempt(()=>this.drain());
         cancelTimers();
@@ -474,6 +482,101 @@ test('status overlay actual apply forwards current stream and tool events throug
   }
 });
 
+
+test('overlay 真实卸载隔离 pending IO、旧回调、重挂及同 session 多 owner',async()=>{
+  const {Context}=await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/cordis')));
+  const overlay=await import(pathToFileURL(resolve('app/src/main/assets/builtin-plugins/dsh-status-overlay/lib/index.js')));
+  const roots=[new Context(),new Context()],callbacks=[];
+  const mount=async(root,capture=false)=>{
+    const fiber=root.plugin({name:'owned-overlay-lifecycle',apply(ctx){
+      overlay.apply({registry:ctx.registry,effect:ctx.effect.bind(ctx),inject:ctx.inject.bind(ctx),
+        on(event,fn){if(capture)callbacks.push({event,fn});return ctx.on(event,fn);}});
+    }});await fiber;assert.equal(fiber.state,2);return fiber;
+  };
+  const session={id:'owned-lifecycle-shared'},chunk=(root,text)=>root.emit('agent/assistant-stream',
+    {agent:{session},frame:{type:'chunk',chunk:{type:'text-delta',text}}});
+  const wait=()=>new Promise(done=>setTimeout(done,160));
+  try {
+    const first=await mount(roots[0],true);io.hold();
+    roots[0].emit('session/event',session,{type:'tool/call',data:{name:'bash',arguments:'{}'}});
+    roots[0].emit('session/event',session,{type:'turn/end',data:{turn:1}});
+    chunk(roots[0],'old pending');
+    const stale=io.requests.slice(),before=io.traffic.length;
+    await first.dispose();
+    io.assertDisposed(session.id,before);
+    assert.ok(stale.some(request=>request.url.pathname==='/app/ui/task-end'));
+    for(const request of stale)assert.equal(request.options.signal.aborted,true,'卸载必须取消旧业务 IO');
+    const clear=io.requests.at(-1);assert.equal(clear.url.searchParams.get('kind'),'clear');
+    assert.equal(clear.options.signal.aborted,false,'clear 不复用已取消业务 signal');
+    await first.dispose();assert.equal(io.traffic.length,before+1,'真实 dispose 幂等');
+    const second=await mount(roots[0]);
+    for(const {event,fn}of callbacks){
+      if(event==='session/event')fn(session,{type:'turn/end',data:{turn:2}});
+      if(event==='agent/assistant-stream')fn({agent:{session},frame:{type:'start'}});
+      if(event==='internal/status')fn();
+    }
+    assert.equal(io.traffic.length,before+1,'保留的旧回调不得发业务请求');
+    io.settle('DISABLED');await io.drain();
+    chunk(roots[0],'new owner');await wait();await io.drain();
+    assert.ok(io.traffic.some(url=>url.searchParams.get('text')==='new owner'),'迟到 DISABLED 不得冷却新挂载');
+    const third=await mount(roots[1]);chunk(roots[1],'other owner');await wait();await io.drain();
+    assert.ok(io.traffic.some(url=>url.searchParams.get('text')==='other owner'),'同 session 缓冲不共享');
+    const from=io.traffic.length;await second.dispose();
+    assert.equal(io.traffic.slice(from).some(url=>url.searchParams.get('kind')==='clear'),false,'不能清除仍存活 owner');
+    chunk(roots[1],' survives');await wait();await io.drain();
+    assert.ok(io.traffic.some(url=>url.searchParams.get('text')==='other owner survives'));
+    io.hold();roots[1].emit('session/event',session,{type:'tool/call',data:{name:'read',arguments:'{}'}});
+    io.settle('NO_PERMISSION');await io.drain();
+    const last=io.traffic.length;await third.dispose();io.assertDisposed(session.id,last);await io.drain();
+    const settled=io.traffic.length;await wait();await io.drain();assert.equal(io.traffic.length,settled);
+  } finally {io.settle();await Promise.all(roots.map(root=>root.fiber.dispose()));await io.drain();}
+});
+
+test('session adapter 真实卸载注销路由与环境，取消 pending 查询并拒绝旧 handler',async()=>{
+  const {Context}=await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/cordis')));
+  const {installSessionAdapter}=await import(pathToFileURL(resolve('app/src/main/assets/builtin-plugins/dsh-status-overlay/lib/session-adapter.js')));
+  const {Readable}=await import('node:stream');
+  const ctx=new Context(),routes=[],environments=[];let settle,signal,calls=0;
+  ctx.provide('webServer',{register(route){routes.push(route);return()=>routes.splice(routes.indexOf(route),1);}});
+  ctx.provide('connection',{requestRejection(){return undefined;}});
+  ctx.provide('agents',{get(){return undefined;}});
+  ctx.provide('sessionController',{list(_args,active){calls++;signal=active;return new Promise(done=>settle=done);}});
+  ctx.provide('shellEnv',{register(env){environments.push(env);return()=>environments.splice(environments.indexOf(env),1);}});
+  const request=async handler=>{
+    const req=Readable.from([Buffer.from(JSON.stringify({method:'sessions.list',args:{}}))]);
+    req.method='POST';req.headers={host:'127.0.0.1:41822'};
+    let status,body;
+    await handler(req,{writeHead(value){status=value;},end(bytes){body=JSON.parse(String(bytes));}});
+    return {status,body};
+  };
+  try {
+    const fiber=ctx.plugin({name:'owned-adapter-lifecycle',apply:scope=>installSessionAdapter(scope,()=> '')});await fiber;
+    assert.equal(routes.length,1);assert.equal(environments.length,1);
+    const oldRoute=routes[0],oldEnv=environments[0],pending=request(oldRoute.handler);
+    await new Promise(done=>setImmediate(done));assert.equal(calls,1);
+    await fiber.dispose();assert.equal(routes.length,0);assert.equal(environments.length,0);
+    assert.equal(signal.aborted,true);assert.deepEqual(oldEnv.resolve({}),{});
+    settle({items:[]});const result=await pending;
+    assert.equal(result.status,409);assert.equal(result.body.ok,false,'迟到成功不得发布为新 owner 的有效结果');
+    const denied=await request(oldRoute.handler);assert.equal(denied.status,409);assert.equal(calls,1,'旧 handler 不得继续调用业务服务');
+    const replacement=ctx.plugin({name:'owned-adapter-remount',apply:scope=>installSessionAdapter(scope,()=> '')});await replacement;
+    assert.equal(routes.length,1);assert.equal(environments.length,1);
+    await replacement.dispose();assert.equal(routes.length,0);assert.equal(environments.length,0);
+  } finally {await ctx.fiber.dispose();}
+});
+
+test('overlay 无 token 时真实挂载与卸载不请求桥且不留 timer',async()=>{
+  const {Context}=await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/cordis')));
+  const overlay=await import(pathToFileURL(resolve('app/src/main/assets/builtin-plugins/dsh-status-overlay/lib/index.js')));
+  const ctx=new Context();io.tokenAvailable(false);
+  try {
+    const fiber=ctx.plugin(overlay);await fiber;
+    ctx.emit('agent/assistant-stream',{agent:{session:{id:'owned-no-token'}},frame:{type:'start'}});
+    ctx.emit('session/event',{id:'owned-no-token'},{type:'turn/end',data:{turn:1}});
+    await fiber.dispose();await io.drain();
+    assert.equal(io.traffic.length,0);assert.deepEqual(io.overlayTimers(),[]);
+  } finally {await ctx.fiber.dispose();}
+});
 
 test('actual official base/Web and all signed bundle patches compose with every intended plugin enabled',async()=>{
   const {loadProfileDirectory,composeEntries} = await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/dsh-app-boot')));
