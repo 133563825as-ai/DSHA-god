@@ -640,8 +640,9 @@ class BackupTest(unittest.TestCase):
         self.put("global/@deepseek-ai/example/package.json", '{"name":"@deepseek-ai/example"}')
         self.put(".dsh/profiles/web/package.json", json.dumps({"dependencies": {"@deepseek-ai/example": "1.0.0"}, "dsh": {"profile": {"bundles": ["@deepseek-ai/example"]}}}))
         self.put(".dsh/profiles/web/node_modules/@deepseek-ai/example.disabled", "disabled")
-        engine.make_backup(self.root, self.archive, "plugins")
+        # 备份和恢复必须解析同一棵隔离源码树；不能借用宿主全局包或忽略缺失源码。
         with patch.object(engine, "GLOBAL_NM", (self.root / "global",)):
+            engine.make_backup(self.root, self.archive, "plugins")
             engine.restore_archive(self.root, self.archive, "plugins")
         self.assertTrue((self.root / ".dsh/profiles/web/node_modules/@deepseek-ai/example/package.json").is_file())
         self.assertEqual("disabled", (self.root / ".dsh/profiles/web/node_modules/@deepseek-ai/example.disabled").read_text())

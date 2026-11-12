@@ -17,6 +17,9 @@ history_fixture_pins = {
     "tools/fixtures/session-interaction-v3/web-integration/session-interaction.js": "df67935e0ab81e23b494119cb7b4c97e2263cd6d01a6cf9069ca6004e6e3a790",
     "tools/fixtures/rc2-upgrade-source/dsh-client-ui-workspace.js": "52765aacb6c7f96327da5d8709d8cbb30dd2957d4744a42da04c18e07fe264e5",
     "tools/fixtures/rc2-upgrade-source/dsh-client-ui-agent-preset.js": "6ecdf173de66fce620e588f10ed1e3b624725febab059fb867beefef9ae4ddb8",
+    "tools/fixtures/rc2-upgrade-source/dsh-client-ui-settings-models.js": "190498e15358bcd3fe6810fe6368023a20b0403e3ea493bc979eca9bdb593b28",
+    "tools/fixtures/rc2-upgrade-source/dsh-web-search-deepseek.js": "fc13dd4eaba3c9298af41a4d0559a1b8bb61614462fe18ba6e76d8c598c332bd",
+    "tools/fixtures/plugin-management-rc5-historical/canonical.js": "1b8bf9eb266d7b3b7f899175e3f435c89ed8baa8aabc677212759f8c6cd23132",
 }
 # These frozen language sources retain their reviewed bytes. Runtime generators
 # use the signed descriptor; native catalogues and notes have explicit CI pins.

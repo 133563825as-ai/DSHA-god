@@ -18,6 +18,7 @@ ASSET = 'deepseek-web-search-headers-patch.json'
 MODULE = '@deepseek-ai/dsh-web-search-deepseek/lib/index.js'
 OLD_APK_SHA = 'ba5fd1e19c5043fe000f02a3ffb56f125939a11b87bad0988d1677c73334cb26'
 OLD_MODULE_SHA = 'fc13dd4eaba3c9298af41a4d0559a1b8bb61614462fe18ba6e76d8c598c332bd'
+OLD_MODULE = ROOT / 'tools/fixtures/rc2-upgrade-source/dsh-web-search-deepseek.js'
 JAVA = r'''
 import com.deepseekharness.app.util.ManagedPatchChain;
 import java.io.IOException;
@@ -37,18 +38,33 @@ public final class WebSearchChainFixture {
   }
   public static void main(String[] args) throws Exception {
     Path root=Path.of(args[0]);var chain=chain(root.resolve("chain"));String expected=Files.readString(root.resolve("expected.js"));
-    for(String input:List.of("official.js","old-191.js","expected.js")) {
+    for(String input:List.of("official.js","pre.js","expected.js")) {
       String result=ManagedPatchChain.apply(Files.readString(root.resolve(input)),chain,()->{throw new AssertionError(input+" unexpectedly restored canonical");});
       require(result.equals(expected),input+" differs");
       System.out.println("PASS_WEB_SEARCH_CHAIN "+input);
     }
-    require(ManagedPatchChain.apply("unknown historical source",chain,()->expected).equals(expected),"canonical recovery differs");
-    System.out.println("PASS_WEB_SEARCH_CHAIN guarded canonical recovery");
-    for(String canonical:Arrays.asList(null,"unknown canonical source")) {
-      try {ManagedPatchChain.apply("unknown historical source",chain,()->canonical);throw new AssertionError("invalid canonical accepted");}
-      catch(IOException error) {require(error.getMessage().contains(canonical==null?"PATCH_CANONICAL_MISSING":"PATCH_CHAIN_MISMATCH"),"wrong guarded error");}
+    var restores=new java.util.concurrent.atomic.AtomicInteger();
+    String canonical=Files.readString(root.resolve("official.js"));
+    require(ManagedPatchChain.apply("unknown historical source",chain,()->{restores.incrementAndGet();return canonical;}).equals(expected),"canonical recovery differs");
+    require(restores.get()==1,"canonical recovery must rebuild exactly once");
+    System.out.println("PASS_WEB_SEARCH_CHAIN guarded canonical recovery exactly once");
+    for(String invalidCanonical:Arrays.asList(null,"unknown canonical source")) {
+      restores.set(0);
+      try {ManagedPatchChain.apply("unknown historical source",chain,()->{restores.incrementAndGet();return invalidCanonical;});throw new AssertionError("invalid canonical accepted");}
+      catch(IOException error) {require(error.getMessage().contains(invalidCanonical==null?"PATCH_CANONICAL_MISSING":"PATCH_CHAIN_MISMATCH"),"wrong guarded error");}
+      require(restores.get()==1,"invalid canonical must be read exactly once");
     }
     System.out.println("PASS_WEB_SEARCH_CHAIN missing and invalid canonical fail closed");
+    String old=Files.readString(root.resolve("old-module.js"));
+    restores.set(0);
+    String upgraded=ManagedPatchChain.apply(old,chain,()->{restores.incrementAndGet();return canonical;});
+    Files.writeString(root.resolve("old-module-result.js"),upgraded);
+    Files.writeString(root.resolve("old-module-restores.txt"),Integer.toString(restores.get()));
+    System.out.println("WEB_SEARCH_OLD_MODULE restores="+restores.get()+" equalsCurrent="+upgraded.equals(expected));
+    require(restores.get()==0||restores.get()==1,"old module canonical restored more than once");
+    require(upgraded.equals(expected),"old module differs from complete current module");
+    require(ManagedPatchChain.apply(upgraded,chain,()->{throw new AssertionError("old upgrade repeat restored canonical");}).equals(expected),"old upgrade repeat differs");
+    System.out.println("PASS_WEB_SEARCH_CHAIN historical module upgrade/repeat");
     if(Files.exists(root.resolve("apk.js"))) {
       String exact=Files.readString(root.resolve("apk.js"));require(exact.equals(expected),"exact APK module differs");
       require(ManagedPatchChain.apply(exact,chain,()->{throw new AssertionError("exact APK restore");}).equals(expected),"exact APK repeat differs");
@@ -100,17 +116,21 @@ def main():
     assert any(name == ASSET for name, _, _ in chain), 'WEB_SEARCH_RECIPE_MUST_BE_REGISTERED'
     pointer = json.loads((ROOT / 'app/build/test-runtimes/current.json').read_text(encoding='utf8'))
     canonical = (Path(pointer['raw']) / 'node_modules' / MODULE).read_bytes()
-    assert sha(canonical) == recipe['sourceSha256'] == OLD_MODULE_SHA, 'LOCKED_SEARCH_MODULE_IDENTITY'
+    assert sha(canonical) == recipe['sourceSha256'], 'LOCKED_SEARCH_MODULE_IDENTITY'
     expected = runtime_stable_patches.apply(canonical, chain)
     assert sha(expected) == recipe['patchedSha256'], 'FINAL_SEARCH_MODULE_IDENTITY'
     prior = [row for row in chain if row[0] != ASSET]
-    old = runtime_stable_patches.apply(canonical, prior)
+    pre = runtime_stable_patches.apply(canonical, prior)
+    assert runtime_stable_patches.apply(pre, chain) == expected, 'CURRENT_PRE_CHAIN_IDENTITY'
+    assert runtime_stable_patches.apply(expected, chain) == expected, 'CURRENT_REPEAT_IDENTITY'
+    old = OLD_MODULE.read_bytes()
+    assert sha(old) == OLD_MODULE_SHA, 'RETAINED_RC2_SEARCH_MODULE_IDENTITY'
     if args.old_apk:
         assert sha(args.old_apk.read_bytes()) == OLD_APK_SHA, 'OLD_191_APK_IDENTITY'
         old = module_from_apk(args.old_apk)
     assert sha(old) == OLD_MODULE_SHA, 'OLD_191_SEARCH_MODULE_IDENTITY'
     owned = Path(tempfile.mkdtemp(prefix='web-search-java-chain-', dir=ROOT / 'app/build'))
-    for name, data in [('official.js', canonical), ('old-191.js', old), ('expected.js', expected)]:
+    for name, data in [('official.js', canonical), ('pre.js', pre), ('old-module.js', old), ('expected.js', expected)]:
         (owned / name).write_bytes(data)
     if args.apk:
         (owned / 'apk.js').write_bytes(module_from_apk(args.apk))
@@ -131,9 +151,11 @@ def main():
     ran = subprocess.run([java, '-cp', str(classes), 'WebSearchChainFixture', str(owned)], capture_output=True, timeout=60)
     (owned / 'java.log').write_bytes(ran.stdout + ran.stderr)
     result = dict(status='PASS' if ran.returncode == 0 else 'FAIL', exitCode=ran.returncode, module=MODULE,
-                  sourceSha256=sha(canonical), patchedSha256=sha(expected), old191ModuleSha256=sha(old),
-                  old191ApkSha256=OLD_APK_SHA if args.old_apk else None,
-                  historicalInput='actual retained build191/1640 APK' if args.old_apk else 'official raw module; matches locked build191 source, no claim of extracting an old APK',
+                  sourceSha256=sha(canonical), preModuleSha256=sha(pre), patchedSha256=sha(expected), oldModuleSha256=sha(old),
+                   oldModuleResultSha256=sha((owned / 'old-module-result.js').read_bytes()) if (owned / 'old-module-result.js').exists() else None,
+                   oldModuleCanonicalRestores=int((owned / 'old-module-restores.txt').read_text()) if (owned / 'old-module-restores.txt').exists() else None,
+                  oldApkSha256=OLD_APK_SHA if args.old_apk else None,
+                  historicalInput='actual retained build191/1640 APK' if args.old_apk else 'retained official rc2 npm module verified against historical lock; no APK supplied',
                   apkSha256=sha(args.apk.read_bytes()) if args.apk else None,
                   recipes=[name for name, _, _ in chain], productionAlgorithmSha256={name:sha((production / name).read_bytes()) for name in ['ManagedPatchChain.java','ExactTextPatch.java']},
                   deviceValidation=False, output=str(owned))

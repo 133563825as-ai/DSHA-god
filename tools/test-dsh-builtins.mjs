@@ -1,8 +1,9 @@
 // 新版消息工厂参与的设备引导回归；模拟准入与已提交事件，不调用模型。
-import test from 'node:test';
+import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { cp, readFile, mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const runtime = resolve(process.env.DSHA_TEST_RUNTIME || 'app/build/dsh-alpha15/host-runtime');
@@ -22,6 +23,10 @@ function fixture(standard = false, history = []) {
   return {sections, original, session, handlers,
     step: (decision=original, extra={})=>handlers.get('agent/pre-step')({agent:{session},step:1,signal:new AbortController().signal,...extra},async()=>decision)};
 }
+let io;
+beforeEach(async()=>{io=await isolateOverlayIO(41822);await io.negativeControls();});
+afterEach(async()=>{await io.restore();});
+
 test('标准模式只注入一份系统引导', async()=>{
   const f=fixture(true); assert.equal(f.sections.length,1);
   assert.equal(await f.step(), f.original);
@@ -99,8 +104,190 @@ test('the upstream version gate still rejects each original stale wrapper declar
 });
 
 
+// 全测试共用护栏；生产吞掉 IO 异常，所以除 throw 外还必须独立计数。
+async function isolateOverlayIO(port) {
+  const oldEnv=Object.fromEntries(['HOME','DSHA_BRIDGE_PORT','DSHA_WEB_GENERATION','DSHA_BUILTIN_TEST_RUNTIME']
+    .map(key=>[key,process.env[key]]));
+  const home=await mkdtemp(resolve('app/build/builtin-overlay-home-'));
+  assert.ok(home.startsWith(resolve('app/build')+sep));
+  const originals=new Map(),traffic=[],pending=new Set(),tokenFDs=new Set(),violations=[];
+  const checked=fn=>{try{return fn();}catch(error){violations.push(error.message);throw error;}};
+  const assertClean=()=>assert.deepEqual(violations,[],'被生产 catch 吞掉的 IO 违规也必须失败');
+  const fixtureToken='owned-fixture-token';let nextFD=1_000_000;
+  const originalFetch=globalThis.fetch,expectedOrigin='http://127.0.0.1:'+port;
+  const originalTimeout=globalThis.setTimeout,originalClear=globalThis.clearTimeout,timers=new Map();
+  let stopping=false,cancelled=0;
+  globalThis.setTimeout=(callback,delay,...args)=>{
+    const timer=originalTimeout(()=>{timers.delete(timer);callback(...args);},delay);
+    if(stopping){originalClear(timer);cancelled++;}
+    else timers.set(timer,{delay,overlay:new Error().stack.includes('/dsh-status-overlay/')});
+    return timer;
+  };
+  globalThis.clearTimeout=timer=>{timers.delete(timer);return originalClear(timer);};
+  let tokenReads=0,portStats=0,blockedFiles=0,blockedDestinations=0,closed=false;
+  const rejectFile=()=>checked(()=>{blockedFiles++;throw Error('FIXTURE_REAL_CREDENTIAL_IO');});
+  const protectedFile=file=>/\/(?:\.dsh|\.ssh|\.android)(?:\/|$)/.test(String(file));
+  // lstat 故意模拟端口文件不存在，读端口只能使用本 fixture 的显式 fake 值。
+  for(const method of ['readFileSync','lstatSync','statSync','openSync','fstatSync','readSync','closeSync']) {
+    originals.set(method,fs[method]);
+    fs[method]=function(file,...args) {
+      if(method==='readFileSync'&&file==='/root/.dsh/.bridge_token') {
+        checked(()=>assert.equal(args[0],'utf8'));tokenReads++;return fixtureToken;
+      }
+      if(method==='openSync'&&file==='/root/.dsh/.bridge_token') {
+        tokenReads++;const fd=nextFD++;tokenFDs.add(fd);return fd;
+      }
+      if(tokenFDs.has(file)) {
+        if(method==='fstatSync')return {isFile:()=>true,size:fixtureToken.length,mode:0o100600};
+        if(method==='readSync')return Buffer.from(fixtureToken).copy(args[0],args[1],args[3]??0,args[2]);
+        if(method==='closeSync'){tokenFDs.delete(file);return;}
+      }
+      if(method==='lstatSync'&&file==='/root/.dsh/.bridge_port') {
+        portStats++;throw Object.assign(Error('isolated fixture'),{code:'ENOENT'});
+      }
+      if(protectedFile(file))return rejectFile();
+      return originals.get(method).call(this,file,...args);
+    };
+  }
+  const asyncOriginals=new Map();
+  for(const method of ['readFile','lstat','stat','open']) {
+    asyncOriginals.set(method,fs.promises[method]);
+    fs.promises[method]=async function(file,...args) {
+      if(protectedFile(file))return rejectFile();
+      return asyncOriginals.get(method).call(this,file,...args);
+    };
+  }
+  process.env.HOME=home;process.env.DSHA_BRIDGE_PORT=String(port);
+  process.env.DSHA_BUILTIN_TEST_RUNTIME=runtime;
+  delete process.env.DSHA_WEB_GENERATION;
+  syncBuiltinESMExports();
+  globalThis.fetch=(input,options)=>{
+    const url=checked(()=>{
+      const url=new URL(input);
+      if(closed||url.origin!==expectedOrigin||!['/app/overlay','/app/plugins','/app/ui/task-end','/app/version'].includes(url.pathname)) {
+        blockedDestinations++;throw Error('FIXTURE_NON_FAKE_DESTINATION');
+      }
+      assert.equal(url.searchParams.has('token'),false,'token query 禁止出现');
+      assert.equal(options.headers['X-Token'],fixtureToken,'X-Token 必须来自 fake 凭据');
+      assert.ok(options.signal instanceof AbortSignal,'请求必须带 AbortSignal');
+      return url;
+    });
+    traffic.push(url);
+    // 真正异步完成，确保 dispose 的 void send 不能越过恢复边界。
+    const request=new Promise(done=>setImmediate(()=>done(new Response(JSON.stringify({result:'OK'})))));
+    pending.add(request);request.then(()=>pending.delete(request),()=>pending.delete(request));
+    return request;
+  };
+  return {traffic,get tokenReads(){return tokenReads;},get portStats(){return portStats;},assertClean,
+    assertDisposed(session,from){
+      // 先取证，不能等 120ms timer 自然触发后再把残留当作已清理。
+      const remaining=[...timers.values()].filter(timer=>timer.overlay).map(timer=>timer.delay);
+      const clear=traffic.slice(from).some(url=>url.pathname==='/app/overlay'
+        &&url.searchParams.get('kind')==='clear'&&url.searchParams.get('session')===session);
+      const evidence={overlayTimers:remaining,clear};
+      console.log('REAL_DISPOSE_EVIDENCE '+JSON.stringify(evidence));
+      assertClean();
+      assert.deepEqual(evidence,{overlayTimers:[],clear:true},'真实 Cordis dispose 必须清 timer 并发送 clear');
+    },
+    async drain(){
+      await new Promise(done=>setImmediate(done));
+      while(pending.size)await Promise.all([...pending]);
+      await new Promise(done=>setImmediate(done));
+      assert.equal(pending.size,0);
+    },
+    async negativeControls(){
+      // 故障注入只打 mock，绝不把原始 fs/fetch 当作“验证”调用。
+      assert.throws(()=>fs.readFileSync('/root/.dsh/.bridge_headers','utf8'),/FIXTURE_REAL_CREDENTIAL_IO/);
+      assert.throws(()=>fs.statSync('/root/.dsh/.bridge_port'),/FIXTURE_REAL_CREDENTIAL_IO/);
+      await assert.rejects(fs.promises.readFile('/root/.dsh/.bridge_token','utf8'),/FIXTURE_REAL_CREDENTIAL_IO/);
+      assert.throws(()=>globalThis.fetch('http://127.0.0.1:1/app/overlay'),/FIXTURE_NON_FAKE_DESTINATION/);
+      assert.throws(()=>globalThis.fetch('https://fixture.invalid/app/overlay'),/FIXTURE_NON_FAKE_DESTINATION/);
+      assert.equal(blockedFiles,3);assert.equal(blockedDestinations,2);
+      // 模拟生产 catch 吞异常：每个校验仍须在独立主链断言中可见。
+      const swallowed=fn=>{try{fn();}catch{}};
+      const valid={headers:{'X-Token':fixtureToken},signal:new AbortController().signal};
+      for(const probe of [
+        ()=>globalThis.fetch('not a URL',valid),
+        ()=>globalThis.fetch(expectedOrigin+'/app/overlay'),
+        ()=>globalThis.fetch(expectedOrigin+'/app/overlay?token=fixture',valid),
+        ()=>globalThis.fetch(expectedOrigin+'/app/overlay',{...valid,headers:{'X-Token':'wrong'}}),
+        ()=>globalThis.fetch(expectedOrigin+'/app/overlay',{...valid,signal:undefined}),
+        ()=>fs.readFileSync('/root/.dsh/.bridge_token','buffer'),
+      ]) {
+        const before=violations.length;swallowed(probe);
+        assert.equal(violations.length,before+1);
+        assert.throws(assertClean,/IO 违规/,'吞错不得使护栏假绿');
+      }
+      assert.equal(violations.length,11);assert.equal(traffic.length,0);
+      violations.length=0;blockedFiles=0;blockedDestinations=0;
+    },
+    async restore(){
+      const errors=[];
+      const attempt=async fn=>{try{await fn();}catch(error){errors.push(error);}};
+      const cancelTimers=()=>{for(const timer of timers.keys()){originalClear(timer);cancelled++;}timers.clear();};
+      // 只在验收结束后兜底。先停调度，fake IO 内 drain；即使 cleanup 报错也继续收尾。
+      stopping=true;cancelTimers();
+      try {
+        await attempt(()=>this.drain());
+        cancelTimers();
+        await attempt(()=>this.drain());
+        await attempt(()=>{
+          assert.equal(pending.size,0,'dispose 后必须先 drain 再恢复真实 IO');
+          assert.equal(timers.size,0,'兜底后不能遗留异步 timer');
+          assert.equal(tokenFDs.size,0,'fake 凭据 fd 必须关闭');
+          assert.equal(blockedFiles,0,'生产路径不能读取未 mock 的凭据');
+          assert.equal(blockedDestinations,0,'生产吞掉的非法目的地同样必须使测试失败');
+          assertClean();
+        });
+        closed=true;
+        console.log('FAKE_IO_CLEANUP '+JSON.stringify({pending:pending.size,timers:timers.size,tokenFDs:tokenFDs.size,
+          violations:violations.length,cancelled}));
+      } finally {
+        for(const [method,original]of originals)fs[method]=original;
+        for(const [method,original]of asyncOriginals)fs.promises[method]=original;
+        syncBuiltinESMExports();globalThis.fetch=originalFetch;
+        for(const timer of timers.keys())originalClear(timer);
+        globalThis.setTimeout=originalTimeout;globalThis.clearTimeout=originalClear;
+        for(const [key,value]of Object.entries(oldEnv)) {
+          if(value===undefined)delete process.env[key];else process.env[key]=value;
+        }
+        await attempt(()=>rm(home,{recursive:true,force:true}));
+        await attempt(()=>assert.equal(fs.existsSync(home),false,'隔离 HOME 必须删除'));
+        for(const [key,value]of Object.entries(oldEnv))
+          await attempt(()=>assert.equal(process.env[key],value,key+' 必须恢复'));
+      }
+      await attempt(()=>{
+        assert.equal(globalThis.fetch,originalFetch);assert.equal(globalThis.setTimeout,originalTimeout);
+        assert.equal(globalThis.clearTimeout,originalClear);
+        for(const [method,original]of originals)assert.equal(fs[method],original);
+        for(const [method,original]of asyncOriginals)assert.equal(fs.promises[method],original);
+      });
+      console.log('FAKE_IO_RESTORED '+JSON.stringify({homeRemoved:!fs.existsSync(home),errors:errors.length}));
+      if(errors.length)throw new AggregateError(errors,'fake IO 收尾失败（全局已恢复）');
+    },
+  };
+}
+
+test('隔离负控：异步 drain 报错仍停止后续调度并恢复 fake IO 外层',async()=>{
+  const saved={fetch:globalThis.fetch,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,
+    readFileSync:fs.readFileSync,readFile:fs.promises.readFile,home:process.env.HOME,port:process.env.DSHA_BRIDGE_PORT};
+  const nested=await isolateOverlayIO(41824),drain=nested.drain.bind(nested);
+  let drains=0;
+  nested.drain=async()=>{await drain();if(++drains===1)throw Error('FIXTURE_ASYNC_CLEANUP_FAILURE');};
+  const pending=globalThis.fetch('http://127.0.0.1:41824/app/plugins',
+    {headers:{'X-Token':'owned-fixture-token'},signal:new AbortController().signal});
+  void pending.then(()=>setTimeout(()=>assert.fail('兜底后不允许执行重排 timer'),30000));
+  setTimeout(()=>assert.fail('兜底应取消遗留 timer'),120);
+  await assert.rejects(nested.restore(),error=>{
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.errors[0].message,/FIXTURE_ASYNC_CLEANUP_FAILURE/);return true;
+  });
+  assert.equal(drains,2,'首次异步 cleanup 失败后仍须再次 drain');
+  assert.deepEqual({fetch:globalThis.fetch,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,
+    readFileSync:fs.readFileSync,readFile:fs.promises.readFile,home:process.env.HOME,port:process.env.DSHA_BRIDGE_PORT},saved);
+});
+
 test('all eleven signed wrappers activate with real 0.2.2 services; actual MCP and Auto lifecycles dispose cleanly',async()=>{
-  process.env.DSHA_BUILTIN_TEST_RUNTIME = runtime;
   await import('./fixtures/builtin-host-hooks.mjs');
   const load = async name => import(pathToFileURL(runtimeRequire.resolve(name)));
   const {Context} = await load('@deepseek-ai/cordis');
@@ -121,8 +308,6 @@ test('all eleven signed wrappers activate with real 0.2.2 services; actual MCP a
   assert.ok(owned.startsWith(resolve('app/build')+sep),'owned cleanup must remain below app/build');
   const ctx = new Context(), routes = [], fibers = [];
   let llmRequests = 0;
-  const oldGeneration = process.env.DSHA_WEB_GENERATION;
-  delete process.env.DSHA_WEB_GENERATION; // no application activity file outside the owned fixture
   try {
     // Controlled host carriers own no socket, model credentials, or user Session.
     ctx.provide('webServer',{port:41821,register(route){routes.push(route);return()=>{routes.splice(routes.indexOf(route),1);};}});
@@ -138,13 +323,14 @@ test('all eleven signed wrappers activate with real 0.2.2 services; actual MCP a
     }
     assert.equal(ctx.permissionPresets.defaultPreset,'danger-full-access');
     assert.equal(ctx.permissionPresets.names.includes('auto'),false);
-    const mounted = [];
+    const mounted = [];let overlayFiber;
     for (const plugin of builtinRegistry.plugins) {
       const filename = plugin.name==='dsh-app-integration' ? resolve('app/src/main/assets/app-integration/index.js')
         : resolve('app/src/main/assets/builtin-plugins',plugin.name,plugin.entrypoint);
       const module = await import(pathToFileURL(filename));
       assert.equal(typeof module.apply,'function',plugin.name+' apply export');
       const fiber=ctx.plugin(module);await fiber;assert.equal(fiber.state,2,plugin.name+' must activate');mounted.push(fiber);
+      if(plugin.name==='dsh-status-overlay')overlayFiber=fiber;
     }
     // The wrapper's cordis.patch inserts this actual official integration.
     const auto=ctx.plugin(await load('@deepseek-ai/dsh-experimental-auto-review'));await auto;
@@ -154,7 +340,16 @@ test('all eleven signed wrappers activate with real 0.2.2 services; actual MCP a
     const passthrough=await ctx.waterfall(null,'tools/pre-execute',{name:'fixture',signal:new AbortController().signal},async()=>{next++;return {kind:'allow'};});
     assert.equal(passthrough.kind,'allow');assert.equal(next,1);assert.equal(llmRequests,0);
     const schemas=ctx.tools.schemas().map(tool=>tool.name);
-    assert.equal(schemas.filter(name=>name.startsWith('mcp__dsha-android__')).length,11);
+    assert.deepEqual(schemas.filter(name=>name.startsWith('mcp__dsha-android__')).sort(),[
+      'android_control','android_get_state','android_history','android_node','android_screenshot','android_read_image',
+      'android_click','android_double_click','android_long_press','android_type','android_key','android_swipe',
+    ].map(name=>'mcp__dsha-android__'+name).sort(),'physical-phone tools must match the complete capability list');
+    const historySchema=ctx.tools.schemas().find(tool=>tool.name==='mcp__dsha-android__android_history').parameters;
+    assert.deepEqual(historySchema.required,[]);
+    assert.equal(historySchema.additionalProperties,false);
+    assert.deepEqual(historySchema.properties,{
+      since:{type:'integer',minimum:0,maximum:9007199254740991},limit:{type:'integer',minimum:1,maximum:100},
+    });
     assert(schemas.includes('mcp__dsha-android__android_read_image'),'shared-storage image reads are exposed as a separate physical-phone tool');
     assert(schemas.includes('mcp__dsha-android__android_node'),'physical-screen semantic actions must be exposed to ordinary conversations');
     assert(schemas.includes('mcp__dsha-android__android_control'),'ordinary conversations need explicit task begin/finish without changing chats');
@@ -169,48 +364,84 @@ test('all eleven signed wrappers activate with real 0.2.2 services; actual MCP a
     const restore=routes.find(route=>route.path==='/__dsha/browser-origin-restore');assert.ok(restore);
     let denied;
     await restore.handler({method:'GET'},{writeHead(code){denied=code;},end(){}});assert.equal(denied,401);
+    // 原 all-wrappers 路径也必须实际执行启动上报 timer，不能靠快速 dispose 避开 IO。
+    await new Promise(done=>setTimeout(done,1100));await io.drain();
+    assert.ok(io.traffic.some(url=>url.pathname==='/app/plugins'));
+    assert.ok(io.tokenReads>0);assert.ok(io.portStats>0);
     await auto.dispose();assert.equal(ctx.permissionPresets.names.includes('auto'),false);
-    for (const fiber of mounted.reverse()) await fiber.dispose();
+    // 在 overlay 自身卸载后立即验收，不能等其它 MCP dispose 时让短 timer 自然跑完。
+    const cleanupSession='owned-all-wrappers-cleanup';
+    ctx.emit('agent/assistant-stream',{agent:{session:{id:cleanupSession}},
+      frame:{type:'chunk',chunk:{type:'text-delta',text:'pending all-wrappers cleanup'}}});
+    const from=io.traffic.length,disposalErrors=[];
+    assert.ok(overlayFiber);
+    await overlayFiber.dispose();
+    try {io.assertDisposed(cleanupSession,from);}catch(error){disposalErrors.push(error);}
+    for (const fiber of mounted.reverse())if(fiber!==overlayFiber)await fiber.dispose();
+    await io.drain();io.assertClean();
     assert.equal(ctx.tools.schemas().length,0);assert.equal(ctx.computerUse.providerName,undefined);
     assert.equal(routes.length,0);assert.equal(llmRequests,0);
+    assert.equal(disposalErrors.length,0,'all-wrappers 的真实 overlay dispose 残留必须失败');
   } finally {
-    await ctx.fiber.dispose();
-    if(oldGeneration===undefined)delete process.env.DSHA_WEB_GENERATION;else process.env.DSHA_WEB_GENERATION=oldGeneration;
-    delete process.env.DSHA_BUILTIN_TEST_RUNTIME;
-    await rm(owned,{recursive:true,force:true});
+    try { await ctx.fiber.dispose(); }
+    finally { await rm(owned,{recursive:true,force:true}); }
   }
 });
 
 
 
-test('status overlay actual apply forwards current stream and tool events through bounded authenticated bridge IO',async()=>{
-  const {default:fs} = await import('node:fs');
-  const {syncBuiltinESMExports} = await import('node:module');
-  const {Context} = await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/cordis')));
-  const originalRead = fs.readFileSync, originalFetch = globalThis.fetch;
-  const traffic = []; let tokenReads=0;
-  const ctx = new Context();
+test('android history validates capability arguments and identity; bridge failures and UNKNOWN remain errors without replay',async()=>{
+  const server=createRequire(import.meta.url)(resolve('app/src/main/assets/builtin-plugins/dsh-computer-use-android/lib/server.cjs'));
+  const {default:fs}=await import('node:fs');
+  const originalStat=fs.lstatSync,originalPort=process.env.DSHA_BRIDGE_PORT;
+  const signal=new AbortController().signal,task={sessionId:'owned-history-session',turnId:'2',completedTurnId:'1'};
+  let reads=0,requests=0,reply=JSON.stringify({events:[],frames:[],nextSince:7});
+  const dependencies={fs:{async readFile(file,encoding){assert.equal(file,'/root/.dsh/.bridge_token');assert.equal(encoding,'utf8');reads++;return 'owned-history-token';}},
+    async fetch(url,options){
+      requests++;assert.equal(url.origin,'http://127.0.0.1:41823');assert.equal(url.pathname,'/app/ui/history');
+      assert.equal(url.searchParams.get('taskSessionId'),task.sessionId);assert.equal(url.searchParams.get('turnId'),'2');
+      assert.equal(url.searchParams.get('completedTurnId'),'1');assert.equal(url.searchParams.has('token'),false);
+      assert.equal(url.searchParams.has('observe'),false);assert.equal(url.searchParams.get('since'),'7');assert.equal(url.searchParams.get('limit'),'3');
+      assert.equal(options.headers['X-Token'],'owned-history-token');assert.equal(options.signal,signal);
+      return new Response(JSON.stringify({result:reply}));
+    }};
   try {
-    // Only the guest token read and network boundary are controlled. The actual
-    // plugin body, timers, event callbacks, aggregation and request construction run.
-    fs.readFileSync = function(file,...args) {
-      if(file === '/root/.dsh/.bridge_token'){tokenReads++;return 'owned-fixture-token';}
-      return originalRead.call(this,file,...args);
+    fs.lstatSync=function(file,...args){
+      if(file==='/root/.dsh/.bridge_port')throw Object.assign(Error('isolated fixture'),{code:'ENOENT'});
+      return originalStat.call(this,file,...args);
     };
-    syncBuiltinESMExports();
-    // 生产不再回退 3090：无本机端口文件时显式发布，期望值取实际解析结果（文件优先于环境）。
-    process.env.DSHA_BRIDGE_PORT ??= '3090';
-    const expectedOrigin='http://127.0.0.1:'+createRequire(import.meta.url)(resolve('app/src/main/assets/builtin-plugins/dsh-status-overlay/lib/bridge-port.cjs'))();
-    globalThis.fetch = async (input,options) => {
-      const url=new URL(input);
-      assert.equal(url.origin,expectedOrigin);
-      assert.ok(['/app/overlay','/app/plugins'].includes(url.pathname));
-      assert.equal(url.searchParams.has('token'),false);
-      assert.equal(options.headers['X-Token'],'owned-fixture-token');
-      assert.ok(options.signal instanceof AbortSignal);
-      traffic.push(url);
-      return new Response(JSON.stringify({result:'OK'}));
-    };
+    process.env.DSHA_BRIDGE_PORT='41823';
+    for(const [args,code] of [[{since:-1},'INVALID_since'],[{since:1.5},'INVALID_since'],[{since:Number.MAX_SAFE_INTEGER+1},'INVALID_since'],
+      [{limit:0},'INVALID_limit'],[{limit:101},'INVALID_limit'],[{limit:'3'},'INVALID_limit'],[{observe:true},'UNKNOWN_ARGUMENT']])
+      await assert.rejects(server.call('android_history',args,signal,dependencies,task),new RegExp(code));
+    await assert.rejects(server.call('android_history',{},signal,dependencies),/SCREEN_TASK_IDENTITY_REQUIRED/);
+    await assert.rejects(server.call('android_history',{},signal,dependencies,{...task,completedTurnId:'2'}),/SCREEN_TURN_INVALID/);
+    await assert.rejects(server.call('android_unknown',{},signal,dependencies,task),/UNKNOWN_TOOL/);
+    assert.equal(reads,0);assert.equal(requests,0,'invalid calls must not reach credentials or bridge');
+    const result=await server.call('android_history',{since:7,limit:3},signal,dependencies,task);
+    assert.equal(result.isError,false);assert.deepEqual(JSON.parse(result.content[0].text),{events:[],frames:[],nextSince:7});
+    for(const failure of ['DISABLED','NO_PERMISSION','UNAUTHORIZED','STOPPED',
+      JSON.stringify({ok:false,state:'UNKNOWN',error:'EXECUTION_UNKNOWN',code:'EXECUTION_UNKNOWN'})]) {
+      reply=failure;const before=requests;
+      const denied=await server.call('android_history',{since:7,limit:3},signal,dependencies,task);
+      assert.equal(denied.isError,true);assert.equal(denied.content[0].text,failure);
+      assert.equal(requests,before+1,'a bridge denial or UNKNOWN must never replay');
+    }
+    assert.equal(reads,requests);
+  } finally {
+    fs.lstatSync=originalStat;
+    if(originalPort===undefined)delete process.env.DSHA_BRIDGE_PORT;else process.env.DSHA_BRIDGE_PORT=originalPort;
+  }
+});
+
+
+test('status overlay actual apply forwards current stream and tool events through bounded authenticated bridge IO',async()=>{
+  let ctx;
+  try {
+    const {Context} = await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/cordis')));
+    ctx = new Context();
+    const {traffic}=io;
+    // 仍运行实际插件、定时器、聚合和请求构建，仅隔离凭据及网络边界。
     const overlay=await import(pathToFileURL(resolve('app/src/main/assets/builtin-plugins/dsh-status-overlay/lib/index.js')).href+'?builtin-activation-stream');
     const mounted=ctx.plugin(overlay);await mounted;assert.equal(mounted.state,2);
     const session={id:'owned-overlay-session'};
@@ -222,14 +453,24 @@ test('status overlay actual apply forwards current stream and tool events throug
     await new Promise(done=>setTimeout(done,160));
     ctx.emit('session/event',session,{type:'tool/call',data:{name:'bash',arguments:JSON.stringify({command:'printf fixture'})}});
     ctx.emit('session/event',session,{type:'turn/end',data:{reason:{kind:'completed'}}});
-    await new Promise(done=>setImmediate(done));
+    await io.drain();
     const overlayRequests=traffic.filter(url=>url.pathname==='/app/overlay');
     for(const [kind,text] of [['reasoning','fixture thought'],['text','fixture reply'],['tool','printf fixture']])
       assert.ok(overlayRequests.some(url=>url.searchParams.get('kind')===kind&&url.searchParams.get('text').includes(text)),kind+' current rc2 event must forward');
     assert.ok(overlayRequests.some(url=>url.searchParams.get('kind')==='done'));
-    assert.ok(tokenReads>0);await mounted.dispose();
+    assert.ok(io.tokenReads>0);assert.ok(io.portStats>0);
+    // 留一个尚未 flush 的桶，卸载必须取消 timer 并异步发送 clear。
+    ctx.emit('agent/assistant-stream',{agent:{session},frame:{type:'chunk',chunk:{type:'text-delta',text:'pending cleanup'}}});
+    const from=traffic.length;
+    await mounted.dispose();
+    io.assertDisposed(session.id,from);
+    await io.drain();io.assertClean();
+    assert.ok(traffic.slice(from).some(url=>url.searchParams.get('kind')==='clear'));
+    const settled=traffic.length;
+    await new Promise(done=>setTimeout(done,160));await io.drain();
+    assert.equal(traffic.length,settled,'真实卸载后不能再 flush stream 或上报');
   } finally {
-    await ctx.fiber.dispose();fs.readFileSync=originalRead;syncBuiltinESMExports();globalThis.fetch=originalFetch;
+    if(ctx)await ctx.fiber.dispose();
   }
 });
 

@@ -53,6 +53,9 @@ app/src/main/assets/plugin-manager.py -text -eol
 
 /tools/fixtures/rc2-upgrade-source/dsh-client-ui-workspace.js -text -eol
 /tools/fixtures/rc2-upgrade-source/dsh-client-ui-agent-preset.js -text -eol
+/tools/fixtures/rc2-upgrade-source/dsh-client-ui-settings-models.js -text -eol
+/tools/fixtures/rc2-upgrade-source/dsh-web-search-deepseek.js -text -eol
+/tools/fixtures/plugin-management-rc5-historical/canonical.js -text -eol
 
 # Frozen build197 language inputs: exact SHA checked by check-source-hygiene.py.
 /docs/releases/build197-changes.ar.md -text -eol

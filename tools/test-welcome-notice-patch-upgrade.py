@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'app/src/main/assets'
 OLD_RECIPE = ROOT / 'tools/fixtures/welcome-notice-v1-patch.json'
 OLD_SHA256 = 'de03bfcd64a00718c5576c25505b14e05af5a38b56ecee2d800dfe6e3c66bde0'
+OLD_CANONICAL_SHA256 = '190498e15358bcd3fe6810fe6368023a20b0403e3ea493bc979eca9bdb593b28'
 OLD_MARKERS = ['DSHA_WELCOME_NOTICE_RC2_V1', 'DSHA_WELCOME_STORE_RC2_V1']
 CURRENT_MARKERS = ['DSHA_WELCOME_NOTICE_RC2_V1', 'DSHA_WELCOME_STORE_RC2_V3']
 
@@ -92,7 +93,9 @@ def apply_recipe(data, recipe):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--module', type=Path, help='locked original rc2 lib/client.js')
+    parser.add_argument('--module', type=Path, help='current locked lib/client.js')
+    parser.add_argument('--historical-module', type=Path, default=ROOT / 'tools/fixtures/rc2-upgrade-source/dsh-client-ui-settings-models.js',
+                        help='pinned rc2 lib/client.js used for the historical side')
     parser.add_argument('--jdk', type=Path, help='JDK 17 home (otherwise JAVA_HOME/PATH)')
     args = parser.parse_args()
     if sys.flags.optimize:
@@ -109,12 +112,14 @@ def main():
     historical = json.loads(historical_bytes)
     current = json.loads((ASSETS / 'welcome-notice-patch.json').read_text(encoding='utf-8'))
     canonical = module.read_bytes()
+    historical_canonical = args.historical_module.read_bytes()
     assert historical['module'] == current['module']
-    assert historical['sourceSha256'] == current['sourceSha256'] == sha(canonical)
-    # rc3 repackages this byte-identical JS; historical recipe bytes remain SHA pinned.
+    assert sha(historical_canonical) == historical['sourceSha256'] == OLD_CANONICAL_SHA256, 'historical rc2 module identity'
+    assert sha(canonical) == current['sourceSha256'], 'current canonical identity'
+    # 历史与当前 canonical 分别锁定，不能把当前字节当作 rc2 输入。
     assert historical['dshVersion'] == '0.2.1-rc.2'
     assert current['dshVersion'] == json.loads((ROOT / 'tools/dsh-runtime/package.json').read_text(encoding='utf-8'))['dependencies']['@deepseek-ai/dsh']
-    old = apply_recipe(canonical, historical)
+    old = apply_recipe(historical_canonical, historical)
     expected = apply_recipe(canonical, current)
     assert old != expected
     assert all(marker.encode() in old for marker in OLD_MARKERS)
@@ -167,6 +172,7 @@ def main():
     (output / 'java.log').write_bytes(ran.stdout + ran.stderr)
     assert ran.returncode == 0, 'Java regression failed: ' + str(output / 'java.log')
     result = dict(status='PASS', historicalRecipeSha256=OLD_SHA256,
+                  historicalCanonicalSha256=sha(historical_canonical),
                   canonicalSha256=sha(canonical), oldV1ModuleSha256=sha(old), currentV3ModuleSha256=sha(expected),
                   registrySha256=sha((ASSETS / 'runtime-patches.json').read_bytes()),
                   javaCases=3, archiveCases=3, deviceValidation=False, output=str(output))

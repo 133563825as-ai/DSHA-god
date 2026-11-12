@@ -118,6 +118,8 @@ jobs:
           ./gradlew :app:testStandardDebugUnitTest --rerun-tasks --no-daemon --max-workers=2 2>&1 | tee out/sprout/unit.log
           python3 tools/verify-unit-results.py --mode full --require-fixtures --output out/sprout/unit-results.json
           ./gradlew :app:lintStandardRelease --no-daemon --max-workers=2 2>&1 | tee out/sprout/lint.log
+          # 独立资源夹具需要AGP真实source-set map；不产APK、不签名、不安装。
+          ./gradlew :app:mapStandardReleaseSourceSetPaths --no-daemon --max-workers=2 2>&1 | tee out/sprout/resource-source-map.log
       - name: Complete runtime and software gates (only after L2)
         shell: bash
         run: |

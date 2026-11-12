@@ -74,27 +74,40 @@ try {
 
   const {default:Permissions}=await load('@deepseek-ai/dsh-permission-presets');
   const official=await load(aliases[1]);
-  const ctx=new Context();let permissionUnit,reviews=0,next=0;
+  const {default:Projections}=await load('@deepseek-ai/dsh-session-projection');
+  const {default:Agents}=await load('@deepseek-ai/dsh-agent');
+  const {Session}=await load('@deepseek-ai/dsh-session');
+  const {default:Tools}=await load('@deepseek-ai/dsh-tools');
+  const {default:SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt');
+  const {default:LocalFS}=await load('@deepseek-ai/dsh-fs-local');
+  const {default:WorkingDirectory}=await load('@deepseek-ai/dsh-working-directory');
+  const ctx=new Context();let reviews=0,next=0,reviewReply='{"risk":"low","decision":"allow"}';
   const sessions=[];
   ctx.provide('shell',{sandboxMode:'danger-full-access'});
   ctx.provide('approval',{config:{policy:'never'},overrideOf:()=> 'never'});
   ctx.provide('sessions',{list:()=>sessions});
-  ctx.provide('sessionProjections',{register(unit){permissionUnit=unit;return()=>{};},stateOf(session){return session.permissionState;}});
-  ctx.provide('tools',{});
-  ctx.provide('workingDirectory',{ensure:async()=>owned});
-  ctx.provide('llm',{async *stream(){reviews++;yield {type:'text-delta',index:0,text:'{"risk":"low","decision":"allow"}'};yield {type:'finish',reason:{kind:'stop'}};}});
+  ctx.provide('llm',{async *stream(){reviews++;yield {type:'text-delta',index:0,text:reviewReply};yield {type:'finish',reason:{kind:'stop'}};}});
   try {
-    await ctx.plugin(Permissions,{defaultPreset:'danger-full-access'});
+    // 使用真实注册表与投影句柄；缺硬依赖时 await fiber 本身不保证已激活。
+    for(const [plugin,config] of [[Projections,{}],[Agents,{}],[SystemPrompt,{}],[Tools,{}],
+      [LocalFS,{cwd:owned}],[WorkingDirectory,{defaultDirectory:owned}],[Permissions,{defaultPreset:'danger-full-access'}]]) {
+      const fiber=ctx.plugin(plugin,config);await fiber;assert.equal(fiber.state,2,plugin.name+' must activate with its required services');
+    }
     assert.equal(ctx.permissionPresets.names.includes('auto'),false);
-    const events=[{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'step/start',data:{turn:1,step:1}},
-      {seq:2,type:'assistant/message',data:{turn:1,step:1,message:{content:[{type:'tool-call',id:'call',name:'fixture-read',arguments:'{}'}]}}},
-      {seq:3,type:'tool/call',data:{turn:1,step:1,callId:'call',name:'fixture-read',arguments:'{}'}}];
-    const session={header:{origin:'user'},surface:{nodes:[2]},permissionState:{preset:'danger-full-access',sandbox:'danger-full-access',approval:'never',seeded:true},
-      snapshotEvents:()=>events,requestHeader:()=>({config:{provider:'fixture',model:'fixture-model'},tools:[{name:'fixture-read',description:'read an isolated fixture',parameters:{type:'object'}}]}),
-      append(type,data){const event={seq:events.length,type,data};events.push(event);this.permissionState=permissionUnit.apply(this.permissionState,event);}};
-    const exec={agent:{session},signal:new AbortController().signal,name:'fixture-read',arguments:{},callId:'call',rootCallId:'call'};
+    const session=Session.create('owned-auto-review-session');
+    session.append('permission/preset',{preset:'danger-full-access'});
+    session.append('sandbox/mode',{mode:'danger-full-access'});
+    session.append('approval/policy',{policy:'never'});
+    session.append('request/header',{reason:'initial',header:{config:{provider:'fixture',model:'fixture-model'},
+      tools:[{name:'fixture-read',description:'read an isolated fixture',parameters:{type:'object'}}]}});
+    session.append('turn/start',{turn:1});session.append('step/start',{turn:1,step:1});
+    session.append('assistant/message',{turn:1,step:1,stream:[],message:{id:'owned-assistant',role:'assistant',
+      source:{kind:'model',provider:'fixture',model:'fixture-model'},content:[{type:'tool-call',id:'call',name:'fixture-read',arguments:'{}'}]}},{surfaceOp:'append'});
+    session.append('tool/call',{turn:1,step:1,callId:'call',name:'fixture-read',arguments:'{}'});
+    assert.throws(()=>ctx.permissionPresets.set(session,'auto'),/unknown preset/,'Auto cannot be selected without its integration');
+    const exec={agent:{session,ctx},signal:new AbortController().signal,name:'fixture-read',arguments:{},callId:'call',rootCallId:'call'};
     const run=()=>ctx.waterfall(null,'tools/pre-execute',exec,async()=>{next++;return {kind:'allow'};});
-    let fiber=ctx.plugin(official);await fiber;
+    let fiber=ctx.plugin(official);await fiber;assert.equal(fiber.state,2);
     assert.equal(ctx.permissionPresets.names.includes('auto'),true);
     assert.equal(ctx.permissionPresets.defaultPreset,'danger-full-access');
     assert.equal(ctx.permissionPresets.current(session),'danger-full-access');
@@ -102,13 +115,20 @@ try {
     ctx.permissionPresets.set(session,'auto');
     assert.equal(ctx.permissionPresets.current(session),'auto');
     assert.equal((await run()).kind,'allow');assert.equal(reviews,1);assert.equal(next,2);
+    reviewReply='{"risk":"high","decision":"deny"}';
+    const denied=await run();assert.equal(denied.kind,'deny');assert.equal(denied.info.code,'AUTO_REVIEW_DENIED');
+    assert.equal(reviews,2);assert.equal(next,2,'review denial must not execute the tool body');
+    reviewReply='invalid reviewer output';
+    const failed=await run();assert.equal(failed.kind,'deny');assert.equal(failed.info.code,'AUTO_REVIEW_FAILED');
+    assert.equal(reviews,3);assert.equal(next,2,'invalid reviewer output must fail closed');
     sessions.push(session);await fiber.dispose();
     assert.equal(ctx.permissionPresets.names.includes('auto'),false);
     assert.equal(ctx.permissionPresets.current(session),'danger-full-access','this is the unchanged official disposal behavior, confined to the synthetic fixture');
-    fiber=ctx.plugin(official);await fiber;
+    assert.throws(()=>ctx.permissionPresets.set(session,'auto'),/unknown preset/,'disposed Auto must not remain selectable');
+    fiber=ctx.plugin(official);await fiber;assert.equal(fiber.state,2);
     assert.equal(ctx.permissionPresets.current(session),'danger-full-access','re-enabling the plugin must not select Auto');
     assert.equal(ctx.permissionPresets.defaultPreset,'danger-full-access');
-    await run();assert.equal(reviews,1);await fiber.dispose();
-    console.log('PASS: real official Cordis + PermissionPresets register/dispose Auto; an actual current-Auto tool gate reviews once; ordinary mode and plugin re-enable do not select Auto.');
+    await run();assert.equal(reviews,3);assert.equal(next,3);await fiber.dispose();
+    console.log('PASS: real official Cordis + PermissionPresets register/dispose Auto; current-Auto gates allow, deny, and fail closed; ordinary mode and plugin re-enable do not select Auto.');
   } finally {await ctx.fiber.dispose();}
 } finally {await managerContext.fiber.dispose();fs.rmSync(owned,{recursive:true,force:true});}

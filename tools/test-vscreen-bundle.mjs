@@ -20,6 +20,7 @@ verifyRuntimeContent(runtime,proof);
 const load=async name=>import(pathToFileURL(path.join(runtime,'node_modules',name,'lib/index.js')));
 const {Context}=await load('@deepseek-ai/cordis');
 const {default:ToolRuntime}=await load('@deepseek-ai/dsh-tools');
+const NativeExecutor=await load('@deepseek-ai/dsh-tool-executor-native');
 const {default:SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt');
 const {loadProfileDirectory,composeEntries}=await load('@deepseek-ai/dsh-app-boot');
 const directory=fs.mkdtempSync(path.join(root,'app/build/vscreen-bundle-'));
@@ -58,7 +59,8 @@ elif mode=='enable': assert r.enable_plugin('dsh-tool-vscreen')==0
   const plugin=await import(pathToFileURL(path.join(pluginDir,'lib/index.js')));
   const wanted=(await import(pathToFileURL(path.join(pluginDir,'lib/server.cjs')))).tools.map(row=>'mcp__dsha-vscreen__'+row.name).sort();
   for(let turn=0;turn<2;turn++){
-    ctx=new Context();await ctx.plugin(SystemPrompt,{});await ctx.plugin(ToolRuntime,{mode:'native'});
+    ctx=new Context();await ctx.plugin(SystemPrompt,{});await ctx.plugin(ToolRuntime,{});
+    await ctx.plugin(NativeExecutor);
     const mounted=ctx.plugin(plugin);await mounted;
     const schemas=ctx.tools.schemas();
     assert.deepEqual(schemas.map(row=>row.name).sort(),wanted);
