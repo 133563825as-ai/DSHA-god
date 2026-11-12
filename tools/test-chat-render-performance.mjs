@@ -2,6 +2,8 @@
 import {testRuntime} from './test-runtime-fixture.mjs';
 // 只加载当前锁定 DSH 的 React/DOM 与 ui-chat，不连接真实账户，不创建设备会话。
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { browserFixture } from './rc1-browser-fixture.mjs';
 
 const runtime = testRuntime('raw');
@@ -24,6 +26,20 @@ try {
   assert.throws(() => assertNoErrors(errors), /CHAT_RENDER_ERROR_CONTROL/);
   errors.splice(errors.indexOf(errorControl), 1);
   assertNoErrors(errors);
+  // 当前模块CSS通过require.asset取鲸鱼图；仅补真实锁定静态资源映射，不改模块源码。
+  const assetName = 'plugins/@deepseek-ai/dsh-client-ui-chat/assets/running-whale%402x-06738fa29b2f.png';
+  const assetBytes = fs.readFileSync(path.join(runtime,
+    'node_modules/@deepseek-ai/dsh-client-ui-chat/lib/assets/running-whale@2x-06738fa29b2f.png'));
+  await fixture.page.evaluate(({name, value}) => {
+    const original = window.__ModuleLoader__.load;
+    window.__ModuleLoader__.load = ({id, factory}) => original({id, factory: require => {
+      require.asset = requested => {
+        if (requested !== name) throw new Error(`Unexpected fixture asset: ${requested}`);
+        return value;
+      };
+      return factory(require);
+    }});
+  }, {name: assetName, value: `data:image/png;base64,${assetBytes.toString('base64')}`});
   await fixture.load('dsh-client-ui-chat', [], `
     module.exports.audit = {ChatFlow, UserMessageNodeView, AssistantNodeView, UserContent,
       legacyComponentType: typeof ChatNodeList};`);
