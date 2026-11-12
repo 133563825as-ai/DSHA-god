@@ -118,18 +118,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # 历史输入前置必须显式满足，不能让缺参数被当成环境豁免或跳过。
+          # 真实历史APK只按共享固定契约下载、流式限额并验证，不合成旧版或放宽哈希。
           python3 - <<'PY'
-          import os, pathlib, re, hashlib
-          runner = pathlib.Path('tools/run-host-tests.py').read_text()
-          child = pathlib.Path('tools/test-build193-patch-chain.py').read_text()
-          expected = re.search(r'hexdigest\(\) != "([a-f0-9]{64})"', runner).group(1)
-          actual = re.search(r"OLD_APK_SHA = '([a-f0-9]{64})'", child).group(1)
-          if expected != actual:
-              raise SystemExit('BLOCKED_HISTORICAL_FIXTURE_CONTRACT: runner and patch-chain require different APK identities; no waiver')
+          import importlib.util, os, pathlib, urllib.request
+          spec = importlib.util.spec_from_file_location('previous_fixture', 'tools/previous-runtime-fixture.py')
+          fixture = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(fixture)
           source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'sprout-previous-runtime.apk'
-          if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != expected:
-              raise SystemExit('BLOCKED_HISTORICAL_FIXTURE_MISSING: exact old APK required; no synthesized input or skip')
+          if source.exists():
+              raise SystemExit('HISTORICAL_FIXTURE_TARGET_EXISTS: inspect before reuse')
+          request = urllib.request.Request(fixture.CONTRACT.url, headers={'User-Agent': 'DSHA-Sprout-CI'})
+          with urllib.request.urlopen(request, timeout=60) as response, source.open('xb') as output:
+              size = 0
+              while True:
+                  chunk = response.read(1024 * 1024)
+                  if not chunk:
+                      break
+                  size += len(chunk)
+                  if size > 512 * 1024 * 1024:
+                      raise SystemExit('HISTORICAL_FIXTURE_SIZE_LIMIT')
+                  output.write(chunk)
+          fixture.verify_apk(source)
+          print('Verified historical build', fixture.CONTRACT.build, fixture.CONTRACT.sha256)
           PY
           python3 tools/run-host-tests.py --stage runtime --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/sprout-toolchains" --pnpm-cli "$RUNNER_TEMP/sprout-pnpm/dist/pnpm.cjs" --previous-runtime-apk "$RUNNER_TEMP/sprout-previous-runtime.apk" --playwright "$GITHUB_WORKSPACE/tools/ci-browser/node_modules/playwright" --browsers-path "$PLAYWRIGHT_BROWSERS_PATH" --output app/build/host-runtime-sprout-ci 2>&1 | tee out/sprout/host-runtime.log
           # 标准Linux内串行调用原脚本；它内部再跑单测/Lint，不与其他Gradle并发。

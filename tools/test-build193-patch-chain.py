@@ -20,7 +20,9 @@ import runtime_stable_patches
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = {'plugin-pnpm-argv-patch.json', 'language-patch.json'}
-OLD_APK_SHA = '2a69a315eca22f8711a97122a54a2f8beb4d98e624a04d8bb3afa65a420e89d2'
+_previous_spec = importlib.util.spec_from_file_location('previous_runtime_fixture', ROOT / 'tools/previous-runtime-fixture.py')
+previous_runtime_fixture = importlib.util.module_from_spec(_previous_spec)
+_previous_spec.loader.exec_module(previous_runtime_fixture)
 OLD_MODULE_SHA = {
     '@deepseek-ai/dsh-plugin-manager/lib/index.js': '7b287c984c0f9e1835e59f3b5d5bf60a68f23430b627a85df41455136a453874',
 }
@@ -59,7 +61,7 @@ public final class Build193PatchChainFixture {
   static void predecessorControls(String old,List<ManagedPatchChain.Recipe> chain,String expected)throws Exception {
     int variants=0;
     for(var recipe:chain)for(var previous:recipe.previousPatches()) {
-      require(old.contains(previous.after())&&old.indexOf(previous.after())==old.lastIndexOf(previous.after()),"old192 predecessor must match exactly once");
+      require(old.contains(previous.after())&&old.indexOf(previous.after())==old.lastIndexOf(previous.after()),"build212 predecessor must match exactly once");
       String partial=old.replace(previous.after(),previous.before());
       rejectWithoutCanonical(partial,chain);
       var reads=new java.util.concurrent.atomic.AtomicInteger();
@@ -93,8 +95,8 @@ public final class Build193PatchChainFixture {
       String directExpected=Files.exists(module.resolve("old-direct.js"))
           ?Files.readString(module.resolve("old-direct.js")):expected;
       String direct=ManagedPatchChain.apply(old,chain,()->{repairs.incrementAndGet();return expected;});
-      require(direct.equals(directExpected),"old192 Java/Python chain semantics differ");
-      require(repairs.get()==(Files.exists(module.resolve("old-direct.js"))?0:1),"old192 canonical boundary differs");
+      require(direct.equals(directExpected),"build212 Java/Python chain semantics differ");
+      require(repairs.get()==(Files.exists(module.resolve("old-direct.js"))?0:1),"build212 canonical boundary differs");
       String staged=ManagedPatchChain.apply(expected,chain,()->{throw new AssertionError("staged new archive restore");});
       require(staged.equals(expected),"staged complete current chain differs");
       String fromArchive=ManagedPatchChain.apply("incomplete previous managed module",chain,()->expected);
@@ -149,13 +151,13 @@ def write_chain(folder, chain):
             (target / ('previous-' + str(j) + '-after.txt')).write_bytes(after.encode())
 
 
-def main():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jdk', type=Path)
-    parser.add_argument('--old-apk', type=Path, default=os.environ.get('DSHA_PREVIOUS_RUNTIME_APK'), help='read-only exact retained published192 Standard APK (required unless --old-archive)')
-    parser.add_argument('--old-archive', type=Path, default=os.environ.get('DSHA_PREVIOUS_RUNTIME_ARCHIVE'), help='read-only hash-pinned published192 runtime archive, mutually exclusive with --old-apk')
+    parser.add_argument('--old-apk', type=Path, default=os.environ.get('DSHA_PREVIOUS_RUNTIME_APK'), help=f'read-only exact retained build{previous_runtime_fixture.CONTRACT.build} Standard APK / DSH {previous_runtime_fixture.CONTRACT.generation} (required unless --old-archive); source: {previous_runtime_fixture.CONTRACT.url}')
+    parser.add_argument('--old-archive', type=Path, default=os.environ.get('DSHA_PREVIOUS_RUNTIME_ARCHIVE'), help='read-only hash-pinned build212 runtime archive, mutually exclusive with --old-apk')
     parser.add_argument('--apk', type=Path, help='read-only exact new APK for final archive validation')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if __debug__ is False:
         raise RuntimeError('TEST_ASSERTIONS_REQUIRE_UNOPTIMIZED_PYTHON')
     if bool(args.old_apk) == bool(args.old_archive):
@@ -163,7 +165,12 @@ def main():
     if args.old_archive:
         assert sha(args.old_archive.read_bytes()) == OLD_ARCHIVE_SHA, 'OLD_212_ARCHIVE_IDENTITY'
     if args.old_apk:
-        assert sha(args.old_apk.read_bytes()) == OLD_APK_SHA, 'OLD_212_APK_IDENTITY'
+        args.old_apk = previous_runtime_fixture.verify_apk(args.old_apk)
+    return args
+
+
+def main():
+    args = parse_args()
     assets = ROOT / 'app/src/main/assets'
     manifest = json.loads((ROOT / 'tools/dsh-runtime/package.json').read_text(encoding='utf8'))
     version = manifest['dependencies']['@deepseek-ai/dsh']
@@ -238,7 +245,7 @@ def main():
                 (directory / 'predecessor-unavailable.txt').write_bytes(predecessor_problem.encode())
             if new:
                 (directory / 'apk.js').write_bytes(module_bytes(new, module))
-            records.append(dict(module=module, sourceSha256=sha(canonical), old192Module=old_module, old192Sha256=sha(old_bytes), currentSha256=sha(expected), oldDirectStatus=direct_status, oldDirectSha256=direct_digest, generationUpgrade='stage-signed-new-runtime-with-ManagedRuntimeTransaction-and-RuntimeTrial', recipes=[name for name, _, _ in chain], previousPatchCounts={name: len(getattr(patches, 'previous', ())) for name, patches, _ in chain}, predecessorControl='not-applicable' if predecessor_problem else 'executed'))
+            records.append(dict(module=module, sourceSha256=sha(canonical), previousModule=old_module, previousSha256=sha(old_bytes), currentSha256=sha(expected), oldDirectStatus=direct_status, oldDirectSha256=direct_digest, generationUpgrade='stage-signed-new-runtime-with-ManagedRuntimeTransaction-and-RuntimeTrial', recipes=[name for name, _, _ in chain], previousPatchCounts={name: len(getattr(patches, 'previous', ())) for name, patches, _ in chain}, predecessorControl='not-applicable' if predecessor_problem else 'executed'))
     finally:
         if old:
             old.close()
@@ -262,8 +269,11 @@ def main():
     ran = subprocess.run([java, '-cp', str(classes), 'Build193PatchChainFixture', str(owned)], capture_output=True, timeout=60)
     (owned / 'java.log').write_bytes(ran.stdout + ran.stderr)
     result = dict(status='PASS' if ran.returncode == 0 else 'FAIL', exitCode=ran.returncode, modules=records,
-                  old192ApkSha256=OLD_APK_SHA if args.old_apk else None,
-                  old192ArchiveSha256=OLD_ARCHIVE_SHA if args.old_archive else None,
+                  previousApkSha256=previous_runtime_fixture.CONTRACT.sha256 if args.old_apk else None,
+                  previousArchiveSha256=OLD_ARCHIVE_SHA,
+                  previousBuild=previous_runtime_fixture.CONTRACT.build,
+                  previousGeneration=previous_runtime_fixture.CONTRACT.generation,
+                  previousApkUrl=previous_runtime_fixture.CONTRACT.url if args.old_apk else None,
                   historicalInput='actual build212 APK' if args.old_apk else 'actual build212 archive',
                   currentDshVersion=version, activeModuleCount=len(names),
                   predecessorPartialVariants=sum(sum(record['previousPatchCounts'].values()) for record in records),
