@@ -28,6 +28,12 @@ OLD_MODULE_SHA = {
 }
 OLD_ARCHIVE_SHA = 'a02cc5a42727238491ee36d4b0b46461d035dd6f8fca22580eb19d8456fbefc3'
 OLD_FRONTEND = '@deepseek-ai/dsh-web-frontend/dist/assets/index-BXV-oxvX.js'
+# 只允许真实 build212 中尚未引入的这三个模块缺席；不是通用可选模块。
+ABSENT_IN_BUILD212 = frozenset({
+    '@deepseek-ai/dsh-tools/lib/pipeline.js',
+    '@deepseek-ai/dsh-official-bundles/lib/index.js',
+    '@deepseek-ai/dsh-client-ui-file-actions/lib/client.js',
+})
 
 JAVA = r'''
 import com.deepseekharness.app.util.ManagedPatchChain;
@@ -54,11 +60,13 @@ public final class Build193PatchChainFixture {
   }
   static void rejectWithoutCanonical(String source,List<ManagedPatchChain.Recipe> chain)throws Exception {
     for(String canonical:Arrays.asList(null,"incomplete canonical")) {
-      try { ManagedPatchChain.apply(source,chain,()->canonical);throw new AssertionError("bad canonical accepted"); }
-      catch(IOException error) { require(error.getMessage().contains(canonical==null?"PATCH_CANONICAL_MISSING":"PATCH_CHAIN_MISMATCH"),"wrong guarded error"); }
+      var reads=new java.util.concurrent.atomic.AtomicInteger();
+      try { ManagedPatchChain.apply(source,chain,()->{reads.incrementAndGet();return canonical;});throw new AssertionError("bad canonical accepted"); }
+      catch(IOException error) { require(error.getMessage().equals(canonical==null?"PATCH_CANONICAL_MISSING":"PATCH_CHAIN_MISMATCH"),"wrong guarded error"); }
+      require(reads.get()==1,"bad canonical must be read exactly once");
     }
   }
-  static void predecessorControls(String old,List<ManagedPatchChain.Recipe> chain,String expected)throws Exception {
+  static int predecessorControls(String old,List<ManagedPatchChain.Recipe> chain,String expected)throws Exception {
     int variants=0;
     for(var recipe:chain)for(var previous:recipe.previousPatches()) {
       require(old.contains(previous.after())&&old.indexOf(previous.after())==old.lastIndexOf(previous.after()),"build212 predecessor must match exactly once");
@@ -69,7 +77,7 @@ public final class Build193PatchChainFixture {
       require(reads.get()==1,"partial predecessor bypassed canonical repair");
       variants++;
     }
-    if(variants==0)return;
+    if(variants==0)return 0;
     rejectWithoutCanonical(old+old,chain);
     // Negative control for this fixture's former bug: dropping predecessor
     // metadata must change admission, rather than silently weakening the gate.
@@ -77,6 +85,7 @@ public final class Build193PatchChainFixture {
     for(var recipe:chain)omitted.add(new ManagedPatchChain.Recipe(recipe.id(),recipe.patches(),recipe.markers()));
     rejectWithoutCanonical(old,omitted);
     System.out.println("PASS_SIGNED_PREDECESSOR partial-variants="+variants+" duplicate/metadata-omission/failclosed");
+    return variants;
   }
   public static void main(String[] args) throws Exception {
     Path root=Path.of(args[0]);
@@ -91,12 +100,24 @@ public final class Build193PatchChainFixture {
       // Compare Java with the independently evaluated old-module chain result;
       // a stale marker-only result requires the separately staged new archive.
       var repairs=new java.util.concurrent.atomic.AtomicInteger();
-      String old=Files.readString(module.resolve("old-192.js"));
-      String directExpected=Files.exists(module.resolve("old-direct.js"))
-          ?Files.readString(module.resolve("old-direct.js")):expected;
-      String direct=ManagedPatchChain.apply(old,chain,()->{repairs.incrementAndGet();return expected;});
-      require(direct.equals(directExpected),"build212 Java/Python chain semantics differ");
-      require(repairs.get()==(Files.exists(module.resolve("old-direct.js"))?0:1),"build212 canonical boundary differs");
+      boolean absent=Files.exists(module.resolve("absent-in-build212.txt"));
+      String old=null;
+      int predecessorVariants=0;
+      if(absent) {
+        require(!Files.exists(module.resolve("old-192.js"))&&!Files.exists(module.resolve("old-direct.js")),"absent module has fabricated history");
+        // 空输入只是恢复边界 probe，绝不是 build212 中存在的旧模块 bytes。
+        String probe=ManagedPatchChain.apply("",chain,()->{repairs.incrementAndGet();return expected;});
+        require(probe.equals(expected)&&repairs.get()==1,"absent module must read complete canonical exactly once");
+        rejectWithoutCanonical("",chain);
+        System.out.println("PASS_ABSENT_IN_BUILD212 empty-input-probe-not-historical-bytes "+Files.readString(module.resolve("name.txt")));
+      } else {
+        old=Files.readString(module.resolve("old-192.js"));
+        String directExpected=Files.exists(module.resolve("old-direct.js"))
+            ?Files.readString(module.resolve("old-direct.js")):expected;
+        String direct=ManagedPatchChain.apply(old,chain,()->{repairs.incrementAndGet();return expected;});
+        require(direct.equals(directExpected),"build212 Java/Python chain semantics differ");
+        require(repairs.get()==(Files.exists(module.resolve("old-direct.js"))?0:1),"build212 canonical boundary differs");
+      }
       String staged=ManagedPatchChain.apply(expected,chain,()->{throw new AssertionError("staged new archive restore");});
       require(staged.equals(expected),"staged complete current chain differs");
       String fromArchive=ManagedPatchChain.apply("incomplete previous managed module",chain,()->expected);
@@ -104,8 +125,9 @@ public final class Build193PatchChainFixture {
       rejectWithoutCanonical("incomplete old module",chain);
       if(Files.exists(module.resolve("predecessor-unavailable.txt")))
         System.out.println("PASS_PREDECESSOR_NOT_APPLICABLE "+Files.readString(module.resolve("predecessor-unavailable.txt")));
-      else
-        predecessorControls(old,chain,expected);
+      else if(!absent)
+        predecessorVariants=predecessorControls(old,chain,expected);
+      Files.writeString(module.resolve("predecessor-executed-count.txt"),Integer.toString(predecessorVariants));
       if(Files.exists(module.resolve("apk.js"))) {
         String exact=Files.readString(module.resolve("apk.js"));require(exact.equals(expected),"exact new APK archive differs");
         require(ManagedPatchChain.apply(exact,chain,()->{throw new AssertionError("exact APK restore");}).equals(expected),"exact APK repeat differs");
@@ -126,10 +148,30 @@ def archive(apk):
         return tarfile.open(fileobj=io.BytesIO(package.read('assets/dsh-runtime.bin')), mode='r:*')
 
 
+def module_matches(archive_file, module):
+    return [entry for entry in archive_file.getmembers() if entry.isfile() and entry.name.endswith('/node_modules/' + module)]
+
+
 def module_bytes(archive_file, module):
-    matches = [entry for entry in archive_file.getmembers() if entry.isfile() and entry.name.endswith('/node_modules/' + module)]
+    matches = module_matches(archive_file, module)
     assert len(matches) == 1, 'APK_MODULE_UNIQUENESS: ' + module
     return archive_file.extractfile(matches[0]).read()
+
+
+def previous_modules(archive_file, modules):
+    result, absent = {}, set()
+    for module in modules:
+        previous = OLD_FRONTEND if module.startswith('@deepseek-ai/dsh-web-frontend/dist/assets/index-') else module
+        matches = module_matches(archive_file, previous)
+        assert len(matches) <= 1, 'APK_MODULE_UNIQUENESS: ' + previous
+        if not matches:
+            assert module in ABSENT_IN_BUILD212, 'UNEXPECTED_BUILD212_MODULE_ABSENCE: ' + module
+            absent.add(module)
+            result[module] = None
+        else:
+            result[module] = archive_file.extractfile(matches[0]).read()
+    assert absent == ABSENT_IN_BUILD212, 'BUILD212_ABSENCE_SET_MISMATCH: ' + repr(sorted(absent))
+    return result
 
 
 def write_chain(folder, chain):
@@ -197,6 +239,7 @@ def main():
     builder_spec.loader.exec_module(builder)
     names, records = [], []
     try:
+        historical_modules = previous_modules(old, chains)
         for module, chain in chains.items():
             directory = owned / str(len(names))
             names.append(directory.name)
@@ -212,25 +255,30 @@ def main():
             prepared = builder.patched_content(Path(module), canonical)
             expected = runtime_stable_patches.apply(prepared, chain)
             old_module = OLD_FRONTEND if module.startswith('@deepseek-ai/dsh-web-frontend/dist/assets/index-') else module
-            old_bytes = module_bytes(old, old_module)
-            if module in OLD_MODULE_SHA:
-                assert sha(old_bytes) == OLD_MODULE_SHA[module], 'PINNED_212_MODULE_IDENTITY'
-            direct_digest, direct_status = None, 'canonical-rebuild-on-anchor-mismatch'
-            try:
-                direct = runtime_stable_patches.apply(old_bytes, chain)
-            except ValueError as failure:
-                assert 'STABLE_PATCH_ANCHOR' in str(failure), 'UNEXPECTED_OLD_CHAIN_ERROR'
+            old_bytes = historical_modules[module]
+            direct_digest, direct_status = None, 'absent-in-build212'
+            if old_bytes is None:
+                (directory / 'absent-in-build212.txt').write_bytes(module.encode())
             else:
-                (directory / 'old-direct.js').write_bytes(direct)
-                direct_digest = sha(direct)
-                direct_status = 'complete-current-bytes' if direct == expected else 'old-markers-retain-old-upstream-bytes'
+                if module in OLD_MODULE_SHA:
+                    assert sha(old_bytes) == OLD_MODULE_SHA[module], 'PINNED_212_MODULE_IDENTITY'
+                direct_status = 'canonical-rebuild-on-anchor-mismatch'
+                try:
+                    direct = runtime_stable_patches.apply(old_bytes, chain)
+                except ValueError as failure:
+                    assert 'STABLE_PATCH_ANCHOR' in str(failure), 'UNEXPECTED_OLD_CHAIN_ERROR'
+                else:
+                    (directory / 'old-direct.js').write_bytes(direct)
+                    direct_digest = sha(direct)
+                    direct_status = 'complete-current-bytes' if direct == expected else 'old-markers-retain-old-upstream-bytes'
+                (directory / 'old-192.js').write_bytes(old_bytes)
             # The signed new archive is always the official generation transition.
             # A successful marker-only overlay is never accepted as that transition.
             # Signed predecessor forms belong to the generation that introduced the
             # recipe; when the pinned old input already contains the replacement
             # form (e.g. the rc3 language receipt), the control is not applicable.
-            old_text = old_bytes.decode('utf8')
-            predecessor_problem = None
+            old_text = old_bytes.decode('utf8') if old_bytes is not None else ''
+            predecessor_problem = 'absent-in-build212; no historical predecessor bytes' if old_bytes is None else None
             for name, patches, _ in chain:
                 for before, after in getattr(patches, 'previous', ()):
                     if old_text.count(after) != 1:
@@ -238,14 +286,14 @@ def main():
                         break
                 if predecessor_problem:
                     break
-            for filename, data in [('canonical.js', prepared), ('old-192.js', old_bytes), ('expected.js', expected), ('name.txt', module.encode())]:
+            for filename, data in [('canonical.js', prepared), ('expected.js', expected), ('name.txt', module.encode())]:
                 (directory / filename).write_bytes(data)
             write_chain(directory / 'chain', chain)
             if predecessor_problem:
                 (directory / 'predecessor-unavailable.txt').write_bytes(predecessor_problem.encode())
             if new:
                 (directory / 'apk.js').write_bytes(module_bytes(new, module))
-            records.append(dict(module=module, sourceSha256=sha(canonical), previousModule=old_module, previousSha256=sha(old_bytes), currentSha256=sha(expected), oldDirectStatus=direct_status, oldDirectSha256=direct_digest, generationUpgrade='stage-signed-new-runtime-with-ManagedRuntimeTransaction-and-RuntimeTrial', recipes=[name for name, _, _ in chain], previousPatchCounts={name: len(getattr(patches, 'previous', ())) for name, patches, _ in chain}, predecessorControl='not-applicable' if predecessor_problem else 'executed'))
+            records.append(dict(module=module, sourceSha256=sha(canonical), previousModule=old_module, previousSha256=sha(old_bytes) if old_bytes is not None else None, currentSha256=sha(expected), oldDirectStatus=direct_status, oldDirectSha256=direct_digest, generationUpgrade='stage-signed-new-runtime-with-ManagedRuntimeTransaction-and-RuntimeTrial', recipes=[name for name, _, _ in chain], previousPatchCounts={name: len(getattr(patches, 'previous', ())) for name, patches, _ in chain}, predecessorControl='not-applicable' if predecessor_problem else 'pending-java'))
     finally:
         if old:
             old.close()
@@ -268,6 +316,15 @@ def main():
     assert compiled.returncode == 0, 'JAVA_COMPILE_FAILED: ' + str(owned)
     ran = subprocess.run([java, '-cp', str(classes), 'Build193PatchChainFixture', str(owned)], capture_output=True, timeout=60)
     (owned / 'java.log').write_bytes(ran.stdout + ran.stderr)
+    for name, record in zip(names, records):
+        receipt = owned / name / 'predecessor-executed-count.txt'
+        count = int(receipt.read_text()) if receipt.exists() else None
+        record['predecessorPartialVariantsExecuted'] = count
+        if count is not None and record['predecessorControl'] == 'pending-java':
+            record['predecessorControl'] = 'executed' if count else 'no-signed-predecessor-patches'
+    predecessor_variants = sum(record['predecessorPartialVariantsExecuted'] or 0 for record in records)
+    predecessor_receipts_complete = all(record['predecessorPartialVariantsExecuted'] is not None for record in records)
+    assert ran.returncode != 0 or predecessor_receipts_complete, 'MISSING_JAVA_PREDECESSOR_RECEIPT'
     result = dict(status='PASS' if ran.returncode == 0 else 'FAIL', exitCode=ran.returncode, modules=records,
                   previousApkSha256=previous_runtime_fixture.CONTRACT.sha256 if args.old_apk else None,
                   previousArchiveSha256=OLD_ARCHIVE_SHA,
@@ -276,8 +333,9 @@ def main():
                   previousApkUrl=previous_runtime_fixture.CONTRACT.url if args.old_apk else None,
                   historicalInput='actual build212 APK' if args.old_apk else 'actual build212 archive',
                   currentDshVersion=version, activeModuleCount=len(names),
-                  predecessorPartialVariants=sum(sum(record['previousPatchCounts'].values()) for record in records),
-                  predecessorNegativeControls=['each incomplete predecessor requires canonical repair', 'duplicate predecessor rejected', 'omitted predecessor metadata rejected'],
+                  predecessorPartialVariants=predecessor_variants,
+                  predecessorExecutionReceiptsComplete=predecessor_receipts_complete,
+                  predecessorNegativeControls=['each incomplete predecessor requires canonical repair', 'duplicate predecessor rejected', 'omitted predecessor metadata rejected'] if predecessor_variants else [],
                   exactNewApkValidation=args.apk is not None,
                   generationBoundary='old package generation receives no in-place current overlay; signed new archive installation/trial is required',
                   apkSha256=sha(args.apk.read_bytes()) if args.apk else None,

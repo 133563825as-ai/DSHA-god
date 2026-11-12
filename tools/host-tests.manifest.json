@@ -2,6 +2,16 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-previous-module-boundary.py",
+      "stage": "fast",
+      "requires": ["python39", "jdk17"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Pinned build212 module absence set, duplicate/member identity negative controls and real production Java whole-chain canonical reconstruction; synthetic branch probe is not historical module bytes.",
+      "cli": "No arguments; JAVA_HOME selects JDK17. No Android/device execution."
+    },
+    {
       "path": "tools/test-previous-runtime-fixture.py",
       "stage": "fast",
       "requires": ["python39"],
