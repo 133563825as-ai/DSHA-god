@@ -104,17 +104,18 @@ class ModuleRegistry(
         val lease = GenerationLease.create(id, nextGeneration, diagnostics)
         val addedKeys = ArrayList<String>(contributions.size)
         for (item in contributions) {
-            val contribution = item!!
-            val added = catalog.add(contribution, nextGeneration)
+            // 第二遍历可能出现空项：先走 catalog 拒绝与清理，不能提前断言非空。
+            val added = catalog.add(item, nextGeneration)
             if (added.rejected()) {
                 revokeKeys(addedKeys)
                 closeQuietly(instance)
                 diagnostics.report(
                     added.code(),
-                    "catalog add rejected: ${contribution.globalKey()}",
+                    "catalog add rejected: ${item!!.globalKey()}",
                 )
                 return added
             }
+            val contribution = item!!
             addedKeys.add(contribution.globalKey())
             if (contribution.kind() == Contribution.Kind.ROUTE) {
                 val routed =

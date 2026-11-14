@@ -30,7 +30,7 @@
 本域生产 Java：18→0；生产 Kotlin：0→18。既有测试源 7 个保持原样；新增 3 个 Java 测试源，因此本批全仓 Java 文件净变化为 -15、Kotlin +18。新增测试：
 
 - [ContractValueInteropTest.java](../../../app/src/test/java/com/deepseekharness/app/contract/ContractValueInteropTest.java)：18 项，Java 构造/静态工厂/包内 helper、record 值语义参照、空值与校验先后、Unicode 空白/UTF-16 长度、集合复制和只读/null 查询。
-- [ContractLifecycleInteropTest.java](../../../app/src/test/java/com/deepseekharness/app/contract/ContractLifecycleInteropTest.java)：10 项，Java SAM/default、空工厂/贡献、锁持有边界、关闭顺序、代次失效、RuntimeException/Error、Event/Target 值语义。
+- [ContractLifecycleInteropTest.java](../../../app/src/test/java/com/deepseekharness/app/contract/ContractLifecycleInteropTest.java)：11 项，Java SAM/default、空工厂/贡献、锁持有边界、关闭顺序、代次失效、RuntimeException/Error、Event/Target 值语义，以及两次遍历间出现空贡献时的拒绝清理次序。
 - [ContractJavaBoundaryTest.java](../../../app/src/test/java/com/deepseekharness/app/contract/ContractJavaBoundaryTest.java)：2 项，真实 javac 验证异包公开调用正控和 7 个原包内入口的访问负控。
 
 共享格式登记只在 [java-format-files.json](../../../tools/java-format-files.json) 删除这 18 个已删除生产 Java 条目、增加上述 3 个 Java 测试条目。其它职责域条目字节不变。未改变构建文件、工具链锁、Gradle 模块、输入清单或 descriptor。
@@ -71,7 +71,7 @@
 
 7 个原 Java record（ContractResult、Contribution、ContributionView、ModuleDescriptor、LayoutSnapshot、DiagnosticsSink.Event、RouteTable.Target）使用普通 final 不可变 Kotlin 类：private final 字段、原 record-style 访问器、显式构造校验与手写 equals/hashCode/toString。没有 bean getter、componentN、copy 或额外公开生产数据模型。集合仍调用 Java `List.copyOf` / `Set.copyOf`，包括空/单/多元素集合的只读和 contains(null) 异常语义；没有换成 Kotlin toList/toSet。
 
-这不是 record 反射元数据的无损迁移：上述类型不再继承 java.lang.Record，isRecord/getRecordComponents 与赋值给 Record 的源码用途不再成立。仓库中没有对 contract 使用这些能力的生产调用；现有其它 record 的反射测试不在本批范围。选择普通类是为了保留紧凑构造中的防御复制和现有 Java 成员形态，并避免 data class 自动 API。新增测试使用嵌套 Java record 作 hash/toString 参照，不依赖两种实现共享一份 equals/hash 实现。
+这不是 record 反射元数据的无损迁移：上述类型不再继承 java.lang.Record，isRecord/getRecordComponents 与赋值给 Record 的源码用途不再成立。197 个原成员的 descriptor 无缺失不覆盖这项变化。仓库中没有对 contract 使用这些能力的生产调用；现有其它 record 的反射测试不在本批范围。选择普通类是为了保留紧凑构造中的防御复制和现有 Java 成员形态，并避免 data class 自动 API。新增测试使用嵌套 Java record 作 hash/toString 参照，不依赖两种实现共享一份 equals/hash 实现。此兼容取舍必须在合入审批明示；main 的内部消费者核查不代表用户已接受内部调用范围之外的兼容变化。
 
 额外 JVM 形状仅来自 Kotlin 编译器：Metadata、Companion、枚举 getEntries、default 兼容桥、访问私有状态所需的 synthetic 桥/构造。它们不属于稳定契约 API。本批没有承诺任意反射消费者、任意手写字节码或外部二进制插件兼容；本系统也没有第三方动态模块加载。
 
@@ -107,11 +107,11 @@ Kotlin 跨类调用不具有 Java 的 protected 同包规则，因此本域使�
 |---|---|
 | 迁移前既有 Java contract 单测 | javac17 + 真实生产 SensitiveData/UiText/语言字典 + JUnit4：39 tests / 0 failure |
 | 迁移前已编译的 Java 测试字节码直接加载 Kotlin | 39 tests / 0 failure；不是先重编译调用方后才运行 |
-| 全部既有及新增 Java 测试重新编译并加载 Kotlin | 69 tests / 0 failure（既有39 + 新增18/10/2） |
-| 同一组新增回归及既有测试加载原 Java 基线 | 69 tests / 0 failure；证明新断言约束原行为 |
-| 固定 AGP built-in Kotlin / 2.2.10 / JVM17 | `dsha-gradle :app:compileStandardDebugKotlin --max-workers=1`：BUILD SUCCESSFUL，1m22s，exit0；实际 Gradle class（major61）再次通过69项 Java 回归及39项旧字节码调用，次数不叠加成新的测试覆盖数 |
+| 全部既有及新增 Java 测试重新编译并加载 Kotlin | 70 tests / 0 failure（既有39 + 新增18/11/2，包含首轮69项及审查新增回归） |
+| 同一组新增回归及既有测试加载原 Java 基线 | 70 tests / 0 failure；证明新断言约束原行为 |
+| 固定 AGP built-in Kotlin / 2.2.10 / JVM17 | `dsha-gradle :app:compileStandardDebugKotlin --max-workers=1`：首轮1m22s、P2修复后18s，均 BUILD SUCCESSFUL / exit0；修复后实际 Gradle class（major61）通过70项 Java 回归及39项旧字节码调用，次数不叠加成新的测试覆盖数 |
 | JVM API | 23 类 / 197 原非 private 成员，descriptor 零缺失，static/synchronized/default 零差异；7 个包内入口改 protected，7 个 record 元数据边界如上 |
-| 全仓 Java 生产及测试调用方编译 | 主动编译全部 main Kotlin 后，1025 份生产/生成 Java 源编译 exit0；770 份 Java 测试源编译 exit0（含 AboutFragment 与其测试；未执行 Robolectric） |
+| 全仓 Java 生产及测试调用方编译 | 首轮主动编译全部 main Kotlin 后，1025 份生产/生成 Java 源编译 exit0；770 份 Java 测试源编译 exit0（含 AboutFragment 与其测试；未执行 Robolectric）。P2不改API，仅追加已有测试源的方法，该源已在新旧实现分别重编译运行 |
 | Kotlin/Java 格式 | Kotlin tree：20 files / 0 need；Java tree：1812 files / 0 need，adoption 缺失/额外均0；两个命令 exit0 |
 | 核心边界 | `tools/test-core-boundaries.py`：25 tests，PASS |
 | 输入契约 | `tools/test-runtime-input-contract.py`：18 tests，PASS；descriptor-inputs：103 安装 / 205 资产 / 507 启动输入，Gradle tree 集合一致260文件 |
@@ -141,6 +141,16 @@ python3 tools/prepare-runtime-descriptor.py --check
 
 未跑：完整 Gradle 单测执行、AboutFragment Robolectric 运行、Lint、APK 打包/签名/安装、真机/布局/语言/SAF 矩阵、完整 CI。没有合并、push、发布、安装或手机操作。
 
+## 独立审查 P2 追加修复
+
+main 对首轮 `7e9862a3` 全 43 文件审查为 REQUEST_CHANGES（P0=0/P1=0/P2=1）。新增确定性回归位于 [生命周期互调测试](../../../app/src/test/java/com/deepseekharness/app/contract/ContractLifecycleInteropTest.java)：CopyOnWriteArrayList 包含首个 ROUTE 和第二个 CARD，在第二次 iterator() 调用时将第二项改为 null，无线程竞态。
+
+实跑审查前的实际 Gradle Kotlin class：11 项生命周期测试中 1 项失败，清理指标（closed / catalog size / route fallback / installed）为 `[0, 1, false, false]`；同一测试源码在原 Java 基线 11/0，指标为 `[1, 0, true, false]`。问题为第二轮在 catalog.add 前的非空断言跳过了拒绝清理。
+
+追加修复只恢复原 Java 次序：先将 nullable item 交给 catalog.add；被拒时撤销已加贡献和路由、关闭实例，然后才执行原诊断表达式的空解引用；仅接受后才取非空 item 登记后续键和路由。原 Java 在这条坏输入路径清理后抛 NPE 的行为继续保留，没有顺便改为结构化返回。回归同时断言实例关闭次数、catalog 清空、路由回宿主、未安装及后续 close 幂等，不只断言异常类型。原两提交不重写，本修复本地追加提交。
+
+修复后全套原 Java 70/0、Kotlin 70/0（包含原69项）、旧39项 Java 字节码直接运行通过。负控脚本与审查前 class 已保存在未入库的 `app/build/contract-migration/review-p2-negative-control.py` / `review-p2-pre-fix-classes/`；两种实现的实跑日志在 `review-p2-java-baseline/junit.log` 与 `review-p2-kotlin-before-fix/junit.log`。最终 Gradle 编译产物与格式/输入复核结果记录于本表及结束声明。
+
 ## runtimeId、遗留与回退
 
 contract 不在受管 launcherSources/launcherTrees。实测本批改变的受管输入集合为空，descriptor 与基线相同；未重算或提交 descriptor。主会话仍须在串行合并树统一核验/重算，不能从单 worker 的零变化推导并行其它职责域也零变化。
@@ -149,4 +159,4 @@ contract 不在受管 launcherSources/launcherTrees。实测本批改变的受�
 - **N4 保留**：SAF ledgerReady→legacy 迁移窗口不在本域改动内，未修改 SAF，也不宣称已关闭。
 - contractVersion/describe 生命周期校验、ModuleHost scope、启停意图持久化、AboutLicense 聚合等原 deferred 项继续保留；本批不补协议或新行为。
 
-回退代码提交即可恢复 18 个原 Java 文件、删除 18 个 Kotlin 实现和新测试，并恢复本域格式登记；文档提交可单独 revert。无需清数据、改偏好键/数据格式、改包名/签名或降级已安装环境。回退后重新执行本域 Java 测试与输入检查；main 在自己的串行树处理最终 descriptor。不得重置或清理其它活跃工作树。
+回退时先 revert 本轮追加的 P2 等价修复，再 revert 原文档 `7e9862a3` 与代码 `86a8c5e3`，恢复 18 个原 Java 文件、删除 18 个 Kotlin 实现和新测试，并恢复本域格式登记。仅撤销 P2 修复会回到已知清理差异的旧 Kotlin 候选，不应作为可合入状态。无需清数据、改偏好键/数据格式、改包名/签名或降级已安装环境。回退后重新执行本域 Java 测试与输入检查；main 在自己的串行树处理最终 descriptor。不得重置或清理其它活跃工作树。

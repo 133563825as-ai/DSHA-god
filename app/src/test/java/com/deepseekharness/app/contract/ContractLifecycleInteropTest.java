@@ -6,9 +6,12 @@ import android.content.Context;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 
@@ -146,6 +149,62 @@ public class ContractLifecycleInteropTest {
     assertTrue(closed.get());
     assertFalse(invalid.isInstalled(ID));
     assertTrue(invalid.contributions().isEmpty());
+  }
+
+  @Test
+  public void secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing() {
+    ModuleId owner = new ModuleId("review.cleanup");
+    Contribution first = Contribution.route(owner, "first", "页面", "Page", 0, "app.first");
+    Contribution second = Contribution.card(owner, "second", "卡片", "Card", 1);
+    // 第二轮登记前才替换空项，既不依赖竞态，也不要求模块提供稳定的 List。
+    CopyOnWriteArrayList<Contribution> contributions =
+        new CopyOnWriteArrayList<>(List.of(first, second)) {
+          private int iterations;
+
+          @Override
+          public Iterator<Contribution> iterator() {
+            if (++iterations == 2) set(1, null);
+            return super.iterator();
+          }
+        };
+    AtomicInteger closed = new AtomicInteger();
+    ModuleRegistry registry = registry(DiagnosticsSink.discarding());
+    ModuleDescriptor descriptor =
+        new ModuleDescriptor(owner, 1, "清理互调", Set.of(), ModuleDescriptor.Enablement.OPTIONAL_USER);
+    assertTrue(
+        registry
+            .register(
+                descriptor,
+                () ->
+                    new ModuleInstance() {
+                      @Override
+                      public List<Contribution> contributions() {
+                        return contributions;
+                      }
+
+                      @Override
+                      public void close(CloseReason reason) {
+                        assertSame(CloseReason.HOST_CLOSE, reason);
+                        closed.incrementAndGet();
+                      }
+                    })
+            .accepted());
+
+    // 原 Java 在拒绝清理后才因诊断内容解引用 null 抛出 NPE；本批保持该异常行为。
+    assertThrows(NullPointerException.class, () -> registry.install(owner));
+    assertEquals(
+        "closed / catalog size / route fallback / installed",
+        List.of(1, 0, true, false),
+        List.of(
+            closed.get(),
+            registry.contributions().size(),
+            registry.resolveRoute("review.cleanup#first").hostFallback(),
+            registry.isInstalled(owner)));
+    assertNull(registry.lease(owner));
+    assertTrue(registry.close(owner, ModuleInstance.CloseReason.HOST_CLOSE).accepted());
+    assertEquals(1, closed.get());
+    assertTrue(registry.contributions().isEmpty());
+    assertTrue(registry.resolveRoute("review.cleanup#first").hostFallback());
   }
 
   @Test
