@@ -139,9 +139,8 @@ public final class DeviceChannelsFragment extends Fragment {
     adb.setOnCheckedChangeListener(
         (button, enabled) -> {
           if (updating) return;
-          com.deepseekharness.app.HttpShellService.smsPolicyChanged(ctx);
-          DeviceBridgeService.adbIntentChanging();
-          savePreference("adb_enabled", enabled);
+          if (!ConfigStore.setAdbEnabled(ctx, enabled, true)) toast(UiText.text("设置保存失败，请重试"));
+          else if (!enabled) com.deepseekharness.app.DeviceSense.revoke(ctx, "adb_enabled");
           if (!enabled)
             com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
                 .revokeFor("ADB_DISABLED");
@@ -426,17 +425,6 @@ public final class DeviceChannelsFragment extends Fragment {
   public void onSaveInstanceState(@androidx.annotation.NonNull Bundle outState) {
     super.onSaveInstanceState(outState);
     disclosure.save(outState, "disclosure");
-  }
-
-  private void savePreference(String key, boolean enabled) {
-    boolean success =
-        requireContext()
-            .getSharedPreferences(Constants.PREFS, 0)
-            .edit()
-            .putBoolean(key, enabled)
-            .commit();
-    if (success && !enabled) com.deepseekharness.app.DeviceSense.revoke(requireContext(), key);
-    if (!success) toast(UiText.text("设置保存失败，请重试"));
   }
 
   private void syncSettings() {

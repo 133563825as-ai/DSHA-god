@@ -1199,19 +1199,16 @@ public final class HttpShellService {
             .put("reason", blockedHost)
             .put("argv", new org.json.JSONArray())
             .toString();
-      com.deepseekharness.app.util.DeviceShellPolicy.Mode mode =
-          new com.deepseekharness.app.core.ConfigStore(ctx).rootPolicyMode();
-      // 放宽档只对真实可用的 root 通道生效；Shizuku/ADB 通用执行器继续按严格档取计划。
-      boolean relaxedRoot =
-          mode != com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT
-              && RootShell.enabled(ctx)
+      var authorization = com.deepseekharness.app.core.ConfigStore.deviceAuthorization(ctx);
+      if (!authorization.readable()) return "[POLICY_BLOCKED] DEVICE_AUTHORIZATION_CHANGING";
+      // 候选存在只影响原有选档，不当作已取得实际 Root 身份。
+      boolean rootPresent =
+          authorization.rootMode() != com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT
+              && authorization.rootAllowed()
               && RootShell.present();
       com.deepseekharness.app.util.DeviceShellPolicy.Plan plan =
           com.deepseekharness.app.util.DeviceShellPolicy.inspect(
-              command,
-              root || relaxedRoot
-                  ? mode
-                  : com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT);
+              command, authorization.planningMode(root, rootPresent));
       org.json.JSONObject value =
           new org.json.JSONObject()
               .put("version", 1)
@@ -1235,9 +1232,7 @@ public final class HttpShellService {
           .put("selfPackage", ctx.getPackageName())
           .put("selfUid", ctx.getApplicationInfo().uid)
           .put("sourceApk", source);
-      if (root
-          && !ctx.getSharedPreferences(Constants.PREFS, 0)
-              .getBoolean(Constants.KEY_ALLOW_ROOT_SHELL, false))
+      if (root && !authorization.rootAllowed())
         return value
             .put("kind", "DENY")
             .put("argv", new org.json.JSONArray())
@@ -1282,6 +1277,8 @@ public final class HttpShellService {
         // 实际 ADB/Shizuku 执行器必须用自己的身份现场取得完整 pm/ps 清单才能停止。
         value.put("requiresAppInventory", true);
       }
+      if (!com.deepseekharness.app.util.DeviceAuthorization.shared().current(authorization))
+        return "[POLICY_BLOCKED] DEVICE_AUTHORIZATION_CHANGED";
       return value.toString();
     } catch (Exception error) {
       return "[POLICY_BLOCKED] " + safeError(error);
