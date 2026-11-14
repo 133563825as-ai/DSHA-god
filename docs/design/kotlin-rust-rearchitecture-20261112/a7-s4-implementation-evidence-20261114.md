@@ -1,6 +1,6 @@
 # A7 S4 软件检查点：F07 有界只读清单
 
-日期：2026-11-14。状态：**软件实施已形成检查点，待独立全差异审查；整轮未完成**。
+日期：2026-11-14。状态：**S4 已独立复审 APPROVE（无 P0/P1，5 条非阻塞 P2 已逐项处置，见下节）；整轮出口见 [A7 出口回执](a7-exit-receipt-20261114.md)**。
 前置已满足：Lead 对 S1 `c92f8495`、S2 `39ddef7a`、S3 `b6dcdc4d` 均 APPROVE；[管理器表](a7-s4-manager-readonly-table-20261114.md)及固定 FD probe 已附条件批准。主线推进未在本工作树自动 rebase，实施基线仍为903cbbfc。
 
 本片新增纯策略/解析 `RootModulePolicy`、`RootModuleInventory`，固定 fd 适配器 `RootModuleFiles`、版本探测子入口 `RootModuleProbeMain` 与协调器 `RootModuleReadCore`，以及原生只读页 `RootModulesFragment`。设备页仅导航到该页，渲染不触发probe；用户显式读取时才经 RootShell 固定 `root-module-list` operation 进入当前安装 APK 的 UID0 helper。
@@ -26,8 +26,22 @@
 
 联调中确实发现并修正了协调器Result契约错误：完整清单的reason必须为null，partial的LIST_PARTIAL不能充当具体失败原因；JSON输出需要null安全。17项实际协调器夹具以完整空/普通项/partial正确期望验证，未把错误期望放宽为UNKNOWN。
 
+## 独立复审与 P2 处置（2026-11-14 接手 @a7-takeover）
+
+独立复审结论 APPROVE（S1/S2/S3 已 APPROVE；S4 `bea574cd` 与 S5 `cf13d360` 无 P0/P1），复审提出 5 条非阻塞 P2。接手会话逐项处置，均未扩大已批准边界：
+
+| # | 复审意见 | 处置与提交 | 证据 |
+|---|---|---|---|
+| ① | `RootModuleFiles` 把 deadline/中断/换链错误折成 `MODULE_ROOT_UNREADABLE` | 已修 `28a94dcc`：截止与 `MODULE_SOURCE_CHANGED` 原样抛出，`InterruptedIOException` 原样传播；其余读取错误仍折成 `MODULE_ROOT_UNREADABLE`，不回显路径 | 内存 OS 夹具新增截止/换链/中断断言，pure 70 项 0 失败 |
+| ② | `RootModuleReadCore` 把 partial 原因改写成 `UNKNOWN` | 已修 `28a94dcc`：`Scan` 携带具体失败码，Core 原样透传；`inventory.add` 拒绝时也回填失败码 | Core 新增透传/截止/换链/中断夹具；pure 70 项 0 失败 |
+| ③ | 页面迟到回调/isResumed/授权变化/ROOT_DISABLED 与 `RootShell.readRootModules` 门禁测试缺口 | 部分补测 `bbb60c5c`：`acceptsResult` 纯围栏覆盖前台+代次；授权变化清正文提为 `showAuthorizationChanged` 并测；`ROOT_DISABLED` 渲染测；新增 `RootShellTest` 证明未允许 Root 时在 su/probe/模块目录之前拒绝 | 页面 9 项、RootShell 1 项 0 失败；真实宿主视图与 `isResumed`/`DeviceAuthorization.current` 端到端路径受本机 AAPT2 缺少编译资源阻断**未跑**，静态证据为 `applyReadResult` 内的 `acceptsResult` 与授权快照分支 |
+| ④ | `DeviceChannelsFragment` 导航按钮与 S5 重叠记账 | 记账：S4 只在通道卡新增一颗导航 `MaterialButton`（`addRootInventoryEntry`），复用 S5 `m9503` 字符串；`m9503` 的 `files` 同时列两个页面是同一共享文案的两处使用，**不是第二条按钮或第二份消息**；S5 `cf13d360` 已提交，S4 不再重复追加文案 | 本节与 S4 回执 |
+| ⑤ | 「均只允许一个终止换行」文案 vs 实现接受 0/1 尾换行 | 已修 `02923563`：文档改为接受 0 或 1 个终止 LF/CRLF、拒绝多余尾随空白/额外行；`oneLine` 注释同步，无行为改动 | 文档 diff |
+
+①②未新增设备路径、argv、端点或权限；③的测试不启动 su、不读模块目录；④只是回执记账；⑤只改文档。整轮剩余项与未跑清单见 [A7 出口回执](a7-exit-receipt-20261114.md)。
+
 本机完整Gradle仍受x86 AAPT2 bad machine阻断，未进行资源链接/完整AndroidUnit/lint/APK/ELF/JNI及真机。未运行真实Android Os/fdexec/su管理器、未安装或操作手机；固定版本源码证据不是二进制或设备认证。UI中英/日夜/短屏/1.3×及同线一次维护页、I1–I10待用户另行授权。
 
-检查点日志：`app/build/a7-s4-current-tests/{compile,junit}.log`（66）；`app/build/a7-screen-fixtures/RootModulesFragmentTest.log`（6）及physical/anchor日志（26/15）；`/tmp/a7-s4-source-fixtures-20261114.log`（1026源）；`/tmp/a7-s4-java-format-20261114.log`、`/tmp/a7-s4-boundaries-20261114.log`。这些机器文件不提交。
+检查点日志：`app/build/a7-s4-current-tests/{compile,junit}.log`（66）；`app/build/a7-screen-fixtures/RootModulesFragmentTest.log`（6）及physical/anchor日志（26/15）；`/tmp/a7-s4-source-fixtures-20261114.log`（1026源）；`/tmp/a7-s4-java-format-20261114.log`、`/tmp/a7-s4-boundaries-20261114.log`。接手回合的补充夹具在 `app/build/a7-takeover-verify/`（`production.log` 1026 源、`pure-tests.log` 70、`RootModulesFragmentTest.log` 9、`RootShellTest.log` 1），均不提交。
 
-后续必须完成：S4独立审查与意见闭环；S5十语/状态/集成回归、前几片非阻断P2出口批处理与整轮回执。main最终rebase到当时main、纳管所有新生产类及ShizukuShell、统一重算descriptor/runtimeId并跑CI，最后用户批准合入。分支未改launcherSources/descriptor，未push/merge/tag。
+后续必须完成：S5十语/状态/集成回归已在 S5 提交与出口回执记录；剩余为整轮出口批处理（未跑项/已知窗口/降级项汇总）、`.SESSION-DONE` 候选与 main 最终 rebase/纳管 `launcherSources`、统一重算 descriptor/runtimeId 并跑 CI，最后用户批准合入。分支未改launcherSources/descriptor，未push/merge/tag。
