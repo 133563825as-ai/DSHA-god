@@ -100,9 +100,12 @@ public final class UpdateProcessInstrumentation extends Instrumentation {
       require(!file.exists() || file.delete(), "测试归档清理失败");
     }
     require(control.delete(), "测试控制文件清理失败");
-    Field singleton = UpdateEngine.class.getDeclaredField("instance");
-    singleton.setAccessible(true);
-    singleton.set(null, null);
+    Field owner = com.deepseekharness.app.DshaApp.class.getDeclaredField("updateOwner");
+    owner.setAccessible(true);
+    Object slot = owner.get(com.deepseekharness.app.DshaApp.from(base));
+    Field value = com.deepseekharness.app.util.ApplicationOwner.class.getDeclaredField("value");
+    value.setAccessible(true);
+    value.set(slot, null);
     base.getSystemService(android.app.NotificationManager.class).cancel(1004);
   }
 

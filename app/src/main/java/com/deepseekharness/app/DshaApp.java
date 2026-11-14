@@ -96,6 +96,21 @@ public class DshaApp extends Application
           com.deepseekharness.app.data.PortableSettings>
       portableSettingsOwner = new com.deepseekharness.app.util.ApplicationOwner<>();
 
+  private final com.deepseekharness.app.util.ApplicationOwner<
+          com.deepseekharness.app.core.UpdateEngine>
+      updateOwner = new com.deepseekharness.app.util.ApplicationOwner<>();
+
+  /** APK 更新与安装前校验共享应用级实例和串行队列，页面重建不重新装配。 */
+  public com.deepseekharness.app.core.UpdateEngine updateEngine() {
+    return updateOwner.get(
+        () ->
+            new com.deepseekharness.app.core.UpdateEngine(
+                this,
+                null,
+                java.util.concurrent.Executors.newSingleThreadExecutor(
+                    task -> new Thread(task, "dsha-apk-update"))));
+  }
+
   public com.deepseekharness.app.core.BackupTask backupTask() {
     return backupOwner.get(() -> new com.deepseekharness.app.core.BackupTask(this));
   }

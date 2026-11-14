@@ -68,6 +68,11 @@ public final class UpdateVersionPageTest {
     }
 
     @Implementation
+    protected java.util.concurrent.Executor verificationExecutor() {
+      return Runnable::run;
+    }
+
+    @Implementation
     protected String channel() {
       return "preview";
     }
