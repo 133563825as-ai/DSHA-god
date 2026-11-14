@@ -2517,7 +2517,7 @@
     {
       "path": "tools/test-bundled-dsh-version.py",
       "stage": "fast",
-      "reason": "Production Gradle configuration gate executes in isolated offline assemble projects and rejects stale native/npm-lock/signed-registry generations and ambiguous native source anchors",
+      "reason": "Production Gradle configuration gate executes in isolated offline marker-only probe projects and rejects stale native/npm-lock/signed-registry generations and ambiguous native source anchors; no AGP assemble or APK execution",
       "args": [
         "--gradle-user-home",
         "{gradleHome}",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute the production Gradle generation gate in isolated offline assemble fixtures."""
+"""Execute the production configuration gate before an isolated offline marker-only probe."""
 import argparse
 import copy
 import hashlib
@@ -69,12 +69,12 @@ def main():
                  'app/src/main/assets/runtime-patches.json': json.dumps(values['registry']),
                  'app/src/main/java/com/deepseekharness/app/util/Constants.java': values['native'],
                  'settings.gradle': "rootProject.name='native-version-fixture'\ninclude ':app'\n",
-                 'app/build.gradle': gate + "\ntasks.register('assemble') { doLast { file('assembled.marker').text = 'assembled' } }\n"}
+                 'app/build.gradle': gate + "\ntasks.register('fixtureGenerationProbe') { doLast { file('assembled.marker').text = 'assembled' } }\n"}
         for relative, body in files.items():
             target = fixture / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8', newline='\n')
-        command = [str(gradle), '--offline', '--no-daemon', '--no-configuration-cache', '--console=plain', '-p', str(fixture), ':app:assemble']
+        command = [str(gradle), '--offline', '--no-daemon', '--no-configuration-cache', '--console=plain', '-p', str(fixture), ':app:fixtureGenerationProbe']
         result = subprocess.run(command, env=env, cwd=ROOT, capture_output=True, timeout=90)
         (fixture / 'stdout.bin').write_bytes(result.stdout)
         (fixture / 'stderr.bin').write_bytes(result.stderr)
@@ -88,7 +88,7 @@ def main():
         results.append(dict(case=case, status='PASS', exitCode=result.returncode,
                             stdoutSha256=hashlib.sha256(result.stdout).hexdigest(), stderrSha256=hashlib.sha256(result.stderr).hexdigest()))
         print(case + ': PASS', flush=True)
-    receipt = dict(scope='Actual production Gradle gate executed at configuration before isolated assemble; no APK/Android/device or source mutation',
+    receipt = dict(scope='Actual production Gradle configuration gate before isolated marker-only fixtureGenerationProbe; no AGP assemble/APK/Android/device or source mutation',
                    gradleVersion=version, gradle=str(gradle), sourceSha256=hashlib.sha256(source.encode()).hexdigest(), results=results)
     (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8', newline='\n')
     print('PASS production Gradle/native/lock/registry gate: ' + str(output / 'receipt.json'))

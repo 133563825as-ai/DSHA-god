@@ -152,6 +152,34 @@ class ValidationInputsTest(unittest.TestCase):
             for forbidden in ['PRIVATE_SECRET', 'PRIVATE_LOG', 'not-declared', '%', 'bad%0A']:
                 self.assertNotIn(forbidden, value)
 
+    def test_configuration_probe_does_not_relax_real_artifact_fence(self):
+        import ast
+        import re
+        source = (ROOT/'tools/test-bundled-dsh-version.py').read_text()
+        tree = ast.parse(source)
+        variants = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == 'variants' for target in node.targets))
+        self.assertEqual(('current', 'native-old', 'native-expression', 'native-duplicate',
+                          'registry-old', 'registry-schema', 'lock-root-old', 'lock-package-old'), ast.literal_eval(variants))
+        self.assertIn("tasks.register('fixtureGenerationProbe')", source)
+        self.assertIn("':app:fixtureGenerationProbe'", source)
+        self.assertNotIn("tasks.register('assemble')", source)
+        self.assertNotIn("':app:assemble'", source)
+        self.assertIn("file('assembled.marker').text = 'assembled'", source)
+        self.assertIn("assert result.returncode == 0 and (app / 'assembled.marker').is_file()", source)
+        self.assertIn("assert result.returncode != 0 and not (app / 'assembled.marker').exists()", source)
+        for required in ['DSH_GRADLE_PREBUILD_GATE_MISSING', 'BUNDLED_DSH_NATIVE_VERSION_ANCHOR', 'BUNDLED_DSH_VERSION_MISMATCH']:
+            self.assertIn(required, source)
+        workflow = (ROOT/'.github/workflows/rebirth-validation.yml').read_text()
+        fence = workflow.split('gradle.taskGraph.whenReady', 1)[1].split('gradle.projectsEvaluated', 1)[0]
+        pattern = re.search(r'n ==~ /(\(\?i\)\(assemble[^\n]+?)\s*\|\|', fence)
+        self.assertIsNotNone(pattern)
+        self.assertIsNotNone(re.fullmatch(pattern.group(1).rstrip('/ '), 'assembleStandardRelease'))
+        for required in ['PackageApplication', 'PackageAndroidArtifact', 'FinalizeBundleTask', 'PackageBundleTask']:
+            self.assertIn(required, fence)
+        for excluded in ['fixtureGenerationProbe', 'native-version-fixture', 'rootDir', 'host-test-', 'assembled.marker']:
+            self.assertNotIn(excluded, fence)
+
     def test_missing_current_head_receipt_never_falls_back_to_bundle(self):
         with patch.object(mod.subprocess, 'check_output', side_effect=RuntimeError('HEAD missing')):
             with self.assertRaisesRegex(RuntimeError, 'HEAD missing'): mod.head_receipts(self.root)
