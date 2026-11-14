@@ -16,6 +16,8 @@ public class ConfigStore {
   private final SharedPreferences prefs;
   private final KeyVault vault;
   private static final Object COLD_SELECTION_LOCK = new Object();
+  private static final com.deepseekharness.app.util.RootRequestGate ROOT_REQUESTS =
+      new com.deepseekharness.app.util.RootRequestGate();
 
   public ConfigStore(Context ctx) {
     this.prefs = ctx.getSharedPreferences(Constants.PREFS, Context.MODE_PRIVATE);
@@ -278,11 +280,34 @@ public class ConfigStore {
   }
 
   public boolean isRootShellAllowed() {
-    return flag(Constants.KEY_ALLOW_ROOT_SHELL, false);
+    try {
+      // 授权不是可迁移的普通偏好；字符串 true 或数字 1 均不能授予 Root。
+      return Boolean.TRUE.equals(prefs.getAll().get(Constants.KEY_ALLOW_ROOT_SHELL));
+    } catch (RuntimeException unavailable) {
+      return false;
+    }
   }
 
   public void setRootShellAllowed(boolean v) {
-    prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, v).apply();
+    ROOT_REQUESTS.update(() -> prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, v).apply());
+  }
+
+  /** 许可仅对本进程、本次 Root 设置代次有效；关闭再开启也不能复活旧请求。 */
+  public com.deepseekharness.app.util.RootRequestGate.Permit captureRootRequest() {
+    return ROOT_REQUESTS.capture(this::isRootShellAllowed);
+  }
+
+  public boolean rootRequestCurrent(com.deepseekharness.app.util.RootRequestGate.Permit permit) {
+    return ROOT_REQUESTS.current(permit, this::isRootShellAllowed);
+  }
+
+  /** 必须在 helper 启动后、交付 stdin 前调用；写入失败后许可仍不可复用。 */
+  public boolean writeRootRequest(
+      java.io.OutputStream input,
+      byte[] payload,
+      com.deepseekharness.app.util.RootRequestGate.Permit permit)
+      throws java.io.IOException {
+    return ROOT_REQUESTS.write(input, payload, permit, this::isRootShellAllowed);
   }
 
   /** root 命令拦截档位；非法或缺失一律回落严格档（fail-closed）。 */
@@ -292,12 +317,17 @@ public class ConfigStore {
   }
 
   public void setRootPolicyMode(com.deepseekharness.app.util.DeviceShellPolicy.Mode mode) {
-    prefs
-        .edit()
-        .putString(
-            Constants.KEY_ROOT_POLICY_MODE,
-            (mode == null ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT : mode).id)
-        .apply();
+    ROOT_REQUESTS.update(
+        () ->
+            prefs
+                .edit()
+                .putString(
+                    Constants.KEY_ROOT_POLICY_MODE,
+                    (mode == null
+                            ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT
+                            : mode)
+                        .id)
+                .apply());
   }
 
   public boolean isCheckUpdate() {
