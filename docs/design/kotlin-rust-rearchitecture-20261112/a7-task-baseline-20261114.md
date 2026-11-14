@@ -198,6 +198,17 @@ S1 默认仅诚实投影 ADB+su 的 unverified 身份，不改 guest 协议。�
 
 实施批准与 docs-only 合并排期分开；各切片回执在本稿后续章节追加，原第一阶段软件结果仍只绑定 d9，实施基线上的结果另记。
 
+## 10. 整轮出口（2026-11-14 接手 @a7-takeover）
+
+S1–S4 已独立 APPROVE，S5 已提交 `cf13d360`；S4 的 5 条非阻塞 P2 已按复核处置（①②代码 `28a94dcc`、③测试 `bbb60c5c`、⑤文案 `02923563`、④记账 `1b8ba6c2`）。逐片提交、实际执行、未跑项、已知窗口与合并前置统一见 [A7 出口回执](a7-exit-receipt-20261114.md)。
+
+出口批处理口径（不扩大批准范围）：
+
+- **实际执行仅限补充夹具**：生产 Java 1026 源 javac 0；F07 pure 70 项、页面 9 项、RootShell 1 项 0 失败；Java 格式 1798 文件/0 需格式化；边界 25 项；i18n newFindings 0/stale 0；source hygiene PASS；文档链接 1315 链接/0 error。physical 26/anchor 15 为 S4 期间证据，本回合未重跑。
+- **未跑（不得写成已验证）**：完整 Gradle/AAPT2 资源链接与 `:app:testStandardDebugUnitTest`、AndroidUnit/lint、`assembleStandardRelease` APK/签名/ELF/JNI、真实 Android `Os`/`fdexec`、真实 su/Root 管理器（Magisk/KernelSU/APatch）授权与版本探测、Shizuku/ADB、真机双屏/敏感页/覆盖维护页与 I1–I10 视觉矩阵；本机同样未跑真实宿主 `isResumed` 页面端到端（P2③ 已给静态证据）。
+- **已知窗口/降级项**：S1 的通道事实组合/`recordPairResult` 适配器组合、CHANGING/UNAVAILABLE 压 false 状态等；S2 的输入/按键真实 fixture；S3 的 actionEvidence 兼容入口仅测试消费；S4 P2③ 的宿主路径未跑。均不阻断 APPROVE，但必须在合并回执与真机窗口中保留。
+- **合并前置**：新 main 在当时的绿 main 上 rebase；把 `util/DeviceAuthorization`、`DeviceChannelFacts`、`PhysicalActionRequest`、`VscreenActionEvidence`、`ShizukuShell`、`util/RootModulePolicy`、`util/RootModuleInventory` 及各设备/屏幕适配改动纳入 `launcherSources`/启动输入；重算 descriptor 与 runtimeId 并跑 Source/Docs CI；用户批准后才可 merge/push。本分支不手改 descriptor/launcherSources/managed-runtime-inputs/contract。
+
 [roadmap]: iteration-roadmap-20261112.md#21-18--21--轮次-映射外部开发者定位用
 [adr4]: ../../adr/0004-kotlin-rust-direction.md#决定四rust-首期只做旁路计算与计划校验
 [check]: ../a7-root-adb-design-check-20261113.md
