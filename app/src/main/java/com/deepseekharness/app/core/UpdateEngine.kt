@@ -56,13 +56,12 @@ internal constructor(
 
     private val transport = source ?: Transport { url, offset -> connect(url, offset) }
     private val busy = AtomicBoolean()
+    @Volatile private var actionRevision = 0L
     @Volatile private var cancelled = false
     @Volatile private var connection: HttpURLConnection? = null
     @Volatile private var channel: String
     // 预览通道也可选中稳定版，来源必须记录所选通道，不能从 release.channel 推断。
     @Volatile private var candidateChannel: String? = null
-    private var startupChecked = false
-    @Volatile private var startupNotice = false
     @Volatile private var candidate: UpdatePolicy.Release? = null
     @Volatile private var verifiedApk: File? = null
     private val state = MutableLiveData(State(UiText.text("尚未检查更新"), false, 0, 0, null, null))
@@ -105,14 +104,44 @@ internal constructor(
     /** 页面请求校验借用同一应用队列，不再创建页面级或静态执行器。 */
     fun verificationExecutor(): Executor = io
 
+    fun permissionRevision(): Long = actionRevision
+
+    /** 主动检查、下载、取消和安装请求都退休先前权限票，不借候选相同恢复旧意图。 */
+    fun invalidatePermissionRequests() {
+        actionRevision++
+    }
+
+    /** 系统回调只有 16 位请求号；本机持久单调分配，拒绝耗尽或损坏的计数而不复用旧号。 */
+    @Synchronized
+    @Throws(IOException::class)
+    fun nextPermissionRequestCode(): Int {
+        val last =
+            prefs().getString("permission_request_code", "16383")?.toIntOrNull()
+                ?: throw IOException("UPDATE_PERMISSION_REQUEST_INVALID")
+        if (last < 0x3fff || last >= 0xfffe)
+            throw IOException("UPDATE_PERMISSION_REQUEST_EXHAUSTED")
+        val next = last + 1
+        if (!prefs().edit().putString("permission_request_code", next.toString()).commit())
+            throw IOException("UPDATE_PERMISSION_REQUEST_NOT_SAVED")
+        return next
+    }
+
+    /** 权限回调只可续接最初观察的候选，不能把旧授权转交给后来检查出的包。 */
+    fun isCurrentCandidate(release: UpdatePolicy.Release?, sourceChannel: String?): Boolean =
+        !busy.get() &&
+            currentCandidate() &&
+            release != null &&
+            candidate === release &&
+            channel == sourceChannel
+
     /** 切换通道并重新检查；下载 / 校验进行中仍锁定，避免换掉正在传输的目标包。 */
     fun setChannel(value: String?) {
         if (channel == value) return
         if (value == null || (value != UpdatePolicy.STABLE && value != UpdatePolicy.PREVIEW)) return
         val supersede = busy.get()
         if (supersede && (runningDownload || !checking)) return
+        invalidatePermissionRequests()
         channel = value
-        startupNotice = false
         prefs().edit().putString("channel", value).apply()
         if (!supersede) {
             check()
@@ -176,8 +205,6 @@ internal constructor(
         verifiedApk = null
         phase = ""
         stopReason = ""
-        startupChecked = false
-        startupNotice = false
         state.postValue(
             State(
                 UiText.choose("等待重新检查更新", "Waiting for a fresh update check"),
@@ -192,6 +219,7 @@ internal constructor(
 
     private fun submit(message: String, task: () -> String) {
         if (!busy.compareAndSet(false, true)) return
+        invalidatePermissionRequests()
         checking = true
         cancelled = false
         state.value = snapshot(message, true)
@@ -229,27 +257,16 @@ internal constructor(
         }
     }
 
-    /** 每个应用进程最多自动检查一次；旋转、主题重建及从 Web 返回不重复请求。 */
-    fun checkOnStartup(enabled: Boolean) {
-        if (!enabled || startupChecked) return
-        startupChecked = true
-        if (busy.get() || shouldResume()) return
-        check(true)
-    }
+    /** 兼容旧 Java 调用；APK 无人触发的检查入口已退休，历史偏好不再授予检查意图。 */
+    @Suppress("UNUSED_PARAMETER") fun checkOnStartup(enabled: Boolean) {}
 
-    /** 未真正显示的提示继续保留，打开 Web 或旋转打断 Snackbar 动画也不会吞掉提示。 */
-    fun startupNotice(): UpdatePolicy.Release? =
-        if (!startupNotice || busy.get() || !currentCandidate()) null else candidate
+    /** 兼容旧 Java 提示领取入口；普通启动不会生成更新提示。 */
+    fun startupNotice(): UpdatePolicy.Release? = null
 
-    fun markStartupNoticeShown(shown: UpdatePolicy.Release?) {
-        if (shown != null && candidate === shown) startupNotice = false
-    }
+    @Suppress("UNUSED_PARAMETER") fun markStartupNoticeShown(shown: UpdatePolicy.Release?) {}
 
+    /** 仅由用户主动检查或切换通道的请求调用。 */
     fun check() {
-        check(false)
-    }
-
-    private fun check(startup: Boolean) {
         val requestedChannel = channel
         submit(checkingMessage()) {
             val conn = transport.open(FEED, 0)
@@ -307,7 +324,6 @@ internal constructor(
                 candidate = selected
                 candidateChannel = if (selected == null) null else requestedChannel
             }
-            startupNotice = startup && selected != null
             val current = candidate
             if (current != null) UiText.format("发现新版本 %s", current.version)
             else UiText.choose("暂无可用更新", "No updates available")
@@ -316,6 +332,7 @@ internal constructor(
 
     fun download() {
         if (!currentCandidate() || !candidate!!.valid() || !busy.compareAndSet(false, true)) return
+        invalidatePermissionRequests()
         cancelled = false
         stopReason = ""
         verifiedApk = null
@@ -460,6 +477,7 @@ internal constructor(
     }
 
     private fun stop(reason: String, nextPhase: String) {
+        invalidatePermissionRequests()
         recheckPending = false
         cancelled = true
         stopReason = reason
@@ -591,7 +609,15 @@ internal constructor(
                 )
             if (candidate == null) return
             phase = prefs().getString("phase", "paused") ?: "paused"
-            verifiedApk = if (phase == "ready" && apk().isFile) apk() else null
+            val retained = apk()
+            // rename 后、ready 回执落盘前可能被终止；先观察已命名的包，不重下已完成的字节。
+            // 文件存在只提供安装前复核入口，installableApk 仍完整检查摘要、包名、版本与签名。
+            val completedWithoutReceipt =
+                phase == "downloading" && retained.isFile && !partial().exists()
+            verifiedApk =
+                if ((phase == "ready" || completedWithoutReceipt) && retained.isFile) retained
+                else null
+            if (completedWithoutReceipt) phase = "ready"
             val restored =
                 snapshot(
                     if (verifiedApk != null) UiText.text("安装包已保留，安装前将重新校验")

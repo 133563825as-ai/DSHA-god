@@ -34,7 +34,6 @@ import java.nio.charset.StandardCharsets
 /** 更新由用户选择通道和确认安装；下载任务不依赖页面生命周期。 */
 class UpdateActivity : AppCompatActivity() {
     private lateinit var repository: UpdateRepository
-    private var resumeInstall = false
     private var installDispatchReady = false
     private var versionExpanded = false
     // 平板横屏右栏标签页；手机与平板竖屏为 null。
@@ -47,8 +46,14 @@ class UpdateActivity : AppCompatActivity() {
         setContentView(R.layout.activity_update)
         PressFeedback.attachButtons(findViewById<View>(android.R.id.content))
         repository = ViewModelProvider(this).get(UpdateRepository::class.java)
-        resumeInstall = saved != null && saved.getBoolean("resumeInstall")
-        repository.restoreInterruptedInstall(saved != null && saved.getBoolean("installPending"))
+        // 旧保存态只用于提示中断，不能重建或授权一次安装请求。
+        val wasInstallPermissionPending = saved != null && saved.getBoolean("resumeInstall")
+        repository.restoreInterruptedInstall(
+            (saved != null && saved.getBoolean("installPending")) || wasInstallPermissionPending
+        )
+        repository.restoreInterruptedDownloadPermission(
+            saved != null && saved.getBoolean("downloadPermissionPending")
+        )
         versionExpanded = saved != null && saved.getBoolean("versionExpanded")
         paneChosen = saved != null && saved.getBoolean("paneChosen")
         findViewById<TextView>(R.id.update_current).text = BuildConfig.VERSION_NAME
@@ -116,7 +121,6 @@ class UpdateActivity : AppCompatActivity() {
             renderState(repository.state().value)
             dispatchInstall()
         }
-        if (saved == null && !repository.hasTask()) repository.check()
     }
 
     private fun showRuntimePlan() {
@@ -362,7 +366,13 @@ class UpdateActivity : AppCompatActivity() {
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                     PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 104)
+            val request = repository.prepareDownloadPermission()
+            if (request < 0) return
+            try {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), request)
+            } catch (error: Exception) {
+                if (repository.discardDownloadPermission(request)) showPermissionError(error)
+            }
         } else {
             repository.download()
         }
@@ -400,18 +410,23 @@ class UpdateActivity : AppCompatActivity() {
         if (repository.installationPending()) return
         try {
             if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-                resumeInstall = true
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + packageName),
+                val request = repository.prepareInstallPermission()
+                if (request < 0) return
+                try {
+                    startActivityForResult(
+                        Intent(
+                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:" + packageName),
+                        ),
+                        request,
                     )
-                )
+                } catch (error: Exception) {
+                    if (repository.discardInstallPermission(request)) showPermissionError(error)
+                }
                 return
             }
             repository.requestInstall()
         } catch (error: Exception) {
-            resumeInstall = false
             showInstallError(error)
         }
     }
@@ -454,11 +469,20 @@ class UpdateActivity : AppCompatActivity() {
         results: IntArray,
     ) {
         super.onRequestPermissionsResult(request, permissions, results)
-        if (request == 104) repository.download()
+        if (isFinishing || isDestroyed) return
+        val known =
+            permissions.contentEquals(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) &&
+                results.size == 1 &&
+                (results[0] == PackageManager.PERMISSION_GRANTED ||
+                    results[0] == PackageManager.PERMISSION_DENIED)
+        // 通知拒绝仍可续接已点按的 FGS 下载；空/未知回执只退休原票，不推断许可或重放。
+        if (known) repository.downloadAfterPermission(request)
+        else repository.discardDownloadPermission(request)
     }
 
     override fun onSaveInstanceState(saved: Bundle) {
-        saved.putBoolean("resumeInstall", resumeInstall)
+        saved.putBoolean("resumeInstall", repository.hasInstallPermissionRequest())
+        saved.putBoolean("downloadPermissionPending", repository.hasDownloadPermissionRequest())
         saved.putBoolean("installPending", repository.installationPending())
         saved.putBoolean("versionExpanded", versionExpanded)
         saved.putBoolean("paneChosen", paneChosen)
@@ -466,16 +490,32 @@ class UpdateActivity : AppCompatActivity() {
         super.onSaveInstanceState(saved)
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (resumeInstall) {
-            resumeInstall = false
-            if (Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) {
-                install()
-            } else {
-                Toast.makeText(this, UiText.text("未允许安装更新，可稍后重试"), Toast.LENGTH_SHORT).show()
+    override fun onActivityResult(request: Int, result: Int, data: Intent?) {
+        super.onActivityResult(request, result, data)
+        if (isFinishing || isDestroyed) return
+        try {
+            // 设置页 RESULT_CANCELED 也可能已经授权，返回后实查；仍只消费这个请求号。
+            val granted = Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
+            if (repository.finishInstallPermission(request, granted)) {
+                if (!granted)
+                    Toast.makeText(this, UiText.text("未允许安装更新，可稍后重试"), Toast.LENGTH_SHORT).show()
+            }
+        } catch (error: Exception) {
+            if (repository.discardInstallPermission(request)) {
+                showPermissionError(error)
             }
         }
+    }
+
+    private fun showPermissionError(error: Exception) {
+        DiagnosticLog.record(this, "APP_UPDATE_PERMISSION", error.toString())
+        val reason =
+            UiText.choose(
+                "无法确认权限请求结果，请重新操作",
+                "Unable to confirm the permission result. Try the action again.",
+            )
+        repository.installFailed(reason)
+        Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
     }
 
     override fun onPostResume() {

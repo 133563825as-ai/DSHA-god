@@ -25,6 +25,115 @@ class UpdateRepository : AndroidViewModel {
     private var installRelease: UpdatePolicy.Release? = null
     private var installChannel: String? = null
 
+    private class PendingPermission(
+        val code: Int,
+        val release: UpdatePolicy.Release,
+        val channel: String,
+        val apk: File?,
+        val revision: Long,
+    )
+
+    private var downloadPermission: PendingPermission? = null
+    private var installPermission: PendingPermission? = null
+
+    private fun clearPermissions() {
+        downloadPermission = null
+        installPermission = null
+    }
+
+    private fun permissionMatches(request: PendingPermission): Boolean =
+        !cleared &&
+            !installationPending() &&
+            request.revision == engine.permissionRevision() &&
+            if (request.apk == null) engine.isCurrentCandidate(request.release, request.channel)
+            else engine.isCurrentInstall(request.apk, request.release, request.channel)
+
+    private fun preparePermission(install: Boolean): Int {
+        if (cleared || installationPending()) return -1
+        clearPermissions()
+        val current = state().value ?: return -1
+        val release = current.release ?: return -1
+        val channel = engine.channel()
+        if (!engine.isCurrentCandidate(release, channel) || (install && current.apk == null))
+            return -1
+        return try {
+            val request =
+                PendingPermission(
+                    engine.nextPermissionRequestCode(),
+                    release,
+                    channel,
+                    if (install) current.apk else null,
+                    engine.permissionRevision(),
+                )
+            if (install) installPermission = request else downloadPermission = request
+            request.code
+        } catch (failure: Exception) {
+            installFailed(
+                UiText.choose(
+                    "无法登记权限请求，请稍后重试",
+                    "Unable to register the permission request. Try again later.",
+                )
+            )
+            -1
+        }
+    }
+
+    fun prepareDownloadPermission(): Int = preparePermission(false)
+
+    fun prepareInstallPermission(): Int = preparePermission(true)
+
+    fun hasInstallPermissionRequest(): Boolean = installPermission != null
+
+    fun hasDownloadPermissionRequest(): Boolean = downloadPermission != null
+
+    fun restoreInterruptedDownloadPermission(wasPending: Boolean) {
+        if (
+            wasPending &&
+                downloadPermission == null &&
+                installPermission == null &&
+                !installationPending() &&
+                installation.value!!.error == null
+        )
+            installFailed(
+                UiText.choose(
+                    "下载请求已因进程重建中断，请重新点击下载",
+                    "The download request was interrupted. Tap Download again.",
+                )
+            )
+    }
+
+    fun discardInstallPermission(code: Int): Boolean {
+        if (installPermission?.code != code) return false
+        installPermission = null
+        return true
+    }
+
+    /** 先消费精确请求号，再续接原下载；重复/迟到回调不能领取同候选的新请求。 */
+    fun downloadAfterPermission(code: Int): Boolean {
+        val request = downloadPermission ?: return false
+        if (request.code != code) return false
+        downloadPermission = null
+        if (!permissionMatches(request)) return false
+        download()
+        return true
+    }
+
+    fun discardDownloadPermission(code: Int): Boolean {
+        if (downloadPermission?.code != code) return false
+        downloadPermission = null
+        return true
+    }
+
+    /** 系统设置结果不作为安装成功；只续接原意图，仍走安装前完整校验与单次领取。 */
+    fun finishInstallPermission(code: Int, granted: Boolean): Boolean {
+        val request = installPermission ?: return false
+        if (request.code != code) return false
+        installPermission = null
+        if (!permissionMatches(request)) return true
+        if (granted) requestInstall() else installFailed(UiText.text("未允许安装更新，可稍后重试"))
+        return true
+    }
+
     enum class Stage {
         IDLE,
         CHECKING,
@@ -106,21 +215,33 @@ class UpdateRepository : AndroidViewModel {
     fun channel(): String = engine.channel()
 
     fun setChannel(channel: String?) {
-        if (!installationPending()) engine.setChannel(channel)
+        if (!installationPending()) {
+            clearPermissions()
+            engine.setChannel(channel)
+        }
     }
 
     fun hasTask(): Boolean = engine.hasTask()
 
     fun check() {
-        if (!installationPending()) engine.check()
+        if (!installationPending()) {
+            clearPermissions()
+            engine.check()
+        }
     }
 
     fun download() {
-        if (!installationPending()) engine.download()
+        if (!installationPending()) {
+            clearPermissions()
+            engine.download()
+        }
     }
 
     fun cancel() {
-        if (!installationPending()) engine.cancel()
+        if (!installationPending()) {
+            clearPermissions()
+            engine.cancel()
+        }
     }
 
     @Throws(Exception::class) fun installableApk(): File = engine.installableApk()
@@ -136,6 +257,8 @@ class UpdateRepository : AndroidViewModel {
             installFailed(UiText.text("请先在当前通道下载并校验安装包"))
             return
         }
+        clearPermissions()
+        engine.invalidatePermissionRequests()
         installRelease = current.release
         installChannel = engine.channel()
         val request = ++installRequest
@@ -177,17 +300,28 @@ class UpdateRepository : AndroidViewModel {
     }
 
     fun installFailed(reason: String?) {
+        installRequest++
+        clearPermissions()
+        installRelease = null
+        installChannel = null
         installation.value = InstallState(false, null, SensitiveData.redact(reason))
     }
 
     fun restoreInterruptedInstall(wasPending: Boolean) {
         val current = installation.value!!
-        if (wasPending && !current.pending() && current.error == null)
+        if (
+            wasPending &&
+                installPermission == null &&
+                downloadPermission == null &&
+                !current.pending() &&
+                current.error == null
+        )
             installFailed(UiText.text("安装前校验已因进程重建中断，请点击「安装更新」重试"))
     }
 
     override fun onCleared() {
         cleared = true
+        clearPermissions()
         installRequest++
         super.onCleared()
     }

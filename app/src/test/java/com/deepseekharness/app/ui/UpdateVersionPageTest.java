@@ -44,7 +44,7 @@ import org.robolectric.shadows.ShadowDialog;
     sdk = 34,
     qualifiers = "zh",
     application = UpdateVersionPageTest.App.class,
-    shadows = UpdateVersionPageTest.Engine.class)
+    shadows = {UpdateVersionPageTest.Engine.class, UpdateVersionPageTest.Provider.class})
 @LooperMode(LooperMode.Mode.PAUSED)
 public final class UpdateVersionPageTest {
   public static final class App extends DshaApp {
@@ -56,6 +56,9 @@ public final class UpdateVersionPageTest {
   public static final class Engine {
     static MutableLiveData<UpdateRepository.State> states;
     static int checks;
+    static boolean hasTask;
+    static File installApk;
+    static java.util.concurrent.Executor verifierQueue;
 
     @Implementation
     protected static UpdateEngine get(Context context) {
@@ -69,7 +72,22 @@ public final class UpdateVersionPageTest {
 
     @Implementation
     protected java.util.concurrent.Executor verificationExecutor() {
-      return Runnable::run;
+      return verifierQueue;
+    }
+
+    @Implementation
+    protected File installableApk() {
+      return installApk;
+    }
+
+    @Implementation
+    protected boolean isCurrentInstall(File file, UpdatePolicy.Release release, String channel) {
+      var current = states.getValue();
+      return current != null
+          && !current.busy
+          && current.release == release
+          && file == installApk
+          && "preview".equals(channel);
     }
 
     @Implementation
@@ -79,7 +97,7 @@ public final class UpdateVersionPageTest {
 
     @Implementation
     protected boolean hasTask() {
-      return true;
+      return hasTask;
     }
 
     @Implementation
@@ -91,6 +109,15 @@ public final class UpdateVersionPageTest {
     }
   }
 
+  /** 只隔离 URI 提供者；生命周期、仓库领取和 ACTION_VIEW 派发使用实际页面代码。 */
+  @Implements(value = androidx.core.content.FileProvider.class, isInAndroidSdk = false)
+  public static final class Provider {
+    @Implementation
+    protected static android.net.Uri getUriForFile(Context context, String authority, File file) {
+      return android.net.Uri.parse("content://" + authority + "/test/" + file.getName());
+    }
+  }
+
   private String previousLanguage;
 
   @Before
@@ -98,6 +125,9 @@ public final class UpdateVersionPageTest {
     previousLanguage = UiText.language();
     UiText.setLanguage("zh");
     Engine.checks = 0;
+    Engine.hasTask = true;
+    Engine.installApk = null;
+    Engine.verifierQueue = Runnable::run;
     Engine.states = new MutableLiveData<>(state("暂无可用更新"));
   }
 
@@ -120,6 +150,86 @@ public final class UpdateVersionPageTest {
     constructor.setAccessible(true);
     return constructor.newInstance(
         message, UpdateRepository.Stage.IDLE, 0L, 0L, null, null, "preview", null);
+  }
+
+  @Test
+  public void idlePageRecreationAndLanguageChangesNeverCheckWithoutAnExplicitAction() {
+    Engine.hasTask = false;
+    var config =
+        new com.deepseekharness.app.core.ConfigStore(
+            org.robolectric.RuntimeEnvironment.getApplication());
+    config.setCheckUpdate(true);
+    try (var controller = Robolectric.buildActivity(UpdateActivity.class).setup()) {
+      assertEquals(0, Engine.checks);
+      controller.recreate();
+      assertEquals(0, Engine.checks);
+      UiText.setLanguage("en");
+      controller.recreate();
+      assertEquals(0, Engine.checks);
+      controller.get().findViewById(R.id.update_check).performClick();
+      assertEquals(1, Engine.checks);
+      controller.recreate();
+      assertEquals(1, Engine.checks);
+      assertTrue(config.isCheckUpdate());
+    }
+  }
+
+  @Test
+  public void verificationAcrossActivityAndLanguageRecreationDispatchesInstallerOnlyOnce()
+      throws Exception {
+    var verification = new java.util.ArrayDeque<Runnable>();
+    Engine.verifierQueue = verification::add;
+    Engine.installApk =
+        new File(org.robolectric.RuntimeEnvironment.getApplication().getFilesDir(), "owned-ui.apk");
+    UpdatePolicy.Release release = release();
+    var constructor =
+        UpdateRepository.State.class.getDeclaredConstructor(
+            String.class,
+            UpdateRepository.Stage.class,
+            long.class,
+            long.class,
+            UpdatePolicy.Release.class,
+            File.class,
+            String.class,
+            String.class);
+    constructor.setAccessible(true);
+    Engine.states.setValue(
+        constructor.newInstance(
+            "已下载",
+            UpdateRepository.Stage.IDLE,
+            release.bytes,
+            release.bytes,
+            release,
+            Engine.installApk,
+            "preview",
+            "preview"));
+    try (var controller = Robolectric.buildActivity(UpdateActivity.class).setup()) {
+      var field = UpdateActivity.class.getDeclaredField("repository");
+      field.setAccessible(true);
+      UpdateRepository repository = (UpdateRepository) field.get(controller.get());
+      repository.requestInstall();
+      repository.requestInstall();
+      assertEquals(1, verification.size());
+      controller.recreate();
+      assertSame(repository, field.get(controller.get()));
+      verification.remove().run();
+      Shadow.<org.robolectric.shadows.ShadowLooper>extract(android.os.Looper.getMainLooper())
+          .idle();
+      var foreground = Shadow.<org.robolectric.shadows.ShadowActivity>extract(controller.get());
+      Intent installer = foreground.getNextStartedActivity();
+      assertNotNull(installer);
+      assertEquals(Intent.ACTION_VIEW, installer.getAction());
+      assertEquals("application/vnd.android.package-archive", installer.getType());
+      assertNull(foreground.getNextStartedActivity());
+      UiText.setLanguage("en");
+      controller.recreate();
+      assertSame(repository, field.get(controller.get()));
+      assertNull(
+          Shadow.<org.robolectric.shadows.ShadowActivity>extract(controller.get())
+              .getNextStartedActivity());
+      assertNull(repository.takeInstallReady());
+      assertEquals(0, verification.size());
+    }
   }
 
   @Test

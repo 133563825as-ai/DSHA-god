@@ -173,10 +173,6 @@ public final class OptimizationInstrumentation extends Instrumentation {
       Field verifiedApk = UpdateEngine.class.getDeclaredField("verifiedApk");
       verifiedApk.setAccessible(true);
       verifiedApk.set(active, null);
-      // 固定清单的下载夹具不接收主界面启动时的真实清单检查。
-      Field startupChecked = UpdateEngine.class.getDeclaredField("startupChecked");
-      startupChecked.setAccessible(true);
-      startupChecked.setBoolean(active, true);
       Method save = UpdateEngine.class.getDeclaredMethod("save", String.class, String.class);
       save.setAccessible(true);
       save.invoke(active, "available", "独立下载验收");
@@ -197,7 +193,7 @@ public final class OptimizationInstrumentation extends Instrumentation {
         require(rejected, "未拒绝 " + bad);
       }
       phase("包名、版本和签名检查通过；开始真实前台下载服务");
-      shell("am start -W -n com.dsh.client/com.deepseekharness.app.ui.MainActivity");
+      shell("am start -W -n " + base.getPackageName() + "/com.deepseekharness.app.ui.MainActivity");
       page =
           startActivitySync(
               new Intent(base, UpdateActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -219,14 +215,13 @@ public final class OptimizationInstrumentation extends Instrumentation {
       long savedBytes = part.length();
       phase("关闭页面继续下载、取消和服务退出通过；重建任务恢复进度");
       runOnMainSync(() -> active = new UpdateEngine(data, source));
-      startupChecked.setBoolean(active, true);
       singleton.set(applicationOwner, active);
       require(
           UpdatePolicy.PREVIEW.equals(active.channel())
               && UpdatePolicy.PREVIEW.equals(active.state().getValue().sourceChannel),
           "重建后夹具查询通道丢失");
       require(active.state().getValue().downloaded == savedBytes, "重建后进度丢失");
-      shell("am start -W -n com.dsh.client/com.deepseekharness.app.ui.MainActivity");
+      shell("am start -W -n " + base.getPackageName() + "/com.deepseekharness.app.ui.MainActivity");
       page =
           startActivitySync(
               new Intent(base, UpdateActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

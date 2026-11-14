@@ -247,6 +247,154 @@ public final class UpdateOwnershipTest {
     assertEquals(0, queue.size());
   }
 
+  @Test
+  public void permissionCallbacksConsumeOnlyTheirOwnGenerationAndKind() {
+    UpdateRepository repository = repository();
+    int first = repository.prepareDownloadPermission();
+    int second = repository.prepareDownloadPermission();
+    assertTrue(first >= 0x4000);
+    assertTrue(second > first);
+    assertFalse(repository.downloadAfterPermission(first));
+    assertFalse(repository.finishInstallPermission(second, true));
+    assertTrue(repository.hasDownloadPermissionRequest());
+    assertTrue(repository.downloadAfterPermission(second));
+    assertFalse(repository.downloadAfterPermission(second));
+    assertTrue(engine.state().getValue().busy);
+    assertEquals(0, queue.size());
+    engine.cancel();
+  }
+
+  @Test
+  public void unknownPermissionReceiptRetiresItsTicketWithoutStartingAnything() {
+    UpdateRepository repository = repository();
+    int request = repository.prepareDownloadPermission();
+    assertTrue(repository.discardDownloadPermission(request));
+    assertFalse(repository.downloadAfterPermission(request));
+    assertFalse(repository.discardDownloadPermission(request));
+    assertFalse(engine.state().getValue().busy);
+    assertEquals(0, queue.size());
+  }
+
+  @Test
+  public void serviceCancelInvalidatesPermissionEvenWhenCandidateAndApkAreUnchanged() {
+    UpdateRepository repository = repository();
+    int request = repository.prepareInstallPermission();
+    engine.cancel();
+    assertSame(release, engine.state().getValue().release);
+    assertSame(apk, engine.state().getValue().apk);
+    assertTrue(repository.finishInstallPermission(request, true));
+    assertEquals(0, queue.size());
+    assertNull(repository.takeInstallReady());
+  }
+
+  @Test
+  public void oldInstallPermissionResultCannotConsumeOrCancelANewerSameCandidateRequest() {
+    UpdateRepository repository = repository();
+    int first = repository.prepareInstallPermission();
+    assertTrue(repository.finishInstallPermission(first, false));
+    int second = repository.prepareInstallPermission();
+    assertTrue(second > first);
+    assertFalse(repository.finishInstallPermission(first, true));
+    assertTrue(repository.hasInstallPermissionRequest());
+    assertTrue(repository.finishInstallPermission(second, true));
+    assertFalse(repository.finishInstallPermission(second, false));
+    assertTrue(repository.installation().getValue().verifying);
+    assertEquals(1, queue.size());
+    finishVerification();
+    assertSame(apk, repository.takeInstallReady());
+    assertNull(repository.takeInstallReady());
+  }
+
+  @Test
+  public void rebuiltPageKeepsTheOriginalPermissionButAProcessMarkerCannotRecreateIt() {
+    UpdateRepository retained = repository();
+    int request = retained.prepareInstallPermission();
+    UiText.setLanguage("en");
+    retained.restoreInterruptedInstall(true);
+    assertNull(retained.installation().getValue().error);
+    assertTrue(retained.finishInstallPermission(request, true));
+    finishVerification();
+    assertSame(apk, retained.takeInstallReady());
+    retained.onCleared();
+    UpdateRepository recreated = repository();
+    recreated.restoreInterruptedInstall(true);
+    assertNotNull(recreated.installation().getValue().error);
+    assertFalse(recreated.finishInstallPermission(request, true));
+    assertEquals(0, queue.size());
+  }
+
+  @Test
+  public void processRebuildReportsInterruptedDownloadPermissionWithoutReplayingIt() {
+    UpdateRepository old = repository();
+    int request = old.prepareDownloadPermission();
+    old.onCleared();
+    UpdateRepository recreated = repository();
+    recreated.restoreInterruptedDownloadPermission(true);
+    assertNotNull(recreated.installation().getValue().error);
+    assertFalse(recreated.downloadAfterPermission(request));
+    assertFalse(old.downloadAfterPermission(request));
+    assertFalse(engine.state().getValue().busy);
+    assertEquals(0, queue.size());
+  }
+
+  @Test
+  public void oldVerificationCannotOverwriteFailureOrANewerExplicitRequest() {
+    UpdateRepository repository = repository();
+    repository.requestInstall();
+    repository.installFailed("执行结果未知");
+    repository.requestInstall();
+    assertEquals(2, queue.size());
+    finishVerification();
+    assertTrue(repository.installation().getValue().verifying);
+    assertNull(repository.installation().getValue().apk);
+    finishVerification();
+    assertSame(apk, repository.takeInstallReady());
+    assertNull(repository.takeInstallReady());
+  }
+
+  @Test
+  public void exhaustedOrCorruptPermissionCounterNeverReusesAnOldSystemRequestCode()
+      throws Exception {
+    var preferences = app.getSharedPreferences("dsha-updates", 0);
+    preferences.edit().putString("permission_request_code", "65534").commit();
+    assertEquals(-1, repository().prepareDownloadPermission());
+    preferences.edit().putString("permission_request_code", "unknown").commit();
+    assertThrows(IOException.class, engine::nextPermissionRequestCode);
+    assertEquals(0, queue.size());
+  }
+
+  @Test
+  public void lostReadyReceiptObservesExistingApkWithoutRepeatingDownloadOrSkippingVerification()
+      throws Exception {
+    Method save = UpdateEngine.class.getDeclaredMethod("save", String.class, String.class);
+    save.setAccessible(true);
+    save.invoke(engine, "downloading", "旧下载仍在执行");
+    File retained = new File(app.getFilesDir(), "updates/" + release.sha256 + ".apk");
+    assertTrue(retained.getParentFile().isDirectory() || retained.getParentFile().mkdirs());
+    try {
+      try (var output = new java.io.FileOutputStream(retained)) {
+        output.write(new byte[100]);
+      }
+      UpdateEngine restored =
+          new UpdateEngine(
+              app,
+              (url, offset) -> {
+                throw new AssertionError("已命名的包不能重下");
+              },
+              queue);
+      assertFalse(restored.shouldResume());
+      restored.runDownload();
+      assertEquals(0, queue.size());
+      assertEquals(retained, restored.state().getValue().apk);
+      assertThrows(IOException.class, restored::installableApk);
+      Shadow.<ShadowLooper>extract(Looper.getMainLooper()).idle();
+      assertNull(restored.state().getValue().apk);
+      assertFalse(restored.shouldResume());
+    } finally {
+      assertTrue(!retained.exists() || retained.delete());
+    }
+  }
+
   private static final class Queue implements Executor {
     private final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
 
