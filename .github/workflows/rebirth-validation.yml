@@ -141,34 +141,111 @@ jobs:
           if not (out / 'dist/pnpm.cjs').is_file():
               raise SystemExit('PNPM_CLI_MISSING')
           PY
-      - name: L1 identity source and complete fast gates
+      - name: L1 identity and source checks
+        id: l1_source
         shell: bash
         run: |
           set -euo pipefail
+          set -E
+          label=l1-identity-tests
+          trap 'rc=$?; printf "::error::gate=%s exitCode=%s\n" "$label" "$rc"; exit "$rc"' ERR
           python3 tools/test-release-identity.py 2>&1 | tee out/rebirth-validation/identity-tests.log
+          label=l1-release-identity
           python3 tools/release-identity.py --check
+          label=l1-runtime-descriptor
           python3 tools/prepare-runtime-descriptor.py --check
+          label=l1-host-manifest
           python3 tools/run-host-tests.py --check-manifest
+          label=l1-source-hygiene
           python3 tools/check-source-hygiene.py
+          label=l1-ui-i18n
           python3 tools/check-ui-i18n.py
+          label=l1-ui-resources
           python3 tools/localize-android-ui.py --resources-only --check
+          label=l1-changelog
           python3 tools/generate-changelog.py --check
+          label=l1-document-links
           python3 tools/check-document-links.py
+          label=l1-java-format
           python3 tools/format-java.py --check --files app/src/main/java/com/deepseekharness/app/backup/RetainedCatalogue.java app/src/main/java/com/deepseekharness/app/core/StartupPipeline.java app/src/main/java/com/deepseekharness/app/core/WebLifecycleController.java app/src/main/java/com/deepseekharness/app/core/WebReadyTasks.java app/src/main/java/com/deepseekharness/app/runtime/GuestPluginScripts.java app/src/main/java/com/deepseekharness/app/runtime/Rc1MigrationCache.java app/src/main/java/com/deepseekharness/app/runtime/RuntimeTools.java app/src/main/java/com/deepseekharness/app/util/ManagedPatchChain.java app/src/main/java/com/deepseekharness/app/util/Rc1MigrationResult.java app/src/main/java/com/deepseekharness/app/util/Rc1MigrationReuse.java app/src/test/java/com/deepseekharness/app/backup/RetainedCatalogueTest.java app/src/test/java/com/deepseekharness/app/core/StartupPipelineTest.java app/src/test/java/com/deepseekharness/app/core/WebLifecycleStartProtectionTest.java app/src/test/java/com/deepseekharness/app/core/WebReadyTasksTest.java app/src/test/java/com/deepseekharness/app/runtime/GuestPluginScriptsTest.java app/src/test/java/com/deepseekharness/app/runtime/Rc1MigrationCacheTest.java app/src/test/java/com/deepseekharness/app/util/ManagedPatchChainTest.java app/src/test/java/com/deepseekharness/app/util/Rc1MigrationResultTest.java app/src/test/java/com/deepseekharness/app/util/Rc1MigrationReuseTest.java --report app/build/java-format/rebirth-ci.json
+      - name: L1 complete fast gates
+        id: l1_fast
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l1-fast exitCode=%s\n" "$rc"; exit "$rc"' ERR
           python3 tools/run-host-tests.py --stage fast --raw "$DSHA_TEST_RUNTIME" --managed "$DSHA_TEST_MANAGED_RUNTIME" --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/rebirth-toolchains" --pnpm-cli "$RUNNER_TEMP/rebirth-pnpm/dist/pnpm.cjs" --output app/build/host-fast-rebirth-ci 2>&1 | tee out/rebirth-validation/host-fast.log
-      - name: L2 complete unit XML Lint and resource source map
+      - name: L1 safe failure summary
+        if: failure() && steps.l1_fast.outcome == 'failure'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import collections, json, pathlib, re
+          declared = json.loads(pathlib.Path('tools/host-tests.manifest.json').read_text())['tests']
+          allowed = {r['path']: pathlib.PurePosixPath(r['path']).name for r in declared if r['stage'] == 'fast' and re.fullmatch(r'tools/[A-Za-z0-9_./-]+', r['path']) and '..' not in pathlib.PurePosixPath(r['path']).parts}
+          allowed = {p: n for p, n in allowed.items() if re.fullmatch(r'[A-Za-z0-9_.-]+', n)}
+          try:
+              report = json.loads(pathlib.Path('app/build/host-fast-rebirth-ci/manifest.json').read_text())
+          except (OSError, ValueError):
+              print('::error::gate=l1-fast manifest=unavailable')
+          else:
+              allowed_states = {'PASS', 'FAILED', 'TIMEOUT', 'FAILED_FIXTURE_INVALIDATED'}
+              rows = report.get('tests', []) if isinstance(report, dict) else []
+              if not isinstance(rows, list):
+                  rows = []
+              counts = collections.Counter()
+              for row in rows:
+                  if not isinstance(row, dict) or not isinstance(row.get('path'), str) or not isinstance(row.get('status'), str) or row['path'] not in allowed or row['status'] not in allowed_states:
+                      continue
+                  status = row['status']; counts[status] += 1
+                  code = row.get('exitCode')
+                  code = str(code) if type(code) is int and -255 <= code <= 255 else 'unknown'
+                  if status != 'PASS':
+                      print('::error::gate=l1-fast path=' + allowed[row['path']] + ' status=' + status + ' exitCode=' + code)
+              print('::error::gate=l1-fast count=' + str(sum(counts.values())) + ' passed=' + str(counts['PASS']) + ' failed=' + str(sum(v for k, v in counts.items() if k != 'PASS')))
+          PY
+      - name: L2 locked Robolectric inputs
+        id: l2_inputs
         shell: bash
         run: |
           set -euo pipefail
+          set -E
+          trap 'rc=$?; printf "::error::gate=l2-robolectric-inputs exitCode=%s\n" "$rc"; exit "$rc"' ERR
           python3 tools/prepare-robolectric-sdks.py --dir "$DSHA_ROBOLECTRIC_DEPENDENCY_DIR"
-          bash gradlew :app:testStandardDebugUnitTest --rerun-tasks --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/unit.log
-          python3 tools/verify-unit-results.py --mode full --require-fixtures --output out/rebirth-validation/unit-results.json
-          bash gradlew :app:lintStandardRelease --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/lint.log
-          bash gradlew :app:mapStandardReleaseSourceSetPaths --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/resource-source-map.log
-      - name: L3 complete runtime and software gates
+      - name: L2 complete unit tests
+        id: l2_unit
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l2-unit exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          bash gradlew :app:testStandardDebugUnitTest --rerun-tasks --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/unit.log
+      - name: L2 complete unit XML verification
+        id: l2_xml
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l2-unit-xml exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 tools/verify-unit-results.py --mode full --require-fixtures --output out/rebirth-validation/unit-results.json
+      - name: L2 Lint
+        id: l2_lint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l2-lint exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          bash gradlew :app:lintStandardRelease --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/lint.log
+      - name: L2 resource source map
+        id: l2_map
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l2-resource-map exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          bash gradlew :app:mapStandardReleaseSourceSetPaths --no-daemon --max-workers=2 2>&1 | tee out/rebirth-validation/resource-source-map.log
+      - name: L3 locked historical input
+        id: l3_inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l3-historical-input exitCode=%s\n" "$rc"; exit "$rc"' ERR
           python3 - <<'PY'
           import importlib.util, os, pathlib, urllib.request
           spec = importlib.util.spec_from_file_location('previous_fixture', 'tools/previous-runtime-fixture.py')
@@ -189,7 +266,48 @@ jobs:
                   output.write(chunk)
           fixture.verify_apk(source)
           PY
+      - name: L3 complete runtime gates
+        id: l3_runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l3-runtime exitCode=%s\n" "$rc"; exit "$rc"' ERR
           python3 tools/run-host-tests.py --stage runtime --raw "$DSHA_TEST_RUNTIME" --managed "$DSHA_TEST_MANAGED_RUNTIME" --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/rebirth-toolchains" --pnpm-cli "$RUNNER_TEMP/rebirth-pnpm/dist/pnpm.cjs" --previous-runtime-apk "$RUNNER_TEMP/rebirth-previous-runtime.apk" --playwright "$GITHUB_WORKSPACE/tools/ci-browser/node_modules/playwright" --browsers-path "$PLAYWRIGHT_BROWSERS_PATH" --output app/build/host-runtime-rebirth-ci 2>&1 | tee out/rebirth-validation/host-runtime.log
+      - name: L3 safe failure summary
+        if: failure() && steps.l3_runtime.outcome == 'failure'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import collections, json, pathlib, re
+          declared = json.loads(pathlib.Path('tools/host-tests.manifest.json').read_text())['tests']
+          allowed = {r['path']: pathlib.PurePosixPath(r['path']).name for r in declared if r['stage'] == 'runtime' and re.fullmatch(r'tools/[A-Za-z0-9_./-]+', r['path']) and '..' not in pathlib.PurePosixPath(r['path']).parts}
+          allowed = {p: n for p, n in allowed.items() if re.fullmatch(r'[A-Za-z0-9_.-]+', n)}
+          try:
+              report = json.loads(pathlib.Path('app/build/host-runtime-rebirth-ci/manifest.json').read_text())
+          except (OSError, ValueError):
+              print('::error::gate=l3-runtime manifest=unavailable')
+          else:
+              allowed_states = {'PASS', 'FAILED', 'TIMEOUT', 'FAILED_FIXTURE_INVALIDATED'}
+              rows = report.get('tests', []) if isinstance(report, dict) else []
+              if not isinstance(rows, list):
+                  rows = []
+              counts = collections.Counter()
+              for row in rows:
+                  if not isinstance(row, dict) or not isinstance(row.get('path'), str) or not isinstance(row.get('status'), str) or row['path'] not in allowed or row['status'] not in allowed_states:
+                      continue
+                  status = row['status']; counts[status] += 1
+                  code = row.get('exitCode')
+                  code = str(code) if type(code) is int and -255 <= code <= 255 else 'unknown'
+                  if status != 'PASS':
+                      print('::error::gate=l3-runtime path=' + allowed[row['path']] + ' status=' + status + ' exitCode=' + code)
+              print('::error::gate=l3-runtime count=' + str(sum(counts.values())) + ' passed=' + str(counts['PASS']) + ' failed=' + str(sum(v for k, v in counts.items() if k != 'PASS')))
+          PY
+      - name: L3 software gates
+        id: l3_software
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l3-software exitCode=%s\n" "$rc"; exit "$rc"' ERR
           python3 tools/verify-stability.py --stage software --java-home "$JAVA_HOME" --sdk "$ANDROID_HOME" --test-forks 1 2>&1 | tee out/rebirth-validation/software.log
       - name: Upload test evidence only including failures
         if: always()
