@@ -302,6 +302,7 @@ jobs:
                       print('::error::gate=l3-runtime path=' + allowed[row['path']] + ' status=' + status + ' exitCode=' + code)
               print('::error::gate=l3-runtime count=' + str(sum(counts.values())) + ' passed=' + str(counts['PASS']) + ' failed=' + str(sum(v for k, v in counts.items() if k != 'PASS')))
           PY
+          python3 -B tools/ci-safe-test-diagnostics.py
       - name: L3 software gates
         id: l3_software
         shell: bash

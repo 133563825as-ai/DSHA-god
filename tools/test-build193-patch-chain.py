@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import zipfile
@@ -20,6 +21,39 @@ import runtime_stable_patches
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = {'plugin-pnpm-argv-patch.json', 'language-patch.json'}
+_DIAGNOSTIC_PHASE = 'INPUT_IDENTITY'
+
+
+def diagnostic(phase, reason):
+    print('DSHA_TEST_DIAGNOSTIC ' + json.dumps(
+        dict(test='BUILD193_PATCH_CHAIN', phase=phase, reason=reason),
+        separators=(',', ':')), flush=True)
+
+
+def phase(value):
+    global _DIAGNOSTIC_PHASE
+    _DIAGNOSTIC_PHASE = value
+
+
+def close_archives(old, new, primary):
+    previous_phase = _DIAGNOSTIC_PHASE
+    cleanup_error = None
+    phase('CLEANUP')
+    for selected in (old, new):
+        if selected:
+            try:
+                selected.close()
+            except BaseException as error:
+                if cleanup_error is None:
+                    cleanup_error = error
+    if primary is not None:
+        # 主步骤已失败：清理次错不覆盖其异常或诊断阶段；原异常继续传播。
+        phase(previous_phase)
+    elif cleanup_error is not None:
+        raise cleanup_error
+    else:
+        phase(previous_phase)
+
 _previous_spec = importlib.util.spec_from_file_location('previous_runtime_fixture', ROOT / 'tools/previous-runtime-fixture.py')
 previous_runtime_fixture = importlib.util.module_from_spec(_previous_spec)
 _previous_spec.loader.exec_module(previous_runtime_fixture)
@@ -212,7 +246,9 @@ def parse_args(argv=None):
 
 
 def main():
+    phase('INPUT_IDENTITY')
     args = parse_args()
+    phase('RECIPE_BINDING')
     assets = ROOT / 'app/src/main/assets'
     manifest = json.loads((ROOT / 'tools/dsh-runtime/package.json').read_text(encoding='utf8'))
     version = manifest['dependencies']['@deepseek-ai/dsh']
@@ -221,6 +257,7 @@ def main():
     chains, _ = runtime_stable_patches.load_chains(assets, version)
     registered = {name for rows in chains.values() for name, _, _ in rows}
     assert NAMES <= registered, 'BUILD193_RECIPES_MUST_BE_REGISTERED'
+    phase('INPUT_IDENTITY')
     selected = os.environ.get('DSHA_TEST_RUNTIME')
     if selected is None:
         selected = json.loads((ROOT / 'app/build/test-runtimes/current.json').read_text(encoding='utf8'))['raw']
@@ -241,6 +278,7 @@ def main():
     try:
         historical_modules = previous_modules(old, chains)
         for module, chain in chains.items():
+            phase('RECIPE_BINDING')
             directory = owned / str(len(names))
             names.append(directory.name)
             directory.mkdir()
@@ -252,8 +290,10 @@ def main():
                 if 'packageIntegrity' in recipe:
                     package_name = 'node_modules/' + '/'.join(module.split('/')[:2])
                     assert recipe['packageIntegrity'] == lock['packages'][package_name]['integrity'], 'RECIPE_PACKAGE_INTEGRITY: ' + name
+            phase('CURRENT_PYTHON')
             prepared = builder.patched_content(Path(module), canonical)
             expected = runtime_stable_patches.apply(prepared, chain)
+            phase('OLD_PYTHON')
             old_module = OLD_FRONTEND if module.startswith('@deepseek-ai/dsh-web-frontend/dist/assets/index-') else module
             old_bytes = historical_modules[module]
             direct_digest, direct_status = None, 'absent-in-build212'
@@ -286,6 +326,7 @@ def main():
                         break
                 if predecessor_problem:
                     break
+            phase('FIXTURE_SERIALIZE')
             for filename, data in [('canonical.js', prepared), ('expected.js', expected), ('name.txt', module.encode())]:
                 (directory / filename).write_bytes(data)
             write_chain(directory / 'chain', chain)
@@ -295,13 +336,12 @@ def main():
                 (directory / 'apk.js').write_bytes(module_bytes(new, module))
             records.append(dict(module=module, sourceSha256=sha(canonical), previousModule=old_module, previousSha256=sha(old_bytes) if old_bytes is not None else None, currentSha256=sha(expected), oldDirectStatus=direct_status, oldDirectSha256=direct_digest, generationUpgrade='stage-signed-new-runtime-with-ManagedRuntimeTransaction-and-RuntimeTrial', recipes=[name for name, _, _ in chain], previousPatchCounts={name: len(getattr(patches, 'previous', ())) for name, patches, _ in chain}, predecessorControl='not-applicable' if predecessor_problem else 'pending-java'))
     finally:
-        if old:
-            old.close()
-        if new:
-            new.close()
+        close_archives(old, new, sys.exc_info()[1])
+    phase('FIXTURE_SERIALIZE')
     assert len(names) == len(chains) and len(names) >= 30, 'ALL_CURRENT_ACTIVE_MODULES_REQUIRED'
     (owned / 'modules.txt').write_bytes('\n'.join(names).encode())
     (owned / 'Build193PatchChainFixture.java').write_bytes(JAVA.encode())
+    phase('JAVA_COMPILE')
     jdk = args.jdk or (Path(os.environ['JAVA_HOME']) if os.environ.get('JAVA_HOME') else None)
     suffix = '.exe' if os.name == 'nt' else ''
     javac = str(jdk / 'bin' / ('javac' + suffix)) if jdk else shutil.which('javac')
@@ -314,8 +354,10 @@ def main():
     compiled = subprocess.run(command, capture_output=True, timeout=60)
     (owned / 'compile.log').write_bytes(compiled.stdout + compiled.stderr)
     assert compiled.returncode == 0, 'JAVA_COMPILE_FAILED: ' + str(owned)
+    phase('JAVA_EXECUTE')
     ran = subprocess.run([java, '-cp', str(classes), 'Build193PatchChainFixture', str(owned)], capture_output=True, timeout=60)
     (owned / 'java.log').write_bytes(ran.stdout + ran.stderr)
+    phase('RECEIPT_CHECK')
     for name, record in zip(names, records):
         receipt = owned / name / 'predecessor-executed-count.txt'
         count = int(receipt.read_text()) if receipt.exists() else None
@@ -344,9 +386,28 @@ def main():
     (owned / 'result.json').write_bytes((json.dumps(result, indent=2) + '\n').encode())
     print(json.dumps(result))
     if ran.returncode:
+        phase('JAVA_EXECUTE')
         print((ran.stdout + ran.stderr).decode('utf8', errors='replace'))
         raise SystemExit(ran.returncode)
 
 
+def run_with_diagnostic():
+    try:
+        main()
+    except SystemExit as error:
+        if error.code is None or error.code == 0:
+            diagnostic('COMPLETE', 'COMPLETED')
+        else:
+            diagnostic(_DIAGNOSTIC_PHASE,
+                       'CLEANUP_FAILED' if _DIAGNOSTIC_PHASE == 'CLEANUP' else 'STEP_FAILED')
+        raise
+    except BaseException:
+        diagnostic(_DIAGNOSTIC_PHASE,
+                   'CLEANUP_FAILED' if _DIAGNOSTIC_PHASE == 'CLEANUP' else 'STEP_FAILED')
+        raise
+    else:
+        diagnostic('COMPLETE', 'COMPLETED')
+
+
 if __name__ == '__main__':
-    main()
+    run_with_diagnostic()

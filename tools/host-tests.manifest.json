@@ -2,6 +2,16 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-ci-safe-test-diagnostics.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic allowlist and injection negative controls for fixed test phase diagnostics; no log text disclosure, network, Gradle, browser or device execution.",
+      "cli": "No arguments; diagnostics never modify test result status or substitute full gate evidence."
+    },
+    {
       "path": "tools/test-validation-inputs.py",
       "stage": "fast",
       "requires": ["python39"],

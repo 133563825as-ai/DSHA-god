@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {browserFixture} from './rc1-browser-fixture.mjs';
-const fixture=await browserFixture();
+let phase='FIXTURE_SETUP', failurePhase, primaryError, fixture;
 try {
+  fixture=await browserFixture(undefined,[],value=>{phase=value;});
   const page=fixture.page;
   page.setDefaultTimeout(3000);
+  phase='FRONTEND_STYLE';
   const runtime=process.env.DSHA_TEST_RUNTIME||JSON.parse(fs.readFileSync('app/build/test-runtimes/current.json','utf8')).raw;
   const frontend=path.join(runtime,'node_modules/@deepseek-ai/dsh-web-frontend/dist');
   for(const match of fs.readFileSync(path.join(frontend,'index.html'),'utf8').matchAll(/href="\.\/(assets\/[^" ]+\.css)"/g))
     await page.addStyleTag({content:fs.readFileSync(path.join(frontend,match[1]),'utf8')});
+  phase='MODULE_LOAD';
   const bundle=fs.readFileSync('app/src/main/assets/builtin-plugins/dsh-web-mobile/lib/client.js','utf8')
     .replace('var __cache = {};','window.mobileRequire=__localRequire; var __cache = {};')
     .replace("exports.inject = ['slots', 'layout', 'locale', 'sessionLogDownload', 'sessions'];",
@@ -40,6 +43,7 @@ try {
     const box=await page.locator('#description').boundingBox();
     await page.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);
   };
+  phase='CARD_TAP';
   for(const [index,kind] of ['package','row','item'].entries()) {
     await page.evaluate(kind=>{
       const card=document.querySelector('li');
@@ -52,19 +56,23 @@ try {
     await page.locator('#toggle').tap();
     assert.deepEqual(await page.evaluate(()=>({opens,toggles})),{opens:2*(index+1),toggles:index+1},kind);
   }
+  phase='UPLOAD_STYLE';
   await page.locator('#upload').hover();
   const pill=await page.locator('#upload').evaluate(el=>({
     before:getComputedStyle(el,'::before').backgroundColor,
     width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
   assert.deepEqual(pill,{before:'rgba(0, 0, 0, 0)',width:28,height:28});
+  phase='SCROLL_FRESH_MODULE';
   await page.evaluate(()=>{document.getElementById('scroller').scrollTop=400;swapTest.rememberConversationScroll();});
   await load(); // Host热替换会生成新模块，不能靠旧模块的局部变量保存位置。
   await page.evaluate(()=>{document.getElementById('scroller').scrollTop=0;swapTest.restoreConversationScroll();});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   assert.equal(await page.locator('#scroller').evaluate(el=>el.scrollTop),400,'fresh module restores the same scroller');
+  phase='SCROLL_HOST_POSITION';
   await page.evaluate(()=>{swapTest.rememberConversationScroll();document.getElementById('scroller').scrollTop=100;swapTest.restoreConversationScroll();});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   assert.equal(await page.locator('#scroller').evaluate(el=>el.scrollTop),100,'host-selected position remains');
+  phase='SCROLL_REMOUNT';
   await page.evaluate(()=>{
     swapTest.rememberConversationScroll();
     const old=document.getElementById('scroller');old.replaceWith(old.cloneNode(true));
@@ -74,6 +82,7 @@ try {
   // 上游 3.3.1 起恢复改为跨节点：热换重建滚动区后按 window.__dshaMobileLastScroll 回填
   // （见 dsh-web-mobile src/client/index.tsx 的 remounted-tree 分支），不再要求新 DOM 停在 0。
   assert.equal(await page.locator('#scroller').evaluate(el=>el.scrollTop),100,'remounted scroller restores the remembered position');
+  phase='SESSION_LOG';
   const sessionLog=await page.evaluate(()=>{
     const frame=document.querySelector('[data-mobile-nav="frame"]');
     const column=document.createElement('div');column.className='fixture_sidebarCol';
@@ -112,10 +121,24 @@ try {
   assert.deepEqual(sessionLog,{emptyDisabled:true,enabled:true,label:'downloadMenu',nested:true,directButtons:2,
     downloaded:['fixture-current'],downloadsOpened:1,closedAfterExport:true,closedAfterDownloads:true,
     remounted:true,count:1,subscriptions:1,unsubscribed:1,removed:true});
+  phase='DESKTOP_BOUNDARY';
   await page.setViewportSize({width:1200,height:800});
   await tapDescription();
   assert.equal(await page.evaluate(()=>opens),6,'desktop description is not forwarded');
+  phase='PAGE_ERRORS';
   assert.deepEqual(fixture.errors,[]);
   console.log(JSON.stringify({cardRoots:['package','row','item'],cardDescription:true,titleOnce:true,toggleIndependent:true,pill,
     freshModuleScrollRestore:true,preserveHostScroll:true,sessionLog,desktopNoForward:true,errors:[]}));
-} finally {await fixture.close();}
+} catch(error) {
+  failurePhase=phase;primaryError=error;
+  throw error;
+} finally {
+  let cleanupFailed=false;
+  try {if(fixture)await fixture.close();}
+  catch(error) {cleanupFailed=true;throw primaryError?new AggregateError([primaryError,error],'TEST_STEP_AND_CLEANUP_FAILED',{cause:primaryError}):error;}
+  finally {
+    console.log('DSHA_TEST_DIAGNOSTIC '+JSON.stringify({test:'MOBILE_REFRESH',
+      phase:failurePhase||(cleanupFailed?'CLEANUP':'COMPLETE'),
+      reason:failurePhase?'STEP_FAILED':cleanupFailed?'CLEANUP_FAILED':'COMPLETED'}));
+  }
+}

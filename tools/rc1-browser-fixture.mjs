@@ -66,7 +66,7 @@ function collectAssets(runtime,name) {
   visit(root);
   return {root,files};
 }
-export async function browserFixture(runtime=process.env.DSHA_TEST_RUNTIME||JSON.parse(fs.readFileSync('app/build/test-runtimes/current.json','utf8')).raw, frontendRecipes=[]) {
+export async function browserFixture(runtime=process.env.DSHA_TEST_RUNTIME||JSON.parse(fs.readFileSync('app/build/test-runtimes/current.json','utf8')).raw, frontendRecipes=[], onPhase=()=>{}) {
   const root=path.resolve(runtime,'node_modules/@deepseek-ai/dsh-web-frontend/dist');
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const entry=html.match(/src="\.\/(assets\/index-[^"]+\.js)"/)[1];
@@ -140,10 +140,14 @@ export async function browserFixture(runtime=process.env.DSHA_TEST_RUNTIME||JSON
   try {
   try { playwright=require(process.env.DSHA_PLAYWRIGHT||'playwright'); }
   catch { playwright=require(path.join(process.env.USERPROFILE||'', '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')); }
+  onPhase('BROWSER_LAUNCH');
   browser=await launchHostBrowser(playwright);
+  onPhase('BROWSER_CONTEXT');
   const page=await browser.newPage({viewport:{width:360,height:800},deviceScaleFactor:1,hasTouch:true});
   const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+  onPhase('BROWSER_NAVIGATE');
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  onPhase('BROWSER_READY');
   await page.waitForFunction(()=>globalThis.auditModules);
   return {page,browser,errors,async close(){await browser.close();await new Promise(resolve=>server.close(resolve));},
     async load(name,recipes=[],extra='') {
