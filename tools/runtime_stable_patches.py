@@ -3,16 +3,22 @@
 Matches ManagedPatchChain/ExactTextPatch semantics. Specialized recipes remain
 host-owned; no plugin install hook or dependency resolution executes here.
 """
+import hashlib
 import json
+import re
 from pathlib import Path
 from runtime_input_contract import relative
 
 
 class PatchSequence(list):
     """Current patches with an optional exact signed predecessor form."""
-    def __init__(self, previous=()):
+    def __init__(self, previous=(), expected_output_sha256=None):
         super().__init__()
         self.previous = list(previous)
+        if expected_output_sha256 is not None and (not isinstance(expected_output_sha256, str)
+                or re.fullmatch('[a-f0-9]{64}', expected_output_sha256) is None):
+            raise ValueError('STABLE_PATCH_OUTPUT_IDENTITY_INVALID')
+        self.expected_output_sha256 = expected_output_sha256
 
 
 def load_chains(assets, version):
@@ -36,7 +42,10 @@ def load_chains(assets, version):
             if not isinstance(before, str) or not isinstance(after, str) or not before or not after or before == after:
                 raise ValueError('STABLE_PATCH_PREDECESSOR_INVALID: ' + name)
             previous.append((before, after))
-        patches = PatchSequence(previous)
+        expected_output = recipe.get('expectedOutputSha256')
+        if 'expectedOutputSha256' in recipe and expected_output is None:
+            raise ValueError('STABLE_PATCH_OUTPUT_IDENTITY_INVALID')
+        patches = PatchSequence(previous, expected_output)
         for patch in recipe['patches']:
             before, after = patch['before'], patch['after']
             if 'prependAsset' in patch:
@@ -55,10 +64,18 @@ def load_chains(assets, version):
     return chains, sorted(inputs)
 
 
+def require_output_identity(text, name, patches):
+    expected = getattr(patches, 'expected_output_sha256', None)
+    if expected is not None and hashlib.sha256(text.encode('utf-8')).hexdigest() != expected:
+        raise ValueError('STABLE_PATCH_OUTPUT_IDENTITY_MISMATCH: ' + name)
+
+
 def apply(data, chain):
     text = data.decode('utf-8')
     for name, patches, markers in chain:
-        if markers and all(marker in text for marker in markers): continue
+        if markers and all(marker in text for marker in markers):
+            require_output_identity(text, name, patches)
+            continue
         previous = getattr(patches, 'previous', ())
         if previous and all(text.count(after) == 1 and text.count(before) == after.count(before)
                             for before, after in previous):
@@ -72,4 +89,5 @@ def apply(data, chain):
             if old != 1 or patched != 0:
                 raise ValueError('STABLE_PATCH_ANCHOR: ' + name)
             text = text.replace(before, after)
+        require_output_identity(text, name, patches)
     return text.encode('utf-8')

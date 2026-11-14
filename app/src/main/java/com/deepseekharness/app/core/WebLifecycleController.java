@@ -47,6 +47,16 @@ final class WebLifecycleController {
     volatile boolean recoveredLive;
     volatile boolean confirmedWebExit;
     volatile boolean authorityRevocationPending;
+    volatile ProotBootstrap migrationBoot;
+    volatile String migrationStartupId;
+
+    String finalizeMigration() throws IOException, InterruptedException {
+      ProotBootstrap prepared = migrationBoot;
+      String startupId = migrationStartupId;
+      if (prepared == null || startupId == null) throw new IOException("RC1_MIGRATION_RUN_UNBOUND");
+      return com.deepseekharness.app.util.GuestCommandOutcome.requireCompleted(
+          prepared.finalizeRc1MigrationResult(startupId), "RC1_FINALIZE");
+    }
 
     WebRun(long generation) {
       this(generation, java.util.UUID.randomUUID().toString());
@@ -1140,6 +1150,8 @@ final class WebLifecycleController {
         return;
       }
       processes.loadStopEvidence();
+      run.migrationBoot = boot;
+      run.migrationStartupId = state.diagnostics.recordId();
       String startupProfile =
           new StartupPipeline(config, boot, proot, webProc, state.diagnostics)
               .prepare(
@@ -1329,8 +1341,7 @@ final class WebLifecycleController {
                 io.execute(() -> saveRunningSession(run));
                 // LAN exchanges and migration checks never pause the stdout drain.
                 Thread ready =
-                    new Thread(
-                        () -> afterAuthenticated(generation, onStatus, safeMode), "dsha-web-ready");
+                    new Thread(() -> afterAuthenticated(run, onStatus, safeMode), "dsha-web-ready");
                 ready.setDaemon(true);
                 ready.start();
               }
@@ -1402,14 +1413,15 @@ final class WebLifecycleController {
             });
   }
 
-  private void afterAuthenticated(long generation, Consumer<String> onStatus, boolean safeMode) {
-    String startupId = state.diagnostics.recordId();
+  private void afterAuthenticated(WebRun run, Consumer<String> onStatus, boolean safeMode) {
+    long generation = run.generation;
+    String startupId = run.migrationStartupId;
     WebReadyTasks.run(
         safeMode,
         config.isLanMode(),
         new WebReadyTasks.Ports() {
           public boolean current() {
-            return lifecycle.isCurrent(generation);
+            return lifecycle.isCurrent(generation) && webRuns.get(generation) == run;
           }
 
           public void asynchronous(String name, Runnable work) {
@@ -1423,8 +1435,12 @@ final class WebLifecycleController {
           }
 
           public String finalizeMigration() throws Exception {
-            return com.deepseekharness.app.util.GuestCommandOutcome.requireCompleted(
-                proot.finalizeRc1MigrationResult(startupId), "RC1_FINALIZE");
+            if (!current()) throw new IOException("RC1_MIGRATION_RUN_STALE");
+            return run.finalizeMigration();
+          }
+
+          public String startupId() {
+            return startupId;
           }
 
           public void migrationLog(String value) {

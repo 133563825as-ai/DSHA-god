@@ -58,6 +58,30 @@ public final class WebLifecycleStartProtectionTest {
     assertFalse(EnvironmentTaskGate.isBusy());
   }
 
+  @Test
+  public void migrationFinalizeUsesTheRunPreparationInstanceNotDefaultOrSuccessor()
+      throws Exception {
+    var seen = new java.util.ArrayList<String>();
+    var prepared =
+        new com.deepseekharness.app.runtime.ProotBootstrap(f.app, true) {
+          @Override
+          public com.deepseekharness.app.util.BoundedProcessRunner.Result
+              finalizeRc1MigrationResult(String id) {
+            seen.add(id);
+            return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                "same preparation instance");
+          }
+        };
+    var run = new WebLifecycleController.WebRun(10);
+    run.migrationBoot = prepared;
+    run.migrationStartupId = "prepared-startup";
+    assertEquals("same preparation instance", run.finalizeMigration());
+    assertEquals(java.util.List.of("prepared-startup"), seen);
+    var successor = new WebLifecycleController.WebRun(11);
+    assertThrows(java.io.IOException.class, successor::finalizeMigration);
+    assertEquals(java.util.List.of("prepared-startup"), seen);
+  }
+
   private WebStartProtection.Ticket ticket() {
     var ticket = f.state.startProtection.begin();
     assertNotNull(ticket);

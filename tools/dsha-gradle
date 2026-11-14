@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""新建诊断守卫：本轮所有Gradle项目任务未准入。"""
+import sys
+sys.dont_write_bytecode = True
+from dsha_gradle_guard import main
+raise SystemExit(main())

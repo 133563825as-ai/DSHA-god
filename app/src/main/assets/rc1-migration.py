@@ -9,8 +9,13 @@ from pathlib import Path
 # Stable asset marker: settings.yaml.imported is a retryable input after a
 # pending section result; it never authorizes a false committed receipt.
 RESTORED_SETTINGS_IMPORTED_FOR_RETRY = True
+# wire 版本与私有业务记录 version=2、用户数据格式互相独立。
+RESULT_VERSION = 3
 MAX_FILES = 100000
 MAX_BYTES = 8 * 1024 * 1024 * 1024
+SECTION_STATES = ('verified', 'pending', 'writing', 'unknown', 'conflict')
+WARNINGS_LIMIT = 32
+_STARTUP_ID = None
 
 
 class MigrationSourceError(ValueError):
@@ -60,8 +65,146 @@ def read_json(path):
     with open(path, encoding='utf-8') as stream: return json.load(stream)
 
 
-def emit(status, **data):
-    print('DSHA_RC1_MIGRATION=' + json.dumps(dict(status=status, **data), ensure_ascii=False))
+def bounded_warnings(values):
+    return values if len(values) <= WARNINGS_LIMIT else values[:WARNINGS_LIMIT - 1] + ['WARNINGS_TRUNCATED']
+
+
+def emit(phase, status, **data):
+    """每次调用只输出一条终态；checkpoint 诊断合并到 warnings。"""
+    payload = dict(resultVersion=RESULT_VERSION, phase=phase, status=status,
+                   startupId=_STARTUP_ID, verificationScope='none', contentCopyStatus='unknown',
+                   sourceObjectIdentity='unknown', settingsImportStatus='unknown', executionState='UNKNOWN')
+    payload.update(data)
+    payload['warnings'] = bounded_warnings(payload.get('warnings', []))
+    print('DSHA_RC1_MIGRATION=' + json.dumps(payload, ensure_ascii=False))
+
+
+def settings_sha256(doc):
+    for row in doc.get('sources', []) + doc.get('snapshotInventory', []):
+        if row.get('kind') == 'settings':
+            value = row.get('sha256')
+            return value if isinstance(value, str) and re.fullmatch('[a-f0-9]{64}', value) else None
+    return None
+
+
+def settings_present(doc):
+    return (any(row.get('kind') == 'settings' for row in doc.get('sources', []) + doc.get('snapshotInventory', []))
+            or any(name in doc.get('inputs', {}) for name in ('settings.yaml', 'settings.yaml.imported')))
+
+
+def context_proof(generation, input_digest, settings_sha):
+    value = {'generation': generation, 'inputDigest': input_digest, 'settingsSha256': settings_sha}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def startup_context(generation, startup_id, input_digest, settings_sha, mode):
+    return dict(version=RESULT_VERSION, startupId=startup_id, generation=generation,
+                inputFingerprint=input_digest, settingsSha256=settings_sha, mode=mode,
+                proofDigest=context_proof(generation, input_digest, settings_sha))
+
+
+def section_names(value):
+    return (isinstance(value, list) and all(isinstance(name, str) and name for name in value)
+            and len(set(value)) == len(value))
+
+
+def expected_sections(folder, doc, ledger):
+    """只传递独立声明的集合；不能从实际 ledger 键合成完整性证据。"""
+    expected = ledger.get('expectedSections')
+    declared = 'expectedSections' in ledger
+    if declared and not section_names(expected): return None, 'SETTINGS_EXPECTED_SECTIONS_INVALID'
+    path = folder/'reuse.json'
+    checkpoint = None
+    try:
+        if path.is_file() and not path.is_symlink() and path.stat().st_size <= 65536:
+            checkpoint = read_json(path)
+    except (OSError, ValueError, UnicodeError): pass
+    if isinstance(checkpoint, dict) and 'settingsSections' in checkpoint:
+        cached = checkpoint['settingsSections']
+        if not section_names(cached): return None, 'SETTINGS_EXPECTED_SECTIONS_INVALID'
+        if (not isinstance(doc.get('inputDigest'), str) or not re.fullmatch('[a-f0-9]{64}', doc['inputDigest'])
+                or checkpoint.get('version') != 2 or checkpoint.get('generation') != doc.get('generation')
+                or checkpoint.get('settingsSha256') != settings_sha256(doc)
+                or checkpoint.get('inputDigest') != doc.get('inputDigest')
+                or not same_input(checkpoint, doc)):
+            return None, 'SETTINGS_EXPECTED_SECTIONS_IDENTITY'
+        if declared and set(expected) != set(cached): return None, 'SETTINGS_EXPECTED_SECTIONS_CONFLICT'
+        expected = cached if not declared else expected
+        declared = True
+    if not declared: return None, 'SETTINGS_EXPECTED_SECTIONS_MISSING'
+    return sorted(expected), None
+
+
+def ledger_state(folder, doc, startup_id=None):
+    """generation/source 摘要、可信期望集合与逐节终态共同授权 verified。"""
+    if not settings_present(doc): return 'not-required', None
+    sha = settings_sha256(doc)
+    if sha is None: return 'unknown', 'SETTINGS_SOURCE_IDENTITY'
+    path = folder/'settings-result.json'
+    if not path.is_file() or path.is_symlink(): return 'unknown', 'SETTINGS_LEDGER_MISSING'
+    try: result = read_json(path)
+    except (OSError, ValueError, UnicodeError): return 'unknown', 'SETTINGS_LEDGER_UNREADABLE'
+    if not isinstance(result, dict) or result.get('version') != 2: return 'unknown', 'SETTINGS_LEDGER_FORMAT'
+    if (result.get('generation') != doc.get('generation') or result.get('sourceSha256') != sha
+            or ('inputDigest' in result and result['inputDigest'] != doc.get('inputDigest'))):
+        return 'unknown', 'SETTINGS_LEDGER_IDENTITY'
+    sections = result.get('sections')
+    if not isinstance(sections, dict): return 'unknown', 'SETTINGS_LEDGER_FORMAT'
+    expected, reason = expected_sections(folder, doc, result)
+    if reason: return 'unknown', reason
+    if set(sections) != set(expected): return 'unknown', 'SETTINGS_SECTION_MISSING'
+    states = [value.get('status') if isinstance(value, dict) else None for value in sections.values()]
+    overall = result.get('status')
+    if overall not in SECTION_STATES or any(state not in SECTION_STATES for state in states):
+        return 'unknown', 'SETTINGS_LEDGER_SECTION'
+    if any(state in ('unknown', 'writing') for state in [overall, *states]):
+        return 'unknown', 'SETTINGS_WRITE_OUTCOME_UNKNOWN'
+    if overall == 'verified' and all(state == 'verified' for state in states): return 'verified', None
+    return 'pending', None
+
+
+def import_status(state):
+    return 'verified-historical' if state == 'verified' else state
+
+
+def valid_current(current):
+    return (isinstance(current, dict) and current.get('version') == 2
+            and re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', str(current.get('generation', ''))))
+
+
+def prepared_bound(doc, current):
+    return (isinstance(doc, dict) and doc.get('version') == 2
+            and doc.get('generation') == current.get('generation')
+            and doc.get('status') == 'prepared' and doc.get('protectionComplete') is True
+            and isinstance(doc.get('inputDigest'), str) and re.fullmatch('[a-f0-9]{64}', doc['inputDigest'])
+            and same_input(doc, current))
+
+
+def committed_receipt(receipt, generation):
+    return (isinstance(receipt, dict) and receipt.get('version') == 2 and receipt.get('generation') == generation
+            and receipt.get('status') == 'committed'
+            and all(receipt.get(key) is True for key in ('sourcePreserved', 'settingsImported', 'protectionComplete')))
+
+
+def host_state(root, state):
+    """缺索引但已有 prepared/committed 时不新建代次。"""
+    generations = state/'generations'
+    if not generations.is_dir(): return 'absent'
+    try:
+        folders = list(generations.iterdir())
+        if len(folders) > 256: return 'unreadable'
+        for folder in folders:
+            if not folder.is_dir() or folder.is_symlink(): return 'unreadable'
+            for name in ('prepare.json', 'receipt.json'):
+                path = folder/name
+                if not path.is_file() or path.is_symlink(): continue
+                value = read_json(path)
+                if not isinstance(value, dict): return 'unreadable'
+                if ((name == 'prepare.json' and value.get('protectionComplete') is True)
+                        or (name == 'receipt.json' and value.get('status') == 'committed')):
+                    return 'missing-current'
+    except (OSError, ValueError, UnicodeError): return 'unreadable'
+    return 'absent'
 
 
 def within(root, path):
@@ -159,7 +302,8 @@ def snapshot_row(folder, dsh, logical, actual, links, kind, ordinal):
         target.flush(); os.fsync(target.fileno())
     after = os.stat(actual)
     if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns): raise ValueError('SOURCE_CHANGED_DURING_SNAPSHOT')
-    if digest(destination) != sha.hexdigest(): raise ValueError('SNAPSHOT_READBACK_FAILED')
+    if total != before.st_size or destination.stat().st_size != total or digest(destination) != sha.hexdigest():
+        raise ValueError('SNAPSHOT_READBACK_FAILED')
     return dict(kind=kind, path=relative, size=total, sha256=sha.hexdigest(), snapshot=destination.relative_to(folder).as_posix(), links=links,
                 mapping=str(actual), sourceIdentity=[str(before.st_dev),str(before.st_ino)], type='file')
 
@@ -242,27 +386,48 @@ def runtime_version(root):
 
 
 def prepare(root, state_root=None, startup_id='manual', approved=()):
+    global _STARTUP_ID; _STARTUP_ID = startup_id
     dsh = Path(os.path.abspath(os.path.join(root, '.dsh'))); state = state_path(root, state_root)
-    if not dsh.exists(): emit('skipped', reason='DSH_MISSING'); return 0
+    if not dsh.exists(): emit('prepare', 'skipped', reason='DSH_MISSING', executionState='NOT_SENT'); return 0
     if dsh.is_symlink(): raise ValueError('DSH_HOME_LINK_NOT_APPROVED')
     active_version = runtime_version(root)
     resolver = Resolver(dsh, approved); stamp = quick(dsh, resolver)
     state.mkdir(parents=True, exist_ok=True)
     if state.is_symlink(): raise ValueError('STATE_ROOT_LINK')
-    current = read_json(state/'current.json') if (state/'current.json').is_file() else None
-    if current and current.get('version') == 2 and same_input(current, stamp):
-        folder = state/'generations'/current['generation']; prepared = read_json(folder/'prepare.json')
-        if prepared.get('protectionComplete'):
-            current['startupId'] = startup_id; write_json(state/'current.json', current)
-            emit('already', generation=current['generation'], protectionComplete=True, dshVersion=prepared.get('dshVersion'), runtimeDshVersion=active_version, continuation='保留数据 → rc1 迁移记录'); return 0
+    current = None
+    if os.path.lexists(state/'current.json'):
+        try:
+            if (state/'current.json').is_symlink(): raise ValueError('STATE_LINK')
+            current = read_json(state/'current.json')
+        except (OSError, ValueError, UnicodeError):
+            emit('prepare', 'unknown', reason='HOST_STATE_UNREADABLE', executionState='NOT_SENT'); return 1
+        if not valid_current(current):
+            emit('prepare', 'unknown', reason='HOST_STATE_INVALID', executionState='NOT_SENT'); return 1
+    elif host_state(root, state) != 'absent':
+        emit('prepare', 'unknown', reason='HOST_STATE_MISSING', executionState='NOT_SENT'); return 1
+    if current and same_input(current, stamp):
+        folder = state/'generations'/current['generation']
+        try:
+            if folder.is_symlink() or (folder/'prepare.json').is_symlink(): raise ValueError('PREPARE_LINK')
+            prepared = read_json(folder/'prepare.json')
+        except (OSError, ValueError, UnicodeError): prepared = None
+        if not prepared_bound(prepared, current):
+            emit('prepare', 'unknown', generation=current['generation'], reason='REUSE_RECORD_UNAVAILABLE', executionState='NOT_SENT'); return 1
+        # 即使前次崩溃残留 write-allowed，也只能降为本次历史只读。
+        current['startupId'] = startup_id
+        current['startupContext'] = startup_context(current['generation'], startup_id,
+            prepared['inputDigest'], settings_sha256(prepared), 'history-only')
+        write_json(state/'current.json', current)
+        return historical_result('prepare', folder, prepared, current, active_version)
     # Full inventory only for a new/incomplete migration. Completed ordinary startup remains a small read.
     try:
         entries, fingerprint = inventory(dsh, resolver)
     except Exception as error:
-        emit('failed', protectionComplete=False, stage='inventory', reason=str(error), errorType=type(error).__name__)
+        emit('prepare', 'failed', stage='inventory', reason=str(error), errorType=type(error).__name__, executionState='COMPLETED')
         return 1
-    pending = read_json(state/'pending.json') if (state/'pending.json').is_file() and not (state/'pending.json').is_symlink() else None
-    reuse = pending and same_input(pending,stamp) and pending.get('inputDigest') == fingerprint and re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', str(pending.get('generation','')))
+    try: pending = read_json(state/'pending.json') if (state/'pending.json').is_file() and not (state/'pending.json').is_symlink() else None
+    except (OSError, ValueError, UnicodeError): pending = None
+    reuse = isinstance(pending, dict) and same_input(pending,stamp) and pending.get('inputDigest') == fingerprint and re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', str(pending.get('generation','')))
     generation = pending['generation'] if reuse else str(uuid.uuid4())
     folder = state/'generations'/generation
     if folder.is_symlink(): raise ValueError('MIGRATION_GENERATION_LINK')
@@ -271,7 +436,7 @@ def prepare(root, state_root=None, startup_id='manual', approved=()):
     # Two copies for presets (snapshot + inert converted candidate), plus bounded record/publication reserve.
     needed = sum(entry['size'] for entry in entries if entry['path'] not in reusable) + sum(entry['size'] for entry in entries if entry['kind']=='preset') + 8*1024*1024
     if shutil.disk_usage(state).free < needed:
-        emit('failed', generation=generation if reuse else None, protectionComplete=False, stage='space-preflight', reason='MIGRATION_SPACE_REQUIRED', requiredBytes=needed)
+        emit('prepare', 'failed', generation=generation if reuse else None, stage='space-preflight', reason='MIGRATION_SPACE_REQUIRED', requiredBytes=needed, executionState='NOT_SENT')
         return 1
     folder.mkdir(parents=True, exist_ok=True)
     doc = dict(version=2, dshVersion=active_version, generation=generation, startupId=startup_id, dshHome=str(dsh), status='preparing', protectionComplete=False, createdAt=previous.get('createdAt',int(time.time())), **stamp, inputDigest=fingerprint, snapshotInventory=list(reusable.values()), sources=[], presets=[], sessions=[], warnings=[])
@@ -329,57 +494,103 @@ def prepare(root, state_root=None, startup_id='manual', approved=()):
             doc['presets'].append(dict(id=name,source='.agent-presets/'+name,candidate=candidate.relative_to(dsh).as_posix(),bundle=None,sha256=sha,target='@deepseek-ai/dsh-agent-preset',activated=False,requiresReview=True,generation=generation))
         operation, logical, actual = 'record-commit', None, folder
         doc.update(status='prepared',protectionComplete=True); write_json(folder/'prepare.json',doc)
-        current = dict(version=2,generation=generation,startupId=startup_id,dshHome=str(dsh),**stamp)
+        current = dict(version=2,generation=generation,startupId=startup_id,dshHome=str(dsh),
+                       startupContext=startup_context(generation, startup_id, fingerprint, settings_sha256(doc), 'write-allowed'), **stamp)
         write_json(state/'current.json',current)
         # 公开的兼容索引只供只读清单，不作为控制依据。
         inert_directory(dsh,dsh/'.dsha-rc1-migration')
         write_json(dsh/'.dsha-rc1-migration/prepare.json',doc)
-        emit('prepared',generation=generation,protectionComplete=True,settings=sum(x['kind']=='settings' for x in doc['sources']),presets=len(doc['presets']),sessions=len(doc['sessions']))
+        emit('prepare', 'prepared', generation=generation, verificationScope='current', contentCopyStatus='verified',
+             settingsImportStatus='pending' if settings_present(doc) else 'not-required', executionState='COMPLETED',
+             dshVersion=active_version, runtimeDshVersion=active_version, warnings=doc['warnings'],
+             settings=sum(x['kind']=='settings' for x in doc['sources']), presets=len(doc['presets']), sessions=len(doc['sessions']))
         return 0
     except Exception as error:
         doc.update(status='failed',protectionComplete=False); doc['warnings'].append(str(error) if isinstance(error,ValueError) else type(error).__name__)
         doc['failure'] = failure_details(error, dsh, operation, logical, actual)
         write_json(folder/'prepare.json',doc)
-        emit('failed',generation=generation,protectionComplete=False,stage=operation,reason=doc['warnings'][-1],path=doc['failure']['path'],errorType=doc['failure']['errorType'],diagnostic='generations/'+generation+'/prepare.json',continuation='按迁移记录中的操作和路径检查；原件未删除')
+        emit('prepare', 'failed', generation=generation, stage=operation, reason=doc['warnings'][-1], path=doc['failure']['path'], errorType=doc['failure']['errorType'], diagnostic='generations/'+generation+'/prepare.json', contentCopyStatus='failed', executionState='COMPLETED', warnings=doc['warnings'], continuation='按迁移记录中的操作和路径检查；原件未删除')
         return 1
 
 
 def publish_reuse(folder, prepared, current, receipt, active_version):
-    """Bounded host checkpoint; legacy or damaged receipts grant no fast path."""
-    generation = current.get('generation')
-    if not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}',str(generation)): return False
-    if any(row.get('version') != 2 or row.get('generation') != generation for row in (prepared,current,receipt)): return False
-    if prepared.get('dshVersion') != active_version or receipt.get('dshVersion') != active_version: return False
-    if prepared.get('status') != 'prepared' or prepared.get('protectionComplete') is not True or not same_input(prepared,current): return False
-    if receipt.get('status') != 'committed' or any(receipt.get(key) is not True for key in ('sourcePreserved','settingsImported','protectionComplete')): return False
-    checkpoint = {key:prepared[key] for key in ('version','generation','dshVersion','dshHome','dataRoot','inputs','status','protectionComplete')}
-    target = folder/'reuse.json'
+    """只维护优化记录；返回诊断供唯一终态使用，不提升历史业务证据。"""
+    if not valid_current(current) or not prepared_bound(prepared, current): return None
+    generation = current['generation']
+    if not committed_receipt(receipt, generation): return None
+    if prepared.get('dshVersion') != active_version or receipt.get('dshVersion') != active_version: return None
+    state, reason = ledger_state(folder, prepared)
+    if state not in ('verified', 'not-required'): return reason
+    checkpoint = {key:prepared[key] for key in ('version','generation','dshVersion','dshHome','dataRoot','inputs','status','protectionComplete','inputDigest')}
+    checkpoint['settingsSha256'] = settings_sha256(prepared)
+    if state == 'verified':
+        expected, reason = expected_sections(folder, prepared, read_json(folder/'settings-result.json'))
+        if reason: return reason
+        checkpoint['settingsSections'] = expected
+    target = folder/'reuse.json'; note = None
     if os.path.lexists(target):
-        if target.is_symlink() or not target.is_file(): raise ValueError('REUSE_CHECKPOINT_TYPE')
+        if target.is_symlink() or not target.is_file(): return 'REUSE_CHECKPOINT_TYPE'
         if target.stat().st_size <= 65536:
             try:
-                if read_json(target) == checkpoint: return True
-            except (ValueError,UnicodeError):
-                emit('reuse-checkpoint-rebuilt',generation=generation,reason='REUSE_CHECKPOINT_FORMAT')
-    write_json(target,checkpoint)
-    return True
+                if read_json(target) == checkpoint: return None
+            except (ValueError, UnicodeError): note = 'REUSE_CHECKPOINT_FORMAT'
+    write_json(target, checkpoint)
+    return note
 
 
-def finalize(root, state_root=None, startup_id='manual', approved=()):
+def historical_result(phase, folder, doc, current, active_version):
+    """历史快路径不重写 prepare/receipt/设置账本，不重扫业务源。"""
+    try: old = read_json(folder/'receipt.json') if not (folder/'receipt.json').is_symlink() else None
+    except (OSError, ValueError, UnicodeError): old = None
+    state, reason = ledger_state(folder, doc)
+    complete = committed_receipt(old, current['generation'])
+    status = 'historical-complete' if complete and state in ('verified', 'not-required') else ('unknown' if state == 'unknown' else 'pending')
+    if not complete and not reason: reason = 'LEGACY_COMPLETION_RECEIPT_MISSING'
+    warnings = [reason] if reason else []
+    if status == 'historical-complete' and phase == 'finalize':
+        note = publish_reuse(folder, doc, current, old, active_version)
+        if note and note not in warnings: warnings.append(note)
+    emit(phase, status, generation=current['generation'], cached=True,
+         verificationScope='historical', contentCopyStatus='verified', settingsImportStatus=import_status(state),
+         executionState='NOT_SENT', dshVersion=doc.get('dshVersion'), runtimeDshVersion=active_version,
+         warnings=warnings, reason=reason, continuation='历史记录；本次未重读全部副本，不自动补导入')
+    return 0
+
+
+def finalize(root, state_root=None, startup_id='manual', approved=(), expected_generation=None):
+    global _STARTUP_ID; _STARTUP_ID = startup_id
     dsh=Path(os.path.abspath(os.path.join(root,'.dsh'))); state=state_path(root,state_root)
-    if not (state/'current.json').is_file(): emit('missing-prepare',protectionComplete=False); return 1
+    if not (state/'current.json').is_file() or (state/'current.json').is_symlink():
+        emit('finalize', 'unknown', reason='HOST_STATE_MISSING', executionState='COMPLETED'); return 1
     active_version=runtime_version(root)
-    current=read_json(state/'current.json'); folder=state/'generations'/current['generation']; doc=read_json(folder/'prepare.json')
-    if current['startupId'] != startup_id: emit('stale-startup',protectionComplete=False); return 1
+    try: current = read_json(state/'current.json')
+    except (OSError, ValueError, UnicodeError):
+        emit('finalize', 'unknown', reason='HOST_STATE_UNREADABLE', executionState='COMPLETED'); return 1
+    if not valid_current(current):
+        emit('finalize', 'unknown', reason='HOST_STATE_INVALID', executionState='COMPLETED'); return 1
+    if expected_generation is not None and current['generation'] != expected_generation:
+        emit('finalize', 'unknown', generation=current['generation'], reason='EXPECTED_GENERATION_MISMATCH', executionState='COMPLETED'); return 1
+    folder=state/'generations'/current['generation']
+    try:
+        if folder.is_symlink() or (folder/'prepare.json').is_symlink(): raise ValueError('PREPARE_LINK')
+        doc=read_json(folder/'prepare.json')
+    except (OSError, ValueError, UnicodeError): doc=None
+    if not prepared_bound(doc, current):
+        emit('finalize', 'unknown', generation=current['generation'], reason='PREPARE_RECORD_UNAVAILABLE', executionState='COMPLETED'); return 1
+    context = current.get('startupContext')
+    mode = context.get('mode') if isinstance(context, dict) else None
+    if (current.get('startupId') != startup_id or mode not in ('write-allowed', 'history-only')
+            or context != startup_context(current['generation'], startup_id, doc['inputDigest'], settings_sha256(doc), mode)):
+        emit('finalize', 'unknown', generation=current['generation'], reason='STALE_STARTUP_BINDING', executionState='COMPLETED'); return 1
+    try: old = read_json(folder/'receipt.json') if not (folder/'receipt.json').is_symlink() else None
+    except (OSError, ValueError, UnicodeError): old = None
+    if mode == 'history-only' or committed_receipt(old, current['generation']):
+        return historical_result('finalize', folder, doc, current, active_version)
     resolver=Resolver(dsh,approved); warnings=[]; preserved=True
-    # 完成代次普通重启不反复哈希历史。首次 finalize 或 pending 明确迁移才核验。
-    old=read_json(folder/'receipt.json') if (folder/'receipt.json').is_file() else {}
-    if old.get('status')=='committed' and old.get('version')==2 and old.get('generation')==current['generation'] and all(old.get(key) is True for key in ('sourcePreserved','settingsImported','protectionComplete')):
-        publish_reuse(folder,doc,current,old,active_version)
-        emit('committed',generation=current['generation'],sourcePreserved=True,settingsImported=True,cached=True,dshVersion=old.get('dshVersion'),runtimeDshVersion=active_version); return 0
     for row in doc['sources']:
         snapshot=folder/row['snapshot']
-        if not snapshot.is_file() or snapshot.is_symlink() or digest(snapshot)!=row['sha256']:
+        if (not snapshot.is_file() or snapshot.is_symlink() or snapshot.stat().st_size != row['size']
+                or digest(snapshot)!=row['sha256']):
             preserved=False; warnings.append('SNAPSHOT_CHANGED:'+row['path']); continue
         try:
             logical=dsh/row['path']
@@ -391,26 +602,37 @@ def finalize(root, state_root=None, startup_id='manual', approved=()):
             if row['kind']=='session' and re.search(r'session\.v4\.',row['path']): continue
             identity = [str(os.stat(actual).st_dev), str(os.stat(actual).st_ino)]
             if row.get('sourceIdentity') and identity != row['sourceIdentity']:
-                raise ValueError('SOURCE_IDENTITY_CHANGED')
-            if digest(actual)!=row['sha256']: raise ValueError('SOURCE_CHANGED')
-        except (OSError,ValueError): preserved=False; warnings.append('SOURCE_MISSING_OR_CHANGED:'+row['path'])
-    source_settings=any(row['kind']=='settings' for row in doc['sources'])
-    result=read_json(folder/'settings-result.json') if (folder/'settings-result.json').is_file() else None
-    imported=not source_settings or bool(result and result.get('generation')==current['generation'] and result.get('status')=='verified')
-    if not imported: warnings.append('SETTINGS_PENDING_READBACK_OR_REVIEW')
+                warnings.append('SOURCE_IDENTITY_CHANGED:'+row['path']); continue
+            if digest(actual)!=row['sha256']: warnings.append('SOURCE_CHANGED:'+row['path'])
+        except (OSError,ValueError): warnings.append('SOURCE_MISSING_OR_CHANGED:'+row['path'])
+    settings_state, settings_reason = ledger_state(folder, doc, startup_id)
+    try: result=read_json(folder/'settings-result.json') if (folder/'settings-result.json').is_file() else None
+    except (OSError, ValueError, UnicodeError): result=None
+    imported = settings_state in ('verified', 'not-required')
+    settings_scope = 'current' if isinstance(result, dict) and result.get('startupId') == startup_id else 'historical'
+    import_status_value = ('verified-current' if settings_scope == 'current' else 'verified-historical') if settings_state == 'verified' else settings_state
+    if settings_reason: warnings.append(settings_reason)
+    elif not imported: warnings.append('SETTINGS_PENDING_READBACK_OR_REVIEW')
     old_sessions=[row for row in doc['sessions'] if not re.search(r'session\.v4\.',row['path'])]
     status='failed' if not preserved else ('pending' if not imported else 'committed')
-    receipt=dict(version=2,dshVersion=doc.get('dshVersion'),runtimeDshVersion=active_version,generation=current['generation'],startupId=startup_id,status=status,sourcePreserved=preserved,protectionComplete=preserved,settingsImported=imported,settingsStatus='verified' if imported else 'pending',sessionsStatus='preserved-awaiting-runtime-open' if old_sessions else 'no-legacy-input',sessionCompatibilityVerified=False if old_sessions else None,presets=len(doc['presets']),sessions=len(doc['sessions']),warnings=warnings,verifiedAt=int(time.time()))
+    receipt=dict(version=2,dshVersion=doc.get('dshVersion'),runtimeDshVersion=active_version,generation=current['generation'],startupId=startup_id,status=status,sourcePreserved=preserved,protectionComplete=preserved,settingsImported=imported,settingsStatus=settings_state,settingsScope=settings_scope,verificationScope='current',sourceObjectIdentity='unknown',sessionsStatus='preserved-awaiting-runtime-open' if old_sessions else 'no-legacy-input',sessionCompatibilityVerified=False if old_sessions else None,presets=len(doc['presets']),sessions=len(doc['sessions']),warnings=warnings,verifiedAt=int(time.time()))
     write_json(folder/'receipt.json',receipt); write_json(dsh/'.dsha-rc1-migration/receipt.json',receipt)
-    if status == 'committed': publish_reuse(folder,doc,current,receipt,active_version)
-    emit(status,**{k:v for k,v in receipt.items() if k!='status'},continuation='保留数据 → rc1 迁移记录；待审阅设置/预设不影响进入已就绪网页')
+    if status == 'committed':
+        note = publish_reuse(folder,doc,current,receipt,active_version)
+        if note and note not in warnings: warnings.append(note)
+    emit('finalize', status, generation=current['generation'], verificationScope='current',
+         contentCopyStatus='verified' if preserved else 'failed', settingsImportStatus=import_status_value,
+         executionState='COMPLETED', dshVersion=doc.get('dshVersion'), runtimeDshVersion=active_version,
+         warnings=warnings, continuation='保留数据 → rc1 迁移记录；未知不自动补导入')
     return 0 if preserved else 1
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=('prepare','finalize')); parser.add_argument('--root',default='/root'); parser.add_argument('--state-root',default='/run/dsha-rc1-state'); parser.add_argument('--startup-id',required=True); parser.add_argument('--approved-root',action='append',default=[]); args=parser.parse_args()
-    try: return (prepare if args.command=='prepare' else finalize)(args.root,args.state_root,args.startup_id,args.approved_root)
+    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=('prepare','finalize')); parser.add_argument('--root',default='/root'); parser.add_argument('--state-root',default='/run/dsha-rc1-state'); parser.add_argument('--startup-id',required=True); parser.add_argument('--approved-root',action='append',default=[]); parser.add_argument('--expected-generation'); args=parser.parse_args()
+    try:
+        if args.command == 'finalize': return finalize(args.root,args.state_root,args.startup_id,args.approved_root,args.expected_generation)
+        return prepare(args.root,args.state_root,args.startup_id,args.approved_root)
     except Exception as error:
-        emit('error',protectionComplete=False,reason=str(error) if isinstance(error,ValueError) else type(error).__name__,operation=getattr(error,'operation',args.command),path=getattr(error,'logical',None)); return 1
+        emit(args.command, 'unknown', reason=str(error) if isinstance(error,ValueError) else type(error).__name__, operation=getattr(error,'operation',args.command), path=getattr(error,'logical',None)); return 1
 
 if __name__=='__main__': raise SystemExit(main())

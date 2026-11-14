@@ -32,7 +32,8 @@ public final class WebSearchChainFixture {
       Path entry=root.resolve(Integer.toString(i));var patches=new ArrayList<ManagedPatchChain.Patch>();
       for(int j=0;j<Integer.parseInt(Files.readString(entry.resolve("count.txt")));j++)
         patches.add(new ManagedPatchChain.Patch(Files.readString(entry.resolve(j+"-before.txt")),Files.readString(entry.resolve(j+"-after.txt"))));
-      result.add(new ManagedPatchChain.Recipe(Files.readString(entry.resolve("id.txt")),patches,Files.readAllLines(entry.resolve("markers.txt"))));
+      String expectedSha=Files.readString(entry.resolve("expected-sha.txt"));
+      result.add(new ManagedPatchChain.Recipe(Files.readString(entry.resolve("id.txt")),patches,Files.readAllLines(entry.resolve("markers.txt")),List.of(),expectedSha.isEmpty()?null:expectedSha));
     }
     return result;
   }
@@ -61,10 +62,21 @@ public final class WebSearchChainFixture {
     Files.writeString(root.resolve("old-module-result.js"),upgraded);
     Files.writeString(root.resolve("old-module-restores.txt"),Integer.toString(restores.get()));
     System.out.println("WEB_SEARCH_OLD_MODULE restores="+restores.get()+" equalsCurrent="+upgraded.equals(expected));
-    require(restores.get()==0||restores.get()==1,"old module canonical restored more than once");
+    require(restores.get()==1,"old module must restore complete current canonical exactly once");
     require(upgraded.equals(expected),"old module differs from complete current module");
     require(ManagedPatchChain.apply(upgraded,chain,()->{throw new AssertionError("old upgrade repeat restored canonical");}).equals(expected),"old upgrade repeat differs");
     System.out.println("PASS_WEB_SEARCH_CHAIN historical module upgrade/repeat");
+    for(String candidate:List.of(old,canonical+"\\n// unknown suffix",expected+"\\n// unknown suffix")) {
+      restores.set(0);
+      try {ManagedPatchChain.apply(candidate,chain,()->{restores.incrementAndGet();return null;});throw new AssertionError("shared anchors accepted without canonical");}
+      catch(IOException error) {require(error.getMessage().contains("PATCH_CANONICAL_MISSING"),"wrong shared-anchor error");}
+      require(restores.get()==1,"shared anchors must request canonical exactly once");
+    }
+    restores.set(0);
+    try {ManagedPatchChain.apply(old,chain,()->{restores.incrementAndGet();return old;});throw new AssertionError("old canonical accepted by local anchors");}
+    catch(IOException error) {require(error.getMessage().contains("PATCH_CHAIN_MISMATCH"),"wrong old canonical error");}
+    require(restores.get()==1,"old canonical must be read exactly once");
+    System.out.println("PASS_WEB_SEARCH_CHAIN shared anchors and wrong canonical fail closed");
     if(Files.exists(root.resolve("apk.js"))) {
       String exact=Files.readString(root.resolve("apk.js"));require(exact.equals(expected),"exact APK module differs");
       require(ManagedPatchChain.apply(exact,chain,()->{throw new AssertionError("exact APK restore");}).equals(expected),"exact APK repeat differs");
@@ -96,6 +108,7 @@ def write_chain(folder, chain):
         (target / 'id.txt').write_bytes(name.encode())
         (target / 'count.txt').write_bytes(str(len(patches)).encode())
         (target / 'markers.txt').write_bytes('\n'.join(markers).encode())
+        (target / 'expected-sha.txt').write_bytes((getattr(patches, 'expected_output_sha256', None) or '').encode())
         for number, (before, after) in enumerate(patches):
             (target / (str(number) + '-before.txt')).write_bytes(before.encode())
             (target / (str(number) + '-after.txt')).write_bytes(after.encode())
@@ -119,6 +132,7 @@ def main():
     assert sha(canonical) == recipe['sourceSha256'], 'LOCKED_SEARCH_MODULE_IDENTITY'
     expected = runtime_stable_patches.apply(canonical, chain)
     assert sha(expected) == recipe['patchedSha256'], 'FINAL_SEARCH_MODULE_IDENTITY'
+    assert recipe['expectedOutputSha256'] == recipe['patchedSha256'], 'COMPLETE_MODULE_OUTPUT_CONTRACT'
     prior = [row for row in chain if row[0] != ASSET]
     pre = runtime_stable_patches.apply(canonical, prior)
     assert runtime_stable_patches.apply(pre, chain) == expected, 'CURRENT_PRE_CHAIN_IDENTITY'

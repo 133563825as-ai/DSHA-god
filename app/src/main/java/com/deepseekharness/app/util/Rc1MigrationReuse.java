@@ -67,7 +67,7 @@ public final class Rc1MigrationReuse {
     return value != null && value.matches("[0-9]{1,20}");
   }
 
-  private static boolean validInputs(Object value) {
+  public static boolean validInputs(Object value) {
     if (!(value instanceof Map)) return false;
     Map<?, ?> inputs = (Map<?, ?>) value;
     for (Map.Entry<?, ?> entry : inputs.entrySet()) {
@@ -79,8 +79,110 @@ public final class Rc1MigrationReuse {
     return true;
   }
 
-  private static boolean sameInputs(Object value, Map<String, String> inputs) {
-    if (!validInputs(value)) return false;
+  /**
+   * 私有 settings 完成账本必须绑定当前代次与同一 sourceSha256；缺字段或未知分节状态
+   * 一律不绑定，不能借旧 committed receipt 授予缓存命中。无 settings 来源须由调用方
+   * 独立核对 inputs 与 checkpoint 的 null sha 后走 not-required，不调用本账本绑定。
+   */
+  public static boolean ledgerBinding(
+      String generation, String settingsSha256, Map<String, Object> ledger) {
+    return Ids.uuid(generation)
+        && digest(settingsSha256)
+        && ledger != null
+        && versionTwo(ledger)
+        && generation.equals(ledger.get("generation"))
+        && settingsSha256.equals(ledger.get("sourceSha256"));
+  }
+
+  /** 逐节状态投影：verified / pending / unknown；写入中或未知终态不能当 pending。 */
+  public static String ledgerState(Map<String, Object> ledger) {
+    return ledgerState(ledger, expectedSections(ledger, null));
+  }
+
+  /** 独立期望集合必需，显式空集合合法；缺证不能从现存分节键自证完整。 */
+  public static Set<String> expectedSections(
+      Map<String, Object> ledger, Map<String, Object> checkpoint) {
+    boolean declared = ledger != null && ledger.containsKey("expectedSections");
+    boolean saved = checkpoint != null && checkpoint.containsKey("settingsSections");
+    Set<String> first = declared ? sectionNames(ledger.get("expectedSections")) : null;
+    Set<String> second = saved ? sectionNames(checkpoint.get("settingsSections")) : null;
+    if (declared && first == null || saved && second == null) return null;
+    if (declared && saved && !first.equals(second)) return null;
+    return declared ? first : second;
+  }
+
+  private static Set<String> sectionNames(Object value) {
+    if (!(value instanceof java.util.List)) return null;
+    Set<String> names = new java.util.LinkedHashSet<>();
+    for (Object name : (java.util.List<?>) value) {
+      if (!(name instanceof String) || ((String) name).isEmpty() || !names.add((String) name))
+        return null;
+    }
+    return names;
+  }
+
+  public static boolean digest(Object value) {
+    return value instanceof String && ((String) value).matches("[a-f0-9]{64}");
+  }
+
+  /** 复用 checkpoint 的集合之前核对其代次、输入和来源；null sha 不能掩盖 settings 输入。 */
+  public static boolean checkpointBinding(
+      Map<String, Object> current, Map<String, Object> checkpoint) {
+    if (current == null || checkpoint == null || !versionTwo(current) || !versionTwo(checkpoint))
+      return false;
+    Object generation = current.get("generation");
+    if (!(generation instanceof String)
+        || !Ids.uuid((String) generation)
+        || !generation.equals(checkpoint.get("generation"))
+        || !HOME.equals(checkpoint.get("dshHome"))
+        || !"prepared".equals(checkpoint.get("status"))
+        || !Boolean.TRUE.equals(checkpoint.get("protectionComplete"))
+        || !digest(checkpoint.get("inputDigest"))
+        || !validInputs(current.get("inputs"))
+        || !validInputs(checkpoint.get("inputs"))) return false;
+    @SuppressWarnings("unchecked")
+    Map<String, String> inputs = (Map<String, String>) current.get("inputs");
+    if (!sameInputs(checkpoint.get("inputs"), inputs) || !checkpoint.containsKey("settingsSha256"))
+      return false;
+    Object context = current.get("startupContext");
+    if (context instanceof Map
+        && ((Map<?, ?>) context).containsKey("inputFingerprint")
+        && !checkpoint.get("inputDigest").equals(((Map<?, ?>) context).get("inputFingerprint")))
+      return false;
+    Object sha = checkpoint.get("settingsSha256");
+    Object settings =
+        inputs.containsKey("settings.yaml")
+            ? inputs.get("settings.yaml")
+            : inputs.get("settings.yaml.imported");
+    return settings == null ? sha == null : digest(sha) && settings.equals(sha);
+  }
+
+  /** 分节和总体状态均须已知，且实际集合必须与独立期望集合完全相等。 */
+  public static String ledgerState(Map<String, Object> ledger, java.util.Set<String> expected) {
+    if (ledger == null || expected == null) return "unknown";
+    Object sections = ledger.get("sections");
+    if (!(sections instanceof Map)) return "unknown";
+    boolean allVerified = true;
+    for (Map.Entry<?, ?> entry : ((Map<?, ?>) sections).entrySet()) {
+      if (!(entry.getKey() instanceof String)) return "unknown";
+      Object value = entry.getValue();
+      if (!(value instanceof Map)) return "unknown";
+      Object status = ((Map<?, ?>) value).get("status");
+      if (!(status instanceof String)) return "unknown";
+      if (Set.of("writing", "unknown").contains(status)) return "unknown";
+      if (!Set.of("verified", "pending", "conflict").contains(status)) return "unknown";
+      if (!"verified".equals(status)) allVerified = false;
+    }
+    if (expected != null && !expected.equals(((Map<?, ?>) sections).keySet())) return "unknown";
+    Object overall = ledger.get("status");
+    if (!(overall instanceof String)
+        || !Set.of("verified", "pending", "conflict").contains(overall)) return "unknown";
+    return allVerified && "verified".equals(overall) ? "verified" : "pending";
+  }
+
+  /** settings.yaml → settings.yaml.imported 的合法 rename 视为同一内容输入。 */
+  public static boolean sameInputs(Object value, Map<String, String> inputs) {
+    if (!validInputs(value) || !validInputs(inputs)) return false;
     Map<?, ?> old = (Map<?, ?>) value;
     if (!Objects.equals(old.get("restore"), inputs.get("restore"))) return false;
     // The upstream importer may rename a single settings file. When both inputs exist, neither

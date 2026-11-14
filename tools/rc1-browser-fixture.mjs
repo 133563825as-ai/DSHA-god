@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
+import {launchHostBrowser} from './host-browser-launch.mjs';
 const require=createRequire(import.meta.url);
 const assetPrefix='/__fixture_assets/';
 const maxAssetBytes=8*1024*1024;
@@ -139,9 +140,7 @@ export async function browserFixture(runtime=process.env.DSHA_TEST_RUNTIME||JSON
   try {
   try { playwright=require(process.env.DSHA_PLAYWRIGHT||'playwright'); }
   catch { playwright=require(path.join(process.env.USERPROFILE||'', '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')); }
-  const engine=process.env.DSHA_BROWSER || 'chromium';
-  if (!['chromium','firefox'].includes(engine)) throw Error('Unsupported fixture browser: '+engine);
-  browser=await playwright[engine].launch({headless:true,...engine==='firefox'?{firefoxUserPrefs:{'ui.primaryPointerCapabilities':1,'ui.allPointerCapabilities':1}}:{}});
+  browser=await launchHostBrowser(playwright);
   const page=await browser.newPage({viewport:{width:360,height:800},deviceScaleFactor:1,hasTouch:true});
   const errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(`http://127.0.0.1:${server.address().port}/`);

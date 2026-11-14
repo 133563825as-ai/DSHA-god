@@ -3,7 +3,7 @@ name: Documentation checks
 # 文档变更的快速门禁：链接、更新记录生成、界面文案目录。只读源码，不需要固定输入或 JDK。
 on:
   push:
-    branches-ignore: ['feat/rebirth-identity']
+    branches-ignore: ['feat/rebirth-identity', 'validate/rebirth-rc1-20261114']
     paths:
       - '**/*.md'
       - 'docs/**'

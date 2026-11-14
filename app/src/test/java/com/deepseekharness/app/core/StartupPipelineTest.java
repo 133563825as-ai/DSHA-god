@@ -21,6 +21,7 @@ public class StartupPipelineTest {
     String casReceipt = receipt(false, 0, "");
     BoundedProcessRunner.Result casOutcome;
     boolean pluginScopeClosed;
+    String migrationOverride;
 
     void step(String name) throws IOException {
       calls.add(name);
@@ -59,7 +60,15 @@ public class StartupPipelineTest {
 
     public String migration(String id) throws Exception {
       step("migration");
-      return "DSHA_RC1_MIGRATION={\"status\":\"already\",\"protectionComplete\":true}";
+      if (migrationOverride != null) return migrationOverride;
+      return "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"phase\":\"prepare\","
+          + "\"status\":\"historical-complete\",\"startupId\":\""
+          + id
+          + "\","
+          + "\"generation\":\"01234567-89ab-cdef-0123-456789abcdef\","
+          + "\"verificationScope\":\"historical\",\"contentCopyStatus\":\"verified\","
+          + "\"sourceObjectIdentity\":\"unknown\",\"settingsImportStatus\":\"not-required\","
+          + "\"executionState\":\"NOT_SENT\"}";
     }
 
     public String register() throws Exception {
@@ -154,6 +163,22 @@ public class StartupPipelineTest {
 
     public void checkpoint(String id) throws Exception {
       step("checkpoint");
+    }
+  }
+
+  @Test
+  public void wrongStartupAndWrongPhaseNeverReachPluginRegistration() throws Exception {
+    for (String mode : List.of("startup", "phase")) {
+      Fixture f = new Fixture();
+      String result = f.migration("fixture");
+      f.calls.clear();
+      f.migrationOverride =
+          mode.equals("startup")
+              ? result.replace("\"startupId\":\"fixture\"", "\"startupId\":\"other\"")
+              : result.replace("\"phase\":\"prepare\"", "\"phase\":\"finalize\"");
+      assertThrows(IOException.class, () -> new StartupPipeline(f, f).prepare(1, false, f));
+      assertFalse(f.calls.contains("register"));
+      assertFalse(f.calls.contains("unlock"));
     }
   }
 

@@ -250,7 +250,25 @@ class Inputs:
             env["LD_LIBRARY_PATH"]=str(Path(self.args.linux_host).resolve())
         if "browser" in row.get("requires", []):
             env.update(DSHA_PLAYWRIGHT=str(self.playwright), PLAYWRIGHT_BROWSERS_PATH=str(self.browsers))
-            if self.args.browser: env.update(DSHA_BROWSER=self.args.browser, DSHA_CHROME=self.args.browser)
+            # engine与可执行路径独立；旧--browser仅保留明确枚举/绝对路径兼容。
+            legacy = self.args.browser
+            legacy_engine = legacy if legacy in ("chromium", "firefox") else None
+            legacy_executable = legacy if legacy and legacy_engine is None else None
+            engine = self.args.browser_engine or legacy_engine or "chromium"
+            if legacy_engine and legacy_engine != engine:
+                raise ValueError("HOST_BROWSER_ENGINE_CONFLICT")
+            candidates = [value for value in (self.args.browser_executable, legacy_executable) if value is not None]
+            if any(not value or not Path(value).is_absolute() for value in candidates):
+                raise ValueError("HOST_BROWSER_EXECUTABLE_ABSOLUTE_REQUIRED")
+            if len({str(Path(value).resolve()) for value in candidates}) > 1:
+                raise ValueError("HOST_BROWSER_EXECUTABLE_CONFLICT")
+            if candidates:
+                browser = str(required_file(candidates[0], "HOST_BROWSER_EXECUTABLE_MISSING"))
+                env.update(DSHA_BROWSER_EXECUTABLE=browser, DSHA_CHROME=browser)
+            profile = self.args.browser_profile
+            if profile == "disable-gpu" and engine != "chromium":
+                raise ValueError("HOST_BROWSER_PROFILE_INVALID")
+            env.update(DSHA_BROWSER_ENGINE=engine, DSHA_BROWSER=engine, DSHA_HOST_BROWSER_PROFILE=profile)
         for key, value in row.get("environment", {}).items(): env[key] = resolve(value, values)
         if self.session is not None:
             env.update(self.session.environment())
@@ -316,7 +334,12 @@ def main():
     parser.add_argument("--check-manifest",action="store_true");parser.add_argument("--list",action="store_true");parser.add_argument("--only",action="append",default=[])
     parser.add_argument("--node",default=shutil.which("node") or "node");parser.add_argument("--powershell",default=shutil.which("pwsh") or "pwsh")
     parser.add_argument("--raw");parser.add_argument("--managed");parser.add_argument("--pnpm-cli");parser.add_argument("--toolchain-root",default=os.environ.get("DSHA_TOOLCHAINS"));parser.add_argument("--jdk")
-    parser.add_argument("--playwright");parser.add_argument("--browsers-path");parser.add_argument("--browser");parser.add_argument("--mobile-upstream",default=str(ROOT/"tools/mobile-plugin-upstream/lib"))
+    parser.add_argument("--playwright");parser.add_argument("--browsers-path")
+    parser.add_argument("--browser", help="Deprecated: browser engine enum or absolute executable path; use separate options")
+    parser.add_argument("--browser-engine", choices=("chromium", "firefox"))
+    parser.add_argument("--browser-executable", help="Absolute existing host browser executable")
+    parser.add_argument("--browser-profile", choices=("default", "disable-gpu"), default="default", help="Explicit host-only reviewed headless compatibility profile")
+    parser.add_argument("--mobile-upstream",default=str(ROOT/"tools/mobile-plugin-upstream/lib"))
     parser.add_argument("--linux-host");parser.add_argument("--wsl-distro",default="docker-desktop");parser.add_argument("--linux-tempdir",help="Explicit writable Linux fixture directory; no WSL repair or remount");parser.add_argument("--flavor",choices=("standard",),default="standard")
     parser.add_argument("--linux-native-inputs",default=str(ROOT/"app/build/audit-build156/linux-native"),help="Prepared NDK/Ubuntu sysroot receipt for the explicit WSL native handshake fixture")
     parser.add_argument("--previous-runtime-apk",help=f"Exact published build{previous_runtime_fixture.CONTRACT.build} Standard APK (DSH {previous_runtime_fixture.CONTRACT.generation}); required only by historical-upgrade fixtures; source: {previous_runtime_fixture.CONTRACT.url}")

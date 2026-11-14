@@ -129,6 +129,38 @@ class HostRunnerTest(unittest.TestCase):
             self.assertIsNone(facts[key], key)
         self.assertFalse(Path(facts['HOME']).exists())
 
+    def test_browser_engine_executable_and_profile_are_independent(self):
+        playwright = self.root / 'playwright'; playwright.mkdir()
+        (playwright / 'package.json').write_text('{}')
+        cache = self.root / 'browsers'; cache.mkdir()
+        self.extra_args = ['--playwright', str(playwright), '--browsers-path', str(cache),
+                           '--browser-engine', 'chromium', '--browser-executable', sys.executable,
+                           '--browser-profile', 'disable-gpu']
+        self.add('test-browser.py', 'import json,os; print(json.dumps({k:os.getenv(k) for k in '
+                 '["DSHA_BROWSER_ENGINE","DSHA_BROWSER_EXECUTABLE","DSHA_BROWSER","DSHA_CHROME","DSHA_HOST_BROWSER_PROFILE"]}))',
+                 requires=['browser'])
+        code, report = self.invoke()
+        self.assertEqual(0, code)
+        facts = json.loads((self.output / 'test-browser.py.log').read_text())
+        self.assertEqual('chromium', facts['DSHA_BROWSER_ENGINE'])
+        self.assertEqual('chromium', facts['DSHA_BROWSER'])
+        self.assertEqual(str(Path(sys.executable).resolve()), facts['DSHA_BROWSER_EXECUTABLE'])
+        self.assertEqual(facts['DSHA_BROWSER_EXECUTABLE'], facts['DSHA_CHROME'])
+        self.assertEqual('disable-gpu', facts['DSHA_HOST_BROWSER_PROFILE'])
+
+    def test_browser_legacy_path_no_longer_becomes_engine_and_conflicts_fail(self):
+        playwright = self.root / 'playwright'; playwright.mkdir()
+        (playwright / 'package.json').write_text('{}')
+        cache = self.root / 'browsers'; cache.mkdir()
+        self.extra_args = ['--playwright', str(playwright), '--browsers-path', str(cache), '--browser', sys.executable]
+        self.add('test-browser.py', 'import os; assert os.environ["DSHA_BROWSER"]=="chromium"; '
+                 'assert os.environ["DSHA_BROWSER_EXECUTABLE"]==os.environ["DSHA_CHROME"]', requires=['browser'])
+        self.assertEqual(0, self.invoke()[0])
+        self.extra_args += ['--browser-engine', 'firefox', '--browser-profile', 'disable-gpu']
+        code, report = self.invoke()
+        self.assertEqual(1, code)
+        self.assertIn('HOST_BROWSER_PROFILE_INVALID', report['tests'][0]['error'])
+
     def test_orphan_and_duplicate_entries_fail_manifest_check(self):
         self.add('test-known.py', '')
         self.save()

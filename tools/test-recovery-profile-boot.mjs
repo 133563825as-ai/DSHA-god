@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { launchHostBrowser } from './host-browser-launch.mjs';
 import { zstdDecompressSync } from 'node:zlib';
 
 const root=path.resolve(import.meta.dirname,'..');
@@ -81,7 +82,7 @@ try{
   let playwright;
   try{playwright=require(process.env.DSHA_PLAYWRIGHT||'playwright');}
   catch{playwright=require(path.join(process.env.USERPROFILE||'','.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));}
-  browser=await playwright.chromium.launch({headless:true,executablePath:process.env.DSHA_BROWSER});
+  browser=await launchHostBrowser(playwright,{requiredEngine:'chromium'});
   const browserContext=await browser.newContext({viewport:{width:393,height:852},isMobile:true,hasTouch:true,locale:'zh-CN'});
   const equals=cookie.indexOf('=');await browserContext.addCookies([{name:cookie.slice(0,equals),value:cookie.slice(equals+1),url:new URL('/',auth).href}]);
   const page=await browserContext.newPage();page.setDefaultTimeout(15000);

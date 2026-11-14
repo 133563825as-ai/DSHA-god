@@ -8,7 +8,11 @@ public class WebReadyTasksTest {
     boolean current = true, bound, cancelOnCookie, cancelOnDelay;
     int exchanges, notices, ready;
     String result =
-        "DSHA_RC1_MIGRATION={\"status\":\"committed\",\"sourcePreserved\":true,\"settingsImported\":true}";
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"phase\":\"finalize\",\"status\":\"committed\","
+            + "\"startupId\":\"startup\",\"generation\":\"01234567-89ab-cdef-0123-456789abcdef\","
+            + "\"verificationScope\":\"current\",\"contentCopyStatus\":\"verified\","
+            + "\"sourceObjectIdentity\":\"unknown\",\"settingsImportStatus\":\"verified-current\","
+            + "\"executionState\":\"COMPLETED\"}";
     Runnable async;
     java.util.List<String> logs = new java.util.ArrayList<>();
     java.util.List<Long> delays = new java.util.ArrayList<>();
@@ -28,6 +32,10 @@ public class WebReadyTasksTest {
 
     public String finalizeMigration() {
       return result;
+    }
+
+    public String startupId() {
+      return "startup";
     }
 
     public void migrationLog(String value) {
@@ -68,6 +76,23 @@ public class WebReadyTasksTest {
     bad.async.run();
     assertEquals(1, bad.notices);
     assertEquals(1, bad.logs.size());
+  }
+
+  @Test
+  public void wrongStartupPhaseOrDuplicateFinalizeIsVisible() {
+    for (String mode : java.util.List.of("startup", "phase", "duplicate")) {
+      Fake fake = new Fake();
+      fake.result =
+          mode.equals("startup")
+              ? fake.result.replace("\"startup\"", "\"other\"")
+              : mode.equals("phase")
+                  ? fake.result.replace("\"finalize\"", "\"prepare\"")
+                  : fake.result + "\n" + fake.result;
+      WebReadyTasks.run(false, false, fake);
+      fake.async.run();
+      assertEquals(mode, 1, fake.notices);
+      assertEquals(mode, 1, fake.logs.size());
+    }
   }
 
   @Test

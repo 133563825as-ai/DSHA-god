@@ -284,7 +284,9 @@ final class StartupPipeline {
         com.deepseekharness.app.util.Rc1MigrationResult.parse(migration);
     if (!com.deepseekharness.app.util.Rc1MigrationResult.isRoutineReceipt(migrationState))
       diagnostics.message(generation, migration);
-    if (!com.deepseekharness.app.util.Rc1MigrationResult.allowsStart(migrationState)) {
+    if (!com.deepseekharness.app.util.Rc1MigrationResult.boundTo(
+            migrationState, diagnostics.recordId())
+        || !com.deepseekharness.app.util.Rc1MigrationResult.allowsStart(migrationState)) {
       throw new java.io.IOException(
           com.deepseekharness.app.util.UiText.format(
               "rc1 迁移快照未完成，已阻止导入；原件保留。请检查存储权限和空间后重试：%s",

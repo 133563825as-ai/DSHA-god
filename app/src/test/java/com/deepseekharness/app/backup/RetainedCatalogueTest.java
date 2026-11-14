@@ -217,6 +217,51 @@ public class RetainedCatalogueTest {
     assertEquals("settings", catalog.sources(entry).get(0).scope());
   }
 
+  private String migrationStatus() throws Exception {
+    return new RetainedCatalogue(fs, temp.getRoot(), new File(temp.getRoot(), "home"))
+        .list().stream()
+            .filter(e -> e.kind == RetainedCatalogue.Kind.MIGRATION)
+            .findFirst()
+            .orElseThrow()
+            .status;
+  }
+
+  @Test
+  public void migrationExpectedCollectionMustBeIndependentAndComplete() throws Exception {
+    String id = "01234567-89ab-cdef-0123-456789abcdef", sha = "a".repeat(64);
+    String folder = "rc1-migration-state/generations/" + id + "/";
+    put(
+        "rc1-migration-state/current.json",
+        "{\"version\":2,\"generation\":\""
+            + id
+            + "\",\"inputs\":{\"settings.yaml\":\""
+            + sha
+            + "\"}}");
+    put(
+        folder + "receipt.json",
+        "{\"version\":2,\"generation\":\"" + id + "\",\"status\":\"committed\"}");
+    String ledger =
+        "{\"version\":2,\"generation\":\""
+            + id
+            + "\",\"sourceSha256\":\""
+            + sha
+            + "\",\"status\":\"verified\",\"sections\":{\"first\":{\"status\":\"verified\"}}";
+    put(folder + "settings-result.json", ledger + "}");
+    assertEquals("UNKNOWN", migrationStatus());
+    put(folder + "settings-result.json", ledger + ",\"expectedSections\":[\"first\",\"second\"]}");
+    assertEquals("UNKNOWN", migrationStatus());
+    put(folder + "settings-result.json", ledger + ",\"expectedSections\":[\"first\"]}");
+    assertEquals("HISTORICAL_COMMITTED", migrationStatus());
+    put(
+        folder + "settings-result.json",
+        (ledger + ",\"expectedSections\":[\"first\"]}").replace("\"version\":2", "\"version\":3"));
+    assertEquals("UNKNOWN", migrationStatus());
+    put(
+        "rc1-migration-state/current.json",
+        "{\"version\":2,\"generation\":\"" + id + "\",\"inputs\":{}}");
+    assertEquals("HISTORICAL_COMMITTED", migrationStatus());
+  }
+
   @Test
   public void completedBackupHistoryStaysVisibleInRetainedCatalogue() throws Exception {
     File files = temp.getRoot(), operations = HostOperationArchive.reserve(fs, files);

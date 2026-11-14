@@ -59,6 +59,66 @@ public class Rc1MigrationReuseTest {
   }
 
   @Test
+  public void expectedSectionsCannotBeInferredFromCurrentLedgerKeys() {
+    var ledger = new HashMap<String, Object>();
+    ledger.put("version", 2L);
+    ledger.put("generation", GENERATION);
+    ledger.put("sourceSha256", SHA);
+    ledger.put("status", "verified");
+    ledger.put("sections", Map.of("first", Map.of("status", "verified")));
+    org.junit.Assert.assertEquals("unknown", Rc1MigrationReuse.ledgerState(ledger));
+    var checkpoint = Map.<String, Object>of("settingsSections", java.util.List.of("first"));
+    org.junit.Assert.assertEquals(
+        "verified",
+        Rc1MigrationReuse.ledgerState(
+            ledger, Rc1MigrationReuse.expectedSections(ledger, checkpoint)));
+    ledger.put("expectedSections", java.util.List.of("first", "second"));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of("first", "first"));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of(""));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of("first"));
+    for (Object status : java.util.List.of("future", "writing", "unknown", true)) {
+      ledger.put("status", status);
+      org.junit.Assert.assertEquals("unknown", Rc1MigrationReuse.ledgerState(ledger));
+    }
+    ledger.put("status", "verified");
+    ledger.put("expectedSections", java.util.List.of());
+    ledger.put("sections", Map.of());
+    org.junit.Assert.assertEquals("verified", Rc1MigrationReuse.ledgerState(ledger));
+    assertTrue(Rc1MigrationReuse.ledgerBinding(GENERATION, SHA, ledger));
+    ledger.put("version", 3L);
+    assertFalse(Rc1MigrationReuse.ledgerBinding(GENERATION, SHA, ledger));
+    assertFalse(Rc1MigrationReuse.ledgerBinding(GENERATION, null, ledger));
+  }
+
+  @Test
+  public void checkpointCannotUseNullShaToHideSettingsOrMalformedInputs() {
+    var index = current(Map.of("settings.yaml", SHA));
+    var checkpoint = prepared(Map.of("settings.yaml", SHA));
+    checkpoint.put("inputDigest", SHA);
+    checkpoint.put("settingsSha256", SHA);
+    assertTrue(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    index.put("startupContext", Map.of("inputFingerprint", CHANGED));
+    assertFalse(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    index.remove("startupContext");
+    for (String field :
+        java.util.List.of("version", "generation", "inputDigest", "settingsSha256", "inputs")) {
+      var bad = new HashMap<>(checkpoint);
+      bad.remove(field);
+      assertFalse(field, Rc1MigrationReuse.checkpointBinding(index, bad));
+    }
+    checkpoint.put("settingsSha256", null);
+    assertFalse(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    var empty = prepared(Map.of());
+    empty.put("inputDigest", SHA);
+    empty.put("settingsSha256", null);
+    assertTrue(Rc1MigrationReuse.checkpointBinding(current(Map.of()), empty));
+    assertFalse(Rc1MigrationReuse.sameInputs(Map.of(), null));
+  }
+
+  @Test
   public void completedCheckpointAllowsIdenticalOrAbsentInputs() {
     assertTrue(matches(Map.of("settings.yaml", SHA), Map.of("settings.yaml", SHA)));
     assertTrue(matches(Map.of(), Map.of()));

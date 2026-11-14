@@ -2,6 +2,56 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-validation-inputs.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic validation-only input receipt binding and static gate-only workflow boundaries; no network, Gradle, APK or device execution.",
+      "cli": "No arguments; fixed bundle transportation never substitutes current HEAD recipe proof."
+    },
+    {
+      "path": "tools/test-runtime-stable-patches.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Exact opt-in full-module output identity for stable runtime patch chains, including marker bypass and unknown shared-anchor inputs; no device or dependency installation.",
+      "cli": "No arguments; isolated patch data negative controls."
+    },
+    {
+      "path": "tools/test-dsha-gradle-guard.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic negative controls for diagnostic-only Gradle admission guard; every real project task remains refused, no Gradle/JVM launch or cache/network modifications.",
+      "cli": "No arguments; not actual Gradle or FileChannel admission evidence."
+    },
+    {
+      "path": "tools/test-host-browser-launch.mjs",
+      "stage": "fast",
+      "requires": ["node24"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Pure host-browser configuration negative controls: engine/executable separation, conflicting legacy aliases and opt-in headless profile restrictions; does not launch a browser or device.",
+      "cli": "No arguments; synthetic option parsing only, not browser execution proof."
+    },
+    {
+      "path": "tools/test-rebirth-rc1-host.py",
+      "stage": "runtime",
+      "requires": ["python39", "node24", "raw", "jdk17"],
+      "args": ["--runtime", "{raw}"],
+      "timeoutSeconds": 1800,
+      "environment": {},
+      "reason": "Current RC1 Java/Python/SettingsForms cross-layer and explicit host JUnit regression, including real StartupPipeline/WebReady consumers and an exact complete WebRun source slice, with documented rejecting Android adapters; not full WebLifecycleController, Robolectric, Android or Gradle validation. Uses locked offline jars, private synthetic profiles, no device or user data.",
+      "cli": "--runtime <proven raw fixture>; complete mode records separate cross-layer and JUnit stages. Do not replace with compile-only or junit-only for this manifest entry."
+    },
+    {
       "path": "tools/test-browser-fixture-assets.mjs",
       "stage": "runtime",
       "requires": ["node24", "raw", "browser"],

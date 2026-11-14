@@ -358,7 +358,8 @@ public class GuestPluginScriptsTest {
   }
 
   @Test
-  public void verifiedReuseSkipsGuestOnlyForThePreparedStartupId() throws Exception {
+  public void verifiedReuseRunsPrepareDowngradeButSkipsFinalizeOnlyForPreparedStartup()
+      throws Exception {
     String generation = java.util.UUID.randomUUID().toString();
     List<String> calls = new ArrayList<>();
     var preparation =
@@ -381,8 +382,16 @@ public class GuestPluginScriptsTest {
             calls.add("assets");
           }
 
-          public String reusableGeneration() {
-            return generation;
+          public Rc1MigrationCache.Reuse reusableMigration() {
+            return Rc1MigrationCache.Reuse.history(
+                    generation,
+                    "verified-historical",
+                    "a".repeat(64),
+                    "d".repeat(64),
+                    null,
+                    "0.2.2-rc.1",
+                    java.util.Map.of("settings.yaml", "a".repeat(64)))
+                .withStartup("startup", "history-only");
           }
         };
     GuestPluginScripts scripts =
@@ -390,18 +399,267 @@ public class GuestPluginScriptsTest {
             preparation,
             (command, timeout) -> {
               calls.add(command);
-              return null;
+              return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                  migrationReceipt("prepare", generation)
+                      .replace("\"prepared\"", "\"historical-complete\"")
+                      .replace("\"current\"", "\"historical\"")
+                      .replace("\"pending\"", "\"verified-historical\"")
+                      .replace("\"COMPLETED\"", "\"NOT_SENT\""));
             });
     var prepared = scripts.migration("prepare", "startup");
     assertEquals(0, prepared.exitCode);
     assertTrue(
         com.deepseekharness.app.util.Rc1MigrationResult.allowsStart(
             com.deepseekharness.app.util.Rc1MigrationResult.parse(prepared.output)));
-    assertTrue(scripts.migration("finalize", "startup").output.contains("committed"));
-    assertTrue(calls.isEmpty());
-    scripts.migration("finalize", "another-startup");
+    var finalized = scripts.migration("finalize", "startup");
+    assertTrue(finalized.output.contains("historical-complete"));
+    assertEquals(finalized, scripts.migration("finalize", "startup"));
+    assertEquals(2, calls.size());
     assertEquals("assets", calls.get(0));
-    assertTrue(calls.get(1).contains(" finalize "));
+    assertTrue(calls.get(1).contains(" prepare "));
+    assertTrue(
+        scripts
+            .migration("finalize", "another-startup")
+            .output
+            .contains("FINALIZE_TICKET_MISSING"));
+    assertEquals(2, calls.size());
+  }
+
+  private static final class MigrationPreparation implements GuestPluginScripts.Preparation {
+    Rc1MigrationCache.Reuse reuse = Rc1MigrationCache.Reuse.absent();
+    int assets;
+
+    public boolean environmentReady() {
+      return true;
+    }
+
+    public boolean rootPresent() {
+      return true;
+    }
+
+    public boolean pythonReady() {
+      return true;
+    }
+
+    public void pnpm() {}
+
+    public void assets() {
+      assets++;
+    }
+
+    public Rc1MigrationCache.Reuse reusableMigration() {
+      return reuse;
+    }
+  }
+
+  private static String migrationReceipt(String phase, String generation) {
+    return "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"phase\":\""
+        + phase
+        + "\","
+        + "\"status\":\""
+        + (phase.equals("prepare") ? "prepared" : "committed")
+        + "\","
+        + "\"startupId\":\"startup\",\"generation\":\""
+        + generation
+        + "\","
+        + "\"verificationScope\":\"current\",\"contentCopyStatus\":\"verified\","
+        + "\"sourceObjectIdentity\":\"unknown\",\"settingsImportStatus\":\""
+        + (phase.equals("prepare") ? "pending" : "verified-current")
+        + "\","
+        + "\"executionState\":\"COMPLETED\"}";
+  }
+
+  @Test
+  public void cachedPrepareEvidenceLossNeverDispatchesGuest() throws Exception {
+    var prep = new MigrationPreparation();
+    String generation = java.util.UUID.randomUUID().toString();
+    prep.reuse =
+        Rc1MigrationCache.Reuse.history(
+                generation,
+                "not-required",
+                null,
+                "d".repeat(64),
+                null,
+                "0.2.2-rc.1",
+                java.util.Map.of())
+            .withStartup("startup", "history-only");
+    var scripts =
+        new GuestPluginScripts(
+            prep,
+            (command, timeout) -> {
+              assertTrue("仅prepare降权，finalize不得补派", command.contains(" prepare "));
+              return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                  migrationReceipt("prepare", generation)
+                      .replace("\"prepared\"", "\"historical-complete\"")
+                      .replace("\"current\"", "\"historical\"")
+                      .replace("\"pending\"", "\"not-required\"")
+                      .replace("\"COMPLETED\"", "\"NOT_SENT\""));
+            });
+    scripts.migration("prepare", "startup");
+    prep.reuse = Rc1MigrationCache.Reuse.unavailable("HOST_STATE_MISSING");
+    var first = scripts.migration("finalize", "startup");
+    assertTrue(first.output.contains("FINALIZE_EVIDENCE_UNAVAILABLE"));
+    assertEquals(first, scripts.migration("finalize", "startup"));
+    assertEquals(1, prep.assets);
+  }
+
+  @Test
+  public void cachedFinalizeRejectsSameGenerationWrongStartupOrWriteAllowed() throws Exception {
+    for (String mode : List.of("other-startup", "write-allowed")) {
+      var prep = new MigrationPreparation();
+      String generation = java.util.UUID.randomUUID().toString();
+      var history =
+          Rc1MigrationCache.Reuse.history(
+              generation,
+              "not-required",
+              null,
+              "d".repeat(64),
+              null,
+              "0.2.2-rc.1",
+              java.util.Map.of());
+      prep.reuse = history.withStartup("startup", "history-only");
+      var count = new java.util.concurrent.atomic.AtomicInteger();
+      var scripts =
+          new GuestPluginScripts(
+              prep,
+              (command, timeout) -> {
+                count.incrementAndGet();
+                return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                    migrationReceipt("prepare", generation)
+                        .replace("\"prepared\"", "\"historical-complete\"")
+                        .replace("\"current\"", "\"historical\"")
+                        .replace("\"pending\"", "\"not-required\"")
+                        .replace("\"COMPLETED\"", "\"NOT_SENT\""));
+              });
+      scripts.migration("prepare", "startup");
+      prep.reuse =
+          mode.equals("other-startup")
+              ? history.withStartup("other", "history-only")
+              : history.withStartup("startup", "write-allowed");
+      assertTrue(
+          scripts
+              .migration("finalize", "startup")
+              .output
+              .contains("FINALIZE_EVIDENCE_UNAVAILABLE"));
+      assertEquals(1, count.get());
+    }
+  }
+
+  @Test
+  public void cachedPrepareRequiresFreshDurableDowngradeBeforeIssuingTicket() throws Exception {
+    var prep = new MigrationPreparation();
+    String generation = java.util.UUID.randomUUID().toString();
+    prep.reuse =
+        Rc1MigrationCache.Reuse.history(
+                generation,
+                "not-required",
+                null,
+                "d".repeat(64),
+                null,
+                "0.2.2-rc.1",
+                java.util.Map.of())
+            .withStartup("old", "write-allowed");
+    var count = new java.util.concurrent.atomic.AtomicInteger();
+    var scripts =
+        new GuestPluginScripts(
+            prep,
+            (command, timeout) -> {
+              count.incrementAndGet();
+              return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                  migrationReceipt("prepare", generation)
+                      .replace("\"prepared\"", "\"historical-complete\"")
+                      .replace("\"current\"", "\"historical\"")
+                      .replace("\"pending\"", "\"not-required\"")
+                      .replace("\"COMPLETED\"", "\"NOT_SENT\""));
+            });
+    assertTrue(
+        scripts.migration("prepare", "startup").output.contains("PREPARE_EVIDENCE_UNAVAILABLE"));
+    assertTrue(scripts.migration("finalize", "startup").output.contains("FINALIZE_TICKET_MISSING"));
+    assertEquals(1, count.get());
+  }
+
+  @Test
+  public void guestFinalizeKeepsPrepareGenerationAcrossCacheTransitionAndRejectsWrongResult()
+      throws Exception {
+    var prep = new MigrationPreparation();
+    var commands = new ArrayList<String>();
+    String generation = java.util.UUID.randomUUID().toString();
+    var scripts =
+        new GuestPluginScripts(
+            prep,
+            (command, timeout) -> {
+              commands.add(command);
+              return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                  migrationReceipt(
+                      command.contains(" prepare ") ? "prepare" : "finalize",
+                      command.contains(" prepare ")
+                          ? generation
+                          : java.util.UUID.randomUUID().toString()));
+            });
+    scripts.migration("prepare", "startup");
+    prep.reuse =
+        Rc1MigrationCache.Reuse.history(
+                generation,
+                "not-required",
+                null,
+                "d".repeat(64),
+                null,
+                "0.2.2-rc.1",
+                java.util.Map.of())
+            .withStartup("startup", "history-only");
+    var first = scripts.migration("finalize", "startup");
+    assertTrue(commands.get(1).contains("--expected-generation '" + generation + "'"));
+    assertTrue(first.output.contains("FINALIZE_RESULT_BINDING"));
+    assertEquals(first, scripts.migration("finalize", "startup"));
+    assertEquals(2, commands.size());
+  }
+
+  @Test
+  public void failedPrepareCannotBeReplayedOrGrantFinalizeDispatch() throws Exception {
+    var count = new java.util.concurrent.atomic.AtomicInteger();
+    var scripts =
+        new GuestPluginScripts(
+            new MigrationPreparation(),
+            (command, timeout) -> {
+              count.incrementAndGet();
+              throw new IOException("prepare receipt lost");
+            });
+    assertThrows(IOException.class, () -> scripts.migration("prepare", "startup"));
+    assertTrue(
+        scripts.migration("prepare", "startup").output.contains("PREPARE_ALREADY_ATTEMPTED"));
+    assertTrue(scripts.migration("finalize", "startup").output.contains("FINALIZE_TICKET_MISSING"));
+    assertEquals(1, count.get());
+  }
+
+  @Test
+  public void unknownGuestFinalizeCannotBeRedispatched() throws Exception {
+    for (String mode : List.of("exception", "null", "timeout")) {
+      var prep = new MigrationPreparation();
+      var count = new java.util.concurrent.atomic.AtomicInteger();
+      String generation = java.util.UUID.randomUUID().toString();
+      var scripts =
+          new GuestPluginScripts(
+              prep,
+              (command, timeout) -> {
+                if (count.getAndIncrement() == 0)
+                  return com.deepseekharness.app.util.BoundedProcessRunner.localCompletion(
+                      migrationReceipt("prepare", generation));
+                if (mode.equals("exception")) throw new IOException("lost receipt");
+                return mode.equals("null") ? null : timeoutResult();
+              });
+      scripts.migration("prepare", "startup");
+      if (mode.equals("exception"))
+        assertThrows(IOException.class, () -> scripts.migration("finalize", "startup"));
+      else scripts.migration("finalize", "startup");
+      var repeated = scripts.migration("finalize", "startup");
+      assertNotNull(repeated);
+      assertFalse(
+          com.deepseekharness.app.util.Rc1MigrationResult.isRoutineReceipt(
+              repeated.timedOut
+                  ? java.util.Map.of()
+                  : com.deepseekharness.app.util.Rc1MigrationResult.parse(repeated.output)));
+      assertEquals(2, count.get());
+    }
   }
 
   @Test

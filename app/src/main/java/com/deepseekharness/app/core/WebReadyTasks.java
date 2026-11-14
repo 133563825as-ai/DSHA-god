@@ -14,6 +14,8 @@ final class WebReadyTasks {
 
     String finalizeMigration() throws Exception;
 
+    String startupId();
+
     void migrationLog(String value);
 
     void migrationNeedsAttention();
@@ -59,16 +61,18 @@ final class WebReadyTasks {
       String result = ports.finalizeMigration();
       if (!ports.current()) return;
       Map<String, Object> receipt = Rc1MigrationResult.parse(result);
-      if (!Rc1MigrationResult.isRoutineReceipt(receipt)) ports.migrationLog(result);
-      boolean committed =
-          "committed".equals(receipt.get("status"))
-              && Boolean.TRUE.equals(receipt.get("sourcePreserved"))
-              && Boolean.TRUE.equals(receipt.get("settingsImported"));
-      if (!committed && ports.current()) ports.migrationNeedsAttention();
+      if (!Rc1MigrationResult.boundTo(receipt, ports.startupId())
+          || !Rc1MigrationResult.allowsFinalize(receipt)) {
+        ports.migrationLog(result);
+        if (ports.current()) ports.migrationNeedsAttention();
+      }
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();
     } catch (Exception error) {
-      if (ports.current()) ports.migrationLog("RC1_MIGRATION_VERIFICATION_UNAVAILABLE");
+      if (ports.current()) {
+        ports.migrationLog("RC1_MIGRATION_VERIFICATION_UNAVAILABLE");
+        ports.migrationNeedsAttention();
+      }
     }
   }
 }

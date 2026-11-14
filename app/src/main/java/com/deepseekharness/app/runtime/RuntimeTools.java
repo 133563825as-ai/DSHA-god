@@ -576,7 +576,13 @@ final class RuntimeTools {
             .computeIfAbsent(module, key -> new java.util.ArrayList<>())
             .add(
                 new com.deepseekharness.app.util.ManagedPatchChain.Recipe(
-                    asset, patches, markers, previous));
+                    asset,
+                    patches,
+                    markers,
+                    previous,
+                    spec.has("expectedOutputSha256")
+                        ? spec.getString("expectedOutputSha256")
+                        : null));
       }
       var retired = registry.getJSONArray("retired");
       for (int i = 0; i < retired.length(); i++)

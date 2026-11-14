@@ -35,7 +35,7 @@
     "app/src/main/assets/deepseek-account-requests-patch.json": "531f5281370b39f63679cc06a525a5eb5bb122c5e8c43b551ef123aa8e4d61a1",
     "app/src/main/assets/deepseek-native-oauth-patch.json": "1e0148cc044ef7280068ce4c717eed7260c435e5474e25452e911848ee70f7c0",
     "app/src/main/assets/deepseek-stream-cancel-patch.json": "ca81e66e73484228c7bc089dc765bca9b5ad189578244b82c72db7264599fb51",
-    "app/src/main/assets/deepseek-web-search-headers-patch.json": "ee38323865f2b747d2ed46f376e0ba665158bce0770f061848d95207b77901f7",
+    "app/src/main/assets/deepseek-web-search-headers-patch.json": "500dc3fd39cb1d0c1c8f18a4a2a1f18a9d18bd30baaefc44c0cb5a83483a74c7",
     "app/src/main/assets/directory-picker-service-patch.json": "27a33ae9ce86182c2ebcfbfbcbd9839edef436bd7fb0b7d28c21368fc48f7981",
     "app/src/main/assets/dsha-layout-recovery.js": "9cda73a589ff19872e07af8e47c4707cf9a1e35391e1551620189441eb70bf13",
     "app/src/main/assets/file-deliverables-patch.json": "a9d45b09dd6c3b41a66295cff42c9dacb3552abe06dd6e963f75a97f6510f026",
@@ -90,7 +90,7 @@
     "app/src/main/assets/web-integration/permission-full-access.js": "af9961be02886c71d477a11d927a5c1e0ff4cb9839d146e75ac7fd0ad90b3d65",
     "app/src/main/assets/web-integration/session-interaction.js": "6dac58b61d0523376aa514d17019344f56e25da62e7b2530c40b45b02b50a280",
     "app/src/main/assets/welcome-notice-patch.json": "d81ac1acbb44c6628df88887d8d87fa0fb36982972bfda82e59630df0e8d5126",
-    "tools/runtime_stable_patches.py": "a3f8a612f433cc024e6495bb180bbff8d7206482019c5710065f3c4cdc175873",
+    "tools/runtime_stable_patches.py": "ddfb92041a33880b5c1272a77b3f721a40320261d6d36d6d094f97b1c6a52512",
     "tools/runtime_input_contract.py": "1924d38cc7c6e7a26cbaeee1cab66d36f983a82588a7408b2acb17b25eebe3aa"
   },
   "archive_sha256": "c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe"

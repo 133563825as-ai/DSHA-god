@@ -5,6 +5,7 @@
   "sourceSha256": "6bde60f4f8a8bf807d588ae3630d7374358a417b241887716fda9deb67b79ea4",
   "packageIntegrity": "sha512-wTOUSDd4fqnJUZ0jnN3Vo4RU4OLxcapw4+fNVG8zVQnAJqACICOEaGSAoj/iCAKayDzLRyjoYpo8l4EVGNFcVQ==",
   "patchedSha256": "cd70f1c98083c4c92077781f981175fcb3cc4eac2601ab7ea172494740af0cde",
+  "expectedOutputSha256": "cd70f1c98083c4c92077781f981175fcb3cc4eac2601ab7ea172494740af0cde",
   "purpose": "Validate each search header without changing credentials or precedence; report only fixed source/category and offending index/code point; distinguish local construction from fetch invocation.",
   "patches": [
     {
