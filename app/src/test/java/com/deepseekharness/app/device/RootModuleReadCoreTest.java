@@ -16,8 +16,13 @@ import java.util.List;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 /** 实际 Core 的包内事实端口夹具；不调用 UID0 生产入口、真实进程或设备文件。 */
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 34, manifest = Config.NONE, application = android.app.Application.class)
 public final class RootModuleReadCoreTest {
   private static final String APK =
       "/data/app/~~fixture/io.github.sunsetrne.dsha.test-fixture/base.apk";
