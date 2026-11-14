@@ -128,6 +128,35 @@ public final class RootModulesFragmentTest {
     assertNull(field("worker").get(page));
   }
 
+  @Test
+  public void rootDisabledReplyShowsTheEnableHintInsteadOfAnUnknownResult() throws Exception {
+    render(
+        new JSONObject()
+            .put("ok", false)
+            .put("readOnly", true)
+            .put("complete", false)
+            .put("code", "ROOT_DISABLED"));
+    assertEquals("Enable Root shell first", status.getText().toString());
+    assertEquals("", entries.getText().toString());
+  }
+
+  @Test
+  public void lateCallbackFenceRejectsPausedOrAdvancedPage() {
+    assertTrue("当前前台且代次一致", RootModulesFragment.acceptsResult(true, 7, 7));
+    assertFalse("迟到回调不能覆盖新页面", RootModulesFragment.acceptsResult(true, 6, 7));
+    assertFalse("暂停页面不能渲染旧结果", RootModulesFragment.acceptsResult(false, 7, 7));
+  }
+
+  @Test
+  public void authorizationChangedCallbackDiscardsOldBodyBeforeRendering() throws Exception {
+    entries.setText("private old module name");
+    var method = RootModulesFragment.class.getDeclaredMethod("showAuthorizationChanged");
+    method.setAccessible(true);
+    method.invoke(page);
+    assertEquals("Authorization changed. Check it again.", status.getText().toString());
+    assertEquals("", entries.getText().toString());
+  }
+
   private void render(JSONObject reply) throws Exception {
     var method = RootModulesFragment.class.getDeclaredMethod("render", String.class);
     method.setAccessible(true);

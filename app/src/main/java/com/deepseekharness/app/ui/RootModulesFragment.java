@@ -86,20 +86,35 @@ public final class RootModulesFragment extends Fragment {
                   () -> {
                     if (worker == completed) worker = null;
                     if (!isAdded() || status == null || refresh == null) return;
-                    refresh.setEnabled(worker == null);
-                    if (!isResumed() || requestedPage != pageGeneration) return;
-                    if (!DeviceAuthorization.shared().current(authorization)) {
-                      entries.setText("");
-                      status.setText(
-                          UiText.choose("授权已变化，请重新核对", "Authorization changed. Check it again."));
-                      return;
-                    }
-                    render(reply);
+                    applyReadResult(requestedPage, authorization, reply);
                   });
             },
             "dsha-root-module-read");
     worker.setDaemon(true);
     worker.start();
+  }
+
+  /** 迟到/暂停/授权变化的回调只能被丢弃，不能用旧结果覆盖当前页面。 */
+  void applyReadResult(
+      long requestedPage, DeviceAuthorization.Snapshot authorization, String reply) {
+    if (!acceptsResult(isResumed(), requestedPage, pageGeneration)) return;
+    if (status == null || refresh == null || entries == null) return;
+    refresh.setEnabled(worker == null);
+    if (!DeviceAuthorization.shared().current(authorization)) {
+      showAuthorizationChanged();
+      return;
+    }
+    render(reply);
+  }
+
+  /** 只有仍在前台且请求代次未推进的页面可以接收旧结果。 */
+  static boolean acceptsResult(boolean resumed, long requestedPage, long currentPage) {
+    return resumed && requestedPage == currentPage;
+  }
+
+  void showAuthorizationChanged() {
+    entries.setText("");
+    status.setText(UiText.choose("授权已变化，请重新核对", "Authorization changed. Check it again."));
   }
 
   private void render(String reply) {
