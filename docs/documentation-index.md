@@ -1,9 +1,9 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261114.1030-dsh0.2.2-rc.1` / build365 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版合入 A3 slice2/3 恢复计划 PlanView v1 投影与提交期校验、RC1 真实 schema 秘密投影/未知写入不重试/历史账本证据及 Java↔CJS 交接加固、A4 终端退出双扫与会话身份，以及 K1 工具门禁/R3 gzip 工程旁路。Rust 默认关闭、`.so` 不随包，A3 slice4 archive 调用点未接入。缺可信期望集合的部分旧 RC1 代次保持 unknown，可阻断普通及安全启动，保留原件且不自动补导入。受管 `runtimeId` 为 **`8598a8dbf15d48773a41ff41e89935a9effcb5faaa0edc2b82f17dda223b5193`**（491 个启动输入、205 个资产输入）；**364→365 覆盖升级后首次启动进入一次整屏运行环境维护页**。数据格式、恢复语义、基础 Ubuntu、内置 `dsh-web-mobile` 3.3.5 与默认启用不变。build365 尚未真机验收；下方 build364 回执只证明历史包。改动与验证边界见 [build365 更新说明](releases/build365-changes.zh.md)。
+当前源码：`0.2.1-rc.5-20261114.1717-dsh0.2.2-rc.1` / build366 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版合入 A6 插件 bundle/entry/父组与生命周期、兼容性、结构化结果、restart-required 和管理面/覆盖状态；A7 设备授权围栏、通道事实、实体/虚拟屏动作证据分离、固定 FD 探测和 Root 模块只读清单（14 条新文案×十语）；另含 A2 默认关闭的文件工作台/受控传输及 A5 S1 只读环境采样整理。A5 退出证明和部署内容证明未接齐时，A6 变更未知继续保留环境占用；重启不等于成功，未完成事务不自动重放。受管 `runtimeId` 为 **`5a276392ff83480c20ecd622fd6541abe34c149806a9c1dca8f64f775db4174f`**（507 个启动输入、205 个资产输入）；**365→366 覆盖升级后首次启动进入一次整屏运行环境维护页**。数据格式、恢复语义、基础 Ubuntu、内置 `dsh-web-mobile` 3.3.5 与默认启用不变。build366 尚未真机验收；静态结果不构成 Root 管理器、双屏或 SAF 设备兼容证明。改动与验证边界见 [build366 更新说明](releases/build366-changes.zh.md)。
 
-build365 十语更新说明：[中文](releases/build365-changes.zh.md) · [繁體中文](releases/build365-changes.zh-Hant.md) · [English](releases/build365-changes.en.md) · [日本語](releases/build365-changes.ja.md) · [한국어](releases/build365-changes.ko.md) · [Français](releases/build365-changes.fr.md) · [Português](releases/build365-changes.pt.md) · [Русский](releases/build365-changes.ru.md) · [العربية](releases/build365-changes.ar.md) · [Latina](releases/build365-changes.la.md)。
+build366 十语更新说明：[中文](releases/build366-changes.zh.md) · [繁體中文](releases/build366-changes.zh-Hant.md) · [English](releases/build366-changes.en.md) · [日本語](releases/build366-changes.ja.md) · [한국어](releases/build366-changes.ko.md) · [Français](releases/build366-changes.fr.md) · [Português](releases/build366-changes.pt.md) · [Русский](releases/build366-changes.ru.md) · [العربية](releases/build366-changes.ar.md) · [Latina](releases/build366-changes.la.md)。
 
 build364 真机覆盖验收：[回执](releases/build364-acceptance-20261113.md)（一加 12，官方包 363→364；一次维护页 SUCCEEDED、runtimeId 迁至 bd0016c3、首次 proroot trial 直接成功且无 ENOENT 重试、READY、无崩溃）。
 
