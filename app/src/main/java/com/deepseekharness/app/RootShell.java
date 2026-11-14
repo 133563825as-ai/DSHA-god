@@ -117,6 +117,35 @@ public final class RootShell {
     };
   }
 
+  private static final java.util.concurrent.atomic.AtomicBoolean MODULE_READ_ACTIVE =
+      new java.util.concurrent.atomic.AtomicBoolean();
+
+  /** 仅用户显式刷新调用；固定 operation，无任意路径/命令、无通道降级或自动重试。 */
+  public static String readRootModules(Context ctx) {
+    var authorization = com.deepseekharness.app.core.ConfigStore.deviceAuthorization(ctx);
+    if (!authorization.rootAllowed())
+      return com.deepseekharness.app.device.RootModuleReadCore.unavailable("ROOT_DISABLED");
+    if (!MODULE_READ_ACTIVE.compareAndSet(false, true))
+      return com.deepseekharness.app.device.RootModuleReadCore.unavailable("ROOT_MODULE_READ_BUSY");
+    try {
+      for (String label : SLOTS.snapshot(now()).labels)
+        if (label.startsWith("root-module-list"))
+          return com.deepseekharness.app.device.RootModuleReadCore.unavailable("UNKNOWN");
+      if (!com.deepseekharness.app.util.DeviceAuthorization.shared().current(authorization))
+        return com.deepseekharness.app.device.RootModuleReadCore.unavailable(
+            "DEVICE_AUTHORIZATION_CHANGED");
+      String output = runPrivileged(ctx, "", -1, "root-module-list");
+      if (!com.deepseekharness.app.util.DeviceAuthorization.shared().current(authorization))
+        return com.deepseekharness.app.device.RootModuleReadCore.unavailable(
+            "DEVICE_AUTHORIZATION_CHANGED");
+      if (output.startsWith("{")) return output;
+      return com.deepseekharness.app.device.RootModuleReadCore.unavailable(
+          output.startsWith("[ROOT_UNAVAILABLE]") ? "SU_UNAVAILABLE" : "UNKNOWN");
+    } finally {
+      MODULE_READ_ACTIVE.set(false);
+    }
+  }
+
   public static String exec(Context ctx, String command, int authorizedSmsUser) {
     var authorization = com.deepseekharness.app.core.ConfigStore.deviceAuthorization(ctx);
     if (!authorization.rootAllowed())

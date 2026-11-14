@@ -167,9 +167,21 @@ public final class DeviceChannelsFragment extends Fragment {
                 .show();
           } else startActivity(new Intent(ctx, AdbPairActivity.class));
         });
+    addRootInventoryEntry(ctx, view);
     addExternalDeviceControls(ctx, view);
     refreshChannelLabels();
     return view;
+  }
+
+  private void addRootInventoryEntry(Context context, View page) {
+    android.widget.LinearLayout card = page.findViewById(R.id.channels_card);
+    var inventory = new com.google.android.material.button.MaterialButton(context);
+    inventory.setText(UiText.choose("Root 模块清单", "Root module inventory"));
+    inventory.setGravity(android.view.Gravity.CENTER);
+    inventory.setIncludeFontPadding(false);
+    inventory.setOnClickListener(
+        view -> SettingsPanes.open(this, new RootModulesFragment(), "root-modules"));
+    card.addView(inventory, new android.widget.LinearLayout.LayoutParams(-1, -2));
   }
 
   /** 独立外接目标能力：默认关闭、不继承本机 ADB/全局授权，首版只开放 USB root 调试与只读预检。 */
