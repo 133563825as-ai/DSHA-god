@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "runtimeId": "5a276392ff83480c20ecd622fd6541abe34c149806a9c1dca8f64f775db4174f",
+  "runtimeId": "f540d7f1988b4854b65660993a9d3f5743b0dca78bce8e51997c45b9773de7be",
   "baseVersion": "10",
   "dshVersion": "0.2.2-rc.1",
   "launcherContract": "DSHA_ARM64_V2",
@@ -170,7 +170,7 @@
     "device/HostResolver.java": "9d055514c3408168491cdc7cd687170f41256d5af25410eb99f3002dcd09c261",
     "device/NetworkDiagnostics.java": "1cee9cfebd31ad8ee80dcbb8c69b77af6f4c1a165d25a59f3752cbdb8521c111",
     "device/NetworkStateMonitor.java": "9e39533af9ce2aaafa9a2e0af6b8bd18cc5d398e1db0609168251e19944ea453",
-    "device/RootModuleFiles.java": "3d3a6786023d01c5102672d4fc3a33cadd6d01d2b44cfd2abf74a8416d17bfcc",
+    "device/RootModuleFiles.java": "cd1b4bbe24a5fc232acb8bef376a851031df12dfb529a8c30f6dea2344cf8487",
     "device/RootModuleProbeMain.java": "51c04c109b432c03634c650266786169cee566a8ca6715767fe9c7cc3269a9f5",
     "device/RootModuleReadCore.java": "806960aa45194b635666aab5bc0fa86851465fb8cf0d7843fe5d6d200dbef4e8",
     "diagnostics/DiagnosticContext.java": "26446f7ec82db1dc3c8e432c871ad3206e3f67ede0e86a995d166c9d93b9512b",

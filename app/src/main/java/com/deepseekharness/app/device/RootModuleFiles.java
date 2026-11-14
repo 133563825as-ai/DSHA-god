@@ -13,6 +13,7 @@ import java.io.InterruptedIOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -464,7 +465,7 @@ public final class RootModuleFiles {
       executable.verify();
       Node before = executable.nodes.get(executable.nodes.size() - 1);
       if (!before.equals(port.stat(executable.last()))) throw failure("MODULE_SOURCE_CHANGED");
-      port.execute(executable.last(), argv.toArray(String[]::new));
+      port.execute(executable.last(), argv.toArray(new String[0]));
       throw failure("ROOT_MODULE_PROBE_EXEC_RETURNED");
     }
   }
@@ -566,7 +567,7 @@ public final class RootModuleFiles {
       ParcelFileDescriptor retained = ParcelFileDescriptor.dup(fd(directory));
       DirectoryStream<Path> stream;
       try {
-        stream = Files.newDirectoryStream(Path.of("/proc/self/fd/" + retained.getFd()));
+        stream = Files.newDirectoryStream(Paths.get("/proc/self/fd/" + retained.getFd()));
       } catch (IOException | RuntimeException error) {
         retained.close();
         throw failure("ROOT_MODULE_DIRECTORY_UNREADABLE");

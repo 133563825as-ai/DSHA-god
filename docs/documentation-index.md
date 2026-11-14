@@ -1,7 +1,7 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261114.1717-dsh0.2.2-rc.1` / build366 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版合入 A6 插件 bundle/entry/父组与生命周期、兼容性、结构化结果、restart-required 和管理面/覆盖状态；A7 设备授权围栏、通道事实、实体/虚拟屏动作证据分离、固定 FD 探测和 Root 模块只读清单（14 条新文案×十语）；另含 A2 默认关闭的文件工作台/受控传输及 A5 S1 只读环境采样整理。A5 退出证明和部署内容证明未接齐时，A6 变更未知继续保留环境占用；重启不等于成功，未完成事务不自动重放。受管 `runtimeId` 为 **`5a276392ff83480c20ecd622fd6541abe34c149806a9c1dca8f64f775db4174f`**（507 个启动输入、205 个资产输入）；**365→366 覆盖升级后首次启动进入一次整屏运行环境维护页**。数据格式、恢复语义、基础 Ubuntu、内置 `dsh-web-mobile` 3.3.5 与默认启用不变。build366 尚未真机验收；静态结果不构成 Root 管理器、双屏或 SAF 设备兼容证明。改动与验证边界见 [build366 更新说明](releases/build366-changes.zh.md)。
+当前源码：`0.2.1-rc.5-20261114.1717-dsh0.2.2-rc.1` / build366 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版合入 A6 插件 bundle/entry/父组与生命周期、兼容性、结构化结果、restart-required 和管理面/覆盖状态；A7 设备授权围栏、通道事实、实体/虚拟屏动作证据分离、固定 FD 探测和 Root 模块只读清单（14 条新文案×十语）；另含 A2 默认关闭的文件工作台/受控传输及 A5 S1 只读环境采样整理。A5 退出证明和部署内容证明未接齐时，A6 变更未知继续保留环境占用；重启不等于成功，未完成事务不自动重放。受管 `runtimeId` 为 **`f540d7f1988b4854b65660993a9d3f5743b0dca78bce8e51997c45b9773de7be`**（507 个启动输入、205 个资产输入）；**365→366 覆盖升级后首次启动进入一次整屏运行环境维护页**。数据格式、恢复语义、基础 Ubuntu、内置 `dsh-web-mobile` 3.3.5 与默认启用不变。build366 尚未真机验收；静态结果不构成 Root 管理器、双屏或 SAF 设备兼容证明。改动与验证边界见 [build366 更新说明](releases/build366-changes.zh.md)。
 
 build366 十语更新说明：[中文](releases/build366-changes.zh.md) · [繁體中文](releases/build366-changes.zh-Hant.md) · [English](releases/build366-changes.en.md) · [日本語](releases/build366-changes.ja.md) · [한국어](releases/build366-changes.ko.md) · [Français](releases/build366-changes.fr.md) · [Português](releases/build366-changes.pt.md) · [Русский](releases/build366-changes.ru.md) · [العربية](releases/build366-changes.ar.md) · [Latina](releases/build366-changes.la.md)。
 

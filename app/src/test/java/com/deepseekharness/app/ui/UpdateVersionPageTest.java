@@ -197,7 +197,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("6f31f111"));
       assertFalse(shown.contains("b8c59df9"));
       assertTrue(shown.contains("runtimeId"));
-      assertTrue(shown.contains("5a276392"));
+      assertTrue(shown.contains("f540d7f1"));
       assertFalse(shown.contains("bd0016c3"));
       assertFalse(shown.contains("5fd17eac"));
       assertFalse(shown.contains("4d55973d"));
@@ -256,7 +256,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("dsh.android.client.rebirth"));
       assertFalse(shown.contains("UNSIGNED_NOT_FOR_INSTALLATION"));
       assertTrue(shown.contains("runtimeId"));
-      assertTrue(shown.contains("5a276392"));
+      assertTrue(shown.contains("f540d7f1"));
       assertFalse(shown.contains("bd0016c3"));
       assertFalse(shown.contains("5fd17eac"));
       assertFalse(shown.contains("4d55973d"));
@@ -565,7 +565,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("6f31f111"));
       assertFalse(shown.contains("b8c59df9"));
       assertTrue(shown.contains("runtimeId"));
-      assertTrue(shown.contains("5a276392"));
+      assertTrue(shown.contains("f540d7f1"));
       assertFalse(shown.contains("bd0016c3"));
       assertFalse(shown.contains("5fd17eac"));
       assertFalse(shown.contains("4d55973d"));
@@ -624,7 +624,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("dsh.android.client.rebirth"));
       assertFalse(shown.contains("UNSIGNED_NOT_FOR_INSTALLATION"));
       assertTrue(shown.contains("runtimeId"));
-      assertTrue(shown.contains("5a276392"));
+      assertTrue(shown.contains("f540d7f1"));
       assertFalse(shown.contains("bd0016c3"));
       assertFalse(shown.contains("5fd17eac"));
       assertFalse(shown.contains("4d55973d"));
