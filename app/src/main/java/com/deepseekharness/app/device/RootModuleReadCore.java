@@ -81,23 +81,17 @@ public final class RootModuleReadCore {
       RootModuleFiles.Scan scan;
       try {
         scan = port.scan(deadline);
+      } catch (java.io.InterruptedIOException cancelled) {
+        Thread.currentThread().interrupt();
+        return unavailable("UNKNOWN");
       } catch (java.io.IOException unreadable) {
-        return unavailable("MODULE_ROOT_UNREADABLE");
+        return unavailable(scanFailure(unreadable));
       }
       RootModuleInventory.Builder inventory = new RootModuleInventory.Builder(selected);
       boolean complete = scan.complete();
-      RootModulePolicy.Code reason = null;
-      if (!complete) {
-        try {
-          reason = RootModulePolicy.Code.valueOf(scan.code());
-        } catch (IllegalArgumentException unknown) {
-          reason = RootModulePolicy.Code.UNKNOWN;
-        }
-        if (reason == RootModulePolicy.Code.LIST_PARTIAL
-            || reason == RootModulePolicy.Code.LIST_COMPLETE
-            || reason == RootModulePolicy.Code.MANAGER_MATCHED)
-          reason = RootModulePolicy.Code.UNKNOWN;
-      }
+      RootModulePolicy.Code reason = complete ? null : scan.reason();
+      if (!complete && !RootModulePolicy.failureReason(reason))
+        reason = RootModulePolicy.Code.UNKNOWN;
       for (RootModuleFiles.Entry source : scan.entries()) {
         if (port.now() >= deadline || Thread.currentThread().isInterrupted()) {
           complete = false;
@@ -116,6 +110,8 @@ public final class RootModuleReadCore {
                   source.modifiedMillis());
           if (!inventory.add(entry, property.length)) {
             complete = false;
+            RootModulePolicy.Code failure = inventory.failure();
+            reason = failure != null ? failure : RootModulePolicy.Code.UNKNOWN;
             break;
           }
         } catch (RootModuleInventory.Rejected rejected) {
@@ -199,6 +195,14 @@ public final class RootModuleReadCore {
     } catch (RuntimeException denied) {
       // 父调用仍会检查 isAlive；无法关闭不能用输出或超时伪造退出。
     }
+  }
+
+  /** 只透传 reader 已判定的截止/换链；其余读取错误不能回显原始路径或 errno。 */
+  private static String scanFailure(java.io.IOException error) {
+    String message = error.getMessage();
+    return "MODULE_DEADLINE_EXCEEDED".equals(message) || "MODULE_SOURCE_CHANGED".equals(message)
+        ? message
+        : "MODULE_ROOT_UNREADABLE";
   }
 
   public static String unavailable(String code) {

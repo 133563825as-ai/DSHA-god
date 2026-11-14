@@ -161,6 +161,42 @@ public final class RootModuleReadCoreTest {
   }
 
   @Test
+  public void scanDeadlineSourceChangeAndInterruptAreNotFoldedIntoUnreadable() throws Exception {
+    Port deadline = new Port(Manager.APATCH);
+    deadline.scanFailure = new IOException("MODULE_DEADLINE_EXCEEDED");
+    assertUnavailable(read(deadline), "MODULE_DEADLINE_EXCEEDED");
+    assertEquals(1, deadline.scanCalls);
+
+    Port changed = new Port(Manager.APATCH);
+    changed.scanFailure = new IOException("MODULE_SOURCE_CHANGED");
+    assertUnavailable(read(changed), "MODULE_SOURCE_CHANGED");
+    assertEquals(1, changed.scanCalls);
+
+    Port interrupted = new Port(Manager.APATCH);
+    interrupted.scanFailure = new java.io.InterruptedIOException("ROOT_MODULE_SCAN_CANCELLED");
+    try {
+      assertUnavailable(read(interrupted), "UNKNOWN");
+      assertTrue(Thread.currentThread().isInterrupted());
+      assertEquals(1, interrupted.scanCalls);
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
+  public void partialScanReasonIsPassedThroughInsteadOfBecomingUnknown() throws Exception {
+    Port port = new Port(Manager.KERNELSU);
+    port.result =
+        new RootModuleFiles.Scan(List.of(), false, RootModulePolicy.Code.MODULE_SOURCE_CHANGED);
+    JSONObject result = read(port);
+    assertEquals("LIST_PARTIAL", result.getString("code"));
+    assertEquals("MODULE_SOURCE_CHANGED", result.getString("reason"));
+    assertFalse(result.getBoolean("complete"));
+    assertEquals(0, result.getJSONArray("modules").length());
+    assertEquals(1, port.scanCalls);
+  }
+
+  @Test
   public void allProbeTimeoutsAndScanUseOneShrinkingDeadline() throws Exception {
     Port port = new Port(Manager.APATCH);
     port.timeAfterEachProbe = 1_100L;
@@ -364,11 +400,11 @@ public final class RootModuleReadCoreTest {
   }
 
   private static RootModuleFiles.Scan complete(List<RootModuleFiles.Entry> entries) {
-    return new RootModuleFiles.Scan(entries, true, "LIST_COMPLETE");
+    return new RootModuleFiles.Scan(entries, true, null);
   }
 
   private static RootModuleFiles.Scan partial(List<RootModuleFiles.Entry> entries) {
-    return new RootModuleFiles.Scan(entries, false, "LIST_PARTIAL");
+    return new RootModuleFiles.Scan(entries, false, RootModulePolicy.Code.MODULE_ROOT_UNREADABLE);
   }
 
   private static byte[] padded(String id, int length) {

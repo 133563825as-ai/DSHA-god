@@ -49,11 +49,16 @@ public final class RootModuleFiles {
     }
   }
 
-  public record Scan(List<Entry> entries, boolean complete, String code) {
+  /** partial 时 reason 必须是具体失败码；不能被调用方改写成 UNKNOWN 或折成空完整清单。 */
+  public record Scan(List<Entry> entries, boolean complete, RootModulePolicy.Code reason) {
     public Scan {
       entries = List.copyOf(entries);
-      if (!code.equals(complete ? "LIST_COMPLETE" : "LIST_PARTIAL"))
+      if (complete ? reason != null : !RootModulePolicy.failureReason(reason))
         throw new IllegalArgumentException("ROOT_MODULE_SCAN_INVALID");
+    }
+
+    public String code() {
+      return complete ? "LIST_COMPLETE" : "LIST_PARTIAL";
     }
   }
 
@@ -175,14 +180,21 @@ public final class RootModuleFiles {
         List<Receipt> receipts = new ArrayList<>();
         int attempted = 0, propertyBytes = 0;
         boolean complete = true;
+        RootModulePolicy.Code reason = null;
         try (Names names = port.names(root.last())) {
           while (true) {
             checkDeadline(deadline);
             if (!names.hasNext()) break;
             checkDeadline(deadline);
             String id = names.next();
-            if (++attempted > RootModulePolicy.MAX_ENTRIES || !validId(id)) {
+            if (++attempted > RootModulePolicy.MAX_ENTRIES) {
               complete = false;
+              reason = RootModulePolicy.Code.MODULE_ENTRY_LIMIT;
+              break;
+            }
+            if (!validId(id)) {
+              complete = false;
+              reason = RootModulePolicy.Code.MODULE_ID_INVALID;
               break;
             }
             try {
@@ -192,13 +204,19 @@ public final class RootModuleFiles {
               propertyBytes += receipt.entry.properties.length;
               entries.add(receipt.entry);
               receipts.add(receipt);
+            } catch (InterruptedIOException cancelled) {
+              throw cancelled;
             } catch (IOException rejected) {
               complete = false;
+              reason = failureReason(rejected);
               break;
             }
           }
+        } catch (InterruptedIOException cancelled) {
+          throw cancelled;
         } catch (IOException rejected) {
           complete = false;
+          reason = RootModulePolicy.Code.MODULE_ROOT_UNREADABLE;
         }
         // 任何父链、根目录或已读条目的变更都不能附带 complete 的旧正文。
         try {
@@ -209,13 +227,18 @@ public final class RootModuleFiles {
             checkDeadline(deadline);
             verifyEntry(root.last(), receipt);
           }
+        } catch (InterruptedIOException cancelled) {
+          throw cancelled;
         } catch (IOException changed) {
-          return new Scan(List.of(), false, "LIST_PARTIAL");
+          return new Scan(List.of(), false, failureReason(changed));
         }
         entries.sort(Comparator.comparing(Entry::id));
-        return new Scan(entries, complete, complete ? "LIST_COMPLETE" : "LIST_PARTIAL");
+        return new Scan(entries, complete, complete ? null : reason);
+      } catch (InterruptedIOException cancelled) {
+        throw cancelled;
       } catch (IOException unreadable) {
-        // 不把 EACCES/ENOENT/类型错误当成空目录，也不在消息中暴露真实路径。
+        // deadline/换链是可判定的失败原因，不能折成根目录不可读；其余错误不暴露真实路径。
+        if (deadlineOrSourceChanged(unreadable)) throw unreadable;
         throw failure("MODULE_ROOT_UNREADABLE");
       }
     } finally {
@@ -299,6 +322,25 @@ public final class RootModuleFiles {
       throw new InterruptedIOException("ROOT_MODULE_SCAN_CANCELLED");
     long now = clock.getAsLong();
     if (now < 0 || now >= deadline) throw failure("MODULE_DEADLINE_EXCEEDED");
+  }
+
+  /** 设备侧开放字符串不能当原因透传；只接受枚举中的具体失败码。 */
+  private static RootModulePolicy.Code failureReason(IOException error) {
+    String message = error.getMessage();
+    if (message != null) {
+      try {
+        RootModulePolicy.Code code = RootModulePolicy.Code.valueOf(message);
+        if (RootModulePolicy.failureReason(code)) return code;
+      } catch (IllegalArgumentException unknown) {
+        // 未知开放字符串统一折成目录不可读，不回显路径。
+      }
+    }
+    return RootModulePolicy.Code.MODULE_ROOT_UNREADABLE;
+  }
+
+  private static boolean deadlineOrSourceChanged(IOException error) {
+    String message = error.getMessage();
+    return "MODULE_DEADLINE_EXCEEDED".equals(message) || "MODULE_SOURCE_CHANGED".equals(message);
   }
 
   private static boolean validId(String id) {

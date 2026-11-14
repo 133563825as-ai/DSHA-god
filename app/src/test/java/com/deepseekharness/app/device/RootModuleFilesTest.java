@@ -334,6 +334,7 @@ public final class RootModuleFilesTest {
     for (int i = 0; i < 300; i++) port.module("module" + i, 1);
     var result = files(port).scan(11_000);
     assertFalse(result.complete());
+    assertEquals(RootModulePolicy.Code.MODULE_ENTRY_LIMIT, result.reason());
     assertEquals(256, result.entries().size());
     assertEquals(257, port.namesRead);
     assertEquals(256, port.bytesRead);
@@ -363,6 +364,7 @@ public final class RootModuleFilesTest {
       port.module(bad, 4);
       var result = files(port).scan(11_000);
       assertFalse(result.complete());
+      assertEquals(RootModulePolicy.Code.MODULE_ID_INVALID, result.reason());
       assertTrue(result.entries().isEmpty());
       assertEquals(0, port.bytesRead);
       port.allClosed();
@@ -376,6 +378,7 @@ public final class RootModuleFilesTest {
     port.afterRead = () -> property.node = replace(property.node, REGULAR | 0644, 0, 0, 1, 4, 8);
     var result = files(port).scan(11_000);
     assertFalse(result.complete());
+    assertEquals(RootModulePolicy.Code.MODULE_SOURCE_CHANGED, result.reason());
     assertTrue(result.entries().isEmpty());
     port.allClosed();
   }
@@ -388,6 +391,7 @@ public final class RootModuleFilesTest {
     port.afterRead = () -> port.adb.children.put("modules", port.directory(0, 0, 0700));
     var result = files(port).scan(11_000);
     assertFalse(result.complete());
+    assertEquals(RootModulePolicy.Code.MODULE_SOURCE_CHANGED, result.reason());
     assertTrue(result.entries().isEmpty());
     port.allClosed();
   }
@@ -400,6 +404,7 @@ public final class RootModuleFilesTest {
         () -> port.modules.node = replace(port.modules.node, DIRECTORY | 0700, 0, 0, 2, 0, 8);
     var result = files(port).scan(11_000);
     assertFalse(result.complete());
+    assertEquals(RootModulePolicy.Code.MODULE_SOURCE_CHANGED, result.reason());
     assertTrue(result.entries().isEmpty());
     port.allClosed();
   }
@@ -424,9 +429,35 @@ public final class RootModuleFilesTest {
         };
     var result = files.scan(11_000);
     assertFalse(result.complete());
+    assertEquals(RootModulePolicy.Code.MODULE_DEADLINE_EXCEEDED, result.reason());
     assertTrue(result.entries().isEmpty());
     assertEquals(1, port.namesRead);
     port.allClosed();
+  }
+
+  @Test
+  public void interruptionIsNotFoldedIntoARootUnreadablePartial() throws Exception {
+    FakePort port = new FakePort();
+    port.module("one", 4);
+    port.afterRead = () -> Thread.currentThread().interrupt();
+    try {
+      IOException cancelled = assertThrows(IOException.class, () -> files(port).scan(11_000));
+      assertEquals("ROOT_MODULE_SCAN_CANCELLED", cancelled.getMessage());
+      assertTrue(Thread.currentThread().isInterrupted());
+    } finally {
+      Thread.interrupted();
+    }
+    port.allClosed();
+  }
+
+  @Test
+  public void scanRejectsAmbiguousOrIncompleteReasonWithoutFailureCode() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new RootModuleFiles.Scan(List.of(), false, RootModulePolicy.Code.LIST_PARTIAL));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new RootModuleFiles.Scan(List.of(), true, RootModulePolicy.Code.UNKNOWN));
   }
 
   @Test

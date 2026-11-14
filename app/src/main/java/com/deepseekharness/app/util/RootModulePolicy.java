@@ -160,7 +160,15 @@ public final class RootModulePolicy {
     return manager == Manager.KERNELSU ? "ksud 3.3.1-22-g6d31a613 (uapi: 6)" : "apd 11282";
   }
 
-  /** 只去掉至多一个尾 LF/CRLF；不 trim、不接受额外行、控制字或非 ASCII。 */
+  /** 只有具体失败码能作为 partial 原因；LIST_COMPLETE/LIST_PARTIAL/MANAGER_MATCHED 不是失败。 */
+  public static boolean failureReason(Code code) {
+    return code != null
+        && code != Code.LIST_COMPLETE
+        && code != Code.LIST_PARTIAL
+        && code != Code.MANAGER_MATCHED;
+  }
+
+  /** 允许 0 或 1 个终止 LF/CRLF；不 trim、不接受额外行、控制字或非 ASCII。 */
   private static String oneLine(String raw) {
     if (raw == null || raw.isEmpty() || raw.length() > MAX_PROBE_BYTES) return null;
     String value =

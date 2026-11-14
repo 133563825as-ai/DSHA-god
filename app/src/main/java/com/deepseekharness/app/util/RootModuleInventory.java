@@ -295,6 +295,8 @@ public final class RootModuleInventory {
         && code != Code.UNSUPPORTED_MANAGER_VERSION
         && code != Code.MANAGER_AMBIGUOUS
         && code != Code.MODULE_ROOT_UNREADABLE
+        && code != Code.MODULE_DEADLINE_EXCEEDED
+        && code != Code.MODULE_SOURCE_CHANGED
         && code != Code.UNKNOWN)
       throw new IllegalArgumentException("ROOT_MODULE_UNAVAILABLE_CODE_INVALID");
     return new Result(code, null, null, List.of(), 0, 0);
@@ -353,10 +355,7 @@ public final class RootModuleInventory {
   }
 
   private static boolean failureReason(Code code) {
-    return code != null
-        && code != Code.LIST_COMPLETE
-        && code != Code.LIST_PARTIAL
-        && code != Code.MANAGER_MATCHED;
+    return RootModulePolicy.failureReason(code);
   }
 
   private static String spaces(String value) {
