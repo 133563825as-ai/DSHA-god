@@ -8,6 +8,8 @@
 
 ## 当前功能与架构
 
+新生专项：[Root-01 交付审查](root-security-root01-delivery.md)、[验收矩阵](root-security-root01-matrix.md)、[源码与测试证据](root-security-root01-evidence.json)。当前存在 P0 阻断，只能 Draft，不代表正式版安全认证。
+
 | 文档 | 解决的问题 |
 |---|---|
 | [项目维护总手册](project-architecture-handbook.md) | 全部主要功能、框架分层、入口类与修改/测试地图 |
