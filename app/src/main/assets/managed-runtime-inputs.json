@@ -835,7 +835,14 @@
     "util/ExternalInstallPlan.java",
     "util/ExternalStepOutput.java",
     "util/ExternalImportQuota.java",
-    "util/TerminalExitPolicy.java"
+    "util/TerminalExitPolicy.java",
+    "ShizukuShell.java",
+    "util/DeviceAuthorization.java",
+    "util/DeviceChannelFacts.java",
+    "util/PhysicalActionRequest.java",
+    "util/RootModulePolicy.java",
+    "util/RootModuleInventory.java",
+    "util/VscreenActionEvidence.java"
   ],
   "generatorSources": [
     "tools/mobile-server/compress.js",
