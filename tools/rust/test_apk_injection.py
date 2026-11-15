@@ -465,7 +465,9 @@ class RustApkInjectionTests(unittest.TestCase):
         (root / "two").write_bytes(b"one")
         self.assertNotEqual(first, artifact.rows_digest(artifact.file_rows(root, root)))
         (root / "one").write_bytes(b"changed")
-        self.assertNotEqual(rows[0]["sha256"], artifact.file_rows(root, root)[0]["sha256"])
+        # file_rows 依赖 os.walk 顺序，不能假设 rows[0] 仍是 "one"；按路径取回以保证与文件系统顺序无关。
+        changed = {row["path"]: row["sha256"] for row in artifact.file_rows(root, root)}
+        self.assertNotEqual(rows[0]["sha256"], changed[rows[0]["path"]])
 
     def test_symbols_exact_not_merely_count(self):
         variants = [self.symbols[:-1], ["Java_wrong_symbol"] + self.symbols[1:], self.symbols + ["extra_export"]]
