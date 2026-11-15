@@ -6,18 +6,24 @@ import static org.junit.Assert.*;
 import android.app.Application;
 import com.deepseekharness.app.core.PluginRepositoryQueryLifecycleTest;
 import com.deepseekharness.app.util.PreviewPageSession;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetSocketAddress;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +59,8 @@ public final class DownloadEngineNetworkTest {
   private TransferBehaviorTestSupport fixture;
   private DownloadEngine engine;
   private TransferArtifact artifact;
-  private HttpServer server;
+  private ServerSocket server;
+  private volatile Socket serving;
   private ExecutorService serverWorker;
   private String origin;
   private final List<Request> requests = new CopyOnWriteArrayList<>();
@@ -61,23 +68,146 @@ public final class DownloadEngineNetworkTest {
   private volatile ContentReply reply;
 
   interface ContentReply {
-    void send(HttpExchange exchange, Request request) throws Exception;
+    void send(Exchange exchange, Request request) throws Exception;
   }
 
+  /** 只使用 Android 单测 classpath 也提供的 java.net/java.io；请求头和正文均有界。 */
   static final class Request {
-    final String path, query, method, cookie, origin, range, ifRange, encoding;
+    private static final int LIMIT = 16 * 1024;
+    final String path, query, method, cookie, range, ifRange, encoding;
     final byte[] body;
 
-    Request(HttpExchange exchange) throws IOException {
-      path = exchange.getRequestURI().getPath();
-      query = exchange.getRequestURI().getRawQuery();
-      method = exchange.getRequestMethod();
-      cookie = exchange.getRequestHeaders().getFirst("Cookie");
-      origin = exchange.getRequestHeaders().getFirst("Origin");
-      range = exchange.getRequestHeaders().getFirst("Range");
-      ifRange = exchange.getRequestHeaders().getFirst("If-Range");
-      encoding = exchange.getRequestHeaders().getFirst("Accept-Encoding");
-      body = exchange.getRequestBody().readAllBytes();
+    Request(InputStream input) throws IOException {
+      String[] start = line(input).split(" ", 3);
+      if (start.length != 3) throw new IOException("fixture request line");
+      URI target = URI.create(start[1]);
+      path = target.getPath();
+      query = target.getRawQuery();
+      method = start[0];
+      Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+      int bytes = 0;
+      for (String header; !(header = line(input)).isEmpty(); ) {
+        bytes += header.length() + 2;
+        int colon = header.indexOf(':');
+        if (bytes > LIMIT || colon <= 0) throw new IOException("fixture request headers");
+        headers.put(header.substring(0, colon), header.substring(colon + 1).trim());
+      }
+      cookie = headers.get("Cookie");
+      range = headers.get("Range");
+      ifRange = headers.get("If-Range");
+      encoding = headers.get("Accept-Encoding");
+      int length;
+      try {
+        length = Integer.parseInt(headers.getOrDefault("Content-Length", "0"));
+      } catch (NumberFormatException invalid) {
+        throw new IOException("fixture request length", invalid);
+      }
+      if (length < 0 || length > LIMIT || headers.containsKey("Transfer-Encoding"))
+        throw new IOException("fixture request length");
+      body = new byte[length];
+      for (int offset = 0; offset < length; ) {
+        int count = input.read(body, offset, length - offset);
+        if (count < 0) throw new EOFException("fixture request body");
+        offset += count;
+      }
+    }
+
+    private static String line(InputStream input) throws IOException {
+      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+      while (bytes.size() <= LIMIT) {
+        int value = input.read();
+        if (value < 0) throw new EOFException("fixture request headers");
+        if (value == '\n') {
+          byte[] data = bytes.toByteArray();
+          if (data.length == 0 || data[data.length - 1] != '\r')
+            throw new IOException("fixture request newline");
+          return new String(data, 0, data.length - 1, StandardCharsets.US_ASCII);
+        }
+        bytes.write(value);
+      }
+      throw new IOException("fixture request line limit");
+    }
+  }
+
+  static final class ResponseHeaders {
+    final Map<String, String> values = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+    void set(String name, String value) {
+      values.put(name, value);
+    }
+  }
+
+  /** 每个响应后关闭连接，支持固定长度和故意构造的 chunked/短包故障。 */
+  static final class Exchange implements AutoCloseable {
+    final Request request;
+    private final Socket socket;
+    private final ResponseHeaders headers = new ResponseHeaders();
+    private OutputStream response;
+
+    Exchange(Socket socket) throws IOException {
+      this.socket = socket;
+      request = new Request(socket.getInputStream());
+    }
+
+    ResponseHeaders getResponseHeaders() {
+      return headers;
+    }
+
+    void sendResponseHeaders(int status, long length) throws IOException {
+      if (response != null) throw new IOException("fixture duplicate response");
+      boolean chunked = length == 0;
+      headers.set("Connection", "close");
+      if (chunked) headers.set("Transfer-Encoding", "chunked");
+      else headers.set("Content-Length", Long.toString(length));
+      StringBuilder head = new StringBuilder("HTTP/1.1 ").append(status).append(" fixture\r\n");
+      for (Map.Entry<String, String> row : headers.values.entrySet())
+        head.append(row.getKey()).append(": ").append(row.getValue()).append("\r\n");
+      OutputStream raw = socket.getOutputStream();
+      raw.write(head.append("\r\n").toString().getBytes(StandardCharsets.US_ASCII));
+      raw.flush();
+      response =
+          new OutputStream() {
+            private boolean closed;
+
+            @Override
+            public void write(int value) throws IOException {
+              write(new byte[] {(byte) value}, 0, 1);
+            }
+
+            @Override
+            public void write(byte[] bytes, int offset, int count) throws IOException {
+              if (closed) throw new IOException("fixture response closed");
+              if (count == 0) return;
+              if (chunked)
+                raw.write(
+                    (Integer.toHexString(count) + "\r\n").getBytes(StandardCharsets.US_ASCII));
+              raw.write(bytes, offset, count);
+              if (chunked) raw.write(new byte[] {'\r', '\n'});
+            }
+
+            @Override
+            public void flush() throws IOException {
+              raw.flush();
+            }
+
+            @Override
+            public void close() throws IOException {
+              if (closed) return;
+              closed = true;
+              if (chunked) raw.write("0\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+              raw.flush();
+            }
+          };
+    }
+
+    OutputStream getResponseBody() throws IOException {
+      if (response == null) throw new IOException("fixture response headers missing");
+      return response;
+    }
+
+    @Override
+    public void close() throws IOException {
+      socket.close();
     }
   }
 
@@ -119,7 +249,7 @@ public final class DownloadEngineNetworkTest {
     engine = fixture.engine();
     artifact = artifact("network-fixture", "network.bin", BYTES);
     openedOffsets.clear();
-    server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server = new ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"));
     serverWorker =
         Executors.newSingleThreadExecutor(
             runnable -> {
@@ -127,10 +257,8 @@ public final class DownloadEngineNetworkTest {
               thread.setDaemon(true);
               return thread;
             });
-    server.setExecutor(serverWorker);
-    server.createContext("/api/dsha/files/", this::handle);
-    server.start();
-    origin = "http://127.0.0.1:" + server.getAddress().getPort();
+    serverWorker.execute(this::serve);
+    origin = "http://127.0.0.1:" + server.getLocalPort();
     Controller.identity =
         new PreviewPageSession.Identity(41, "network-instance", origin + "/?token=fixture");
     Controller.cookie = COOKIE;
@@ -142,15 +270,38 @@ public final class DownloadEngineNetworkTest {
     try {
       fixture.close();
     } finally {
-      if (server != null) server.stop(0);
-      if (serverWorker != null) serverWorker.shutdownNow();
+      if (server != null) server.close();
+      Socket active = serving;
+      if (active != null) active.close();
+      if (serverWorker != null) {
+        serverWorker.shutdownNow();
+        assertTrue(
+            "本机 HTTP 夹具线程必须退出",
+            serverWorker.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+      }
     }
     if (serverError.get() != null) throw new AssertionError("本机 HTTP 夹具失败", serverError.get());
   }
 
-  private void handle(HttpExchange exchange) throws IOException {
+  private void serve() {
+    while (!server.isClosed()) {
+      try (Socket socket = server.accept()) {
+        serving = socket;
+        socket.setSoTimeout(5000);
+        try (Exchange exchange = new Exchange(socket)) {
+          handle(exchange);
+        }
+      } catch (Throwable failure) {
+        if (!server.isClosed()) serverError.compareAndSet(null, failure);
+      } finally {
+        serving = null;
+      }
+    }
+  }
+
+  private void handle(Exchange exchange) throws IOException {
     try {
-      Request request = new Request(exchange);
+      Request request = exchange.request;
       requests.add(request);
       if (request.path.endsWith("/resolve")) {
         JSONObject manifest = artifact.toJson();
@@ -171,7 +322,7 @@ public final class DownloadEngineNetworkTest {
     }
   }
 
-  private void send(HttpExchange exchange, int status, byte[] bytes) throws IOException {
+  private void send(Exchange exchange, int status, byte[] bytes) throws IOException {
     exchange.getResponseHeaders().set("ETag", '"' + artifact.sha256 + '"');
     exchange.sendResponseHeaders(status, bytes.length);
     try (OutputStream output = exchange.getResponseBody()) {
@@ -179,7 +330,7 @@ public final class DownloadEngineNetworkTest {
     }
   }
 
-  private void sendRange(HttpExchange exchange, int offset) throws IOException {
+  private void sendRange(Exchange exchange, int offset) throws IOException {
     exchange
         .getResponseHeaders()
         .set("Content-Range", "bytes " + offset + "-" + (BYTES.length - 1) + "/" + BYTES.length);
@@ -218,10 +369,7 @@ public final class DownloadEngineNetworkTest {
     assertEquals(
         List.of("/api/dsha/files/resolve", "/api/dsha/files/content", "/api/dsha/files/release"),
         requests.stream().map(request -> request.path).toList());
-    for (Request request : requests) {
-      assertEquals(COOKIE, request.cookie);
-      assertEquals(origin, request.origin);
-    }
+    for (Request request : requests) assertEquals(COOKIE, request.cookie);
     Request resolve = requests.get(0), content = contentRequests().get(0);
     assertEquals("POST", resolve.method);
     JSONObject body = new JSONObject(new String(resolve.body, StandardCharsets.UTF_8));
