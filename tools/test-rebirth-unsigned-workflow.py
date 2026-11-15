@@ -120,6 +120,28 @@ class CandidateWorkflowTest(unittest.TestCase):
         self.assertIn("t.path == ':app:validateSigningStandardRelease'", fence)
         self.assertIn("chain.contains('com.android.build.gradle.internal.tasks.ValidateSigningTask')", fence)
 
+    def test_build_diagnostic_is_fixed_codes_and_bounded_task_names_only(self):
+        text = (ROOT/'.github/workflows/rebirth-unsigned-candidate.yml').read_text()
+        for code in ['TASK_ENTRY', 'PROPERTIES', 'ENVIRONMENT', 'ANDROID_CONFIGURATION', 'FORBIDDEN_GRAPH']:
+            self.assertIn("println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_" + code + "')", text)
+            self.assertIn("throw new GradleException('REBIRTH_PACK_" + code + "')", text)
+        self.assertIn('reason=GRADLE_FAILED_UNCLASSIFIED exitCode=%s', text)
+        self.assertNotIn('BASH_COMMAND', text)
+        self.assertNotIn('forbidden*.path', text)
+        self.assertIn('forbidden.take(32)', text)
+        self.assertIn('taskName=COUNT_TRUNCATED', text)
+        pattern = re.search(r'def safeName = t.name ==~ /([^/]+)/ \? t.name : \'UNSAFE_NAME\'', text)
+        self.assertIsNotNone(pattern)
+        for value in ['packageStandardRelease', 'extractStandardReleaseNativeDebugMetadata']:
+            self.assertEqual(value, value if re.fullmatch(pattern.group(1), value) else 'UNSAFE_NAME')
+        for value in ['bad%0A::error::PRIVATE', 'bad\nPRIVATE', ':app:privateTask', '../private', '', 'a'*121]:
+            safe = value if re.fullmatch(pattern.group(1), value) else 'UNSAFE_NAME'
+            self.assertEqual('UNSAFE_NAME', safe)
+            self.assertNotIn('PRIVATE', safe)
+        # 仍保留原拒绝规则，不因诊断放行Debug/Low任务或JVM环境注入。
+        self.assertIn('n ==~ /(?i).*(Debug|Low).*/', text)
+        self.assertIn("'JAVA_TOOL_OPTIONS'", text)
+
     def test_unsigned_artifact_success_only_and_evidence_no_wide_builds(self):
         text = (ROOT/'.github/workflows/rebirth-unsigned-candidate.yml').read_text()
         artifact = text.split('      - name: Upload unsigned candidate not for installation', 1)[1].split('      - name: Upload package check evidence', 1)[0]

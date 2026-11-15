@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          trap 'rc=$?; printf "::error::gate=unsigned-candidate-build exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          trap 'rc=$?; printf "::error::gate=unsigned-candidate-build reason=GRADLE_FAILED_UNCLASSIFIED exitCode=%s\n" "$rc"; exit "$rc"' ERR
           # 全新CI home只放此固定受管init，不继承tests-only围栏或任何密钥配置。
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cat > "$GRADLE_USER_HOME/gradle.properties" <<'PROPERTIES'
@@ -82,22 +82,30 @@ jobs:
           PROPERTIES
           cat > "$GRADLE_USER_HOME/init.d/rebirth-unsigned.gradle" <<'GRADLE'
           def expectedTasks = [':app:printReleaseIdentity', ':app:assembleStandardRelease']
-          if (gradle.startParameter.taskNames != expectedTasks)
+          if (gradle.startParameter.taskNames != expectedTasks) {
+            println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_TASK_ENTRY')
             throw new GradleException('REBIRTH_PACK_TASK_ENTRY')
+          }
           def required = ['dsha.identity': 'upstream', 'dsha.unsignedPackage': 'true', 'dsha.rebirthCandidate': 'true']
-          if (gradle.startParameter.projectProperties != required)
+          if (gradle.startParameter.projectProperties != required) {
+            println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_PROPERTIES')
             throw new GradleException('REBIRTH_PACK_PROPERTIES')
+          }
           def forbiddenEnv = ['DSHA_KEYSTORE', 'DSHA_KEYSTORE_PASSWORD', 'DSHA_KEY_PASSWORD', 'DSHA_KEY_ALIAS', 'DSHA_SUNSET_TEST', 'DSHA_DEBUG_PACKAGE', 'DSHA_DEV_PACKAGE', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'GRADLE_OPTS', 'JAVA_OPTS']
-          if (forbiddenEnv.any { System.getenv(it) } || System.getenv().keySet().any { it.startsWith('ORG_GRADLE_PROJECT_') })
+          if (forbiddenEnv.any { System.getenv(it) } || System.getenv().keySet().any { it.startsWith('ORG_GRADLE_PROJECT_') }) {
+            println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_ENVIRONMENT')
             throw new GradleException('REBIRTH_PACK_ENVIRONMENT')
+          }
           gradle.startParameter.setParallelProjectExecutionEnabled(false)
           gradle.startParameter.setMaxWorkerCount(2)
           gradle.projectsEvaluated {
             def app = gradle.rootProject.findProject(':app')
             def android = app?.extensions?.findByName('android')
             if (android == null || android.defaultConfig.applicationId != 'dsh.android.client.rebirth' ||
-                android.buildTypes.release.debuggable || android.buildTypes.release.signingConfig != null)
+                android.buildTypes.release.debuggable || android.buildTypes.release.signingConfig != null) {
+              println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_ANDROID_CONFIGURATION')
               throw new GradleException('REBIRTH_PACK_ANDROID_CONFIGURATION')
+            }
           }
           gradle.taskGraph.whenReady { graph ->
             def forbidden = graph.allTasks.findAll { t ->
@@ -120,7 +128,15 @@ jobs:
               def actualSigning = chain.any { it.contains('SignApk') || it.contains('PackageBundleTask') || it.contains('FinalizeBundleTask') }
               forbiddenName || actualSigning
             }
-            if (!forbidden.empty) throw new GradleException('REBIRTH_PACK_FORBIDDEN_GRAPH: ' + forbidden*.path)
+            if (!forbidden.empty) {
+              println('::error::gate=unsigned-candidate-build reason=REBIRTH_PACK_FORBIDDEN_GRAPH')
+              forbidden.take(32).each { t ->
+                def safeName = t.name ==~ /[A-Za-z0-9_]{1,120}/ ? t.name : 'UNSAFE_NAME'
+                println('::error::gate=unsigned-candidate-build taskName=' + safeName)
+              }
+              if (forbidden.size() > 32) println('::error::gate=unsigned-candidate-build taskName=COUNT_TRUNCATED')
+              throw new GradleException('REBIRTH_PACK_FORBIDDEN_GRAPH')
+            }
           }
           GRADLE
           # 仅候选无签名release；不调用sign/package发布脚本，不生成测试证书。
