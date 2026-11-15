@@ -1,6 +1,6 @@
 # transfer Kotlin API 精确对照（2026-11-15）
 
-基线 `b3602555`；与 [迁移回执](transfer-kotlin-migration-20261115.md) 配套。下表从原 Java 与最终 Kotlin class 文件自动解析，并以 `javap -p -s` 留存复核。只覆盖 12 个具名边界类型，原 private 内部实现与匿名/编译器类不充作稳定 API。
+原 Java 基线 `b3602555`；与 [迁移回执](transfer-kotlin-migration-20261115.md) 配套。原 8 Java 在 `e368e6d8` 中字节未变；迁移代码已重基为 `4253b00a`，并在新基线重新验证。下表从原 Java 与 Kotlin class 文件自动解析；e368 的真实 Gradle Kotlin 输出与重新混编输出两套均以 classfile + `javap -p -s` 重核，以下 93 原成员、可见性/final/23 基础设施差异完全相同。只覆盖 12 个具名边界类型，原 private 内部实现与匿名/编译器类不充作稳定 API。新轮证据为 `/tmp/transfer-e368-api-2e0bfb12{.json,.javap.json}` 及 `/tmp/transfer-e368-gradle-api-2e0bfb12{.json,.javap.json}`；验证代码 HEAD 4253b00a，后续仅文档提交不冒称已执行源码 HEAD。
 
 原非 private、非 synthetic 成员 **93**，其中 `<clinit>` **3**；丢失 0、checked exception 变化 0、原 private 入口放宽 0。Class major 均为 61。不是位级完全一致。
 

@@ -1,6 +1,6 @@
 # transfer 整域 Kotlin 迁移回执（2026-11-15）
 
-本批次完成本地实现和验证；不是发布、安装或手机验收。分支 `migrate-transfer-kotlin-r2`，基线为开工 fetch 后的 `origin/main`：`b3602555b39056279bc5131e7eaefc1a6be114ae`。已发布版本仍为 build366 / `5ccc8aa3`。提交号以分支 HEAD 与工作树 `.SESSION-DONE` 为准。
+本批次完成本地实现和验证；不是发布、安装或手机验收。分支 `migrate-transfer-kotlin-r2`。开工基线为 `b3602555b39056279bc5131e7eaefc1a6be114ae`；当前代码已重基到 P1 出口后的 `e368e6d8a0b8679faa138feb51dd70f2447860e1`，代码提交 `4253b00af9c9aea9a51091e1459f53a7d36e9447`，新基线复验见文末。下方首轮结果保留为 b3602555 的历史证据，不把其环境限制套到新轮；当前发布仍为 build366 / `5ccc8aa3`。按主会话顺序，仍须等 SAF #1 合入后再重基一次交 ready；本批未 push/merge/安装。
 
 ## 实现范围与 owner
 
@@ -114,3 +114,25 @@ K2JVMCompiler 2.2.10 + javac 17，目标字节码 17，生产编译使用 SDK37�
 不自行 push、合并、发布、安装或操作手机。主会话合入前需基于当时 main 重核/必要时 rebase，独立逐行审查并请用户批准上述明确兼容例外；受管输入和最终 descriptor 由主会话处理。
 
 回退为 revert 本批提交，恢复 8 Java 并删除同名 Kotlin、恢复本域格式清单条目；不改用户数据/偏好键/协议/包名/数据格式。若主会话之后配套更新受管输入，回退时需串行恢复对应输入并重算 descriptor。
+
+## e368e6d8 重基复验（P1 出口后）
+
+本节覆盖前文首轮环境限制与旧输入口径。原迁移 `d79c79fe` 无冲突重基为 `4253b00af9c9aea9a51091e1459f53a7d36e9447`，父基线为 `e368e6d8a0b8679faa138feb51dd70f2447860e1`；两基线之间 transfer 生产/测试未变，迁移 8 对源码及新增测试的字节也未变。本轮验证代码 HEAD 是 **4253b00a**；之后的文档提交不冒称已执行的源码 HEAD，交付前再次核对全部已编译/已测源码 SHA。
+
+| 验证 | e368 实际结果 |
+|---|---|
+| 标准 Gradle Kotlin + 输入门禁 | `dsha-gradle :app:compileStandardDebugKotlin :app:verifyRuntimeDescriptorInputs` **BUILD SUCCESSFUL**，25 任务/23 executed/2 up-to-date；未排除任务、未改仓库构建配置 |
+| 新布局完整生产输入 | SourceLayout 的 main/standard/debug **1072** 个真实生产源与手工编译器选入的物理源集合完全对等；另有 14 个生成 Java/AIDL 等价源，合计 **1052 Java + 34 Kotlin** |
+| 测试混编/执行 | 14 个显式 Java + 1 个 Kotlin 测试源（另编 NoApkRunner 传递 helper）；**88/0**，15 份测试 SHA 与前轮完全相同、14 FQCN 不变 |
+| 原 Java ABI 对照 | 手工与**真实 Gradle Kotlin 输出**两套 class 均重核：12 类型/93 原成员，0 missing/0 checked exception 差/0 原 private 放宽；仍仅已批 10 成员+4 类型、35 加 final/2 减、23 基础设施成员 |
+| 全树格式 | Java **1812 文件/58 批/0 need**，manifest missing=0/extra=0；Kotlin **38 文件/10 批/0 need**；Java jobs=1，离线锁定工具 |
+| 边界/输入/源码 | core **25/0**、布局 **16/0**、运行时输入 **18/0**、格式清单 **4/0**、descriptor source **4/0**；architecture/源码卫生/共享映射检查均通过 |
+| full 输入计划 | 1 个真实任务、**785 测试源/5245 声明/1889 代码输入/593 资源**；仅生成静态 plan，**不是 full 执行或 baseline matched 证明** |
+
+固定输入只恢复到忽略路径：前六项按 e368 runtime descriptor 的摘要验证；python-support 进一步按 `tools/ci-build-inputs.lock.json` 的独立 pin 验证，adb-wheels 按原独立锁验证，两个 recovery 归档按 recovery 锁验证。`ci-assets.verify_sources()` 全部通过，未改任何锁、原始 JSON/proof/descriptor。保留首次缺 python-support、第二次缺 adb-wheels 的失败日志；补齐完整固定输入后第三次标准编译通过，不隐藏失败，也不继续宣称仍被 dsh-runtime.bin 阻断。
+
+受管身份变化单独记账：b360 main 的 `a50a81c7abcb74fc21e90eac5ccc04cc9c3b2565bcb285b958c202451aee37a0` 到 e368 main 的 `c4f17521bc372a8159cfb7b820999099ccf239ffe73aba1f25f32eed225b2923` 属 **A8-P1/main** 的配方与 `generatorSources`（新增 `ci/source-layout.json`、`tools/source_layout.py`）变更。当前本域相对 e368 的实际 **517** 个 launcherInputs：新增 0、删除 0、字节变化 0，transfer 键仍为 0；baseVersion 10/dataWrite 不变。实际检查为 **103 安装/205 资产/517 启动输入**；`prepare-runtime-descriptor.py --check` 匹配 e368 descriptor，未使用 `--write` 自行收口。后续 SAF 合入会带来另一笔受管变化，届时以新 main 串行结果为准。
+
+本轮证据位于 `/tmp/transfer-e368-88-2e0bfb12/`（含绑定 4253b00a 的 source-layout-audit、source/test SHA、全部编译/JUnit 参数与日志）、`/tmp/transfer-e368-gradle-r3-2e0bfb12.log`、`/tmp/transfer-e368-{api,gradle-api}-2e0bfb12{.json,.javap.json}`、`/tmp/transfer-e368-{host,format,input-impact,ci-inputs}-2e0bfb12.json`、两种 format 日志及 full plan/summary。Gradle 产物 ABI 来自本树 `app/build/intermediates/built_in_kotlinc/standardDebug/compileStandardDebugKotlin/classes`，未拿其它树编译结果代替。
+
+仍未验：本批 Gradle 全量 Test/正式 unit-run proof、Lint、APK/Dex、签名/安装/真机；手工测试仍沿用前文 SDK34/Conscrypt OFF/Origin 的本机配置，不能替代默认完整 CI。Kotlin 标准编译已通过，不再列为未验。按主会话指令，本轮结束只报告 e368 复验完成；SAF #1 合入后再重基一次并交主会话独审，不 push/merge。
