@@ -1,12 +1,13 @@
 # 网络健康 Kotlin 迁移：JVM ABI 冻结与对照（2026-11-15）
 
-交付验证基线 `e368e6d8a0b8679faa138feb51dd70f2447860e1`，Java 测试冻结 `79fa4772ec2637f7c0064c2b2d5b1882a433c19c`，生产复验源快照 `f0809ddcf1dbcf0fc568eb5fe3b48fc79b6f8bcd`。使用 JDK 17 `javap -p -s`，原 Java 与替换 Kotlin 分别从本轮真实生产混编产物重新读取；不是手写签名或测试 stub。两侧新取原文与初轮 b3602555 输出逐字节相等，以下保留完整原文。比较忽略编译器 lambda 名、枚举内部数组构建器和 clinit；源级类型/字段/方法/构造逐项核对。文档修正后最终 SHA 见主回执与 `.SESSION-DONE`；SAF/transfer 后最终重基线时再次更新绑定。
+最终验证基线 `823fd4c83184c65ec7311357d8e3b53595fe8da7`（已含 SAF/transfer），Java 测试冻结 `f1ad2bc03003694466741a31bac5f0e4981c6888`，生产复验源快照 `8920acc41881cc31aafe6cf711b64ba6d0ad8635`。使用 JDK 17 `javap -p -s`，原 Java 与替换 Kotlin 分别从最终基线新编译产物重新读取；不是手写签名或测试 stub。两侧新取原文与 e368e6d8 中间复验、初轮 b3602555 输出逐字节相等，以下保留完整原文。比较忽略编译器 lambda 名、枚举内部数组构建器和 clinit；源级类型/字段/方法/构造逐项核对。最终文档收口提交不改被测生产/测试源，其 HEAD 完整 SHA 见 `.SESSION-DONE` 与同轮 ready 回报；本节明确绑定实际被编译的源提交，不伪填文档自身尚未生成的 SHA。
 
 - 原类型：8；逐项核对成员：93；缺失、原 private 放宽、字段 static/final/volatile 改变、原声明异常改变：0。
 - 已批准的原可见性差异：1 类型 + 6 成员，共 7 项，列于下表。
 - 新增方法 ACC_FINAL：32，owner 原先全部为 final，原可覆写边界变化 0。
 - 外层差异记录 20 条 = 原 8 类型内新增成员 17 条 + 新增 Companion 类型本体 3 条；不是全部新增成员总数，也不是 20 项原成员可见性放宽。
 - 3 个 Companion 内另有 16 个 public 非 synthetic 方法、3 个 public synthetic 构造桥；还包含 3 个 private 构造、3 个 private lambda helper，分型计数见后表。
+- 本轮同时从实际 Gradle Kotlin Compile 目录读取 11 个类型（原 8 + 3 Companion），完整 `javap -p -s` 与本轮直接编译的 Kotlin 输出逐字节一致；原/新 ABI 机器结果与 Gradle 原文在 `/tmp/nethealth-final-8211ba69/abi-result.json`、`gradle-abi.json`。
 - 本文件只记录本域 ABI，不属于受管运行时证明或 descriptor。
 
 ## 原类型可见性差异
@@ -107,7 +108,7 @@
 
 16 个普通公共方法的 flags 均为 `ACC_PUBLIC, ACC_FINAL`，没有 `ACC_SYNTHETIC`：Monitor 的 `ensureStarted`、Probe 的 `run`，以及 Policy 的 `classify/shouldProbe/frozenGap/evidence/append/recent/serialize/parse/resolvState/redactNetReport/totals/known/errorName/safeToken`。它们是实存的 JVM public 方法，不隐藏为 synthetic，也不混计到七项原可见性差异。
 
-3 个公共构造桥的 descriptor 均为 `(Lkotlin/jvm/internal/DefaultConstructorMarker;)V`，flags 为 `ACC_PUBLIC, ACC_SYNTHETIC`；3 个 private 无参构造的 descriptor 均为 `()V`。另有 Probe 的 `run$lambda$0`、Policy 的 `totals$lambda$1` 与 `totals$lambda$2` 三个 private static final helper。完整签名仍保留在下面 Kotlin 原文；flags 原始输出和机器计数位于 `/tmp/nethealth-p1-after-8211ba69/*Companion.javap-v.txt` 与 `/tmp/nethealth-p1-companion-8211ba69.json`。
+3 个公共构造桥的 descriptor 均为 `(Lkotlin/jvm/internal/DefaultConstructorMarker;)V`，flags 为 `ACC_PUBLIC, ACC_SYNTHETIC`；3 个 private 无参构造的 descriptor 均为 `()V`。另有 Probe 的 `run$lambda$0`、Policy 的 `totals$lambda$1` 与 `totals$lambda$2` 三个 private static final helper。完整签名仍保留在下面 Kotlin 原文；最终轮 flags 原始输出和机器计数位于 `/tmp/nethealth-final-8211ba69/after/*Companion.javap-v.txt` 与 `/tmp/nethealth-final-8211ba69/companion.json`；e368 中间轮的 `/tmp/nethealth-p1-after-8211ba69/*Companion.javap-v.txt` 和 `/tmp/nethealth-p1-companion-8211ba69.json` 仍保留。
 
 ## Java 冻结：完整 javap -p -s
 

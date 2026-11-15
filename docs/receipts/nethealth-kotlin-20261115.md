@@ -1,10 +1,10 @@
 # 网络健康封闭切片 Kotlin 等价迁移回执（2026-11-15）
 
-## A8-P1 后交付快照
+## 最终交付基线与验证快照
 
-本轮已重基线到 `e368e6d8a0b8679faa138feb51dd70f2447860e1`；测试冻结提交为 `79fa4772ec2637f7c0064c2b2d5b1882a433c19c`，生产与测试复验执行时的提交为 `f0809ddcf1dbcf0fc568eb5fe3b48fc79b6f8bcd`。主会话已独立确认代码、ABI、59 项身份与复跑通过，要求修正本回执的基线/计数说明（P2×2），不改生产与测试代码。当前文档修正后的可合入 SHA 以 `.SESSION-DONE` 和 main 回报为准；本轮验证之后仅调整这两份回执。
+本分支已在 SAF、transfer 合入后，重基线到 main 指定的 `823fd4c83184c65ec7311357d8e3b53595fe8da7`。本轮 Java 测试冻结提交为 `f1ad2bc03003694466741a31bac5f0e4981c6888`，生产/测试验证执行的源提交为 `8920acc41881cc31aafe6cf711b64ba6d0ad8635`。三份生产 Kotlin 与七份测试源码相对主审完成的版本逐字节相等；回执收口提交只调整本文件及 ABI 回执。最终可审 HEAD 的完整 SHA 记录在 `.SESSION-DONE` 和同轮 `peer_report ready`，与本节验证源提交明确分开。
 
-`b3602555`、`fcea9e41`、`67428782` 仅为 rebase 前历史记录，不能作为当前分支按字面执行回退的 SHA。以下保留初轮输入 SHA-256 与旧日志，当前复验结果见文末「A8-P1 后复验」。按 main 排序，仍须待 SAF/transfer 合入后重基到最终 main 并复验，当前不以旧基线结果冒认最终交付。
+主会话此前已独立确认代码、ABI、59 项身份与复跑通过；两项 docs P2（基线/回退指向、Companion 成员计数）已在 `9945bd6b` 修正。`b3602555/fcea9e41/67428782`、`e368e6d8/79fa4772/f0809ddc/9945bd6b` 均仅作前轮历史，不能作为当前分支按字面回退的 SHA。下文保留 Java 输入 SHA-256 表及两轮旧日志，最终基线的重新执行结果见「SAF/transfer 合入后最终复验」，不将旧树成果当作本轮验证。
 
 ## 初轮范围与基线（b3602555）
 
@@ -109,7 +109,7 @@ Monitor 测试只替换共享协作者的只读边界；outer static 和 Compani
 
 初轮在 b3602555 读取 [managed-runtime-inputs.json](../../app/src/main/assets/managed-runtime-inputs.json) 和 [输入枚举规则](../../tools/runtime_input_contract.py)，当时 `launcher_paths` 返回 515 个 key，其中本域 0 项：三个旧 Java 与新 Kotlin 路径均不在 launcherSources，nethealth 与 util/NetworkHealthPolicy 也不受 launcherTrees 覆盖。**本任务生产源码是 3 删 3 增，受管源码 key 增删为 0。** A8-P1 后布局生成器纳管使总 key 变为 517，本域仍为 0，见下面的新树实测。不改受管 JSON/proof/固定输入/descriptor；完整摘要由 main 串行收口，本回执不声称替 main 重算了 descriptor。
 
-回退只针对本分支的两提交栈、且工作树干净并未叠加新工作时：先 `git revert HEAD` 撤回当前生产迁移（含本回执修正），恢复三 Java、三个生产格式条目并删除三 Kotlin/迁移回执，保留可在 Java 上运行的基线测试；需要全部撤回时，再 `git revert 79fa4772ec2637f7c0064c2b2d5b1882a433c19c` 撤回本轮测试冻结。不得拿历史 `fcea9e41` 替代当前测试提交。若再次重基线，必须以最终回执对应的新测试提交更新第二步。无设置、数据格式、包名或运行时数据迁移，无需清数据；main 合并后的回退由 main 对已合入提交及身份配套安排。
+回退只针对本轮最终三提交栈、工作树干净且未叠加新工作时：先 `git revert HEAD` 撤回最终文档收口；再 `git revert 8920acc41881cc31aafe6cf711b64ba6d0ad8635` 撤回生产迁移，恢复三 Java、三个生产格式条目并删除三 Kotlin/迁移回执，保留可在 Java 上运行的基线测试；需要全部撤回时，最后 `git revert f1ad2bc03003694466741a31bac5f0e4981c6888` 撤回测试冻结。前轮历史 SHA 不用于本轮按字面回退。无设置、数据格式、包名或运行时数据迁移，无需清数据；main 合并后的回退由 main 对已合入提交及身份配套安排。
 
 ## A8-P1 后复验（e368e6d8 / 79fa4772 / f0809ddc）
 
@@ -135,4 +135,36 @@ Monitor 测试只替换共享协作者的只读边界；outer static 和 Compani
 
 新版外部观测器仅在测试 JVM 里记录 JUnit 描述，不替换生产或测试逻辑。源归档最初遗漏两个生成器 Python helper、观测器初次长 classpath 参数未用 args 文件、第一次成功观测后未显式退出 JVM，均是仓库外验证脚本问题：按同一基线补齐工具、改用参数文件及与 JUnitCore.main 等价的退出后，定稿进程 exit0；没有改产品代码、测试期望或身份。所有真正编译/运行均使用共享构建锁串行；无后台任务残留后才结束本轮。
 
-A8-P1 全量入口的 plan 通过只证明计划可构建；本域手工 59 项与主会话已通过的 P1 CI 不冒充本候选完整 full 运行。完整 Gradle/CI 单测、Lint/APK/设备验收仍由后续 main 集成承担。按 main 最新顺序，本树必须在 SAF/transfer 合入后再次 rebase 到最终 main，重录该树结果再报 ready；本节暂为 e368e6d8 的中间复验。
+A8-P1 全量入口的 plan 通过只证明计划可构建；本域手工 59 项与主会话已通过的 P1 CI 不冒充本候选完整 full 运行。完整 Gradle/CI 单测、Lint/APK/设备验收仍由后续 main 集成承担。本节仅保留 e368e6d8 中间轮证据；SAF/transfer 已合入后的最终轮结果另列如下。
+
+## SAF/transfer 合入后最终复验（823fd4c8 / f1ad2bc0 / 8920acc4）
+
+最终 main 已包含 SAF #1、transfer #2 及其测试夹具修复。两提交无冲突重基线为 `f1ad2bc03003694466741a31bac5f0e4981c6888`（Java 原实现 + 本域测试冻结）→ `8920acc41881cc31aafe6cf711b64ba6d0ad8635`（Kotlin 替换与前轮文档）；以下新鲜执行均绑定该基线和源提交。最终只追加两份回执收口，不改 3 个生产和 7 个相关测试源；三生产、七测试与 `9945bd6b` 及主审源快照均逐字节相等。当前回退入口使用本节新提交，不使用前轮 SHA。
+
+| 最终树检查 | 实际结果 |
+|---|---|
+| SourceLayout / HEAD | PASS；共享布局枚举与当前被编译源字节相符 |
+| 原 Java 实现真实混编 | 从 `f1ad2bc0` 精确导出；**1037 Java + 49 Kotlin**，包含当前 SAF/transfer；6 Java + 1 Kotlin 本域测试源；全部编译 exit0 |
+| 替换后真实混编 | **1034 Java + 52 Kotlin**，同样包含当前 SAF/transfer；6 Java + 1 Kotlin 本域测试源；全部编译 exit0 |
+| 前后定向执行 | Java/Kotlin 两侧各 **59/59，0 failure、0 ignore**；不是把两次累加为 118 个覆盖 |
+| 精确身份对照 | 前后 59 个 `(classname, method)` 逐项相同，无新增/缺失/重复，且与新计划本域 59 声明完全一致 |
+| JVM ABI | 原 8 类型/93 成员、7 例外，32 个新增 ACC_FINAL 均为原 final owner；本轮两侧完整 javap 与前轮逐字节相等 |
+| 真实 Gradle ABI | 从本树真实 Kotlin Compile 产物读取 11 类型（含 3 Companion），与本轮直接编译 javap 逐字节相等；原契约和 Companion 分层计数保持 |
+| Java 格式 | **1798/1798 文件、57 批、0 need**；manifest missing=0/extra=0；本域仍仅 3 删/3 增，其他条目相对顺序与政策字段不变 |
+| Kotlin 格式 | **58 文件、14 批、0 need** |
+| core / architecture | **25/25 PASS** / PASS |
+| 运行时输入契约 | **18/18 PASS**；103 安装项、205 资产、517 启动输入，本域 keys=0 |
+| 新 full 静态计划 | **exit0**：791 测试源、5296 声明、593 资源，本域仍 59 声明；不是 full 执行或 baseline matched 的证明 |
+| 卫生 / 文档 | PASS / **56 documents、1328 links、0 warning、0 error**；最终提交前再次核对 |
+| 真实 Gradle 生产任务 | `dsha-gradle :app:compileStandardDebugKotlin :app:compileStandardDebugJavaWithJavac :app:verifyRuntimeDescriptorInputs`（另带仓库外只读测试图导出任务）**BUILD SUCCESSFUL**；29 任务、17 executed/12 up-to-date，生产 Kotlin 与 Java Compile 本轮均实际执行 |
+| Gradle 定向 Test 尝试 | 指定同域过滤实际运行，**exit1** 于 `processStandardDebugResources`：本机 x86_64 AAPT2 `bad machine`；没有运行到 Test，不记作 Gradle Test 成功 |
+| 实际 Android 测试编译图 | 只读导出本树 Gradle Java/Kotlin 测试源码、依赖和 `--system` jdkImage 后，**全部 785 Java + 6 Kotlin 测试源直接编译 exit0**；编译图未添加 SDK34/android-all/宿主 JDK 模块 |
+| 实际解析运行依赖中的本域测试 | 从上述真实测试图产物、本树实际生产输出和已解析运行依赖执行同身份 **59/59**，0 failure/ignore；仍保留本机 SDK34 runtime、Conscrypt OFF/opens，属于直接 JUnit 执行，不是 Gradle Test/full proof |
+
+Gradle 生产编译日志中的 SAF/transfer/更新域既有弃用、nullable 和 `VAL_REASSIGNMENT` 抑制警告保持原状，没有修共享实现；没有 nethealth 新编译错误。本域 Kotlin、Java 真实调用方和全部测试图编译已经实际成功，不再写为“生产/测试源码未编译”。受限项准确为 Gradle Test/资源链接、CI full/正式 `unit-run` proof、Lint/APK/签名/设备矩阵，均未由本轮证明。
+
+真实 Android 测试图只读导出任务来自仓库外 `/tmp/nethealth-final-test-inputs-8211ba69.init.gradle`，没有修改 Gradle 工程或过滤设置。AAPT2 未生成的 resource-linked R.jar 和 app classes JAR 只在仓库外直接编译消费者中映射为**同树真实 Gradle 已生成的 compile R.jar 与已编译生产 Java/Kotlin 目录**；测试 Kotlin 输出映射到本次直接编译目录。映射逐项进入 `test-compile-receipt.json`，没有伪造 R/BuildConfig 或用未声明 SDK/JDK 模块补齐测试编译图，不能据此声称 AAPT2/资源打包通过。
+
+最终机器证据根为 `/tmp/nethealth-final-8211ba69/`：`binding.json` 绑定完整 base、Java 冻结和被测生产源 HEAD；`before-compile.log`、`after-compile.log`、`before/`、`after/` 保存真实参数与 59 项日志；`identities.json` 保存精确身份对照；`abi-result.json`、`companion.json`、`gradle-abi.json` 保存字节码核验；`gates.json` 和各门禁日志保存最终格式/边界/输入结果。`gradle-production.log`、`gradle-test.log` 保留成功编译与资源阻断的不同结果；`gradle-test-inputs.json`、`android-tests/{test-compile-receipt.json,receipt.json,identities.tsv}` 绑定实际测试图的 785/6 编译与第三次同身份 59 执行。原 Java SHA-256 表、初轮和 e368 旧日志继续保留。
+
+相对最终 base 的 [受管清单](../../app/src/main/assets/managed-runtime-inputs.json)、[descriptor](../../app/src/main/assets/runtime-descriptor.json)、[固定归档证明](../../app/src/main/assets/dsh-runtime.inputs.json)、[源码布局](../../ci/source-layout.json) 均逐字节未变。本域受管 key 仍增删 0，累计 Java 格式条目精确 3 删/3 增，记录在 `input-delta.json`。真实 Gradle 校验读到 main 已提交的 `63adce0a3df6f0c46494dc6adf030f07f80724557f139b3598755caa1607e2ad`；它是 SAF/main 的现有身份，本任务没有自行写入新 descriptor、proof 或手工证明。最终合并时身份收口继续由 main 执行。
