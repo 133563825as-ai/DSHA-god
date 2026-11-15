@@ -1,6 +1,6 @@
 # A8 P1：工程门禁准备实现与验证（2026-11-15）
 
-本批已实现共享源码映射、全仓测试身份/新鲜报告门禁和可直接应用的构建约定，**不提取生产类，不创建产品模块，不解锁 P2–P7**。P1 完整出口尚未通过：原始历史 CI 材料已恢复并通过导入预核，正式身份基线在追加代码提交后冻结；最终受管输入登记、归档重建与 descriptor 仍由 main 串行完成。待完成这些步骤后再做候选完整 CI，不能把本页本机夹具测试写成整仓通过。
+本批已实现共享源码映射、全仓测试身份/新鲜报告门禁和可直接应用的构建约定，**不提取生产类，不创建产品模块，不解锁 P2–P7**。P1 完整出口尚未通过：历史 CI 的正式身份基线已在整改代码提交后导入冻结；最终受管输入登记、归档重建与 descriptor 仍由 main 串行完成。待完成这些步骤后再做候选完整 CI，不能把本页本机夹具测试写成整仓通过。
 
 依据：[A8 基线 §9](a8-task-baseline-20261114.md#9-convention-plugin-与测试数硬门禁)、[§11](a8-task-baseline-20261114.md#11-实现阶段与逐提交回退点待批准)、[ADR-0004](../../adr/0004-kotlin-rust-direction.md)及[工具链](../../kotlin-toolchain.md)。用户本次直接授权的是独立 P1 工程准备；基线的 P2–P7 前置与业务收口不因此获准。
 
@@ -72,7 +72,7 @@ begin 校验计划、HEAD/源码输入、Rust 构建 receipt 和库摘要后，�
 
 仓库根 out、local.properties、module/build 不作为普通受管源资源；后者仅通过上述精确生成器取得编译输入证明。自定义 manifest 等其他外部 Gradle 输入、java/kotlin 根内非代码文件、任意外部 fixture owner 仍须由集成方单独拒绝或登记，不能扩大本工具对标准代码根/资源根的保证。
 
-[历史基线文件](../../../ci/unit-test-baseline.json) 明确保持 pending，不填猜测的执行数字，不提供自动 bootstrap。历史导入必须读取成功 CI 元数据、同 run 的原 artifact 元数据与 ZIP、原 XML/summary 和真实 unit job log：
+[历史基线文件](../../../ci/unit-test-baseline.json) 已用提交 `f8cb6c824d69762d097bbe3e9fcf27a4ea9a4cfe` 中的正式导入器冻结为 5,107 个精确身份，来源是上述 f9 run/attempt1/原 ZIP；无自动 bootstrap，也不从声明数反推执行数。该数量是此份真实历史集合的大小，不是永不变化的阈值。导入器读取成功 CI 元数据、同 run 的原 artifact 元数据与 ZIP、原 XML/summary 和真实 unit job log：
 
 ```sh
 python3 tools/unit_test_contract.py import-ci-baseline --root "$PWD" \
@@ -144,7 +144,7 @@ review#6 追加整改的独立增量审查已给出 **APPROVE**，三项代码�
 
 过程日志全部保留：r1 曾打印 US-ASCII 编码诊断但返回成功并产出实际 class/XML；r2 KGP 单独 classpath 的离线传递依赖缺项未到编译；r3 复用真实仓库固定 AGP/KGP classpath 并显式 UTF-8 后干净成功，没有新增依赖 pin、豁免或 force。已有夹具目录的重复创建被拒绝，没有覆写或重放消耗过的 state。
 
-历史材料已由新 main 取得：原 ZIP 的 SHA-256 与 GitHub API 摘要一致；真实 job log/元数据/755 XML 的材料预核导入得到 5,107 项 testcase 身份。该预核产物只在 ignored 构建目录，正式基线须在追加代码提交后通过 `import-ci-baseline` 再生成，不能把材料恢复当成本批候选完整 CI 成功。
+正式历史导入已在 `f8cb6c82` 提交后执行，exit0，基线状态 `frozen`：755 XML / 5,107 个原始 testcase 身份，0 failure/error/skipped，七夹具各一次。基线文件 SHA-256 为 `e66b63560b8c9674b83b71bbb23ac5ad753e5d7d7a43a781abf1ed5d67404032`，原 ZIP 摘要为 `c3be158f43b65d72a67d166777ac76c101bdf6a6dcfc5455233644ceadfb6eb0`，原 unit job log 摘要为 `41365cca8b01455f9d1404562dea95db63b282396b1cf5852b5c497fe686f945`。导入回执显式为 `historical-ci-import-no-freshness-attestation`，不会生成本批候选的 fresh run/task 证据；没有把历史 CI 与合成 smoke 相加或冒充候选完整 CI。
 
 ## 提交与回退
 
