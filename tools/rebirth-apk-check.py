@@ -81,6 +81,41 @@ def file_digest(path):
         return stream_digest(stream)
 
 
+def sdk_observation(badging, key):
+    expected = {'sdkVersion': '30', 'targetSdkVersion': '37'}[key]
+    # 独立按精确字段起始计数，不复用拒绝用的整行predicate；只接受ASCII缩进。
+    rows = []
+    for row in badging.splitlines():
+        stripped = row.lstrip(' \t')
+        if stripped.startswith(key + ':'):
+            rows.append(stripped[len(key) + 1:])
+    count = 'ZERO' if not rows else 'ONE' if len(rows) == 1 else 'MANY'
+    shape, value = 'OTHER', 'UNPARSEABLE'
+    if len(rows) == 1:
+        payload = rows[0].strip(' \t\r')
+        quoted = re.fullmatch(r"'([0-9]+)'", payload)
+        integer = re.fullmatch(r'[0-9]+', payload)
+        trailing = re.fullmatch(r"'([0-9]+)'[ \t]+[^ \t].*", payload)
+        if quoted:
+            shape, decimal = 'LEGACY_QUOTED_DECIMAL', quoted.group(1)
+        elif integer:
+            shape, decimal = 'COLON_INT', payload
+        elif trailing:
+            shape, decimal = 'QUOTED_WITH_TRAILING_FIELD', trailing.group(1)
+        else:
+            decimal = None
+        if decimal is not None:
+            value = 'EXPECTED' if decimal == expected else 'OTHER_DECIMAL'
+    return dict(field=key, count=count, shape=shape, value=value)
+
+
+def print_sdk_observation(badging, key):
+    observed = sdk_observation(badging, key)
+    print('::error::gate=unsigned-candidate-sdk field=' + observed['field']
+          + ' count=' + observed['count'] + ' shape=' + observed['shape']
+          + ' value=' + observed['value'], flush=True)
+
+
 def verify_badging(badging):
     package = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging, re.M)
     if not package or package.group(1) != PACKAGE or package.group(2) != '359' or not package.group(3).endswith('-Rebirth-Sprout.1'):
@@ -94,6 +129,7 @@ def verify_badging(badging):
         raise ValueError('REBIRTH_LOCALIZED_LABEL')
     for key, expected in (('sdkVersion', '30'), ('targetSdkVersion', '37')):
         if re.findall(r"^" + key + r":'([^']*)'\s*$", badging, re.M) != [expected]:
+            print_sdk_observation(badging, key)
             raise ValueError('REBIRTH_PLATFORM_IDENTITY:' + key)
     native = re.findall(r'^native-code:(.*)$', badging, re.M)
     if len(native) != 1 or re.fullmatch(r"\s*'arm64-v8a'\s*", native[0]) is None:

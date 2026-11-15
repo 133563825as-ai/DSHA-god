@@ -129,10 +129,49 @@ class ApkCheckTest(unittest.TestCase):
                               ("sdkVersion:'30'", "sdkVersion:'29'"),
                               ("targetSdkVersion:'37'", "targetSdkVersion:'36'"), ('DSHA 新生', 'old label')):
             with self.subTest(before=before):
-                with self.assertRaises(ValueError):
+                with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
                     CHECK.verify_badging(self.badging.replace(before, after))
         with self.assertRaises(ValueError):
             CHECK.verify_badging(self.badging + '\napplication-debuggable')
+
+    def test_sdk_observation_count_shape_and_value_buckets(self):
+        cases = [
+            ('sdkVersion', '', 'ZERO', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "sdkVersion:'30'", 'ONE', 'LEGACY_QUOTED_DECIMAL', 'EXPECTED'),
+            ('targetSdkVersion', "targetSdkVersion:'37'", 'ONE', 'LEGACY_QUOTED_DECIMAL', 'EXPECTED'),
+            ('sdkVersion', 'sdkVersion:30', 'ONE', 'COLON_INT', 'EXPECTED'),
+            ('sdkVersion', " \tsdkVersion:'29'", 'ONE', 'LEGACY_QUOTED_DECIMAL', 'OTHER_DECIMAL'),
+            ('sdkVersion', "sdkVersion:'30' extra='secret'", 'ONE', 'QUOTED_WITH_TRAILING_FIELD', 'EXPECTED'),
+            ('sdkVersion', "sdkVersion:'secret'", 'ONE', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "sdkVersion:'30'\nsdkVersion:'29'", 'MANY', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "sdkVersion:'30'\nsdkVersion:'30'", 'MANY', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "targetSdkVersion:'30'", 'ZERO', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "prefixsdkVersion:'30'", 'ZERO', 'OTHER', 'UNPARSEABLE'),
+            ('sdkVersion', "\u00a0sdkVersion:'30'", 'ZERO', 'OTHER', 'UNPARSEABLE'),
+        ]
+        for key, source, count, shape, value in cases:
+            with self.subTest(key=key, shape=shape):
+                self.assertEqual(dict(field=key, count=count, shape=shape, value=value),
+                                 CHECK.sdk_observation(source, key))
+
+    def test_sdk_observation_never_emits_raw_or_changes_sdk_predicate(self):
+        for raw in (" sdkVersion:'30'", 'sdkVersion:30', "sdkVersion:'30' extra='TOP_SECRET'",
+                    "sdkVersion:'TOP_SECRET'\n::error::forged", "sdkVersion:'30'\nsdkVersion:'29'"):
+            changed = self.badging.replace("sdkVersion:'30'", raw)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaisesRegex(ValueError, 'REBIRTH_PLATFORM_IDENTITY:sdkVersion'):
+                CHECK.verify_badging(changed)
+            rows = output.getvalue().splitlines()
+            self.assertEqual(1, len(rows))
+            self.assertRegex(rows[0], r'^::error::gate=unsigned-candidate-sdk field=sdkVersion count=(ZERO|ONE|MANY) shape=(LEGACY_QUOTED_DECIMAL|COLON_INT|QUOTED_WITH_TRAILING_FIELD|OTHER) value=(EXPECTED|OTHER_DECIMAL|UNPARSEABLE)$')
+            self.assertNotIn('TOP_SECRET', output.getvalue())
+            self.assertNotIn('forged', output.getvalue())
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            CHECK.verify_badging(self.badging)
+        self.assertEqual('', output.getvalue())
+        with self.assertRaises(KeyError):
+            CHECK.sdk_observation('irrelevant', 'sdkVersion\n::error::forged')
 
     def test_manifest_exact_authorities_and_entry(self):
         CHECK.verify_manifest(self.manifest)
