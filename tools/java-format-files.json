@@ -12,6 +12,7 @@
     "app/src/androidTest/java/com/deepseekharness/app/ui/RealWebInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/ui/ThemeInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/ui/WebInstrumentation.java",
+    "app/src/androidTest/java/com/deepseekharness/app/util/RustNativeInstrumentation.java",
     "app/src/debug/java/com/deepseekharness/app/BridgeAuditInstrumentation.java",
     "app/src/debug/java/com/deepseekharness/app/DeviceCapabilityAudit.java",
     "app/src/debug/java/com/deepseekharness/app/DevicePolicyAudit.java",
