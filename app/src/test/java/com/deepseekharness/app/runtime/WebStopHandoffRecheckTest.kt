@@ -16,7 +16,12 @@ import org.junit.rules.TemporaryFolder
 
 /** 真实临时目录/节点/字节加注入内核读取；运行生产无信号复核，绝不启动或结束进程。 */
 class WebStopHandoffRecheckTest {
-    @get:Rule val temporary = TemporaryFolder()
+    // A8 P1 身份解析只接受已审的 Kotlin 注解形式；JUnit4 方法规则与
+    // `@get:Rule` 等价，避免 use-site 注解被当作无法核验的测试声明。
+    @Rule
+    fun temporaryFolder(): TemporaryFolder = temporary
+
+    private val temporary = TemporaryFolder()
     private val fs = JvmBackupFileSystem()
     private lateinit var home: File
     private lateinit var trials: File
