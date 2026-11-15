@@ -9,10 +9,15 @@ import {pathToFileURL} from 'node:url';
 import {testRuntime} from './test-runtime-fixture.mjs';
 import {preparePrivatePluginInventory} from './private-plugin-inventory-fixture.mjs';
 
+let phase='FIXTURE_SETUP', failurePhase, primaryError, cleanupFailure=false;
+const managerContexts=[],originalOpen=fs.promises.open;
+const previous=process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;
+let measure=false,delay=0,mutation,readGate,stats,server;
+try {
 const S=path.resolve(import.meta.dirname,'..'),assets=path.join(S,'app/src/main/assets');
 const raw=testRuntime('raw'),sha=value=>createHash('sha256').update(value).digest('hex');
 const {Context}=await import(pathToFileURL(path.join(raw,'node_modules/@deepseek-ai/cordis/lib/index.js')));
-const managerContexts=[];
+phase='RECIPE_BINDING';
 const own='plugin-bundle-proof-workers-patch.json',moduleName='@deepseek-ai/dsh-plugin-manager/lib/index.js';
 let before=fs.readFileSync(path.join(raw,'node_modules',moduleName),'utf8').replaceAll('\r\n','\n');
 const canonical=sha(before),inputs={};
@@ -43,12 +48,11 @@ const library='@fixture/unused-library',libraryDir=path.join(sdk,'node_modules',
 fs.writeFileSync(path.join(sdk,'package.json'),JSON.stringify({name:'@deepseek-ai/dsh',version:JSON.parse(fs.readFileSync(path.join(assets,'runtime-patches.json'))).dshVersion,dependencies:Object.fromEntries([...names,library].map(name=>[name,'1.0.0']))}));
 const manifestPath=path.join(profileDir,'package.json');fs.writeFileSync(manifestPath,JSON.stringify({name:'private-worker-fixture',private:true,dsh:{profile:{bundles:names}}}));fs.writeFileSync(path.join(profileDir,'cordis.patch.yml'),'[]\n');
 const proofFile=path.join(home,'managed-package-proofs.json');fs.writeFileSync(proofFile,JSON.stringify({version:1,packages:proofs}));
-const previous=process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=sha(fs.readFileSync(proofFile));
+process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=sha(fs.readFileSync(proofFile));
 const profile={name:'web',dir:profileDir,home,patchPath:path.join(profileDir,'cordis.patch.yml'),overlays:[],startedBundles:[],installAnchor:path.join(sdk,'package.json')};
 function manager(Type){const ctx=new Context(),item=Object.create(Type.prototype);ctx.provide('loader',{entries:()=>[]});managerContexts.push(ctx);Object.defineProperty(item,'ctx',{value:ctx});Object.assign(item,{profile,ownerContext:ctx,managementBundles:new Set(),installedFrom:new Map(),packageOperations:new Set(),installs:new Map(),abort:new AbortController(),lockWaitMs:1000});return item;}
-const old=manager(Before),candidate=manager(After),originalOpen=fs.promises.open;
+const old=manager(Before),candidate=manager(After);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-let measure=false,delay=0,mutation,readGate,stats;
 function reset(){assert.equal(stats?.active??0,0);stats={active:0,maxActive:0,proofOpens:0,bytes:0,libraryBytes:0,files:new Set(),packages:new Set()};}
 fs.promises.open=async function(file,...args){
  const handle=await originalOpen.call(this,file,...args);if(!measure)return handle;const resolved=path.resolve(file);
@@ -62,20 +66,25 @@ fs.promises.open=async function(file,...args){
 const result={schema:1,node:process.version,owned,inputs,sourceHashes:{raw:canonical,before:sha(before),after:sha(after)},inventoryDependency:dependency.evidence,scope:'real current Host methods and exact full content proofs in private fixtures; injected per-read I/O delay is an algorithmic control, not a phone benchmark',cases:[]};
 const snapshot=()=>({...stats,files:stats.files.size,packages:[...stats.packages]});
 async function timed(label,item){reset();const start=performance.now(),rows=await item.listBundles();assert.equal(stats.active,0);const observed={label,ms:performance.now()-start,...snapshot()};assert.equal(observed.proofOpens,1);assert.equal(observed.libraryBytes,0);assert(observed.bytes>=3*1024*1024);assert.equal(rows.filter(row=>names.includes(row.name)&&row.origin==='dsh-managed').length,3);return {rows,observed};}
-let server;
 try{
+ phase='BASELINE_COMPARE';
  measure=true;delay=2;
  const runs=[];let expected;
  for(const [label,item] of [['before-1',old],['after-1',candidate],['after-2',candidate],['before-2',old]]){const run=await timed(label,item);if(expected)assert.deepEqual(run.rows,expected,'original names/rows/order and full classification must match');else expected=run.rows;assert.equal(run.observed.maxActive,label.startsWith('before')?1:2);runs.push(run.observed);}
  result.cases.push({name:'counterbalanced-identical-input-controlled-read-delay',injectedDelayPerReadMs:delay,runs,rowsOrderAndContentsEqual:true,fullBytesAndFreshProofEachTime:true});
+ phase='TARGET_SCAN';
  reset();const targetRows=await candidate.listBundles(names[1]);assert.equal(targetRows.length,1);assert.equal(stats.maxActive,1);assert.deepEqual([...stats.packages],[1]);result.cases.push({name:'target-only-read-remains-one-package-one-worker',...snapshot()});
+ phase='INTEGRITY_REJECTION';
  delay=0;const payload=path.join(packageDirs[0],'payload.bin'),original=fs.readFileSync(payload),originalStat=fs.statSync(payload);fs.writeFileSync(payload,Buffer.alloc(original.length,7));fs.utimesSync(payload,originalStat.atime,originalStat.mtime);
  assert.equal((await candidate.listBundles(names[0]))[0].origin,'user');fs.writeFileSync(payload,original);assert.equal((await candidate.listBundles(names[0]))[0].origin,'dsh-managed');
  mutation=async()=>{fs.writeFileSync(path.join(packageDirs[0],'concurrent.txt'),'race');};await assert.rejects(candidate.listBundles(names[0]),/PACKAGE_PROOF_CHANGED/);assert.equal(stats.active,0);fs.unlinkSync(path.join(packageDirs[0],'concurrent.txt'));
  const proofBytes=fs.readFileSync(proofFile);fs.appendFileSync(proofFile,' ');assert.equal((await candidate.listBundles(names[0]))[0].origin,'user');fs.writeFileSync(proofFile,proofBytes);assert.equal((await candidate.listBundles(names[0]))[0].origin,'dsh-managed');
  result.cases.push({name:'restored-mtime-edit-directory-race-and-unauthenticated-proof-remain-rejected',ok:true});
+ phase='ERROR_DRAIN';
  reset();delay=2;mutation=async()=>{throw Error('fixture-proof-read-failure');};await assert.rejects(candidate.listBundles(),/fixture-proof-read-failure/);assert.equal(stats.active,0,'error settlement must drain both workers');assert.ok(stats.packages.size<=2,'no third proof may be scheduled after the first failure');result.cases.push({name:'error-stops-new-packages-and-drains-active-handles',...snapshot()});
+ phase='CANCEL_DRAIN';
  reset();const cancelled=manager(After),beforeManifest=fs.readFileSync(manifestPath);mutation=async()=>cancelled.abort.abort(Error('fixture-proof-cancelled'));await assert.rejects(cancelled.listBundles(),/fixture-proof-cancelled/);assert.equal(stats.active,0);assert.deepEqual(fs.readFileSync(manifestPath),beforeManifest);result.cases.push({name:'mid-read-cancellation-drains-and-does-not-replay-writer',...snapshot()});
+ phase='HTTP_CONCURRENCY';
  reset();let active=0;
  server=http.createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');if(req.url==='/ping'){res.end(JSON.stringify({scanning:active>0}));return;}active++;try{const rows=await candidate.listBundles();res.end(JSON.stringify({count:rows.length}));}catch(error){res.statusCode=500;res.end(JSON.stringify({error:error.message}));}finally{active--;}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
@@ -84,14 +93,31 @@ try{
  // Explicit overload contract: the existing two-active/32-waiter bound is
  // preserved, rather than enlarged to hide the second worker per request.
  // A pathological burst can therefore receive BUSY earlier than before.
+ phase='BURST_ADMISSION';
  delay=0;reset();readGate=Promise.withResolvers();const burstSettled=[];
  const burst=Array.from({length:18},()=>candidate.listBundles().then(value=>{const row={ok:true,rows:value.length};burstSettled.push(row);return row;},error=>{const row={ok:false,error:error.message};burstSettled.push(row);return row;}));
  for(let i=0;i<200&&!burstSettled.some(row=>!row.ok);i++)await wait(5);
  assert.equal(stats.active,2);assert.ok(burstSettled.some(row=>row.error==='PACKAGE_PROOF_BUSY'),'18 simultaneous two-worker reads must exercise the unchanged bounded queue');
+ phase='BURST_SETTLE';
  readGate.resolve();readGate=undefined;const settled=await Promise.all(burst);assert.equal(stats.active,0);assert.equal(stats.maxActive,2);assert.ok(settled.every(row=>row.ok&&row.rows===expected.length||row.error==='PACKAGE_PROOF_BUSY'));
+ phase='POST_BURST';
  const afterBurst=await candidate.listBundles();assert.deepEqual(afterBurst,expected,'overload rejection cannot poison later proof sessions');
  result.cases.push({name:'18-request-burst-remains-bounded-and-recovers',requests:18,accepted:settled.filter(row=>row.ok).length,busy:settled.filter(row=>!row.ok).length,maxActive:stats.maxActive,limitation:'two proof jobs per full request can exhaust the existing 32-waiter bound earlier; the bound is not enlarged'});
+ phase='REMOVAL';
  delay=0;reset();const remove=await candidate.removeBundle(names[1]);assert.equal(remove.application,'failed');assert.equal(remove.error.code,'not-removable');assert.equal(stats.proofOpens,2);assert.deepEqual([...stats.packages],[1]);assert(stats.bytes>=2*1024*1024&&stats.bytes<3*1024*1024);assert.deepEqual(fs.readFileSync(manifestPath),beforeManifest);result.cases.push({name:'removal-still-authenticates-preflight-and-locked-target-only-recheck',...snapshot()});
-}finally{readGate?.resolve();measure=false;fs.promises.open=originalOpen;if(server)await new Promise(resolve=>server.close(resolve));for(const ctx of managerContexts)await ctx.fiber.dispose();if(previous===undefined)delete process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;else process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=previous;}
+}catch(error){failurePhase=phase;primaryError=error;throw error;}
+finally{
+ phase='CLEANUP';
+ try{readGate?.resolve();measure=false;fs.promises.open=originalOpen;if(server)await new Promise(resolve=>server.close(resolve));for(const ctx of managerContexts)await ctx.fiber.dispose();if(previous===undefined)delete process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;else process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256=previous;}
+ catch(error){cleanupFailure=true;if(failurePhase)throw new AggregateError([primaryError,error],'proof workers fixture cleanup failed',{cause:primaryError});throw error;}
+}
+phase='REMOVAL';
 const report=process.env.DSHA_PLUGIN_WORKERS_REPORT;if(report){fs.mkdirSync(path.dirname(report),{recursive:true});fs.writeFileSync(report,JSON.stringify(result,null,2)+'\n');}
 console.log('PASS: same full provenance/row order, two bounded workers, fresh request proofs, target-only scans, integrity failures, cancellation/error draining and HTTP concurrency.');
+phase='COMPLETE';
+}catch(error){
+ if(!failurePhase)failurePhase=cleanupFailure?'CLEANUP':phase;
+ throw error;
+}finally{
+ console.log('DSHA_TEST_DIAGNOSTIC '+JSON.stringify({test:'PLUGIN_BUNDLE_PROOF_WORKERS',phase:failurePhase??'COMPLETE',reason:failurePhase?(failurePhase==='CLEANUP'?'CLEANUP_FAILED':'STEP_FAILED'):'COMPLETED'}));
+}

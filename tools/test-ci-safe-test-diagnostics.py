@@ -101,6 +101,35 @@ class SafeDiagnosticsTest(unittest.TestCase):
             (self.output/'manifest.json').write_text(data)
             self.assertEqual(['::error::gate=l3-runtime diag=DIAG_MANIFEST_UNAVAILABLE'], mod.annotations(self.root))
 
+    def test_proof_worker_terminal_preserves_primary_and_cleanup_failure(self):
+        import subprocess
+        source = (ROOT/'tools/test-plugin-bundle-proof-workers.mjs').read_text()
+        cleanup = source.split('}catch(error){failurePhase=phase;primaryError=error;throw error;}', 1)[1].split("phase='REMOVAL';\nconst report=", 1)[0]
+        terminal = source.split("phase='COMPLETE';\n", 1)[1]
+        for main_fail, cleanup_fail, phase, reason in [
+            (False, False, 'COMPLETE', 'COMPLETED'), (True, False, 'BURST_ADMISSION', 'STEP_FAILED'),
+            (False, True, 'CLEANUP', 'CLEANUP_FAILED'), (True, True, 'BURST_ADMISSION', 'STEP_FAILED')]:
+            script = "let phase='BURST_ADMISSION',failurePhase,primaryError,cleanupFailure=false; const originalOpen=()=>{},previous=undefined,readGate=undefined,server=undefined;let measure=true;const mainError=Error('synthetic main');const managerContexts=[{fiber:{dispose:async()=>{if(" + str(cleanup_fail).lower() + ")throw Error('synthetic cleanup');}}}];const fs={promises:{open:originalOpen}};\n"
+            script += "try { try { if("+str(main_fail).lower()+")throw mainError; }catch(error){failurePhase=phase;primaryError=error;throw error;}" + cleanup
+            script += "phase='COMPLETE';\n" + terminal
+            synthetic = self.root/'terminal.mjs'; synthetic.write_text(script)
+            result = subprocess.run(['node', str(synthetic)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(int(main_fail or cleanup_fail), result.returncode, result.stderr)
+            rows = [line for line in result.stdout.splitlines() if line.startswith(mod.PREFIX.decode())]
+            self.assertEqual(1, len(rows))
+            marker, error = mod.parse_marker(rows[0].encode(), *mod.CONTRACTS['tools/test-plugin-bundle-proof-workers.mjs'])
+            self.assertIsNone(error); self.assertEqual((phase, reason), (marker['phase'], marker['reason']))
+
+    def test_proof_worker_assertions_and_scheduling_budget_remain_exact(self):
+        import subprocess
+        source = (ROOT/'tools/test-plugin-bundle-proof-workers.mjs').read_text()
+        old = subprocess.check_output(['git', 'show', 'HEAD:tools/test-plugin-bundle-proof-workers.mjs'], cwd=ROOT, text=True)
+        # 原整行包含断言/轮询/并发请求的算法表达式不得改写，仅新增单独phase行。
+        for line in old.splitlines():
+            if 'assert' in line and not line.startswith('import ') or 'i<100' in line or 'i<200' in line or 'length:18' in line:
+                self.assertIn(line, source)
+        self.assertIn('PLUGIN_BUNDLE_PROOF_WORKERS', {v[0] for v in mod.CONTRACTS.values()})
+
     def test_workflow_only_adds_helper_to_failure_summary(self):
         text = (ROOT/'.github/workflows/rebirth-validation.yml').read_text()
         block = text.split('      - name: L3 safe failure summary', 1)[1].split('      - name: L3 software gates', 1)[0]

@@ -119,8 +119,27 @@ try{
       await login.getByRole('button',{name:/^(关闭|Close)$/i}).click();
       await login.waitFor({state:'hidden'});
     }
-  phase='WORKSPACE_READY';
-    await page.getByText('DSHA Recovery',{exact:true}).first().waitFor({state:'visible'});
+  phase='WORKSPACE_TITLE_WAIT';
+    try {
+      await page.getByText('DSHA Recovery',{exact:true}).first().waitFor({state:'visible'});
+    } catch(error) {
+      // 仅固定可见性枚举；不输出DOM/标题正文/URL，也不替代原wait异常。
+      phase='TITLE_PROBE_FAILED';
+      try {
+        const titles=page.getByText('DSHA Recovery',{exact:true});
+        const count=await titles.count();
+        if(count>32)phase='TITLE_PROBE_FAILED';
+        else if(count===0)phase='TITLE_NONE';
+        else if(await titles.first().isVisible())phase='TITLE_FIRST_VISIBLE';
+        else {
+          let otherVisible=false;
+          for(let index=1;index<count;index++)if(await titles.nth(index).isVisible()){otherVisible=true;break;}
+          phase=otherVisible?'TITLE_FIRST_HIDDEN_OTHER_VISIBLE':'TITLE_FIRST_HIDDEN_ONLY';
+        }
+      } catch {phase='TITLE_PROBE_FAILED';}
+      throw error;
+    }
+  phase='WORKSPACE_EMPTY_ASSERT';
     assert.equal(await page.getByText('选择一个工作区开始',{exact:true}).count(),0,'empty workspace screen cannot pass');
   phase='COMPOSER_EDIT';
     await composer.waitFor({state:'visible'});await composer.click();

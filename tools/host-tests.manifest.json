@@ -4,7 +4,7 @@
     {
       "path": "tools/test-ci-safe-test-diagnostics.py",
       "stage": "fast",
-      "requires": ["python39"],
+      "requires": ["python39", "node24"],
       "args": [],
       "timeoutSeconds": 120,
       "environment": {},

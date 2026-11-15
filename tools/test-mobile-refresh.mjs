@@ -72,16 +72,20 @@ try {
   await page.evaluate(()=>{swapTest.rememberConversationScroll();document.getElementById('scroller').scrollTop=100;swapTest.restoreConversationScroll();});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   assert.equal(await page.locator('#scroller').evaluate(el=>el.scrollTop),100,'host-selected position remains');
-  phase='SCROLL_REMOUNT';
+  phase='REMOUNT_PRECONDITION';
   await page.evaluate(()=>{
     swapTest.rememberConversationScroll();
     const old=document.getElementById('scroller');old.replaceWith(old.cloneNode(true));
     swapTest.restoreConversationScroll();
   });
+  phase='REMOUNT_FRAME';
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   // 上游 3.3.1 起恢复改为跨节点：热换重建滚动区后按 window.__dshaMobileLastScroll 回填
   // （见 dsh-web-mobile src/client/index.tsx 的 remounted-tree 分支），不再要求新 DOM 停在 0。
-  assert.equal(await page.locator('#scroller').evaluate(el=>el.scrollTop),100,'remounted scroller restores the remembered position');
+  phase='REMOUNT_ASSERT';
+  const remountedTop=await page.locator('#scroller').evaluate(el=>el.scrollTop);
+  phase=remountedTop===0?'REMOUNT_GOT_0':remountedTop===100?'REMOUNT_GOT_100':remountedTop===400?'REMOUNT_GOT_400':'REMOUNT_GOT_OTHER';
+  assert.equal(remountedTop,100,'remounted scroller restores the remembered position');
   phase='SESSION_LOG';
   const sessionLog=await page.evaluate(()=>{
     const frame=document.querySelector('[data-mobile-nav="frame"]');

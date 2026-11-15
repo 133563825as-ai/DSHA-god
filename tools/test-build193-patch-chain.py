@@ -86,8 +86,10 @@ public final class Build193PatchChainFixture {
       var previous=new ArrayList<ManagedPatchChain.Patch>();
       for(int j=0;j<previousCount;j++)
         previous.add(new ManagedPatchChain.Patch(Files.readString(recipe.resolve("previous-"+j+"-before.txt")),Files.readString(recipe.resolve("previous-"+j+"-after.txt"))));
-      var current=new ManagedPatchChain.Recipe(Files.readString(recipe.resolve("id.txt")),patches,Files.readAllLines(recipe.resolve("markers.txt")),previous);
+      String expectedSha=Files.readString(recipe.resolve("expected-sha.txt"));
+      var current=new ManagedPatchChain.Recipe(Files.readString(recipe.resolve("id.txt")),patches,Files.readAllLines(recipe.resolve("markers.txt")),previous,expectedSha.isEmpty()?null:expectedSha);
       require(current.previousPatches().size()==previousCount,"fixture dropped signed predecessor metadata");
+      require(Objects.equals(current.expectedOutputSha256(),expectedSha.isEmpty()?null:expectedSha),"fixture dropped whole-module output identity");
       result.add(current);
     }
     return result;
@@ -116,7 +118,7 @@ public final class Build193PatchChainFixture {
     // Negative control for this fixture's former bug: dropping predecessor
     // metadata must change admission, rather than silently weakening the gate.
     var omitted=new ArrayList<ManagedPatchChain.Recipe>();
-    for(var recipe:chain)omitted.add(new ManagedPatchChain.Recipe(recipe.id(),recipe.patches(),recipe.markers()));
+    for(var recipe:chain)omitted.add(new ManagedPatchChain.Recipe(recipe.id(),recipe.patches(),recipe.markers(),List.of(),recipe.expectedOutputSha256()));
     rejectWithoutCanonical(old,omitted);
     System.out.println("PASS_SIGNED_PREDECESSOR partial-variants="+variants+" duplicate/metadata-omission/failclosed");
     return variants;
@@ -217,6 +219,8 @@ def write_chain(folder, chain):
         (target / 'id.txt').write_bytes(name.encode())
         (target / 'count.txt').write_bytes(str(len(patches)).encode())
         (target / 'markers.txt').write_bytes('\n'.join(markers).encode())
+        expected_output = getattr(patches, 'expected_output_sha256', None)
+        (target / 'expected-sha.txt').write_bytes((expected_output if expected_output is not None else '').encode())
         for j, (before, after) in enumerate(patches):
             (target / (str(j) + '-before.txt')).write_bytes(before.encode())
             (target / (str(j) + '-after.txt')).write_bytes(after.encode())
@@ -306,7 +310,10 @@ def main():
                 try:
                     direct = runtime_stable_patches.apply(old_bytes, chain)
                 except ValueError as failure:
-                    assert 'STABLE_PATCH_ANCHOR' in str(failure), 'UNEXPECTED_OLD_CHAIN_ERROR'
+                    output_identity_mismatch = str(failure).partition(':')[0] == 'STABLE_PATCH_OUTPUT_IDENTITY_MISMATCH'
+                    assert 'STABLE_PATCH_ANCHOR' in str(failure) or output_identity_mismatch, 'UNEXPECTED_OLD_CHAIN_ERROR'
+                    if output_identity_mismatch:
+                        direct_status = 'canonical-rebuild-on-output-identity-mismatch'
                 else:
                     (directory / 'old-direct.js').write_bytes(direct)
                     direct_digest = sha(direct)
