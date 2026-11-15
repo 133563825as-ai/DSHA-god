@@ -1,6 +1,6 @@
 # transfer 整域 Kotlin 迁移回执（2026-11-15）
 
-本批次完成本地实现和验证；不是发布、安装或手机验收。分支 `migrate-transfer-kotlin-r2`。开工基线为 `b3602555b39056279bc5131e7eaefc1a6be114ae`；当前代码已重基到 P1 出口后的 `e368e6d8a0b8679faa138feb51dd70f2447860e1`，代码提交 `4253b00af9c9aea9a51091e1459f53a7d36e9447`，新基线复验见文末。下方首轮结果保留为 b3602555 的历史证据，不把其环境限制套到新轮；当前发布仍为 build366 / `5ccc8aa3`。按主会话顺序，仍须等 SAF #1 合入后再重基一次交 ready；本批未 push/merge/安装。
+当前交付基线为 SAF 合入后的 `9281a50e974b26f9661a80c03e40b42bb4612bd1`，分支 `migrate-transfer-kotlin-r2`。实现提交已重基为 `1515d037`；审查要求的 ServerSocket/删除 host Origin 断言修复为 `592b34e9`，测试类型提取修订为 `2b03a20d8bd521f823bc0e8713861d3fbdd4f214`。最新验证绑定 **2b03a20d**，结果及 Gradle Test/AAPT2 限制以文末“独立审查 P1 修订”节为准；后续只追加文档的提交不冒称执行 HEAD。以下 b3602555/e368e6d8 及 4253b00a/ba65d641 的 88/0 均保留为历史：它们使用自定义 runner 与 Origin JVM 属性，**不是仓库 Gradle Test 已通过的证明**。本批完成本地实现/验证，不是发布/安装/手机验收，仍未 push/merge；发布仍 build366 / `5ccc8aa3`。
 
 ## 实现范围与 owner
 
@@ -136,3 +136,34 @@ K2JVMCompiler 2.2.10 + javac 17，目标字节码 17，生产编译使用 SDK37�
 本轮证据位于 `/tmp/transfer-e368-88-2e0bfb12/`（含绑定 4253b00a 的 source-layout-audit、source/test SHA、全部编译/JUnit 参数与日志）、`/tmp/transfer-e368-gradle-r3-2e0bfb12.log`、`/tmp/transfer-e368-{api,gradle-api}-2e0bfb12{.json,.javap.json}`、`/tmp/transfer-e368-{host,format,input-impact,ci-inputs}-2e0bfb12.json`、两种 format 日志及 full plan/summary。Gradle 产物 ABI 来自本树 `app/build/intermediates/built_in_kotlinc/standardDebug/compileStandardDebugKotlin/classes`，未拿其它树编译结果代替。
 
 仍未验：本批 Gradle 全量 Test/正式 unit-run proof、Lint、APK/Dex、签名/安装/真机；手工测试仍沿用前文 SDK34/Conscrypt OFF/Origin 的本机配置，不能替代默认完整 CI。Kotlin 标准编译已通过，不再列为未验。按主会话指令，本轮结束只报告 e368 复验完成；SAF #1 合入后再重基一次并交主会话独审，不 push/merge。
+
+## 独立审查 P1 修订与最终基线 9281a50e
+
+独立全量审查确认生产 8 文件等价，但指出原网络测试使用 `com.sun.net.httpserver`（Android 单测编译图没有该模块），以及 host Origin 断言依赖自定义 runner 设置的 JVM 属性。接受两项 P1；旧 88/0 只能证明其对应自定义环境，不能充当仓库 Test 通过证据。
+
+已完成以下仅测试修订，生产 8 文件字节保持不变：
+
+- `592b34e9` 将网络夹具改为真实 IPv4 loopback `java.net.ServerSocket`，以有界请求头/正文及固定长度、chunked 响应支持原 6 个 HTTP 案例；监听/活动 socket、流和 daemon worker 在 teardown 收尾。
+- 删除 `request.origin` 与 host Origin 断言；不修改 `build-logic/test.gradle` 或其它共享测试配置。Cookie/Range/If-Range/Accept-Encoding、实际 loopback 目的地及不采用响应 contentUrl 的验证仍在，**不声称本轮验证了 Android Origin 头**。
+- `2b03a20d` 仅把本域 Support/Service 测试中宽泛的 `Shadows.shadowOf` 重载改成显式 `Shadow.extract`，避开 SDK37 已删类型造成的编译补齐需求。6 个网络方法名、14 个选定 FQCN 及 88 个方法身份保持，不减测试、不改生产调用方。
+
+所有修订已无冲突重基到 `9281a50e974b26f9661a80c03e40b42bb4612bd1`（SAF+main descriptor+source-hygiene 工具）。实现变为 `1515d037`；验证代码 HEAD 为 **2b03a20d8bd521f823bc0e8713861d3fbdd4f214**，只追加本文/API 回执的后继提交不冒称被测源码 HEAD。
+
+| 实际动作 | 最终结果与边界 |
+|---|---|
+| 审查指定命令 | 已实际运行 `dsha-gradle :app:testStandardDebugUnitTest --tests '*DownloadEngineNetworkTest'`；`processStandardDebugResources` 遭 x86_64 AAPT2 `bad machine`，**未到测试编译/Test，不算通过** |
+| 独立测试编译任务 | 已实际尝试 `:app:compileStandardDebugUnitTestKotlin` 与 `:app:compileStandardDebugUnitTestJavaWithJavac`；同一 AAPT2 资源前置阻断。该轮真实生产 Kotlin 与 Java Compile 任务已执行成功，但不把它们冒称测试编译任务成功 |
+| 真实测试图导出 | 仅 `/tmp` init script 注册只读导出任务；从本树 Gradle 取得 Java/Kotlin 测试源码、实际编译 classpath、默认 compiler args、Android `--system` jdkImage 及解析的 runtime artifacts。未改变仓库配置/依赖/任务过滤/Origin 属性 |
+| 实际 K2 测试编译 | Gradle 导出的全部 **5 个 Kotlin 测试源**和 Java 符号，以实际测试 classpath、`-no-jdk` 和真实生产 friend 输出直接实编，exit0；**未补 SDK34/android-all/JDK 模块到编译图** |
+| 实际 Java 测试编译 | Gradle 导出的全部 **782 个 Java 测试源**，以同一 Android `--system` 镜像、实际 compiler args 和测试依赖直接 javac17 实编，exit0；不是 host JDK 默认模块图 |
+| P1-1 负控 | 将旧 `659a1951` 的原 HttpServer 测试源放入相同 Android 编译参数，实际 javac exit1，明确拒绝 `com.sun.net.httpserver`；修复后的全部测试源编译通过，负控不是只搜字符串 |
+| P1-2 与 88 回归 | 使用实际解析的运行依赖，对本域/相邻原 **88** 案执行 JUnit，显式 `sun.net.http.allowRestrictedHeaders=false`，**88/0**；保留本机 SDK34 runtime/Conscrypt OFF/opens，不是 Gradle Test 或全量执行证明 |
+| 最终只读/格式 | 运行时输入 **18/0**；103 安装/205 资产/517 launcher 映射及 descriptor `--check` 通过；Java **1798/57 批/0 need**、Kotlin **54/12 批/0 need**；源码卫生 PASS，生产 8 源未变 |
+
+受 AAPT2 阻断未生成的 resource-linked R.jar、打包 app classes JAR，仅在仓库外的直接测试编译/执行中映射到**同树真实 Gradle 已生成的 compile R.jar、已编译生产 Java/Kotlin 目录**；尚未生成的 test Kotlin 输出映射到本轮直接编译目录。没有伪造 R 类型/资源或添加未声明 SDK/JDK 依赖，映射逐项记入 receipt。这些替代不能证明 AAPT2/资源打包或正式 `unit-run` proof 通过。实际生产输出来自指定 Gradle 尝试；之后两次测试修订相对其生产源码无变化。
+
+本轮机器证据绑定 2b03a20d：`/tmp/transfer-review-android-tests-r3-2e0bfb12/{test-compile-receipt.json,receipt.json}`、两种真实测试编译参数/日志及 `junit-88-default-origin.log`；只读导出 `/tmp/transfer-review2-gradle-inputs-2e0bfb12.json`；Gradle 尝试日志 `/tmp/transfer-review-gradle-{network,test-compile}-2e0bfb12.log`；负控 `/tmp/transfer-review-httpserver-negative-2e0bfb12/`；最终格式日志 `/tmp/transfer-review-format-{java,kotlin}-2e0bfb12.log`。保留先前资源 producer 尚未映射的失败运行，不覆盖成通过。
+
+当前 main 的 runtimeId 为 `63adce0a3df6f0c46494dc6adf030f07f80724557f139b3598755caa1607e2ad`，517 启动输入及 SAF 的 15 Java→Kotlin 是 **SAF/main** 已合入结果；本域仍没有受管输入增删/摘要变化，未写清单/proof/descriptor。`check-ui-i18n.py` 对 `.kt` 的覆盖登记为 main/后续项，本批未声称该文案扫描已完整覆盖 Kotlin。
+
+最终还需主会话复核 P1 修订并按批准顺序合入；CI full、Gradle Test/正式 proof、Lint/APK/Dex/签名/设备矩阵仍未由本轮证明。worker 不 push/merge/发布/安装/手机操作。
