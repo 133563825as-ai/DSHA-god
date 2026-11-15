@@ -343,6 +343,17 @@ public class ProotBootstrap {
     return execution.exec(command, environment);
   }
 
+  /** 仅在全部启动准备完成后调用；调用者仍拥有本次操作与取消状态。 */
+  public interface LaunchCheck {
+    void verify() throws IOException;
+  }
+
+  public Process execRootfs(
+      String command, java.util.Map<String, String> environment, LaunchCheck beforeStart)
+      throws IOException {
+    return execution.exec(command, environment, beforeStart);
+  }
+
   public Process execRootfsForInstall(String command) throws IOException {
     return execution.install(command, false);
   }

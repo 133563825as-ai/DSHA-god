@@ -179,12 +179,22 @@ final class RuntimeExecution {
   }
 
   Process exec(String command, Map<String, String> environment) throws IOException {
+    return exec(command, environment, null);
+  }
+
+  Process exec(
+      String command, Map<String, String> environment, ProotBootstrap.LaunchCheck beforeStart)
+      throws IOException {
     try (RuntimeHostPorts.Scope ignored = ports.open()) {
       requireReady();
       ContainerRuntime runtime = runtime();
       boolean links = hardlinks();
       prepareTools();
-      return start(command, launch(runtime).hardlinks(links).environment(environment).build());
+      return launcher.start(
+          command,
+          launch(runtime).hardlinks(links).environment(environment).build(),
+          null,
+          beforeStart);
     }
   }
 
