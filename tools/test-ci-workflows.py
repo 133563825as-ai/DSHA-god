@@ -86,7 +86,21 @@ class WorkflowGraph(unittest.TestCase):
                 self.assertNotRegex(source, r":app:(?:test|lint|assemble)Low")
                 self.assertNotIn("tools/remote", source)
                 self.assertNotIn("dsha-connect", source)
-        self.assertIn(":app:testStandardDebugUnitTest", text("_node-unit-tests.yml"))
+        unit = text('_node-unit-tests.yml')
+        for fragment in ('tools/source_layout.py --test-tasks',
+                         'mapfile -t unit_tasks < out/unit-tasks.txt',
+                         'for task in "${unit_tasks[@]}"', 'args+=("$task")',
+                         '**/build/test-results/**', 'tools/unit_test_contract.py verify',
+                         '--baseline ci/unit-test-baseline.json'):
+            self.assertIn(fragment, unit)
+        tasks = json.loads(subprocess.check_output(
+            [sys.executable, str(ROOT / 'tools/source_layout.py'), '--test-tasks'], text=True))
+        layout = json.loads((ROOT / 'ci/source-layout.json').read_text(encoding='utf-8'))
+        self.assertEqual({module['path'] + ':' + module['testTask'] for module in layout['modules']},
+                         {row['task'] for row in tasks})
+        self.assertTrue(tasks)
+        self.assertEqual(len(tasks), len({row['task'] for row in tasks}))
+        self.assertNotIn('args=(:app:', unit)
         self.assertIn("--stage package --flavors standard", text("ci-package.yml"))
         result = subprocess.run([sys.executable, str(ROOT / "tools/verify-stability.py"),
                                  "--stage", "software", "--flavors", "both"],

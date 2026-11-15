@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "kind": "dsha-unit-test-baseline",
+  "status": "awaiting-real-full-ci",
+  "identityFormat": ["classname", "name"],
+  "reason": "当前 main 的完整 CI 已成功，但原始 JUnit artifact 下载返回 HTTP 403，无法冻结执行身份。此文件不含历史执行数字；需取得下述原始 ZIP 并由 import-ci-baseline 验证后冻结。候选 full verify 在此状态必须失败。",
+  "pendingProvenance": {
+    "commit": "f9e8d867b695f8f862288fae00f2c0a89455a87f",
+    "runId": "43661288065",
+    "runAttempt": "1",
+    "conclusion": "success",
+    "url": "https://github.com/SunsetRNE/DSHA-Sunset-mod/actions/runs/43661288065",
+    "artifactId": 14140142885,
+    "artifactName": "unit-results",
+    "artifactApiDigest": "sha256:c3be158f43b65d72a67d166777ac76c101bdf6a6dcfc5455233644ceadfb6eb0",
+    "downloadVerified": false,
+    "missingEvidence": "HTTP403_FROM_ARTIFACT_BLOB"
+  }
+}
