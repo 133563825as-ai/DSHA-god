@@ -300,7 +300,7 @@ class ProductionTestPackageAttachments(unittest.TestCase):
     def test_test_packages_jobs_split_compile_and_sign(self):
         unsigned = self.jobs["test-packages-unsigned"]
         self.assertIn("uses: ./.github/workflows/_node-test-packages.yml", unsigned)
-        self.assertIn("needs: [bind, inputs]", unsigned)
+        self.assertEqual(needs(unsigned), {"bind", "inputs", "rust-native"})
         self.assertIn("unsigned_only: true", unsigned)
         self.assertIn("fixture: false", unsigned)
         self.assertIn("artifact_prefix: release-test-unsigned", unsigned)
