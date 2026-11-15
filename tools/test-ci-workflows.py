@@ -590,8 +590,8 @@ class RustGraph(unittest.TestCase):
     def test_prebuilt_production_is_only_a_dry_run_debug_candidate(self):
         source = text("release-production.yml")
         request = source.split("      rust_native_mode:", 1)[1].split("      dry_run:", 1)[0]
-        self.assertIn("default: off", request)
-        self.assertIn("options: [off, prebuilt]", request)
+        self.assertIn('default: "off"', request)
+        self.assertIn('options: ["off", prebuilt]', request)
         self.assertIn("RUST_PREBUILT_REQUIRES_DRY_RUN_DEBUG_CANDIDATE", self.graph["bind"])
         self.assertIn("os.environ['RUST_DRY_RUN'] != 'true'", self.graph["bind"])
         self.assertIn("os.environ['RUST_TEST_PACKAGES'] not in ('debug', 'debug+dev')", self.graph["bind"])

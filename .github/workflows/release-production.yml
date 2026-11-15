@@ -44,8 +44,8 @@ on:
         description: 'off preserves released APK contents; prebuilt is a dry-run Android loading candidate only'
         required: false
         type: choice
-        options: [off, prebuilt]
-        default: off
+        options: ["off", prebuilt]
+        default: "off"
       dry_run:
         description: Build and verify everything (including test packages) without creating the tag or Release
         required: false
