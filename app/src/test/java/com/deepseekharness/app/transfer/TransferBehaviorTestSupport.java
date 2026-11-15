@@ -51,11 +51,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.Shadows;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowApplication;
 import org.robolectric.shadows.ShadowContentResolver;
+import org.robolectric.shadows.ShadowLooper;
 
 /** 只隔离 Android 文件/Provider/宿主初始化及执行器边界，三个被测协作者始终使用生产实现。 */
 public final class TransferBehaviorTestSupport implements AutoCloseable {
@@ -486,12 +487,13 @@ public final class TransferBehaviorTestSupport implements AutoCloseable {
   List<Intent> startedServices() {
     List<Intent> started = new ArrayList<>();
     Intent intent;
-    while ((intent = Shadows.shadowOf(app).getNextStartedService()) != null) started.add(intent);
+    while ((intent = Shadow.<ShadowApplication>extract(app).getNextStartedService()) != null)
+      started.add(intent);
     return started;
   }
 
   static void idle() {
-    Shadows.shadowOf(Looper.getMainLooper()).idle();
+    Shadow.<ShadowLooper>extract(Looper.getMainLooper()).idle();
   }
 
   CountDownLatch blockRead(File target) {

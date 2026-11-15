@@ -21,10 +21,11 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
-import org.robolectric.Shadows;
 import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowNotificationManager;
 import org.robolectric.shadows.ShadowPendingIntent;
 import org.robolectric.shadows.ShadowPowerManager;
 import org.robolectric.shadows.ShadowService;
@@ -90,7 +91,7 @@ public final class DownloadServiceBehaviorTest {
     DownloadService service = create().get();
     assertNull(service.onBind(null));
     assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 17));
-    ShadowService shadow = Shadows.shadowOf(service);
+    ShadowService shadow = Shadow.<ShadowService>extract(service);
     assertTrue(shadow.isStoppedBySelf());
     assertEquals(17, shadow.getStopSelfId());
     assertTrue(shadow.isForegroundStopped());
@@ -119,7 +120,8 @@ public final class DownloadServiceBehaviorTest {
     assertEquals(id, engine.state().getValue().activeId);
     DownloadService service = create().get();
     assertEquals(Service.START_NOT_STICKY, service.onStartCommand(new Intent(), 0, 41));
-    Notification notification = Shadows.shadowOf(service).getLastForegroundNotification();
+    Notification notification =
+        Shadow.<ShadowService>extract(service).getLastForegroundNotification();
     assertEquals(
         "active-notification.bin", notification.extras.getCharSequence(Notification.EXTRA_TITLE));
     assertEquals(100, notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX));
@@ -128,12 +130,12 @@ public final class DownloadServiceBehaviorTest {
     assertNotEquals(0, notification.flags & Notification.FLAG_ONGOING_EVENT);
     assertNotEquals(0, notification.flags & Notification.FLAG_ONLY_ALERT_ONCE);
     assertEquals(2, notification.actions.length);
-    ShadowPendingIntent open = Shadows.shadowOf(notification.contentIntent);
+    ShadowPendingIntent open = Shadow.<ShadowPendingIntent>extract(notification.contentIntent);
     assertTrue(open.isActivity());
     assertTrue(open.isImmutable());
     List<Intent> actions = new ArrayList<>();
     for (Notification.Action action : notification.actions) {
-      ShadowPendingIntent pending = Shadows.shadowOf(action.actionIntent);
+      ShadowPendingIntent pending = Shadow.<ShadowPendingIntent>extract(action.actionIntent);
       assertTrue(pending.isService());
       assertTrue(pending.isImmutable());
       Intent intent = pending.getSavedIntent();
@@ -150,11 +152,12 @@ public final class DownloadServiceBehaviorTest {
     fixture.unblock();
     worker.await();
     idle();
-    ShadowService shadow = Shadows.shadowOf(service);
+    ShadowService shadow = Shadow.<ShadowService>extract(service);
     assertTrue(shadow.isStoppedBySelf());
     assertEquals(43, shadow.getStopSelfId());
     Notification finished =
-        Shadows.shadowOf(service.getSystemService(NotificationManager.class))
+        Shadow.<ShadowNotificationManager>extract(
+                service.getSystemService(NotificationManager.class))
             .getNotification(NotificationIds.FILE_DOWNLOAD);
     assertNotNull(finished);
     assertEquals(0, finished.flags & Notification.FLAG_ONGOING_EVENT);
@@ -173,11 +176,12 @@ public final class DownloadServiceBehaviorTest {
     PowerManager.WakeLock wakeLock = ShadowPowerManager.getLatestWakeLock();
     assertNotNull(wakeLock);
     assertTrue(wakeLock.isHeld());
-    assertFalse(Shadows.shadowOf(wakeLock).isReferenceCounted());
-    assertEquals("DSHA:file-download", Shadows.shadowOf(wakeLock).getTag());
+    assertFalse(Shadow.<ShadowPowerManager.ShadowWakeLock>extract(wakeLock).isReferenceCounted());
+    assertEquals(
+        "DSHA:file-download", Shadow.<ShadowPowerManager.ShadowWakeLock>extract(wakeLock).getTag());
     assertEquals(Service.START_NOT_STICKY, service.onStartCommand(new Intent(), 0, 2));
     assertSame(wakeLock, ShadowPowerManager.getLatestWakeLock());
-    assertEquals(1, Shadows.shadowOf(wakeLock).getTimesHeld());
+    assertEquals(1, Shadow.<ShadowPowerManager.ShadowWakeLock>extract(wakeLock).getTimesHeld());
     assertEquals(1, queue(engine).size());
     assertTrue(engine.state().hasObservers());
     destroy(controller);
@@ -208,8 +212,8 @@ public final class DownloadServiceBehaviorTest {
     service.onTimeout(11, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
     assertEquals("PAUSED", status(first));
     assertEquals("PAUSED", status(newer));
-    assertTrue(Shadows.shadowOf(service).isStoppedBySelf());
-    assertTrue(Shadows.shadowOf(service).getNotificationShouldRemoved());
+    assertTrue(Shadow.<ShadowService>extract(service).isStoppedBySelf());
+    assertTrue(Shadow.<ShadowService>extract(service).getNotificationShouldRemoved());
     assertTrue(fixture.partial(first).exists());
     assertTrue(fixture.partial(newer).exists());
     queue(engine).runAll();
@@ -225,7 +229,7 @@ public final class DownloadServiceBehaviorTest {
       throws Exception {
     String id = enqueue("foreground-denied.bin");
     DownloadService service = create().get();
-    ShadowService shadow = Shadows.shadowOf(service);
+    ShadowService shadow = Shadow.<ShadowService>extract(service);
     shadow.setThrowInStartForeground(new SecurityException("fixture foreground admission denied"));
     assertEquals(Service.START_NOT_STICKY, service.onStartCommand(new Intent(), 0, 61));
     assertEquals("PAUSED", status(id));
