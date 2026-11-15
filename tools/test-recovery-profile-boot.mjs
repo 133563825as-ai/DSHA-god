@@ -12,6 +12,13 @@ import { zstdDecompressSync } from 'node:zlib';
 let phase='FIXTURE_SETUP', failurePhase, primaryError, cleanupFailed=false;
 try {
 const root=path.resolve(import.meta.dirname,'..');
+// 锁定rc.1 conversation client.js:16430/16816；与tools/i18n/web-messages.json一致。
+// 仅作zh/en空工作区占位负控，不从浏览器locale猜测宿主locale。
+const workspacePlaceholders=['选择一个工作区开始','Choose a workspace to start'];
+const webMessages=JSON.parse(await readFile(path.join(root,'tools/i18n/web-messages.json'),'utf8'));
+const workspaceMessage=webMessages.messages.find(row=>row.id==='conversation:placeholder.workspace');
+assert.deepEqual([workspaceMessage?.zh,workspaceMessage?.en],workspacePlaceholders);
+const visibleRecoveryTitle=page=>page.getByText('DSHA Recovery',{exact:true}).filter({visible:true}).first();
 const expectedDsh=JSON.parse(await readFile(path.join(root,'tools/recovery-runtime/lock.json'),'utf8')).dshVersion;
 const fixture=JSON.parse(await readFile(path.join(root,'app/build/test-runtimes/current.json'),'utf8'));
 const runtime=path.resolve(process.env.DSHA_TEST_RECOVERY_RUNTIME||process.env.DSHA_TEST_RUNTIME||fixture.raw);
@@ -93,6 +100,22 @@ try{
   browser=await launchHostBrowser(playwright,{requiredEngine:'chromium'});
   phase='BROWSER_CONTEXT';
   const browserContext=await browser.newContext({viewport:{width:393,height:852},isMobile:true,hasTouch:true,locale:'zh-CN'});
+  // Playwright1.64.1支持visible filter：真实DOM负控与主页面隔离，不证明workspace组件全链。
+  const titleProbe=await browserContext.newPage();titleProbe.setDefaultTimeout(15000);
+  let probePrimary;
+  try {
+    await titleProbe.setContent('<div hidden>DSHA Recovery</div><div>DSHA Recovery</div>');
+    assert.equal(await titleProbe.getByText('DSHA Recovery',{exact:true}).first().isVisible(),false);
+    await visibleRecoveryTitle(titleProbe).waitFor({state:'visible'});
+    assert.equal(await visibleRecoveryTitle(titleProbe).isVisible(),true);
+    await titleProbe.setContent('<div hidden>DSHA Recovery</div><div style="display:none">DSHA Recovery</div>');
+    assert.equal(await titleProbe.getByText('DSHA Recovery',{exact:true}).filter({visible:true}).count(),0);
+    assert.equal(await visibleRecoveryTitle(titleProbe).isVisible(),false,'all-hidden titles cannot establish readiness');
+  } catch(error) {probePrimary=error;throw error;}
+  finally {
+    try {await titleProbe.close();}
+    catch(error) {throw probePrimary?new AggregateError([probePrimary,error],'TITLE_PROBE_AND_CLEANUP_FAILED',{cause:probePrimary}):error;}
+  }
   const equals=cookie.indexOf('=');await browserContext.addCookies([{name:cookie.slice(0,equals),value:cookie.slice(equals+1),url:new URL('/',auth).href}]);
   const page=await browserContext.newPage();page.setDefaultTimeout(15000);
   const pageErrors=[],clientWarnings=[];
@@ -106,10 +129,10 @@ try{
     const dismiss=page.getByRole('button',{name:/^(稍后配置|Configure later|Later|Skip for now|继续|Continue)$/i});
     for(let attempt=0;attempt<30;attempt++){
       const visible=await dismiss.all();for(const button of visible)if(await button.isVisible()&&await button.isEnabled())await button.click();
-      if(await page.locator('[contenteditable="true"]:visible,textarea:visible').count())break;
+      if(await page.locator('[data-composer-input][contenteditable="true"]:visible').count())break;
       await page.waitForTimeout(200);
     }
-    const composer=page.locator('[contenteditable="true"]:visible,textarea:visible').first();
+    const composer=page.locator('[data-composer-input]:visible').first();
     const later=page.getByRole('button',{name:/^(稍后配置|Configure later|Later|Skip for now)$/i});
     await later.waitFor({state:'visible',timeout:8000}).catch(()=>{});if(await later.isVisible())await later.click();
     // 0.2.1 presents an account sign-in sheet with an explicit close button.
@@ -121,7 +144,7 @@ try{
     }
   phase='WORKSPACE_TITLE_WAIT';
     try {
-      await page.getByText('DSHA Recovery',{exact:true}).first().waitFor({state:'visible'});
+      await visibleRecoveryTitle(page).waitFor({state:'visible'});
     } catch(error) {
       // 仅固定可见性枚举；不输出DOM/标题正文/URL，也不替代原wait异常。
       phase='TITLE_PROBE_FAILED';
@@ -142,7 +165,13 @@ try{
   phase='WORKSPACE_EMPTY_ASSERT';
     assert.equal(await page.getByText('选择一个工作区开始',{exact:true}).count(),0,'empty workspace screen cannot pass');
   phase='COMPOSER_EDIT';
-    await composer.waitFor({state:'visible'});await composer.click();
+    await composer.waitFor({state:'visible'});
+    // 正向真实composer合同；尚未覆盖无workspace的真实组件/stream负控，不能以title替代selection证明。
+    assert.equal(await composer.evaluate(element=>element.isContentEditable),true,'actual composer must be editable');
+    const placeholder=await composer.getAttribute('data-placeholder');
+    assert.equal(typeof placeholder,'string','actual composer must expose its placeholder contract');
+    assert.equal(workspacePlaceholders.includes(placeholder),false,'workspace-picker placeholder cannot establish editor readiness');
+    await composer.click();
     const draft='DSHA 应急输入回归：只验证草稿，不发送模型请求。';
     await composer.fill(draft);
     assert.equal(await composer.evaluate(element=>element instanceof HTMLTextAreaElement?element.value:element.textContent),draft);
