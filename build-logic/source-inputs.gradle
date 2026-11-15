@@ -303,7 +303,15 @@ ext.dshaWriteCompileProof = { testTask, state ->
     def head = verifyHead()
     def inventory = snapshot()
     def closure = taskClosure(testTask)
-    def compileTasks = closure.findAll { isCompile(it) }.toList().sort { it.path }
+    def compileTasks = closure.findAll { isCompile(it) }.toList()
+    // AGP 的 Test 任务可能经 bundle/文件集合间接引用主 Java 编译，taskDependencies
+    // 不暴露该边时，主 Java 虽已执行并写出 receipt，却不会进入 compile proof，
+    // full 契约会因缺少主 Java 编译行而拒绝。补入同一 state 内已实际执行的本模块
+    // Compile 任务；只认有 execution receipt 的成功任务，不放宽任何源码/编译证明。
+    testTask.project.tasks.matching { isCompile(it) && executionFile(state, it).isFile() }.each { task ->
+        if (!compileTasks.contains(task)) compileTasks.add(task)
+    }
+    compileTasks = compileTasks.sort { it.path }
     if (compileTasks.isEmpty()) sourceFail('Test has no real Compile dependency ' + testTask.path)
     def modules = compileTasks.collect { it.project }.unique()
     def run = new groovy.json.JsonSlurper().parse(new File(state, 'run.json'))
