@@ -278,9 +278,7 @@ class ApkCheckTest(unittest.TestCase):
             ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0xffffffff')),
             ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0x0 (Raw: "SECRET")')),
             ('ATTRIBUTE_DEPTH', startup.replace('      A:', '        A:')),
-            ('ATTRIBUTE_NAMESPACE_URI', startup.replace('android:', 'http://schemas.android.com/apk/res/android:')),
             ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0x0 (Raw: "false")')),
-            ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '"false"')),
         ]
         for reason, changed in variants:
             manifest = self.manifest[:start] + changed + self.manifest[end:]
@@ -302,7 +300,7 @@ class ApkCheckTest(unittest.TestCase):
             CHECK.verify_manifest(self.manifest)
         self.assertEqual('', output.getvalue())
 
-    def test_startup_format_observation_is_enum_only_and_does_not_admit(self):
+    def test_startup_format_observation_is_enum_only_and_matches_reviewed_forms(self):
         start = self.manifest.index('    E: provider', self.manifest.index('.documents'))
         end = self.manifest.index('    E: activity', start)
         startup = self.manifest[start:end]
@@ -316,8 +314,35 @@ class ApkCheckTest(unittest.TestCase):
                 manifest = self.manifest[:start] + changed + self.manifest[end:]
                 expected_shape = shape if namespace != 'OTHER' else 'OTHER'
                 self.assertEqual((namespace, expected_shape), CHECK.startup_provider_format(manifest))
-                if namespace != 'SHORT' or value != '(type 0x12)0x0':
-                    self.assertFalse(CHECK.startup_provider_valid(manifest))
+                allowed = namespace in ('SHORT', 'ANDROID_URI') and value in ('(type 0x12)0x0', '"false"')
+                self.assertEqual(allowed, CHECK.startup_provider_valid(manifest))
+
+    def test_actual_namespace_boolean_false_keeps_strict_parent_and_duplicate_gates(self):
+        start = self.manifest.index('    E: provider', self.manifest.index('.documents'))
+        end = self.manifest.index('    E: activity', start)
+        original = self.manifest[start:end]
+        uri = 'http://schemas.android.com/apk/res/android:'
+        for exported in ('false', '"false"', '(type 0x12)0x0'):
+            startup = original.replace('android:', uri).replace('(type 0x12)0x0', exported)
+            CHECK.verify_manifest(self.manifest[:start] + startup + self.manifest[end:])
+        startup = original.replace('android:', uri).replace('(type 0x12)0x0', 'false')
+        name = '      A: ' + uri + 'name(0x01010003)="androidx.startup.InitializationProvider"'
+        authority = '      A: ' + uri + 'authorities(0x01010018)="' + CHECK.PACKAGE + '.androidx-startup"'
+        export_line = '      A: ' + uri + 'exported(0x01010010)=false'
+        variants = [startup.replace(uri, 'https://unknown.invalid/android:'),
+                    startup.replace('=false', '=true'), startup.replace('=false', '=0'),
+                    startup.replace('=false', '="false" garbage'),
+                    startup.replace('=false', '=(type 0x12)0x0 (Raw: "false")'),
+                    startup + name.replace(uri, 'android:') + '\n',
+                    startup + export_line.replace(uri, 'android:') + '\n',
+                    startup + authority.replace(uri, 'android:') + '\n',
+                    startup.replace(name, '') + '      E: meta-data\n        A: ' + uri + 'name="androidx.startup.InitializationProvider"\n',
+                    startup.replace(export_line, '') + '      E: meta-data\n        A: ' + uri + 'exported=false\n',
+                    startup.replace(name, '') + '    E: provider\n      A: android:name="androidx.startup.InitializationProvider"\n',
+                    startup.replace('    E: provider', '      E: provider')]
+        for changed in variants:
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+                CHECK.verify_manifest(self.manifest[:start] + changed + self.manifest[end:])
 
     def test_four_authorities_reject_duplicate_unknown_and_truncated_startup(self):
         for changed in (self.manifest.replace('.androidx-startup', '.androidx'),

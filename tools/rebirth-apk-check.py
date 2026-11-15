@@ -186,12 +186,20 @@ def startup_provider_valid(manifest):
             selected.append(rows)
     if len(selected) != 1:
         return False
-    block = selected[0]
-    text = '\n'.join(block)
-    names = re.findall(r'android:name(?:\([^)]*\))?="([^"]*)"', text)
-    exported = [row for row in block if re.match(r'android:exported(?:\([^)]*\))?=', row)]
-    return (names == ['androidx.startup.InitializationProvider'] and len(exported) == 1
-            and re.fullmatch(r'android:exported(?:\([^)]*\))?=\(type 0x12\)0x0', exported[0]) is not None)
+    attributes = {'name': [], 'authorities': [], 'exported': []}
+    for row in selected[0]:
+        attribute = re.match(r'([^ ]+):(name|authorities|exported)(?:\([^)]*\))?=(.*)$', row)
+        if attribute:
+            if attribute.group(1) not in ('android', 'http://schemas.android.com/apk/res/android'):
+                return False
+            attributes[attribute.group(2)].append(attribute.group(3))
+    if any(len(values) != 1 for values in attributes.values()):
+        return False
+    names = re.findall(r'^"([^"]*)"', attributes['name'][0])
+    authority = re.findall(r'^"([^"]*)"', attributes['authorities'][0])
+    return (names == ['androidx.startup.InitializationProvider']
+            and authority == [PACKAGE + '.androidx-startup']
+            and attributes['exported'][0] in ('(type 0x12)0x0', 'false', '"false"'))
 
 
 def startup_provider_observation(manifest):
