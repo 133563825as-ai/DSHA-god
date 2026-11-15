@@ -2,6 +2,16 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-mobile-scroll-lifecycle.mjs",
+      "stage": "fast",
+      "requires": ["node24"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Exact pinned old and generated mobile scroll lifecycle code under controlled RAF; owner/request retirement, late cleanup, original 100-position regression and guard negative controls without browser or device execution.",
+      "cli": "No arguments; synthetic mechanism evidence does not substitute real browser or full runtime verification."
+    },
+    {
       "path": "tools/test-ci-safe-test-diagnostics.py",
       "stage": "fast",
       "requires": ["python39", "node24"],

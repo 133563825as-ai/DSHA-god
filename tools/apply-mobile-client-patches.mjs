@@ -34,6 +34,283 @@ export function mobileServerSourceMap(name, bytes) {
     sources: ['dsha://tools/mobile-server/' + name], sourcesContent: [source], names: [],
     mappings: ['AAAA', ...Array(Math.max(0, lines - 1)).fill('AACA')].join(';') }) + '\n';
 }
+// 本轮特批的临时滚动生命周期差异，不伪装上游字节或升级上游锁。
+const scrollOriginalSource = `const SWAP_RESTORE_MS = 10_000
+
+type SavedScroll = { top: number; savedAt: number; url: string }
+const scrollWindow = window as Window & {
+  __dshaMobileScrollState?: WeakMap<HTMLElement, SavedScroll>
+  /** Last known conversation offset, independent of the scroller's identity. */
+  __dshaMobileLastScroll?: SavedScroll
+}
+const scrollState = scrollWindow.__dshaMobileScrollState instanceof WeakMap
+  ? scrollWindow.__dshaMobileScrollState
+  : (scrollWindow.__dshaMobileScrollState = new WeakMap<HTMLElement, SavedScroll>())
+
+// 宿主自己写在会话滚动区上的 [data-conversation-scroll] 打头（2026-11-04 热换后对话弹到顶，内置 3.2.2 同样）：
+// effect 按后注册先清理（cordis clear() 反序），frame 标记归后注册的 reconciler 所有、先被摘掉，
+// 只靠它的话卸载时 0 命中、什么也没存下。
+function conversationScrollers(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-conversation-scroll], [data-mobile-nav="frame"] [class*="scrollBody"]')]
+}
+
+/**
+ * Where the conversation was scrolled to, independent of the element.
+ *
+ * The per-element WeakMap below only survives a stylesheet swap, where the
+ * scroll body keeps its identity. A hot swap that re-renders the tree (the
+ * host re-imports the client module) replaces the node, and the frame marker
+ * the scroller query keys on is only applied by a reconciler task on the NEXT
+ * frame — so the old restore found nothing and the conversation stayed at 0.
+ * Field data 2026-10-30 (phone beacon): convTop 5546 -> 0 within one second of
+ * a plugin re-apply, with no pointer or key event in between; the owner's
+ * 「时不时跳到上文很久以前的内容」 is exactly that.
+ */
+function rememberConversationScroll(): void {
+  for (const element of conversationScrollers()) {
+    if (element.scrollTop > 0) {
+      const saved = { top: element.scrollTop, savedAt: Date.now(), url: location.href }
+      scrollState.set(element, saved)
+      scrollWindow.__dshaMobileLastScroll = saved
+    } else scrollState.delete(element)
+  }
+}
+
+function restoreConversationScroll(): void {
+  // Same node (stylesheet-only swap): the cheap path.
+  for (const element of conversationScrollers()) {
+    const saved = scrollState.get(element)
+    scrollState.delete(element)
+    if (!saved || Date.now() - saved.savedAt > SWAP_RESTORE_MS || saved.url !== location.href) continue
+    requestAnimationFrame(() => {
+      if (element.isConnected && saved.url === location.href &&
+        Date.now() - saved.savedAt <= SWAP_RESTORE_MS && element.scrollTop === 0)
+        element.scrollTop = saved.top
+    })
+  }
+  // Remounted tree (plugin re-apply): retry until the new scroller exists, has
+  // content, and the frame marker is in place. Bounded, and it never fights a
+  // scroll the user started — it only writes while the scroller sits at 0.
+  const saved = scrollWindow.__dshaMobileLastScroll
+  if (saved === undefined) return
+  let tries = 0
+  const attempt = (): void => {
+    tries += 1
+    if (saved.url !== location.href || Date.now() - saved.savedAt > SWAP_RESTORE_MS) return
+    const element = document.querySelector<HTMLElement>('[class*="scrollBody"]')
+    if (element !== null && element.scrollTop === 0 && element.scrollHeight >= saved.top + element.clientHeight) {
+      element.scrollTop = saved.top
+      return
+    }
+    if (tries < 30) requestAnimationFrame(attempt)
+  }
+  requestAnimationFrame(attempt)
+}
+`;
+const scrollOriginalBundle = `const SWAP_RESTORE_MS = 10_000;
+const scrollWindow = window;
+const scrollState = scrollWindow.__dshaMobileScrollState instanceof WeakMap
+    ? scrollWindow.__dshaMobileScrollState
+    : (scrollWindow.__dshaMobileScrollState = new WeakMap());
+// 宿主自己写在会话滚动区上的 [data-conversation-scroll] 打头（2026-11-04 热换后对话弹到顶，内置 3.2.2 同样）：
+// effect 按后注册先清理（cordis clear() 反序），frame 标记归后注册的 reconciler 所有、先被摘掉，
+// 只靠它的话卸载时 0 命中、什么也没存下。
+function conversationScrollers() {
+    return [...document.querySelectorAll('[data-conversation-scroll], [data-mobile-nav="frame"] [class*="scrollBody"]')];
+}
+/**
+ * Where the conversation was scrolled to, independent of the element.
+ *
+ * The per-element WeakMap below only survives a stylesheet swap, where the
+ * scroll body keeps its identity. A hot swap that re-renders the tree (the
+ * host re-imports the client module) replaces the node, and the frame marker
+ * the scroller query keys on is only applied by a reconciler task on the NEXT
+ * frame — so the old restore found nothing and the conversation stayed at 0.
+ * Field data 2026-10-30 (phone beacon): convTop 5546 -> 0 within one second of
+ * a plugin re-apply, with no pointer or key event in between; the owner's
+ * 「时不时跳到上文很久以前的内容」 is exactly that.
+ */
+function rememberConversationScroll() {
+    for (const element of conversationScrollers()) {
+        if (element.scrollTop > 0) {
+            const saved = { top: element.scrollTop, savedAt: Date.now(), url: location.href };
+            scrollState.set(element, saved);
+            scrollWindow.__dshaMobileLastScroll = saved;
+        }
+        else
+            scrollState.delete(element);
+    }
+}
+function restoreConversationScroll() {
+    // Same node (stylesheet-only swap): the cheap path.
+    for (const element of conversationScrollers()) {
+        const saved = scrollState.get(element);
+        scrollState.delete(element);
+        if (!saved || Date.now() - saved.savedAt > SWAP_RESTORE_MS || saved.url !== location.href)
+            continue;
+        requestAnimationFrame(() => {
+            if (element.isConnected && saved.url === location.href &&
+                Date.now() - saved.savedAt <= SWAP_RESTORE_MS && element.scrollTop === 0)
+                element.scrollTop = saved.top;
+        });
+    }
+    // Remounted tree (plugin re-apply): retry until the new scroller exists, has
+    // content, and the frame marker is in place. Bounded, and it never fights a
+    // scroll the user started — it only writes while the scroller sits at 0.
+    const saved = scrollWindow.__dshaMobileLastScroll;
+    if (saved === undefined)
+        return;
+    let tries = 0;
+    const attempt = () => {
+        tries += 1;
+        if (saved.url !== location.href || Date.now() - saved.savedAt > SWAP_RESTORE_MS)
+            return;
+        const element = document.querySelector('[class*="scrollBody"]');
+        if (element !== null && element.scrollTop === 0 && element.scrollHeight >= saved.top + element.clientHeight) {
+            element.scrollTop = saved.top;
+            return;
+        }
+        if (tries < 30)
+            requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+}`;
+const scrollCanonical = `// DSHA_SCROLL_LIFECYCLE_V1 — 用户2026-11-15批准的临时修复。
+// why: 旧RAF保存400后跨热换覆盖新100；until: 上游等价owner/token退休修复经同矩阵验证后删除。
+// 首次旧版RAF不认识本token，不能追溯取消；完整保证从fresh load/修复版重载开始。
+const SWAP_RESTORE_MS = 10_000
+const scrollWindow = window
+const scrollState = scrollWindow.__dshaMobileScrollState instanceof WeakMap
+  ? scrollWindow.__dshaMobileScrollState
+  : (scrollWindow.__dshaMobileScrollState = new WeakMap())
+const scrollLifecycle = scrollWindow.__dshaMobileScrollLifecycleV1 ??= {}
+let scrollOwner = { disposed: false }
+scrollLifecycle.owner ??= scrollOwner
+function conversationScrollers() {
+  return [...document.querySelectorAll('[data-conversation-scroll], [data-mobile-nav="frame"] [class*="scrollBody"]')]
+}
+function primaryScroller(elements) {
+  const explicit = elements.filter(element => element.matches('[data-conversation-scroll]'))
+  return explicit.length === 1 ? explicit[0] : explicit.length === 0 && elements.length === 1 ? elements[0] : undefined
+}
+function rememberConversationScroll() {
+  if (scrollOwner.disposed || scrollLifecycle.owner !== scrollOwner) return
+  scrollLifecycle.request?.cancel()
+  const elements = conversationScrollers()
+  const primary = primaryScroller(elements)
+  for (const element of elements) {
+    if (element.scrollTop > 0) {
+      const saved = { top: element.scrollTop, savedAt: Date.now(), url: location.href }
+      scrollState.set(element, saved)
+      if (element === primary) scrollWindow.__dshaMobileLastScroll = saved
+    } else {
+      scrollState.delete(element)
+      if (element === primary) delete scrollWindow.__dshaMobileLastScroll
+    }
+  }
+  if (elements.length > 1 && primary === undefined) delete scrollWindow.__dshaMobileLastScroll
+}
+function restoreConversationScroll() {
+  scrollLifecycle.request?.cancel()
+  const owner = scrollOwner = { disposed: false }
+  scrollLifecycle.owner = owner
+  const frames = new Set()
+  const request = {
+    active: true,
+    cancel() {
+      request.active = false
+      for (const frame of frames) cancelAnimationFrame(frame)
+      frames.clear()
+    },
+  }
+  scrollLifecycle.request = request
+  const current = () => !owner.disposed && request.active && scrollLifecycle.owner === owner && scrollLifecycle.request === request
+  const schedule = (callback) => {
+    if (!current()) return
+    const frame = requestAnimationFrame(() => {
+      frames.delete(frame)
+      if (current()) callback()
+    })
+    frames.add(frame)
+  }
+  const fresh = (saved) => saved.url === location.href && Date.now() - saved.savedAt <= SWAP_RESTORE_MS
+  const retired = new WeakSet()
+  for (const element of conversationScrollers()) {
+    const saved = scrollState.get(element)
+    scrollState.delete(element)
+    if (!saved || !fresh(saved)) continue
+    schedule(() => {
+      if (retired.has(element) || !element.isConnected || !fresh(saved)) { retired.add(element); return }
+      if (element.scrollTop !== 0) { retired.add(element); return }
+      if (current() && element.scrollHeight >= saved.top + element.clientHeight) { retired.add(element); element.scrollTop = saved.top }
+    })
+  }
+  const saved = scrollWindow.__dshaMobileLastScroll
+  let tries = 0
+  const attempt = () => {
+    if (!current() || !saved) return
+    if (!fresh(saved)) { request.cancel(); return }
+    tries += 1
+    const elements = conversationScrollers()
+    const element = primaryScroller(elements)
+    if (elements.length > 1 && element === undefined) { request.cancel(); return }
+    if (element !== undefined && element.isConnected) {
+      if (retired.has(element) || element.scrollTop !== 0) { retired.add(element); request.cancel(); return }
+      if (element.scrollHeight >= saved.top + element.clientHeight) {
+        if (current()) element.scrollTop = saved.top
+        request.cancel()
+        return
+      }
+    }
+    if (tries < 30 && current()) schedule(attempt)
+    else request.cancel()
+  }
+  if (saved !== undefined) schedule(attempt)
+  return () => {
+    if (owner.disposed) return
+    if (scrollLifecycle.owner === owner) {
+      rememberConversationScroll()
+      delete scrollLifecycle.owner
+    }
+    request.cancel()
+    owner.disposed = true
+  }
+}
+`;
+export function mobileScrollLifecycleCode(typed = false) {
+  if (!typed) return scrollCanonical;
+  return scrollCanonical
+    .replace('const scrollWindow = window', `type SavedScroll = { top: number; savedAt: number; url: string }
+type ScrollRequest = { active: boolean; cancel(): void }
+const scrollWindow = window as Window & {
+  __dshaMobileScrollState?: WeakMap<HTMLElement, SavedScroll>
+  __dshaMobileLastScroll?: SavedScroll
+  __dshaMobileScrollLifecycleV1?: { owner?: { disposed: boolean }; request?: ScrollRequest }
+}`)
+    .replace('new WeakMap()', 'new WeakMap<HTMLElement, SavedScroll>()')
+    .replace('function conversationScrollers()', 'function conversationScrollers(): HTMLElement[]')
+    .replace("document.querySelectorAll('[data-conversation-scroll]", "document.querySelectorAll<HTMLElement>('[data-conversation-scroll]")
+    .replace('function primaryScroller(elements)', 'function primaryScroller(elements: HTMLElement[]): HTMLElement | undefined')
+    .replace('function rememberConversationScroll()', 'function rememberConversationScroll(): void')
+    .replace('function restoreConversationScroll()', 'function restoreConversationScroll(): () => void')
+    .replace('const frames = new Set()', 'const frames = new Set<number>()')
+    .replace('const schedule = (callback) =>', 'const schedule = (callback: () => void): void =>')
+    .replace('const fresh = (saved) =>', 'const fresh = (saved: SavedScroll): boolean =>')
+    .replace('const retired = new WeakSet()', 'const retired = new WeakSet<HTMLElement>()');
+}
+function scrollReplace(source, before, after) {
+  if (source.split(before).length !== 2) throw Error('MOBILE_SCROLL_ANCHOR');
+  return source.replace(before, after);
+}
+export function applyMobileScrollLifecycle(source, typed = false, reverse = false) {
+  const old = typed ? scrollOriginalSource : scrollOriginalBundle;
+  const next = mobileScrollLifecycleCode(typed);
+  source = scrollReplace(source, reverse ? next : old, reverse ? old : next);
+  const before = typed ? '    restoreConversationScroll()\n    return () => {\n      rememberConversationScroll()' : '        restoreConversationScroll();\n        return () => {\n            rememberConversationScroll();';
+  const after = typed ? '    const disposeScroll = restoreConversationScroll()\n    return () => {\n      disposeScroll()' : '        const disposeScroll = restoreConversationScroll();\n        return () => {\n            disposeScroll();';
+  return scrollReplace(source, reverse ? after : before, reverse ? before : after);
+}
+
 export function applyMobileClientPatches(bytes) {
   if (sha(bytes) !== upstreamClientHash) throw new Error('上游 client 字节不匹配固定 commit；请重新审阅补丁');
   let source = bytes.toString('utf8');
@@ -42,7 +319,7 @@ export function applyMobileClientPatches(bytes) {
     source = source.replace(before, after);
   };
   // build336（T101 重做，用户选 C）+ build351（2026-11-09 同步上游 3.3.5）：以上游为基座，
-  // client 只保留四类本地差异：
+  // client 保留四类既有差异及2026-11-15特批临时滚动生命周期修复：
   //   1) 宿主集成 DSHA_GEAR_FIT_V1：footer 齿轮按实测行宽让位（上游 3.3.5 仍是旧的
   //      「连接条 :has() 存在性」判据，DSH 0.2.2 首连不渲染指示灯时会判错）；
   //   2) 安全区：applyMobileSafeArea 把 env(safe-area-inset-*) 包成 DSHA 原生发布的变量；
@@ -139,7 +416,7 @@ function createDrawerQuickSettingsTask(ctx) {`);
                 if (wrap.dataset.mobileNavQuickFit !== fit) wrap.dataset.mobileNavQuickFit = fit;
             }
             syncMenuEntry(target, gearVisible);`);
-  return applyMobileSafeArea(applyFileTransferClient(applyMobileLocaleBundlePatch(source)));
+  return applyMobileScrollLifecycle(applyMobileSafeArea(applyFileTransferClient(applyMobileLocaleBundlePatch(source))));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [input, action = '--check'] = process.argv.slice(2);
@@ -149,7 +426,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const name of mobileLocaleSourceFiles) {
       const bytes = readFileSync(path.join(directory, name));
       if (sha(bytes) !== lock.files[name]?.sha256) throw new Error('mobile locale source differs from fixed commit: ' + name);
-      const patched = applyMobileLocaleSourcePatch(name, bytes.toString('utf8'));
+      const localized = applyMobileLocaleSourcePatch(name, bytes.toString('utf8'));
+      const patched = name === 'src/client/index.tsx' ? applyMobileScrollLifecycle(localized, true) : localized;
       const output = path.join(project, 'app/src/main/assets/builtin-plugins/dsh-web-mobile', name);
       if (localeAction === '--write') writeFileSync(output, patched);
       else if (readFileSync(output, 'utf8') !== patched) throw new Error('移动语言源码与锁定补丁不符: ' + name);

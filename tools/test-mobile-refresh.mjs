@@ -86,6 +86,47 @@ try {
   const remountedTop=await page.locator('#scroller').evaluate(el=>el.scrollTop);
   phase=remountedTop===0?'REMOUNT_GOT_0':remountedTop===100?'REMOUNT_GOT_100':remountedTop===400?'REMOUNT_GOT_400':'REMOUNT_GOT_OTHER';
   assert.equal(remountedTop,100,'remounted scroller restores the remembered position');
+  // 真实DOM与真实新bundle函数；只接管RAF队列精确交付已cancel旧回调，不drain/等待求绿。
+  let lifecyclePrimary;
+  try {
+    await page.evaluate(()=>{
+    const originalRAF=window.requestAnimationFrame,originalCancel=window.cancelAnimationFrame;
+    let next=0;const pending=new Map(),history=new Map();
+    window.scrollLifecycle={pending,history,installed:true,frame(){const batch=[...pending.values()];pending.clear();for(const cb of batch)cb(performance.now());},
+      restoreRAF(){window.requestAnimationFrame=originalRAF;window.cancelAnimationFrame=originalCancel;}};
+    window.requestAnimationFrame=cb=>{const id=++next;pending.set(id,cb);history.set(id,cb);return id;};
+    window.cancelAnimationFrame=id=>pending.delete(id);
+    const el=document.getElementById('scroller');el.scrollTop=100;swapTest.rememberConversationScroll();
+    window.scrollDisposeA=swapTest.restoreConversationScroll();
+    });
+    await load();
+    const lifecycle=await page.evaluate(()=>{
+      const control=window.scrollLifecycle,el=document.getElementById('scroller');
+      const disposeB=swapTest.restoreConversationScroll();
+      const saved=window.__dshaMobileLastScroll,keys=Object.keys(window).filter(k=>k.startsWith('__dshaMobileScroll'));
+      const state=keys.map(key=>[key,window[key]]),queued=[...control.pending.keys()];
+      const lifecycle=window.__dshaMobileScrollLifecycleV1,owner=lifecycle.owner,request=lifecycle.request;
+      window.scrollDisposeA();
+      const staleCleanupQuiet=window.__dshaMobileLastScroll===saved&&state.every(([key,value])=>window[key]===value)&&lifecycle.owner===owner&&lifecycle.request===request&&request.active&&JSON.stringify([...control.pending.keys()])===JSON.stringify(queued);
+      control.frame();el.scrollTop=135;disposeB();
+      const completedOwnerSaved=window.__dshaMobileLastScroll.top===135;
+      el.scrollTop=0;swapTest.restoreConversationScroll();
+      const oldCallbacks=[...control.pending.values()];
+      el.scrollTop=0;swapTest.rememberConversationScroll();
+      for(const cb of oldCallbacks)cb(performance.now());
+      const zeroIntentRetired=el.scrollTop===0&&control.pending.size===0;
+      return {staleCleanupQuiet,completedOwnerSaved,zeroIntentRetired};
+    });
+    assert.deepEqual(lifecycle,{staleCleanupQuiet:true,completedOwnerSaved:true,zeroIntentRetired:true});
+  } catch(error) {
+    lifecyclePrimary=error;throw error;
+  } finally {
+    try {
+      await page.evaluate(()=>{if(window.scrollLifecycle?.installed){window.scrollLifecycle.restoreRAF();delete window.scrollLifecycle;delete window.scrollDisposeA;}});
+    } catch(error) {
+      throw lifecyclePrimary?new AggregateError([lifecyclePrimary,error],'MOBILE_LIFECYCLE_AND_CLEANUP_FAILED',{cause:lifecyclePrimary}):error;
+    }
+  }
   phase='SESSION_LOG';
   const sessionLog=await page.evaluate(()=>{
     const frame=document.querySelector('[data-mobile-nav="frame"]');

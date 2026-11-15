@@ -3,9 +3,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {applyMobileClientPatches,upstreamCommit,upstreamClientHash} from './apply-mobile-client-patches.mjs';
+import {applyMobileClientPatches,applyMobileScrollLifecycle,mobileScrollLifecycleCode,upstreamCommit,upstreamClientHash} from './apply-mobile-client-patches.mjs';
+import {stripTypeScriptTypes} from 'node:module';
 const asset='app/src/main/assets/builtin-plugins/dsh-web-mobile/lib/client.js';
 const upstreamSource=()=>readFileSync('tools/mobile-plugin-upstream/lib/client.js','utf8');
+test('临时滚动生命周期源与产物同义且往返锚点强校验',()=>{
+  const code=mobileScrollLifecycleCode();
+  const typed=stripTypeScriptTypes(mobileScrollLifecycleCode(true));
+  assert.equal(typed.replace(/\s+/g,''),code.replace(/\s+/g,''),'TypeScript只增加类型，不复制另一套算法');
+  const output=readFileSync(asset,'utf8');
+  const before=applyMobileScrollLifecycle(output,false,true);
+  assert.equal(applyMobileScrollLifecycle(before),output);
+  assert.throws(()=>applyMobileScrollLifecycle(output),/MOBILE_SCROLL_ANCHOR/);
+  assert.throws(()=>applyMobileScrollLifecycle(before.replace('function restoreConversationScroll()', 'function changedScroll()')),/MOBILE_SCROLL_ANCHOR/);
+  assert.match(output,/DSHA_SCROLL_LIFECYCLE_V1/);
+});
 test('移动 client 固定预构建来源与部署产物闭环，拒绝错误版本/追加字节',()=>{
   const source=upstreamSource();
   assert.equal(createHash('sha256').update(source).digest('hex'),upstreamClientHash);

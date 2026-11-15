@@ -57,76 +57,112 @@ export const inject = ['slots', 'layout', 'locale', 'sessionLogDownload', 'sessi
  * The gap between our teardown and re-apply is one dynamic import inside the host's
  * client-modules queue — well under a second in practice; ten is generous.
  */
+// DSHA_SCROLL_LIFECYCLE_V1 — 用户2026-11-15批准的临时修复。
+// why: 旧RAF保存400后跨热换覆盖新100；until: 上游等价owner/token退休修复经同矩阵验证后删除。
+// 首次旧版RAF不认识本token，不能追溯取消；完整保证从fresh load/修复版重载开始。
 const SWAP_RESTORE_MS = 10_000
-
 type SavedScroll = { top: number; savedAt: number; url: string }
+type ScrollRequest = { active: boolean; cancel(): void }
 const scrollWindow = window as Window & {
   __dshaMobileScrollState?: WeakMap<HTMLElement, SavedScroll>
-  /** Last known conversation offset, independent of the scroller's identity. */
   __dshaMobileLastScroll?: SavedScroll
+  __dshaMobileScrollLifecycleV1?: { owner?: { disposed: boolean }; request?: ScrollRequest }
 }
 const scrollState = scrollWindow.__dshaMobileScrollState instanceof WeakMap
   ? scrollWindow.__dshaMobileScrollState
   : (scrollWindow.__dshaMobileScrollState = new WeakMap<HTMLElement, SavedScroll>())
-
-// 宿主自己写在会话滚动区上的 [data-conversation-scroll] 打头（2026-11-04 热换后对话弹到顶，内置 3.2.2 同样）：
-// effect 按后注册先清理（cordis clear() 反序），frame 标记归后注册的 reconciler 所有、先被摘掉，
-// 只靠它的话卸载时 0 命中、什么也没存下。
+const scrollLifecycle = scrollWindow.__dshaMobileScrollLifecycleV1 ??= {}
+let scrollOwner = { disposed: false }
+scrollLifecycle.owner ??= scrollOwner
 function conversationScrollers(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('[data-conversation-scroll], [data-mobile-nav="frame"] [class*="scrollBody"]')]
 }
-
-/**
- * Where the conversation was scrolled to, independent of the element.
- *
- * The per-element WeakMap below only survives a stylesheet swap, where the
- * scroll body keeps its identity. A hot swap that re-renders the tree (the
- * host re-imports the client module) replaces the node, and the frame marker
- * the scroller query keys on is only applied by a reconciler task on the NEXT
- * frame — so the old restore found nothing and the conversation stayed at 0.
- * Field data 2026-10-30 (phone beacon): convTop 5546 -> 0 within one second of
- * a plugin re-apply, with no pointer or key event in between; the owner's
- * 「时不时跳到上文很久以前的内容」 is exactly that.
- */
+function primaryScroller(elements: HTMLElement[]): HTMLElement | undefined {
+  const explicit = elements.filter(element => element.matches('[data-conversation-scroll]'))
+  return explicit.length === 1 ? explicit[0] : explicit.length === 0 && elements.length === 1 ? elements[0] : undefined
+}
 function rememberConversationScroll(): void {
-  for (const element of conversationScrollers()) {
+  if (scrollOwner.disposed || scrollLifecycle.owner !== scrollOwner) return
+  scrollLifecycle.request?.cancel()
+  const elements = conversationScrollers()
+  const primary = primaryScroller(elements)
+  for (const element of elements) {
     if (element.scrollTop > 0) {
       const saved = { top: element.scrollTop, savedAt: Date.now(), url: location.href }
       scrollState.set(element, saved)
-      scrollWindow.__dshaMobileLastScroll = saved
-    } else scrollState.delete(element)
+      if (element === primary) scrollWindow.__dshaMobileLastScroll = saved
+    } else {
+      scrollState.delete(element)
+      if (element === primary) delete scrollWindow.__dshaMobileLastScroll
+    }
   }
+  if (elements.length > 1 && primary === undefined) delete scrollWindow.__dshaMobileLastScroll
 }
-
-function restoreConversationScroll(): void {
-  // Same node (stylesheet-only swap): the cheap path.
+function restoreConversationScroll(): () => void {
+  scrollLifecycle.request?.cancel()
+  const owner = scrollOwner = { disposed: false }
+  scrollLifecycle.owner = owner
+  const frames = new Set<number>()
+  const request = {
+    active: true,
+    cancel() {
+      request.active = false
+      for (const frame of frames) cancelAnimationFrame(frame)
+      frames.clear()
+    },
+  }
+  scrollLifecycle.request = request
+  const current = () => !owner.disposed && request.active && scrollLifecycle.owner === owner && scrollLifecycle.request === request
+  const schedule = (callback: () => void): void => {
+    if (!current()) return
+    const frame = requestAnimationFrame(() => {
+      frames.delete(frame)
+      if (current()) callback()
+    })
+    frames.add(frame)
+  }
+  const fresh = (saved: SavedScroll): boolean => saved.url === location.href && Date.now() - saved.savedAt <= SWAP_RESTORE_MS
+  const retired = new WeakSet<HTMLElement>()
   for (const element of conversationScrollers()) {
     const saved = scrollState.get(element)
     scrollState.delete(element)
-    if (!saved || Date.now() - saved.savedAt > SWAP_RESTORE_MS || saved.url !== location.href) continue
-    requestAnimationFrame(() => {
-      if (element.isConnected && saved.url === location.href &&
-        Date.now() - saved.savedAt <= SWAP_RESTORE_MS && element.scrollTop === 0)
-        element.scrollTop = saved.top
+    if (!saved || !fresh(saved)) continue
+    schedule(() => {
+      if (retired.has(element) || !element.isConnected || !fresh(saved)) { retired.add(element); return }
+      if (element.scrollTop !== 0) { retired.add(element); return }
+      if (current() && element.scrollHeight >= saved.top + element.clientHeight) { retired.add(element); element.scrollTop = saved.top }
     })
   }
-  // Remounted tree (plugin re-apply): retry until the new scroller exists, has
-  // content, and the frame marker is in place. Bounded, and it never fights a
-  // scroll the user started — it only writes while the scroller sits at 0.
   const saved = scrollWindow.__dshaMobileLastScroll
-  if (saved === undefined) return
   let tries = 0
-  const attempt = (): void => {
+  const attempt = () => {
+    if (!current() || !saved) return
+    if (!fresh(saved)) { request.cancel(); return }
     tries += 1
-    if (saved.url !== location.href || Date.now() - saved.savedAt > SWAP_RESTORE_MS) return
-    const element = document.querySelector<HTMLElement>('[class*="scrollBody"]')
-    if (element !== null && element.scrollTop === 0 && element.scrollHeight >= saved.top + element.clientHeight) {
-      element.scrollTop = saved.top
-      return
+    const elements = conversationScrollers()
+    const element = primaryScroller(elements)
+    if (elements.length > 1 && element === undefined) { request.cancel(); return }
+    if (element !== undefined && element.isConnected) {
+      if (retired.has(element) || element.scrollTop !== 0) { retired.add(element); request.cancel(); return }
+      if (element.scrollHeight >= saved.top + element.clientHeight) {
+        if (current()) element.scrollTop = saved.top
+        request.cancel()
+        return
+      }
     }
-    if (tries < 30) requestAnimationFrame(attempt)
+    if (tries < 30 && current()) schedule(attempt)
+    else request.cancel()
   }
-  requestAnimationFrame(attempt)
+  if (saved !== undefined) schedule(attempt)
+  return () => {
+    if (owner.disposed) return
+    if (scrollLifecycle.owner === owner) {
+      rememberConversationScroll()
+      delete scrollLifecycle.owner
+    }
+    request.cancel()
+    owner.disposed = true
+  }
 }
 
 /**
@@ -162,9 +198,9 @@ export function apply(ctx: ClientContext): void {
     // 宿主热换插件走 client-modules.replace()：tearDown → import → refresh，
     // 我们这张表在窗口里会**整个消失**，长会话的 content-visibility 估算与布局
     // 翻转会让 Chromium 把会话滚动区重锚到顶部。卸载前记下位置、重挂后回填。
-    restoreConversationScroll()
+    const disposeScroll = restoreConversationScroll()
     return () => {
-      rememberConversationScroll()
+      disposeScroll()
       tag.remove()
     }
   }, 'dsh-web-mobile: styles')
