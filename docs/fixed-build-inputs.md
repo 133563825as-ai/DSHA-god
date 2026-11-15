@@ -97,6 +97,8 @@ python3 tools/ci-assets.py --archive dsha-a-su-fixed-inputs-20261113-build364.zi
 | SHA-256 | `2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad` |
 | 下载直链 | `https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip` |
 
+> **build367 当前候选**：继续使用 `fixed-inputs-20261113`、上述归档与 SHA-256；候选 `runtimeId` 为 `63adce0a3df6f0c46494dc6adf030f07f80724557f139b3598755caa1607e2ad` / 205 资产 / 517 启动输入，`baseVersion=10` 与 `dataWrite` 不变。build367 尚未发布，完整 CI 与设备验收待完成；本轮实际还原、源核验与 CI 结果由各自回执记录。下列 build365、build366 核验与下文 build364 上传记录保留其历史归属，不作为 build367 通过证据。
+
 > **历史资产核验（build365 发布准备，2026-11-14，只读）**：release id `444366070`，asset id `744079349`；资产 `dsha-a-su-fixed-inputs-20261113-build364.zip`，`size=716787167`、`state=uploaded`、digest `sha256:2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad`，发布于 2026-11-13T15:01:59Z。本轮以同一摘要从本机归档还原，pin 核验通过；没有上传或替换资产。
 > build365 沿用同一输入与 provenance；`builder.recipe_inputs()` 与记录逐项一致，无需重建或修改 `dsh-runtime.inputs.json`。描述符检查与源核验为 `8598a8dbf15d48773a41ff41e89935a9effcb5faaa0edc2b82f17dda223b5193` / 205 资产 / 491 启动输入。该 runtimeId 变化来自 build364 之后合入的受管源码，版本提升本身不改变 runtimeId。下文 build364 的重建与上传回执按历史保留。
 
