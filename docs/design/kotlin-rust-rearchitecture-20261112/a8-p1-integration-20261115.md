@@ -17,7 +17,7 @@
 - [`tools/host-tests.manifest.json`](../../../tools/host-tests.manifest.json)：T2 的 `test-backup-signed-builtin-files.py` 与 A8-P1 的 `test-ci-toolchain.py` 均保留；`test-host-test-runner` 10/10。
 - [`tools/test-ci-workflows.py`](../../../tools/test-ci-workflows.py)：自动合并后 135/135；Rust 图、`rust-native`/`rust-differential` 断言保留。
 - 追加测试修正 [`tools/test-runtime-descriptor-source.py`](../../../tools/test-runtime-descriptor-source.py)：A8-P1 起启动输入统一经 `SourceLayout` 解析，合成根补最小 `ci/source-layout.json`；生产校验仍 fail-closed。
-- 主线 S1b 的 [`WebStopHandoffRecheckTest.kt`](../../../app/src/test/java/com/deepseekharness/app/runtime/WebStopHandoffRecheckTest.kt) 使用 `@get:Rule`；A8-P1 的 Kotlin 声明解析拒绝未登记 use-site 注解，full plan 因此失败。改为等价方法级 `@Rule`（`c988f51c`），测试类/方法身份与 TemporaryFolder 行为不变，plan 已通过。
+- 主线 S1b 的 [`WebStopHandoffRecheckTest.kt`](../../../app/src/test/java/com/deepseekharness/app/runtime/WebStopHandoffRecheckTest.kt) 使用 `@get:Rule`；A8-P1 的 Kotlin 声明解析拒绝未登记 use-site 注解，full plan 因此失败。改为等价方法级 `@Rule`（`c988f51c`），测试类/方法身份与 TemporaryFolder 行为不变，plan 已通过；该文件已用 ktfmt 0.64 格式化（`560010cb`）。
 
 ## 受管输入、归档与描述符（main 串行）
 
@@ -42,6 +42,7 @@
 | `tools/rust/test_apk_injection.py` / `test_android_candidate.py` | 57 / 17 全过 |
 | `check-source-hygiene.py` / `check-ui-i18n.py` | PASS / newFindings=0 |
 | `check-document-links.py` | 56 文档 / 1328 链接 / 0 error |
+| `format-java-tree.py --check` / `format-kotlin-tree.py --check --offline` | Java 1813/1813、Kotlin 29/29，0 需格式化 |
 | `unit_test_contract.py plan` | PASS：777 测试源 / 5197 声明 / 593 资源输入；冻结基线 5107 身份均有声明源覆盖（32 个 `BrowserTasksTest[23]` 是参数化 XML 后缀，不是缺失） |
 | `:app:lintStandardRelease`（`-Pdsha.unsignedPackage=true`） | BUILD SUCCESSFUL；617 issues = 609 Warning / 8 Hint / 0 Error |
 
