@@ -896,6 +896,8 @@
     "tools/i18n/web-translations/ar.json",
     "tools/i18n/web-translations/ko.json",
     "tools/i18n/web-translations/la.json",
-    "tools/i18n/web-translations/zh-Hant.json"
+    "tools/i18n/web-translations/zh-Hant.json",
+    "ci/source-layout.json",
+    "tools/source_layout.py"
   ]
 }
