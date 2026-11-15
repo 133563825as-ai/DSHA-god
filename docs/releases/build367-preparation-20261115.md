@@ -1,6 +1,6 @@
 # build367 发布准备与主会话接手回执（2026-11-15）
 
-状态：**本地候选准备中；未推送、未合并 main、未创建 tag/Release、未 dispatch、未安装或操作手机。** 当前会话的远端操作须用户明确授权，前任会话的批准不沿用。
+状态：**本地候选 `21a4925a23a97c6ee11c394a825f86dea1a3d4a6` 已提交，适用静态、格式与工作流门禁已通过；版本页 Gradle 在 AAPT2 资源前置失败，未到 Test，不计 JUnit 通过。未推送、未合并 main、未创建 tag/Release、未 dispatch、未安装或操作手机。** 当前会话的远端操作须用户明确授权，前任会话的批准不沿用。本文最终收尾提交只改此回执，不改变被测软件输入。
 
 ## 身份与接手事实
 
@@ -29,10 +29,12 @@
 日志保存在仓库外 `/tmp/build367-prep-f182f2ce/`；不提交原始日志或任何设备资料。
 
 - 首轮串行 18 项：15 项通过。发布前置身份、三身份回归、descriptor 源、runtime inputs、runtime tools、第三方声明生成/核验、内置证明、凭据路径、host manifest、源卫生、UI i18n、发布签名脚本、core/architecture 边界均 exit0。
-- 首轮 `test-ci-workflows.py` 实际 135 项，30 failure / 9 error，全部指向未提交的 `app/build.gradle` 被 `RUST_INPUT_NOT_COMMITTED` 拒绝；此轮不算通过。待形成干净本地候选后复跑，不绕过该守卫。
-- 首轮 Java/Kotlin 格式因 PATH 与 JAVA_HOME 未配置 JDK17，均 exit2；已找到并实测 `/opt/jdk17/bin/java` 为 Temurin 17.0.21，指定该路径的串行复验待收集。
-- 版本页正文静态对照首轮发现两个过时中文负断言（默认禁用、网络健康）；已修正为本版内容断言。该对照不替代 Robolectric 或 Gradle Test。
-- 十语说明/生成记录、文档链接、全量分片 diff 空白检查与本地候选提交：待收口。
+- 首轮 `test-ci-workflows.py` 实际 135 项，30 failure / 9 error，全部指向未提交的 `app/build.gradle` 被 `RUST_INPUT_NOT_COMMITTED` 拒绝；此轮不算通过。形成本地候选 `21a4925a` 后按原命令复跑，**135 项全部通过（28.123s）**，未修改或绕过该守卫；两轮日志分别保留。
+- 首轮 Java/Kotlin 格式因 PATH 与 JAVA_HOME 未配置 JDK17，均 exit2；指定已实测的 `/opt/jdk17/bin/java`（Temurin 17.0.21）后，第二轮发现本树缺 formatter 缓存。按锁核对本机既有两份 JAR 的 size/SHA-256 后复制到忽略缓存，最终串行复验 **Java 1798/1798（manifest missing0/extra0、57 批）和 Kotlin 58/58（14 批），0 需格式化**；前两轮失败日志保留，无全局工具安装。
+- 版本页正文静态对照首轮发现两个过时中文负断言（默认禁用、网络健康），已修正为本版内容断言，并补上本版英文 network-health 断言。最终中文 355、英文 358，共 **713 条字面包含/排除断言全部匹配**；该对照不替代 Robolectric 或 Gradle Test。
+- 在软件候选 `21a4925a` 实际执行 `dsha-gradle :app:testStandardDebugUnitTest --tests '*UpdateVersionPageTest'`，exit1 / 128.969s，39 个任务实际执行。受管证明 655、103/205/517 输入契约、descriptor、独立应急归档、Rust off、十语生成与 Kotlin 生产编译等前置已运行；`:app:processStandardDebugResources` 的固定 x86_64 AAPT2 在 aarch64 报 `bad machine`，未到 Test。完整日志保留编译器关于 SAF `VAL_REASSIGNMENT` 的既有不保证未来行为警告；未为绕过资源处理而伪造 R 类或更换测试图。只尝试一次，不重放该环境失败。
+- 十语说明均为正确的 build367/.1335 标题、13 条、末尾本语言自链接，UTF-8 5,144–12,207 B，低于 16,384 B 上限；统一运行 `generate-changelog.py` 后 `--check` 通过，十份 raw 与源说明逐字节一致。独立子代理全文复核十语与中英测试断言，无 P0/P1/P2。
+- `check-document-links.py` 实际 56 文档 / 1340 有效链接 / 0 warning / 0 error；48 路径与 build366 发布模板精确对齐（47 项模板 + 本准备回执），按最多 7 路径分片 `git diff --check` 全过，额外 UTF-8/行尾空白检查通过。只提交版本、测试断言、十语资源和文档；固定资产、原始日志、两份本地声明不入库。
 
 ## 已核 CI 与未验范围
 
