@@ -1,0 +1,1792 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "repository": "133563825as-ai/DSHA-god",
+  "baseBranch": "integration/sprout",
+  "baseCommit": "4027e4c8a84fa25b09d9b3d7e6b8f833b898dd1e",
+  "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+  "sourceSha256": {
+    "app/src/main/assets/runtime-descriptor.json": "00bdda6702ec9b269a5a45016d7b890cc2c762cc1ccaf3cb1726ee23b189643b",
+    "app/src/main/java/com/deepseekharness/app/RootShell.java": "166d667365222dcc4dc4165c7ae90337cfacb9c92acd6e27d8b79bc362cb6811",
+    "app/src/main/java/com/deepseekharness/app/core/ConfigStore.java": "d6d4bd4929268a8db84e35821258aa459aa1c3ade5b899e9c18232d083eb38fa",
+    "app/src/main/java/com/deepseekharness/app/util/RootRequestGate.java": "62d15f8bd362baad8426f2e353ea4bd4bc98b958f15a3f06e10e2a1bbfa63015",
+    "app/src/test/java/com/deepseekharness/app/RootShellRequestGateTest.java": "91715cf98dca7181718cfe0d31ac81e612e36c6470b1e00e5ad9e918901e42fe",
+    "app/src/test/java/com/deepseekharness/app/core/ConfigStoreRootRequestTest.java": "c6e59427667dab5121f95301075def365e0d80e6f3425c0bfeee9d7132595243",
+    "app/src/test/java/com/deepseekharness/app/util/RootRequestGateTest.java": "31fd572c484bc50cc7327622e1b3ccdf59b7098dd094d24364ed780aca3e5a3d",
+    "tools/java-format-files.json": "8a87993a569af6066254c8d9b2a9d2be0650327c78142d01ff712fa90a7e1c4c"
+  },
+  "acceptance": "NOT_ACCEPTED_DRAFT_ONLY",
+  "independentReview": {
+    "decision": "REQUEST_CHANGES",
+    "scope": "Full production, test, generated, documentation, index and evidence JSON diff; independent source/commit digest, XML, matrix, APK and log-digest verification. No independent Gradle/device rerun.",
+    "remainingP0": [
+      "claim-before-first-byte revocation gap reproduced",
+      "SharedPreferences.apply has no durable revocation acknowledgement"
+    ],
+    "finalDecision": "REQUEST_CHANGES; Draft delivery permitted, Ready/merge prohibited",
+    "findings": [
+      {
+        "priority": "P0",
+        "file": "app/src/main/java/com/deepseekharness/app/util/RootRequestGate.java",
+        "line": 66,
+        "finding": "claim then unlocked write allows revoked zero-byte request to hand over later",
+        "nextAction": "Design bounded controlled handover and revocation effective point; reproduce before fix"
+      },
+      {
+        "priority": "P0",
+        "file": "app/src/main/java/com/deepseekharness/app/core/ConfigStore.java",
+        "line": 292,
+        "finding": "apply provides no asynchronous durable revocation acknowledgement",
+        "nextAction": "Separate immediate in-memory invalidation from durable save/restart fail-closed evidence; policy setter line317 is also affected"
+      }
+    ],
+    "fixedFindings": [
+      "Three external Root entry points now carry generation permit",
+      "Root authorization rejects wrong scalar types"
+    ]
+  },
+  "finalUnitTests": {
+    "classes": 21,
+    "tests": 161,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "class": "com.deepseekharness.app.capabilities.CapabilityBrokerTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "66494262c544cbb0957dc54be2c2c822b0dac39f116b206c5003e4e17331c498",
+        "cases": [
+          {
+            "name": "deadlineExpiresWithoutApprovingOrDispatching",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "revokeWakesOldWaiterWithoutPretendingUserDenied",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "denialAndCancellationCannotBeReauthorizedByLateCallback",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "revocationIsScopedButRunStopFencesEverything",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "confirmationIsSingleSlotAndSingleDecision",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "dispatchClaimIsOneUseAndNeverWaitsForAdapter",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "targetComparisonNeverUsesPackageAlone",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "simultaneousDispatchClaimsHaveOneWinnerAndStopDoesNotWaitOnIt",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "onlyKnownNotSentResultIsEligibleForExplicitAlternateChoice",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "noRunningInstanceOrWrongInstallationCannotBorrowAuthority",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "differentBrokerCannotAdoptDispatchPermit",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.core.ConfigStoreRootRequestTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "8e6b87088ed6f4b74186f20185f33a7ecce41ce78fdc5c452fa599db436f6e85",
+        "cases": [
+          {
+            "name": "stringTrueCannotAuthorizeRoot",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "stringOneCannotAuthorizeRoot",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "malformedRootFlagCannotAuthorizeOrDispatch",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "anotherSettingsInstanceCannotReviveOldRequestByTurningRootBackOn",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "integerOneCannotAuthorizeRoot",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "fullToStrictRejectsTheAlreadyCheckedFullRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.core.DeviceGrantsPreferenceRecoveryTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "a25d2ef563929ffd809537a8124c2097eab4c0ec8d478365c728aba452c871f3",
+        "cases": [
+          {
+            "name": "repeatedHealthyChoiceDoesNotRewriteOrAdvanceItsRevision",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "malformedStringRecoveryAdvancesPastAnyPreviouslyObservedGrant",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "allowAllWithoutRulesSurvivesActualScreenPolicyXmlReload",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "repeatedOwnersAndStatusReadsNeverPersistThePolicy",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "changedRecordCannotBeReplacedByAnOlderConfirmation",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "corruptBooleanRequiresExplicitRecoveryAndRetainsItsOriginalType",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "sameChoiceAfterAnUnsafeReadStillRequiresANewFence",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "failedQuarantineNeverReplacesTheOriginalOrEnablesBypass",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "invalidationFailureDoesNotReplaceTheOriginal",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "aNewPolicyMutationInvalidatesTheOpenRecoveryConfirmation",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "serializerIndentedLegacyRecordNeedsExplicitOffRecoveryAndPreservesDiskEvidence",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "customMultipleRulesSurviveActualScreenPolicyXmlReload",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unreadableOriginalCannotBeOverwrittenByRecovery",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "legacyScreenPolicyPollutedByXmlIndentationStaysManual",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "manualSurvivesActualScreenPolicyXmlReload",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "missingGlobalKeyInRealLegacyPreferencesShowsTheOffSwitch",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "failedReplacementCommitKeepsThePreservedOriginalAndRemainsUnavailable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "savedPolicyRemainsReadableAfterAnActualXmlDiskReload",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.core.DeviceGrantsSensitiveScreenTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "952fd664edf081c0ab862df81a22e276bed8606959c4309052f0d1b8cc220d41",
+        "cases": [
+          {
+            "name": "resetReturnsToDefaultsButKeepsRevisionIncreasing",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "malformedRecordFallsBackToAskWithoutRevivingAnOldRevision",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "sensitiveModePersistsAndFencesBeforePublication",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "appListsRoundTripAndInvalidInputIsNotPublished",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.core.DeviceGrantsTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "58c0f796cd20e20a67133dbedea71c5e45e4321bf9b4b5c9c18b840aceb6df1b",
+        "cases": [
+          {
+            "name": "globalOnlyBypassesAskWithoutGrantingSmsAndRevokesBeforePublication",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "privilegedExecutionIsOffByDefaultRevocableAndFailsClosedWhenUnreadable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "failedCommitStaysVisibleAcrossReadsAndExplicitRetryUsesANewRevision",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "modeAndExactRulesPersistAcrossOwnersAndInvalidateBeforePublication",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "readFailureIsVisibleAndDoesNotOverwriteTheRecordOrRestoreOn",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "smsRevokesBeforePublishingAndHasNoImportedAuthority",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "malformedStatusDoesNotBecomeOffOrRestartAnOldRevision",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.ExternalTargetConfirmationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "7d83b0795e916e273f12e5bc0b006b81cfd6d257e35dff9a589e47af459503db",
+        "cases": [
+          {
+            "name": "requestRevokedDuringPreparationCannotHandOffPayload",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unchangedTargetCanHandOverOnlyTheCapturedCommand",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "confirmedFirstNeverDispatchesToReplacementOrChangedIdentity",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "forgetAndOffOnInvalidateEvenIfIdenticalBindingReturns",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "anUnboundRequestCannotSurviveAChangedPersistedEpoch",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "failedCommitCanPublishCacheButCannotAuthorizeAnyNewDispatch",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "twoInspectedCandidatesCannotPublishTheSameNextEpoch",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.RootShellRequestGateTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "415b8ee8e0785a66e5cc75b987116e5ddcb8f5a1e403ca1e738a3063a75b1906",
+        "cases": [
+          {
+            "name": "policyChangeAfterHelperStartRejectsPreviouslyCheckedRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "externalArgvOffOnCannotReviveOldRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "rootDisabledAfterHelperStartPreventsRequestHandover",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "externalSessionOffOnCannotReviveOldRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "offThenOnAfterHelperStartDoesNotReviveRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "externalStepsOffOnCannotReviveOldRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.ui.DeviceGrantsSensitiveScreenTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "2cce5f15bc71268577d9e56168d88ffdbea94b60d092a314ab600789801658d8",
+        "cases": [
+          {
+            "name": "choosingHandoffPersistsAndCancellingDoesNot",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "dialogListsEveryCategoryAndExplainsHandoff",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "settingsEntryShowsDefaultAskAndHardBlock",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.DeviceChannelOrderTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "49f1cae5b6f09c621a2d6f6fd9e70ad66b51abf345ec3c0d93d3117701b74653",
+        "cases": [
+          {
+            "name": "rawShellOnlyRootOrAdbWithSu",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "forceFlagsRestrictTheEligibleSet",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "adbNeedsSwitchAndLocalNetworkGrant",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "strictTierWinsBeforeAuthorizedTier",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "shizukuAndRootNeverCarrySu",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "screenGateAndDeviceCommandsShareOneOrder",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "smsNeverUsesShizuku",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "deviceCommandPicksSameChannelAsVirtualScreenWhenUsable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.DeviceShellPolicyDeleteTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "5ce10a5e730c98061e3c87fa6db6143bd245f647f8cb5d1e6b280af6a4772efd",
+        "cases": [
+          {
+            "name": "quotingDoesNotTurnEchoIntoADeletion",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "deeperPathsAndSingleFileDeleteStayUsable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "systemRootsAndBlockDevicesKeepTheirOwnRules",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "recursiveDeleteOfStorageRootOrFirstLevelIsDenied",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.DeviceShellPolicyTest",
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "bfe3c2162341854e93fa797a9d7ccfe71b7a9793ae870d3dd58ec3e5b0785106",
+        "cases": [
+          {
+            "name": "rootReadAndCopySourcesCannotBypassSmsCapability",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "grepRepeatedPatternFilesAndSeparatorPreserveOperandMeaning",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "everyReadableDirectoryIsEligible",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "missingOrMismatchedLaunchIdentityDoesNotDefault",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "recursiveGrepWithoutInputFilesChecksWorkingDirectory",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "grepPatternFileDashIsLiteralButDataDashIsStdin",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "rootAndProtectedDirectoriesCannotBeMutated",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "managedVirtualScreenProbeBindsFullBirthIdentityAndHasNoSignalArgument",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "allDestructiveDeviceClassesAreBlocked",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "processTargetsMustBeExplicit",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "shellLanguageAndAlternateExecutorsCannotBypass",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "acceptedArgumentsAreDataAndImmutable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "recursiveRootReadsCannotDescendIntoSmsProviderParents",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "genericDeviceCommandCannotStartAppProcess",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "grepCollectsPatternFilesFromPackedAndSeparateOptions",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "grepPatternsAndFiltersAreNotFileResources",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "writableDiagnosticsAreNotReadOnly",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "grepRejectsUnverifiableOptionSyntax",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "multiSourceRootCopyChecksEverySource",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "ordinaryFilesAndCopiesFromReadOnlyDirectoriesAreAllowed",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "typedVirtualScreenLauncherRequiresExactCanonicalInstalledApk",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unsafePathsAndUnknownOptionsFailClosed",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.ExternalToolPolicyTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "c1dfef6eae4d089621d245b35a690c313f73d8100d913df55ed6c1c9a3aa5226",
+        "cases": [
+          {
+            "name": "fastbootIsReadOnly",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "externalObservationCommandsStayReadOnly",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "privilegedArgvEnforcesTheSameReadOnlyDisplayAndLogGrammar",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "plannedRemoteShellPassesOnlyGeneratedForms",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "installShapesRequireImportRootAndPlannedRemoteTargets",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "wirelessConnectPairAndTargetedShell",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "onlyReadOnlyAdbShellCommandsPass",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "adbServerOnlyAcceptsLoopbackNodaemon",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "siblingToolAndLibraryPathsRemainOutsideRoot",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "adbSessionClientMustUseServerPortAndTools",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "emptyLibraryPathSegmentsAreRejected",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.RootHelperSlotsTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "a818b6d89f8627f2b579084f3ebdd18de1f6389a246641c16347aef8c8df9fd7",
+        "cases": [
+          {
+            "name": "labelsAreRecordedForDiagnostics",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "neverStartedHelperReleasesImmediately",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "helperThatCannotBeKilledKeepsItsSlotUntilItExits",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "refusesBeforeLaunchWhenFull",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "exitedHelperReleasesImmediately",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "repeatedOrForeignReleaseHasNoEffect",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "capacityMustBePositive",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.RootHelperWatchdogTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "7bdec0f4fc9eaec28abce0fc360bf188b54023825b589ba4f992497e7dde8f4d",
+        "cases": [
+          {
+            "name": "requestedDeadlineIsBounded",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "deadlineEndsTheHelper",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "continuesWhileOwnerIsTheSameProcess",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unparsableStatDoesNotKillAWaitingRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unknownOwnerFallsBackToDeadlineOnly",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "ownerExitOrPidReuseEndsTheHelper",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.RootPolicyModeTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "61192fed60b305fceae1d6ec5689653ba4377068e8bb1cac30bed902187e2c6d",
+        "cases": [
+          {
+            "name": "relaxedAllowsArbitraryCommandsButKeepsIrreversibleOnes",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "shellPlanCarriesRawCommandAndMode",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "relaxedGradesDeleteTargetsByRecoverability",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unknownModeFallsBackToStrict",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "fullModeStopsJudgingCommands",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "invalidOrOversizedShellCommandsFailClosed",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "nativeGatesSurviveEveryMode",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "strictDeniesUnrecognisedCommands",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.RootRequestGateTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "120a1769bc74ed937f18880f331d46f96491953fa0af1a226656ca33cc2e469e",
+        "cases": [
+          {
+            "name": "unreadablePermissionFailsClosed",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "anotherGateCannotUsePermit",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "writeFailureDoesNotMakeClaimReusable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "concurrentWritersCanConsumeOnePermitOnlyOnce",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "failedSettingsWriteInvalidatesOldAndBlocksNewUntilSuccessfulUpdate",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "offThenOnWhileHelperStartsNeverRevivesOldRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "enabledRequestWritesExactlyOnce",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "disabledRequestCannotObtainPermit",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "knownGapClaimedRequestCanWriteAfterRevocation",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "disabledBeforeHandoverWritesNoBytes",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "policyChangeInvalidatesAlreadyCheckedRequest",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.RootShellCandidatesTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "60044780326b70bbb98a347cc8d68576627eac89e9ad98245aab60dd9a795cd7",
+        "cases": [
+          {
+            "name": "existingSystemSuWinsWithoutInspectingLaterCandidates",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unverifiedCandidatesAreNeverSelectedAndDiscoveryCannotReadAppPath",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "kernelSuAndAPatchAreOrderedTrustedCandidates",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.ScreenCapabilityGateTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "3ba82c2c709c5165080605ae2bd6e4bed06c6f5739c243fee789d627b60be4d4",
+        "cases": [
+          {
+            "name": "physicalNeedsOnlyAccessibility",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "rootIsPreferredAndRequiresBothEnabledAndPresent",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "virtualNeedsARealChannelAndTreatsAccessibilityAsEnhancement",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "android17PrefersVerifiedAdbOverShizuku",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "virtualRequiresApi30AndReportsMissingOverlayAsDegraded",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "permissionAloneOrAdbSwitchAloneIsNotUsable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "unknownChannelIsNeverUsable",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.SensitiveScreenPolicyTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "fd46bfb98451674ecb93df125b850e099a31be62f3ece940e43bb90a9c6c1473",
+        "cases": [
+          {
+            "name": "resetKeepsRevisionMonotonic",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "encodeDecodeRoundTripsAndMalformedDataFailsBackToAsk",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "offOnlyDisablesTieredHandlingNotPackageLists",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "appListsAreBoundedExactAndMutuallyExclusive",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "defaultsAskEveryCategoryWithEmptyLists",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "handoffModeAndPackageListsBecomeDecisions",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.SmsQueryTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "86578d8db8c43ebc34224ae90ff31477ca6fc49105bedfebb4e2b283404bebf4",
+        "cases": [
+          {
+            "name": "canProbeWithoutReadingAnyActualMessage",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "preventsCrossAndroidUserEvenWhenRootIsEnabled",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "cannotExtendCapabilityToWritesOtherProvidersOrQueryInjection",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "smsRequiresItsOwnCapabilityInsteadOfReadonlyAllowance",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.util.TurnCapabilityGrantsTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "53199fd3b71da173d86b9ed6cac7076d1e58711a4009676d46e27b3af329119f",
+        "cases": [
+          {
+            "name": "clearRetiresRememberedCapabilities",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          },
+          {
+            "name": "capabilityAndRevisionArePinnedToTheTurn",
+            "status": "PASS",
+            "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14"
+          }
+        ]
+      }
+    ],
+    "securityWarning": "Known-gap characterization is a passing JUnit test of a failing safety property; never count as INV-03 PASS."
+  },
+  "redNegativeControl": {
+    "tests": 12,
+    "failures": 6,
+    "errors": 0,
+    "source": "Working snapshot: inherited original production files plus the six new negative cases, before final production repair. Not the sourceCommit above.",
+    "originalSnapshotSha256": {
+      "app/src/main/assets/runtime-descriptor.json": "5451b3e1129c8ef3f37d0ba160f93166746050dfdc0f8f4045e0c89cdc3ee2b4",
+      "app/src/main/java/com/deepseekharness/app/RootShell.java": "90d78333d3371f7f21b526855e10d19501578847f630e07ac724ad5301b63843",
+      "app/src/main/java/com/deepseekharness/app/core/ConfigStore.java": "18981c94dc337bc5a44df0713cac9478b89e20294f169433c903f13f05cec1f3",
+      "app/src/main/java/com/deepseekharness/app/util/RootRequestGate.java": "b0980548b6cb3db91315441b19823dbcffd1d3e0b00cd64e025965232c13ce5c",
+      "app/src/test/java/com/deepseekharness/app/RootShellRequestGateTest.java": "2b213ad8c04dc4814f7eb38f5606a51909dcb002b3a7f37b4de346f69abf814b",
+      "app/src/test/java/com/deepseekharness/app/core/ConfigStoreRootRequestTest.java": "37a063ac63eb2e796edb6a4d6a8cad2abb3cda36a663fe3d9244fc4df41dcf34",
+      "app/src/test/java/com/deepseekharness/app/util/RootRequestGateTest.java": "7b3ec58eee0d569fb072e0cd8bba8bdc242faaa37baf09e4b475f3601eef32dd",
+      "tools/java-format-files.json": "8a87993a569af6066254c8d9b2a9d2be0650327c78142d01ff712fa90a7e1c4c"
+    },
+    "suites": [
+      {
+        "class": "com.deepseekharness.app.core.ConfigStoreRootRequestTest",
+        "tests": 6,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "f5afc5505e63130173e77ff2ac5efe7f42c5d3cc6e0002ad903c837ff02223d3",
+        "cases": [
+          {
+            "name": "stringTrueCannotAuthorizeRoot",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: Root 授权不能兼容转换错误类型"
+          },
+          {
+            "name": "stringOneCannotAuthorizeRoot",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: Root 授权不能兼容转换错误类型"
+          },
+          {
+            "name": "malformedRootFlagCannotAuthorizeOrDispatch",
+            "status": "PASS"
+          },
+          {
+            "name": "anotherSettingsInstanceCannotReviveOldRequestByTurningRootBackOn",
+            "status": "PASS"
+          },
+          {
+            "name": "integerOneCannotAuthorizeRoot",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: Root 授权不能兼容转换错误类型"
+          },
+          {
+            "name": "fullToStrictRejectsTheAlreadyCheckedFullRequest",
+            "status": "PASS"
+          }
+        ]
+      },
+      {
+        "class": "com.deepseekharness.app.RootShellRequestGateTest",
+        "tests": 6,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0,
+        "xmlSha256": "50bfe032a2fa85f5ad31a70dde2434cca20e9cff52b0c8b004600a852e15e066",
+        "cases": [
+          {
+            "name": "policyChangeAfterHelperStartRejectsPreviouslyCheckedRequest",
+            "status": "PASS"
+          },
+          {
+            "name": "externalArgvOffOnCannotReviveOldRequest",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: [EXECUTION_UNKNOWN] 外接 root 进程未返回完整结果，不会自动重试\n[EXIT=125]"
+          },
+          {
+            "name": "rootDisabledAfterHelperStartPreventsRequestHandover",
+            "status": "PASS"
+          },
+          {
+            "name": "externalSessionOffOnCannotReviveOldRequest",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: [EXECUTION_UNKNOWN] 外接 root 进程未返回完整结果，不会自动重试\n[EXIT=125]"
+          },
+          {
+            "name": "offThenOnAfterHelperStartDoesNotReviveRequest",
+            "status": "PASS"
+          },
+          {
+            "name": "externalStepsOffOnCannotReviveOldRequest",
+            "status": "FAIL",
+            "failureMessage": "java.lang.AssertionError: [EXECUTION_UNKNOWN] 外接 root 进程未返回完整结果，不会自动重试\n[EXIT=125]"
+          }
+        ]
+      }
+    ]
+  },
+  "baselineRecheck": {
+    "classes": 11,
+    "tests": 86,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source": "Original copied working snapshot, not the final sourceCommit; originalSnapshotSha256 above identifies copied source bytes"
+  },
+  "repeat": {
+    "rounds": 25,
+    "testsPerRound": 11,
+    "executions": 275,
+    "junitFailures": 0,
+    "seed": "No random seed; deterministic latch scheduling; not exhaustive scheduling",
+    "securityWarning": "Each round also reproduces the unresolved INV-03 gap"
+  },
+  "build": {
+    "status": "PASS",
+    "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+    "task": "assembleStandardRelease -Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true",
+    "apk": "app-standard-release-unsigned.apk",
+    "sha256": "e5e50da9ef198ca6c16c5c19eb6dbf34978197bcb25d9054698d20f703b8358a",
+    "bytes": 316585176,
+    "installed": false,
+    "published": false,
+    "runtimeId": "970a385aa3a5bcfb6bfb168a68aaaaf4e9049b7facf5dd3939d4f04791c09566"
+  },
+  "device": {
+    "status": "BLOCKED",
+    "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+    "evidence": "Mobile MCP devices=[] and elevated adb devices -l empty",
+    "historicalApkEvidenceReusedAsCurrentPass": false
+  },
+  "matrixCounts": {
+    "PASS": 20,
+    "BLOCKED": 19,
+    "NOT_RUN": 26,
+    "FAIL": 2,
+    "NOT_APPLICABLE": 1
+  },
+  "matrix": [
+    {
+      "id": "A01",
+      "condition": "Root 从未启用",
+      "status": "PASS",
+      "evidence": "单元 disabledRequestCannotObtainPermit，capture=null",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "A02",
+      "condition": "已启用但管理器未授权",
+      "status": "BLOCKED",
+      "evidence": "无本地设备，未取得当前管理器证据",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A03",
+      "condition": "管理器明确拒绝",
+      "status": "BLOCKED",
+      "evidence": "同上",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A04",
+      "condition": "管理器允许、UID 0",
+      "status": "BLOCKED",
+      "evidence": "旧报告不代替当前构建",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A05",
+      "condition": "正常执行后关闭 App 开关",
+      "status": "BLOCKED",
+      "evidence": "没有当前 APK 的真实正常执行；内存撤销单独见 B01",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A06",
+      "condition": "关闭后再次请求",
+      "status": "PASS",
+      "evidence": "单元 disabledRequestCannotObtainPermit/disabledBeforeHandoverWritesNoBytes；0 字节",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "A07",
+      "condition": "关闭后重启 App",
+      "status": "BLOCKED",
+      "evidence": "当前包未安装，历史重启不沿用",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A08",
+      "condition": "关闭后重新启用",
+      "status": "PASS",
+      "evidence": "gate 旧许可拒绝，新许可写入；ConfigStore 跨实例 ABA 测试通过",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "A09",
+      "condition": "KernelSU 撤销",
+      "status": "BLOCKED",
+      "evidence": "无设备；不承诺已启动 UID 0 helper 即时退出",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A10",
+      "condition": "管理器状态变化",
+      "status": "BLOCKED",
+      "evidence": "无设备，无检测延迟证据",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A11",
+      "condition": "保存失败",
+      "status": "NOT_RUN",
+      "evidence": "gate 同步抛错测试通过，真实 apply 磁盘失败未注入；P0 待验",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A12",
+      "condition": "配置损坏/读取异常",
+      "status": "PASS",
+      "evidence": "单元任意坏串、true/1 字串、整数 1 均拒绝；supplier 读取异常拒绝",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "A13",
+      "condition": "管理器不可用",
+      "status": "BLOCKED",
+      "evidence": "无设备；候选路径静态测试不能替代管理器",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "A14",
+      "condition": "su 可见但非 UID 0",
+      "status": "BLOCKED",
+      "evidence": "未运行真实 Android helper UID 负向验证",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B01",
+      "condition": "请求创建前撤销",
+      "status": "PASS",
+      "evidence": "gate 禁止获取许可",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "B02",
+      "condition": "上游排队、未批准",
+      "status": "NOT_RUN",
+      "evidence": "Root 无内部队列；上游不同请求来源未逐一注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B03",
+      "condition": "审批弹窗显示时",
+      "status": "BLOCKED",
+      "evidence": "无当前设备/弹窗注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B04",
+      "condition": "已批准、尚未派发",
+      "status": "PASS",
+      "evidence": "仅 gate capture 后 update，再 write=false/0 字节；非全部审批 UI",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "B05",
+      "condition": "第一次检查后、最终校验前",
+      "status": "PASS",
+      "evidence": "真实 RootShell + Robolectric helper-start 屏障；精确拒绝码",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "B06",
+      "condition": "claim 后、实际首字节前",
+      "status": "FAIL",
+      "evidence": "knownGapClaimedRequestCanWriteAfterRevocation：撤销完成时 0 字节，释放后仍写全 payload",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "B07",
+      "condition": "Helper 启动后、命令交付前",
+      "status": "PASS",
+      "evidence": "普通 Root 关闭/ABA/降级三项；外接 argv/session/steps ABA 三项，模拟层",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "B08",
+      "condition": "业务命令已派发",
+      "status": "NOT_RUN",
+      "evidence": "gate 消费不可复用有单测，但业务侧副作用及撤销未端到端注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B09",
+      "condition": "命令执行中",
+      "status": "BLOCKED",
+      "evidence": "无当前 Root 设备；不以 claim 事件代替命令开始",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B10",
+      "condition": "完成但结果未返回",
+      "status": "NOT_RUN",
+      "evidence": "结果层 UNKNOWN 单测不代替此具体时间窗",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B11",
+      "condition": "结果返回过程中撤销",
+      "status": "NOT_RUN",
+      "evidence": "无受控端到端结果流注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "B12",
+      "condition": "多个不同 Root 请求等待",
+      "status": "NOT_RUN",
+      "evidence": "当前仅验证同许可 12 消费者；不同业务请求批量撤销未覆盖",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C01",
+      "condition": "同一许可重复派发",
+      "status": "PASS",
+      "evidence": "12 并发消费者只写一次；不可使用其他 gate 许可",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "C02",
+      "condition": "多个不同请求等待",
+      "status": "NOT_RUN",
+      "evidence": "不把同许可竞争当不同请求覆盖",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C03",
+      "condition": "关闭后立即开启",
+      "status": "PASS",
+      "evidence": "gate/ConfigStore/普通 Root/三类外接的 claim 前 ABA 均拒绝",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "C04",
+      "condition": "高并发反复撤销",
+      "status": "NOT_RUN",
+      "evidence": "25 轮固定屏障回归非完整多请求随机撤销",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C05",
+      "condition": "改授权时进程退出",
+      "status": "BLOCKED",
+      "evidence": "无当前 App 故障注入；持久化 P0 未关闭",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C06",
+      "condition": "App 重启",
+      "status": "BLOCKED",
+      "evidence": "当前 APK 未设备验收",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C07",
+      "condition": "Helper 超时",
+      "status": "PASS",
+      "evidence": "仅 RootHelperWatchdogTest 期限/owner 纯逻辑；实际 su 超时未运行",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "C08",
+      "condition": "Helper 槽位耗尽",
+      "status": "PASS",
+      "evidence": "RootHelperSlotsTest 满槽拒绝、未退出仍占槽纯逻辑",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "C09",
+      "condition": "Helper 不完整输出",
+      "status": "NOT_RUN",
+      "evidence": "DeviceTransportResult 缺标记 UNKNOWN 已回归；RootShell 原始 Base64/结果解析尚未注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C10",
+      "condition": "执行线程中断",
+      "status": "NOT_RUN",
+      "evidence": "静态异常路径保留 UNKNOWN，未当作动态 PASS",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C11",
+      "condition": "授权持久化失败",
+      "status": "NOT_RUN",
+      "evidence": "gate 同步异常单测不代替异步磁盘失败",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C12",
+      "condition": "用户取消确认",
+      "status": "BLOCKED",
+      "evidence": "无设备；broker 取消/拒绝单测见证据清单，仅为局部证据",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C13",
+      "condition": "旧回调迟到",
+      "status": "NOT_RUN",
+      "evidence": "broker 旧代次回归不代替全部 Root 回调来源",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "C14",
+      "condition": "旧请求被新生命周期接收",
+      "status": "NOT_RUN",
+      "evidence": "gate 进程代次不是整个 runtime 生命周期代次",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-01",
+      "condition": "关闭不取得新 Root 能力",
+      "status": "PASS",
+      "evidence": "gate 禁止 capture；仅 App 内受控入口",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "INV-02",
+      "condition": "无有效管理器授权不标已验证",
+      "status": "BLOCKED",
+      "evidence": "当前管理器与 helper 身份未真机验证",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-03",
+      "condition": "撤销后旧未发送请求不派发",
+      "status": "FAIL",
+      "evidence": "B06 稳定反例；B05/B07 通过不能抵消",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "INV-04",
+      "condition": "失效票据不可复用",
+      "status": "PASS",
+      "evidence": "gate 旧代次/其他 owner/重复消费/并发竞争；不等于所有原生审批票据",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "INV-05",
+      "condition": "重新开启不复活旧请求",
+      "status": "PASS",
+      "evidence": "claim 前的普通及三类外接回归；claim 后仍受 B06 限制",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "INV-06",
+      "condition": "已发送且未知不自动重放",
+      "status": "NOT_RUN",
+      "evidence": "同 gate 写异常不可重用通过；全跨通道链路留 Root-02",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-07",
+      "condition": "普通批准不扩大敏感授权",
+      "status": "NOT_RUN",
+      "evidence": "DeviceGrants/策略局部回归通过；Full 任意 shell 不构成完整隔离",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-08",
+      "condition": "未知/损坏配置不变宽松",
+      "status": "PASS",
+      "evidence": "Boolean 严格读取、非法档位回严格的单元回归；不证明旧磁盘状态安全",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "INV-09",
+      "condition": "不完整输出不能推断成功",
+      "status": "NOT_RUN",
+      "evidence": "typed legacy 结果单测通过，原始 helper framing 尚未完整注入",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-10",
+      "condition": "撤销/执行/释放证据分离",
+      "status": "NOT_RUN",
+      "evidence": "槽位、watchdog、typed 结果分别回归，跨进程全过程尚缺",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-11",
+      "condition": "许可绑定请求/能力/摘要/身份/期限",
+      "status": "NOT_RUN",
+      "evidence": "当前 gate 仅 owner/generation/consumed，不能宣称完整绑定",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "INV-12",
+      "condition": "单请求至多消费且跨通道不重放",
+      "status": "NOT_RUN",
+      "evidence": "前半 gate 局部通过；全局业务 ID 与跨通道规则待 Root-02",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S01",
+      "condition": "Root 不自动授予 SMS API",
+      "status": "NOT_RUN",
+      "evidence": "SMS/DeviceGrants 局部测试通过；未追加当前 Root 开关跨模块端到端验证",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S02",
+      "condition": "Root 不打开敏感界面控制",
+      "status": "NOT_RUN",
+      "evidence": "敏感屏幕策略原有单测通过；完整跨模块路径未验",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S03",
+      "condition": "全局允许不覆盖显式拒绝",
+      "status": "PASS",
+      "evidence": "DeviceGrants/ScreenCapabilityGate 等既有回归；不外推任意 raw shell",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "S04",
+      "condition": "Android 原生系统权限独立",
+      "status": "BLOCKED",
+      "evidence": "无当前设备运行权限验收",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S05",
+      "condition": "严格/放宽/Full 语义无退化",
+      "status": "PASS",
+      "evidence": "RootPolicyModeTest 与 DeviceShellPolicy 原有回归；Full→Strict 失效",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "S06",
+      "condition": "人工拒绝不因旧请求失效",
+      "status": "NOT_RUN",
+      "evidence": "broker 拒绝与旧代次已有局部回归，整链路未验",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S07",
+      "condition": "备份恢复不激活旧授权",
+      "status": "NOT_RUN",
+      "evidence": "静态核对白名单不含 Root 键；未运行备份恢复端到端",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S08",
+      "condition": "普通确认不扩大敏感能力",
+      "status": "NOT_RUN",
+      "evidence": "局部 broker/策略回归；Root-03 仍有限制",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S09",
+      "condition": "UNKNOWN 重试不扩大范围",
+      "status": "NOT_RUN",
+      "evidence": "Root-02 全链路未完成；本补丁没有新增 fallback",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "S10",
+      "condition": "测试不通过关闭检查造绿",
+      "status": "PASS",
+      "evidence": "源/差异/描述符门禁；Robolectric 只替换 su 候选与同步屏障，没有关闭生产策略",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "D01",
+      "condition": "当前源码 APK 构建",
+      "status": "PASS",
+      "evidence": "独立未签名 Rebirth Standard release 构建成功，哈希见交付报告",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": true
+    },
+    {
+      "id": "D02",
+      "condition": "当前 APK 安装身份/哈希",
+      "status": "BLOCKED",
+      "evidence": "ADB 和 Mobile MCP 均无设备",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "D03",
+      "condition": "当前设备严格 id/关闭/重启/重新开启",
+      "status": "BLOCKED",
+      "evidence": "同上；没有移植历史 PASS",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "D04",
+      "condition": "当前 KernelSU 等待竞态",
+      "status": "BLOCKED",
+      "evidence": "同上；电脑同步屏障不能代替真实系统行为",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "D05",
+      "condition": "Magisk/APatch/其他系统",
+      "status": "NOT_RUN",
+      "evidence": "未进行兼容性验证",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    },
+    {
+      "id": "D06",
+      "condition": "真实敏感数据/破坏性命令",
+      "status": "NOT_APPLICABLE",
+      "evidence": "用户明确禁止；替代为合成输入，不能以此证明 Full 隔离",
+      "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+      "executed": false
+    }
+  ],
+  "localLogSha256": {
+    "baseline-gradle.log": "08ffa46cf98953bd10bb8c19d0fa2a687b1357eb540f72fdbf0241e86e7926db",
+    "candidate-gradle.log": "325c1c93ab35ab0d26d379a8cf83b2a2d2a77ecd2faa5e63cdbe224144284715",
+    "check-document-links.log": "5ea565d7c652854dcde9b4829923446527c7e42fa42d56e1d764cbe90c1bbb93",
+    "check-source-hygiene.log": "ba994f27da02407119c1455b0a505745c7861deea238e06e6089a8335786b803",
+    "clean-checkout.log": "c8788ceb92ae8244f6f6021c3d3e37b8ee84db46ddf934d23167e184b5a8a7ef",
+    "final-check-document-links.log": "5ea565d7c652854dcde9b4829923446527c7e42fa42d56e1d764cbe90c1bbb93",
+    "final-check-source-hygiene.log": "0c7fc4e7da4e4328168d913327a7ff9a8cec6b313160a772705dfe74b4aa3c87",
+    "final-gradle.log": "f20d726336d74bc74b194ef85f5870b26b96b81a47043d5663169d61f7a4a03f",
+    "format-check.log": "4d089a1fbd2c357bffb10b59c82a2383de94578bc45b49d8beb00e7e9ba72122",
+    "generate-changelog.log": "80e9613d09cf69298d560b714593af3e83ce25270c223e4976bda9425f2566bb",
+    "green-gradle.log": "741e86ee7bc0688be6e278b95fcbded85f4892a2d882a6c9ad37363196fd4850",
+    "red-gradle.log": "0386d7e2a52c8e232067d3438d130f6950d70a218bd889080a362094a30bc900",
+    "run-host-tests.log": "e67f4d86a4f376e59bf59e6f7596cb00357296bd13fab00a43bbbfc05966a2e9",
+    "stress.log": "9ff47029f981149ed9b8b3d5c31f5e65dba0bc6c0768f5fbdca9dd8b06afeef2"
+  },
+  "notRun": [
+    "Full repository test suite",
+    "Full lint (release lintVital ran)",
+    "Current APK installation and device race injection",
+    "Actual asynchronous preference disk failure/process-death fault injection",
+    "All raw helper malformed result framing faults",
+    "Cross-channel Root-02 replay end-to-end tests",
+    "Clean checkout full Gradle/Android test suite (pure gate tests were reproduced from a clean detached worktree)"
+  ],
+  "cleanCheckout": {
+    "sourceCommit": "0cf73994b108f9f8491652c8e1012b7fb3fbbe14",
+    "status": "PASS",
+    "tests": 11,
+    "failures": 0,
+    "workingTreeCleanBeforeAndAfter": true,
+    "scope": "Pure RootRequestGate tests only. Full clean-checkout Gradle/Android suite not rerun. Known-gap characterization remains a failing safety property."
+  },
+  "gates": {
+    "hostManifest": "PASS_MANIFEST_255_ENTRIES_NOT_255_EXECUTED_TESTS",
+    "sourceHygiene": "PASS_AFTER_LF_NORMALIZATION",
+    "changelog": "PASS",
+    "documentLinks": "PASS: documents=55, ok=1264, warning=0, error=0; repository checker scope only",
+    "javaFormat": "PASS_6_FILES_0_CHANGES",
+    "runtimeDescriptor": "PASS_OFFICIAL_GENERATOR_AND_INDEPENDENT_CHECK"
+  }
+}

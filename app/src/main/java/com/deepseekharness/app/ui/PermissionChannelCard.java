@@ -247,25 +247,40 @@ final class PermissionChannelCard {
     var toggle = new com.google.android.material.materialswitch.MaterialSwitch(ctx);
     toggle.setChecked(enabled);
     toggle.setContentDescription(UiText.text("允许 Root Shell"));
+    var updatingRoot = new java.util.concurrent.atomic.AtomicBoolean();
     toggle.setOnCheckedChangeListener(
         (button, on) -> {
-          new ConfigStore(ctx).setRootShellAllowed(on);
+          if (updatingRoot.get()) return;
+          toggle.setEnabled(false);
           if (!on)
             com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
                 .revokeFor("ROOT_DISABLED");
-          Context app = ctx.getApplicationContext();
-          new Thread(
-                  () -> {
-                    try {
-                      com.deepseekharness.app.bridge.AdbBridge.applySettings(
-                          app, com.deepseekharness.app.core.HarnessController.get(app).proot());
-                    } catch (RuntimeException ignored) {
-                      // 与设备授权页一致：同步结果只用于提示，失败不影响本地开关。
+          new ConfigStore(ctx)
+              .setRootShellAllowedAsync(
+                  on,
+                  saved -> {
+                    updatingRoot.set(true);
+                    toggle.setChecked(RootShell.enabled(ctx));
+                    updatingRoot.set(false);
+                    toggle.setEnabled(true);
+                    if (saved) {
+                      Context app = ctx.getApplicationContext();
+                      new Thread(
+                              () -> {
+                                try {
+                                  com.deepseekharness.app.bridge.AdbBridge.applySettings(
+                                      app,
+                                      com.deepseekharness.app.core.HarnessController.get(app)
+                                          .proot());
+                                } catch (RuntimeException ignored) {
+                                  // 同步失败不扩大本地 Root 授权。
+                                }
+                              },
+                              "onboarding-root-sync")
+                          .start();
                     }
-                  },
-                  "onboarding-root-sync")
-              .start();
-          refresh.run();
+                    refresh.run();
+                  });
         });
     line.addView(toggle);
     panel.addView(line);

@@ -1223,6 +1223,14 @@ public final class HttpShellService {
                   "paths",
                   new org.json.JSONObject(
                       com.deepseekharness.app.util.DeviceShellPolicy.pathRules()));
+      if (root && !new com.deepseekharness.app.core.ConfigStore(ctx).isRootShellAllowed())
+        return value
+            .put("kind", "DENY")
+            .put("argv", new org.json.JSONArray())
+            .put(
+                "reason",
+                com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 未允许 root shell"))
+            .toString();
       String source = ctx.getApplicationInfo().sourceDir;
       if (!source.equals(new java.io.File(source).getCanonicalPath())
           || !com.deepseekharness.app.util.DeviceShellPolicy.canonicalApkPath(source))
@@ -1235,16 +1243,6 @@ public final class HttpShellService {
           .put("selfPackage", ctx.getPackageName())
           .put("selfUid", ctx.getApplicationInfo().uid)
           .put("sourceApk", source);
-      if (root
-          && !ctx.getSharedPreferences(Constants.PREFS, 0)
-              .getBoolean(Constants.KEY_ALLOW_ROOT_SHELL, false))
-        return value
-            .put("kind", "DENY")
-            .put("argv", new org.json.JSONArray())
-            .put(
-                "reason",
-                com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 未允许 root shell"))
-            .toString();
       if (plan.kind == com.deepseekharness.app.util.DeviceShellPolicy.Kind.SHELL
           && plan.shell != null) {
         // guest 只在 kind=SHELL、mode 合法且 su=true 时执行原始命令；rootOnly 留给原生选择器核验。

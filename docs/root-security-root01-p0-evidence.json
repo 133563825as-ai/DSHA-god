@@ -1,0 +1,497 @@
+{
+  "date": "2026-11-15 Asia/Shanghai",
+  "sourceCommit": "ee80dedc3c84c505fbb8ca0da3f5f9676a58aa89",
+  "scope": "App Root switch revocation, staged helper handover, durable explicit session grant",
+  "runtimeId": "81bfc4e52ab3b97b5dc479636bc99d28b6759dbbb9d661f86ead6be623ab7827",
+  "tests": {
+    "classes": 25,
+    "tests": 195,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "name": "com.deepseekharness.app.capabilities.CapabilityBrokerTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "deadlineExpiresWithoutApprovingOrDispatching",
+          "revokeWakesOldWaiterWithoutPretendingUserDenied",
+          "denialAndCancellationCannotBeReauthorizedByLateCallback",
+          "revocationIsScopedButRunStopFencesEverything",
+          "confirmationIsSingleSlotAndSingleDecision",
+          "dispatchClaimIsOneUseAndNeverWaitsForAdapter",
+          "targetComparisonNeverUsesPackageAlone",
+          "simultaneousDispatchClaimsHaveOneWinnerAndStopDoesNotWaitOnIt",
+          "onlyKnownNotSentResultIsEligibleForExplicitAlternateChoice",
+          "noRunningInstanceOrWrongInstallationCannotBorrowAuthority",
+          "differentBrokerCannotAdoptDispatchPermit"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.core.ConfigStoreRootRequestTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "stringTrueCannotAuthorizeRoot",
+          "stringOneCannotAuthorizeRoot",
+          "stalePersistedTrueCannotBypassExplicitSessionDisable",
+          "externalAuthorityRevokedDuringHelperStagingCannotCommit",
+          "malformedRootFlagCannotAuthorizeOrDispatch",
+          "pendingRootChangeDisarmsBeforeAnyDiskCommit",
+          "anotherSettingsInstanceCannotReviveOldRequestByTurningRootBackOn",
+          "integerOneCannotAuthorizeRoot",
+          "slowDiskSaveDoesNotBlockNextRevocation",
+          "fullToStrictRejectsTheAlreadyCheckedFullRequest",
+          "stalePersistedFullCannotOverrideExplicitStrictPolicy",
+          "revocationCannotCompleteBetweenFinalCheckAndCommit"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.core.DeviceGrantsPreferenceRecoveryTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "repeatedHealthyChoiceDoesNotRewriteOrAdvanceItsRevision",
+          "malformedStringRecoveryAdvancesPastAnyPreviouslyObservedGrant",
+          "allowAllWithoutRulesSurvivesActualScreenPolicyXmlReload",
+          "repeatedOwnersAndStatusReadsNeverPersistThePolicy",
+          "changedRecordCannotBeReplacedByAnOlderConfirmation",
+          "corruptBooleanRequiresExplicitRecoveryAndRetainsItsOriginalType",
+          "sameChoiceAfterAnUnsafeReadStillRequiresANewFence",
+          "failedQuarantineNeverReplacesTheOriginalOrEnablesBypass",
+          "invalidationFailureDoesNotReplaceTheOriginal",
+          "aNewPolicyMutationInvalidatesTheOpenRecoveryConfirmation",
+          "serializerIndentedLegacyRecordNeedsExplicitOffRecoveryAndPreservesDiskEvidence",
+          "customMultipleRulesSurviveActualScreenPolicyXmlReload",
+          "unreadableOriginalCannotBeOverwrittenByRecovery",
+          "legacyScreenPolicyPollutedByXmlIndentationStaysManual",
+          "manualSurvivesActualScreenPolicyXmlReload",
+          "missingGlobalKeyInRealLegacyPreferencesShowsTheOffSwitch",
+          "failedReplacementCommitKeepsThePreservedOriginalAndRemainsUnavailable",
+          "savedPolicyRemainsReadableAfterAnActualXmlDiskReload"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.core.DeviceGrantsSensitiveScreenTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "resetReturnsToDefaultsButKeepsRevisionIncreasing",
+          "malformedRecordFallsBackToAskWithoutRevivingAnOldRevision",
+          "sensitiveModePersistsAndFencesBeforePublication",
+          "appListsRoundTripAndInvalidInputIsNotPublished"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.core.DeviceGrantsTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "globalOnlyBypassesAskWithoutGrantingSmsAndRevokesBeforePublication",
+          "privilegedExecutionIsOffByDefaultRevocableAndFailsClosedWhenUnreadable",
+          "failedCommitStaysVisibleAcrossReadsAndExplicitRetryUsesANewRevision",
+          "modeAndExactRulesPersistAcrossOwnersAndInvalidateBeforePublication",
+          "readFailureIsVisibleAndDoesNotOverwriteTheRecordOrRestoreOn",
+          "smsRevokesBeforePublishingAndHasNoImportedAuthority",
+          "malformedStatusDoesNotBecomeOffOrRestartAnOldRevision"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.ExternalTargetConfirmationTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "requestRevokedDuringPreparationCannotHandOffPayload",
+          "unchangedTargetCanHandOverOnlyTheCapturedCommand",
+          "confirmedFirstNeverDispatchesToReplacementOrChangedIdentity",
+          "forgetAndOffOnInvalidateEvenIfIdenticalBindingReturns",
+          "anUnboundRequestCannotSurviveAChangedPersistedEpoch",
+          "failedCommitCanPublishCacheButCannotAuthorizeAnyNewDispatch",
+          "twoInspectedCandidatesCannotPublishTheSameNextEpoch"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.HttpShellServiceRootPlanTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "stalePersistedTrueDoesNotAuthorizeGuestRootPlan",
+          "malformedPersistedFlagDoesNotAuthorizeGuestRootPlan"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.RootShellRequestGateTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "policyChangeAfterHelperStartRejectsPreviouslyCheckedRequest",
+          "externalArgvOffOnCannotReviveOldRequest",
+          "rootDisabledAfterHelperStartPreventsRequestHandover",
+          "externalSessionOffOnCannotReviveOldRequest",
+          "offThenOnAfterHelperStartDoesNotReviveRequest",
+          "externalStepsOffOnCannotReviveOldRequest"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.ui.DeviceGrantsLayoutTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "channelPageUsesCompactRows",
+          "entryStatusFitsAtLargeFontScale",
+          "relaxedSegmentDoesNotSaveWhileRootIsDisabled",
+          "longAdbStatusWrapsAtLargeFontScale",
+          "wideContentMovesSensitiveToSecondColumn",
+          "offStateWordUsesOffTranslationsInEveryLanguage",
+          "screenPageUsesCompactRows",
+          "screenPolicyDisclosureKeepsConsequenceAndExpandsWhenRelaxed",
+          "allFilesRowOpensSystemSettings",
+          "phoneShowsEntryRowsWithoutSummaryHeader",
+          "switchesUseContrastingTrackTint",
+          "rootSwitchReflectsFailedSaveDisarmEvenWithPersistedTrue",
+          "channelStatusAllowsWrappingWithoutEllipsis",
+          "entriesOpenTheirOwnPages",
+          "longAdbStatusWrapsWithoutSqueezingChannelActions",
+          "entryStatusFitsLongTranslationsAtNarrowWidth"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.ui.DeviceGrantsSensitiveScreenTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "choosingHandoffPersistsAndCancellingDoesNot",
+          "dialogListsEveryCategoryAndExplainsHandoff",
+          "settingsEntryShowsDefaultAskAndHardBlock"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.DeviceChannelOrderTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "rawShellOnlyRootOrAdbWithSu",
+          "forceFlagsRestrictTheEligibleSet",
+          "adbNeedsSwitchAndLocalNetworkGrant",
+          "strictTierWinsBeforeAuthorizedTier",
+          "shizukuAndRootNeverCarrySu",
+          "screenGateAndDeviceCommandsShareOneOrder",
+          "smsNeverUsesShizuku",
+          "deviceCommandPicksSameChannelAsVirtualScreenWhenUsable"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.DeviceShellPolicyDeleteTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "quotingDoesNotTurnEchoIntoADeletion",
+          "deeperPathsAndSingleFileDeleteStayUsable",
+          "systemRootsAndBlockDevicesKeepTheirOwnRules",
+          "recursiveDeleteOfStorageRootOrFirstLevelIsDenied"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.DeviceShellPolicyTest",
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "rootReadAndCopySourcesCannotBypassSmsCapability",
+          "grepRepeatedPatternFilesAndSeparatorPreserveOperandMeaning",
+          "everyReadableDirectoryIsEligible",
+          "missingOrMismatchedLaunchIdentityDoesNotDefault",
+          "recursiveGrepWithoutInputFilesChecksWorkingDirectory",
+          "grepPatternFileDashIsLiteralButDataDashIsStdin",
+          "rootAndProtectedDirectoriesCannotBeMutated",
+          "managedVirtualScreenProbeBindsFullBirthIdentityAndHasNoSignalArgument",
+          "allDestructiveDeviceClassesAreBlocked",
+          "processTargetsMustBeExplicit",
+          "shellLanguageAndAlternateExecutorsCannotBypass",
+          "acceptedArgumentsAreDataAndImmutable",
+          "recursiveRootReadsCannotDescendIntoSmsProviderParents",
+          "genericDeviceCommandCannotStartAppProcess",
+          "grepCollectsPatternFilesFromPackedAndSeparateOptions",
+          "grepPatternsAndFiltersAreNotFileResources",
+          "writableDiagnosticsAreNotReadOnly",
+          "grepRejectsUnverifiableOptionSyntax",
+          "multiSourceRootCopyChecksEverySource",
+          "ordinaryFilesAndCopiesFromReadOnlyDirectoriesAreAllowed",
+          "typedVirtualScreenLauncherRequiresExactCanonicalInstalledApk",
+          "unsafePathsAndUnknownOptionsFailClosed"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.ExternalToolPolicyTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "fastbootIsReadOnly",
+          "externalObservationCommandsStayReadOnly",
+          "privilegedArgvEnforcesTheSameReadOnlyDisplayAndLogGrammar",
+          "plannedRemoteShellPassesOnlyGeneratedForms",
+          "installShapesRequireImportRootAndPlannedRemoteTargets",
+          "wirelessConnectPairAndTargetedShell",
+          "onlyReadOnlyAdbShellCommandsPass",
+          "adbServerOnlyAcceptsLoopbackNodaemon",
+          "siblingToolAndLibraryPathsRemainOutsideRoot",
+          "adbSessionClientMustUseServerPortAndTools",
+          "emptyLibraryPathSegmentsAreRejected"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootHelperSlotsTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "labelsAreRecordedForDiagnostics",
+          "neverStartedHelperReleasesImmediately",
+          "helperThatCannotBeKilledKeepsItsSlotUntilItExits",
+          "refusesBeforeLaunchWhenFull",
+          "exitedHelperReleasesImmediately",
+          "repeatedOrForeignReleaseHasNoEffect",
+          "capacityMustBePositive"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootHelperWatchdogTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "requestedDeadlineIsBounded",
+          "deadlineEndsTheHelper",
+          "continuesWhileOwnerIsTheSameProcess",
+          "unparsableStatDoesNotKillAWaitingRequest",
+          "unknownOwnerFallsBackToDeadlineOnly",
+          "ownerExitOrPidReuseEndsTheHelper"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootPolicyModeTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "relaxedAllowsArbitraryCommandsButKeepsIrreversibleOnes",
+          "shellPlanCarriesRawCommandAndMode",
+          "relaxedGradesDeleteTargetsByRecoverability",
+          "unknownModeFallsBackToStrict",
+          "fullModeStopsJudgingCommands",
+          "invalidOrOversizedShellCommandsFailClosed",
+          "nativeGatesSurviveEveryMode",
+          "strictDeniesUnrecognisedCommands"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootRequestGateTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "unreadablePermissionFailsClosed",
+          "revocationDuringStagingPreventsCommitAndHelperExecution",
+          "anotherGateCannotUsePermit",
+          "writeFailureDoesNotMakeClaimReusable",
+          "concurrentWritersCanConsumeOnePermitOnlyOnce",
+          "failedSettingsWriteInvalidatesOldAndBlocksNewUntilSuccessfulUpdate",
+          "offThenOnWhileHelperStartsNeverRevivesOldRequest",
+          "enabledRequestWritesExactlyOnce",
+          "disabledRequestCannotObtainPermit",
+          "disabledBeforeHandoverWritesNoBytes",
+          "policyChangeInvalidatesAlreadyCheckedRequest"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootRequestWireTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "trailingBytesAfterCommitAreRejected",
+          "committedFrameIsAcceptedOnlyAfterEof",
+          "stagedRequestWithoutCommitIsRejected",
+          "oversizedFrameIsRejectedBeforeAllocation"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootSettingsAuthorityTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "failedPolicySaveCannotActivatePermissiveMode",
+          "pendingRevocationDisarmsImmediatelyBeforeDiskWrite",
+          "failedEnableNeverArmsRootEvenIfPreferenceMemoryChanged",
+          "failedDisableCannotClaimDurableRevocationAndCannotRearm",
+          "newerChangeCannotBeRearmedByOlderBlockedCommit",
+          "newProcessRejectsStalePersistedRootAndFullPolicy"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.RootShellCandidatesTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "existingSystemSuWinsWithoutInspectingLaterCandidates",
+          "unverifiedCandidatesAreNeverSelectedAndDiscoveryCannotReadAppPath",
+          "kernelSuAndAPatchAreOrderedTrustedCandidates"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.ScreenCapabilityGateTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "physicalNeedsOnlyAccessibility",
+          "rootIsPreferredAndRequiresBothEnabledAndPresent",
+          "virtualNeedsARealChannelAndTreatsAccessibilityAsEnhancement",
+          "android17PrefersVerifiedAdbOverShizuku",
+          "virtualRequiresApi30AndReportsMissingOverlayAsDegraded",
+          "permissionAloneOrAdbSwitchAloneIsNotUsable",
+          "unknownChannelIsNeverUsable"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.SensitiveScreenPolicyTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "resetKeepsRevisionMonotonic",
+          "encodeDecodeRoundTripsAndMalformedDataFailsBackToAsk",
+          "offOnlyDisablesTieredHandlingNotPackageLists",
+          "appListsAreBoundedExactAndMutuallyExclusive",
+          "defaultsAskEveryCategoryWithEmptyLists",
+          "handoffModeAndPackageListsBecomeDecisions"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.SmsQueryTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "canProbeWithoutReadingAnyActualMessage",
+          "preventsCrossAndroidUserEvenWhenRootIsEnabled",
+          "cannotExtendCapabilityToWritesOtherProvidersOrQueryInjection",
+          "smsRequiresItsOwnCapabilityInsteadOfReadonlyAllowance"
+        ]
+      },
+      {
+        "name": "com.deepseekharness.app.util.TurnCapabilityGrantsTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "cases": [
+          "clearRetiresRememberedCapabilities",
+          "capabilityAndRevisionArePinnedToTheTurn"
+        ]
+      }
+    ]
+  },
+  "unsignedApkSha256": "7dd8d0f9666899fb3d2ec9a2c9ee694c803b163f709601eec0b8b880c998ef7e",
+  "localTestApkSha256": "2517044a6b4b0064e62447126909d1c119934a999ddf6d7b0ce4b5534d5cd9fd",
+  "localTestCertificateSha256": "a990dd51923e18c68b89a80d1ad9a931ea8af91666411d3a0c9bcaa62ed397e0",
+  "checks": [
+    "format-java",
+    "runtime-descriptor",
+    "source-hygiene",
+    "ui-i18n",
+    "host-manifest",
+    "document-links",
+    "test-ui-i18n"
+  ],
+  "remaining": [
+    "External business TARGET_LOCK revocation is not atomic with Root commit",
+    "Guest plan-to-su cross-process revocation remains Root-02 work",
+    "Real disk failure and su waiting race injection not performed",
+    "Full matrix and other Root managers not accepted"
+  ],
+  "review": {
+    "decision": "APPROVE",
+    "scope": "Limited repair and Draft evidence delivery only; full Root-01 security acceptance not passed",
+    "reviewer": "/root/root01_review",
+    "sourceCommit": "ee80dedc3c84c505fbb8ca0da3f5f9676a58aa89",
+    "independentChecks": [
+      "all diff",
+      "25 XML suites and 195 cases match evidence",
+      "format",
+      "descriptor",
+      "i18n",
+      "manifest",
+      "hygiene",
+      "changelog",
+      "links",
+      "whitespace",
+      "installed APK hash"
+    ],
+    "limitations": "Reviewer did not rerun Gradle or operate phone; device observations are author records",
+    "mergeApproved": false
+  },
+  "device": {
+    "model": "Xiaomi 17 Pro Max",
+    "android": "17",
+    "manager": "KernelSU",
+    "installedApkHashMatches": true,
+    "nativeId": {
+      "status": "PASS",
+      "result": "uid=0(root) gid=0(root) groups=0(root) context=u:r:ksu:s0; EXIT=0",
+      "count": 2
+    },
+    "restartWhileEnabled": {
+      "status": "PASS_UI",
+      "action": "force-stop independent test package while Root enabled, then launch",
+      "observed": "Root disabled; Strict selected"
+    },
+    "disabledVerify": {
+      "status": "PASS_UI",
+      "observed": "No successful result dialog",
+      "limitation": "No helper dispatch counter"
+    },
+    "runtime": "Maintenance warning initially; home showed READY after restart; guest full path not accepted",
+    "finalState": "App Root off; Strict; manager grant unchanged"
+  }
+}

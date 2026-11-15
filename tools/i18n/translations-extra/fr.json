@@ -1978,5 +1978,9 @@
   "x2100201": "Autoriser l'entrée ?",
   "x2100202": "Autoriser l'entrée",
   "x2100203": "L'assistant d'écran physique peut contourner l'accessibilité, capturer l'écran et injecter des appuis, balayages et touches pendant la tâche de téléphone en cours — pour les jeux et autres interfaces dessinées par l'application.\n\nDésactivé par défaut et révocable à tout moment. Les actions exigent aussi l'autorisation de contrôle d'écran pour l'application cible ; les écrans de mot de passe, de paiement et de sécurité système sont toujours refusés. La phase expérimentale ne garantit que le canal root.",
-  "x2100204": "Échec de l'enregistrement"
+  "x2100204": "Échec de l'enregistrement",
+  "x2100205": "Enregistrement du réglage Root",
+  "x2100206": "Impossible d’enregistrer le réglage Root ; l’accès reste désactivé. Réessayez.",
+  "x2100207": "Enregistrement de la politique Root",
+  "x2100208": "Impossible d’enregistrer la politique Root ; l’accès reste désactivé. Réessayez."
 }

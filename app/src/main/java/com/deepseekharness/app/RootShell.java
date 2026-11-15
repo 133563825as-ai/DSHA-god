@@ -53,8 +53,7 @@ public final class RootShell {
   private RootShell() {}
 
   public static boolean enabled(Context ctx) {
-    return ctx.getSharedPreferences(Constants.PREFS, 0)
-        .getBoolean(Constants.KEY_ALLOW_ROOT_SHELL, false);
+    return new com.deepseekharness.app.core.ConfigStore(ctx).isRootShellAllowed();
   }
 
   private static String executable() {
@@ -100,13 +99,15 @@ public final class RootShell {
   }
 
   public static String exec(Context ctx, String command, int authorizedSmsUser) {
-    if (!enabled(ctx))
+    com.deepseekharness.app.core.ConfigStore config =
+        new com.deepseekharness.app.core.ConfigStore(ctx);
+    com.deepseekharness.app.util.RootRequestGate.Permit permit = config.captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
     String hostBlocked = com.deepseekharness.app.util.HostDeviceCommandGuard.rejection(command);
     if (hostBlocked != null) return hostBlocked + "\n[EXIT=126]";
-    DeviceShellPolicy.Mode mode =
-        new com.deepseekharness.app.core.ConfigStore(ctx).rootPolicyMode();
+    DeviceShellPolicy.Mode mode = config.rootPolicyMode();
     DeviceShellPolicy.Plan plan = DeviceShellPolicy.inspect(command, mode);
     if (!plan.allowed()) return plan.reason + "\n[EXIT=126]";
     if (plan.kind == DeviceShellPolicy.Kind.SENSITIVE_READ
@@ -118,14 +119,16 @@ public final class RootShell {
       if (mode == DeviceShellPolicy.Mode.STRICT || plan.shell == null)
         return com.deepseekharness.app.util.UiText.text(
             "[POLICY_BLOCKED] ROOT_SHELL_PLAN_UNVERIFIED\n[EXIT=126]");
-      return runPrivileged(ctx, plan.shell, -1, "root-unrestricted");
+      return runPrivileged(ctx, plan.shell, -1, "root-unrestricted", permit);
     }
-    return runPrivileged(ctx, command, authorizedSmsUser, "");
+    return runPrivileged(ctx, command, authorizedSmsUser, "", permit);
   }
 
   /** Native-only launcher path. Generic RootShell.exec rejects app_process unconditionally. */
   public static String execVirtualScreen(Context ctx, String command) {
-    if (!enabled(ctx))
+    com.deepseekharness.app.util.RootRequestGate.Permit permit =
+        new com.deepseekharness.app.core.ConfigStore(ctx).captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
     try {
@@ -140,13 +143,15 @@ public final class RootShell {
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 无法核验 DSHA 安装包路径\n[EXIT=126]");
     }
-    return runPrivileged(ctx, command, -1, "virtual-screen-start");
+    return runPrivileged(ctx, command, -1, "virtual-screen-start", permit);
   }
 
   /** Preserve pre-send refusal separately from a possibly executed native launch/probe. */
   public static com.deepseekharness.app.device.DeviceTransportResult execVirtualScreenTyped(
       Context ctx, String command) {
-    if (!enabled(ctx))
+    com.deepseekharness.app.util.RootRequestGate.Permit permit =
+        new com.deepseekharness.app.core.ConfigStore(ctx).captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.device.DeviceTransportResult.notSent(
           "root", "ROOT_NOT_ENABLED", "[POLICY_BLOCKED] ROOT_NOT_ENABLED\n[EXIT=126]");
     try {
@@ -169,7 +174,10 @@ public final class RootShell {
     if (executable() == null)
       return com.deepseekharness.app.device.DeviceTransportResult.notSent(
           "root", "ROOT_UNAVAILABLE", "[ROOT_UNAVAILABLE] ROOT_UNAVAILABLE\n[EXIT=124]");
-    String output = runPrivileged(ctx, command, -1, "virtual-screen-start");
+    String output = runPrivileged(ctx, command, -1, "virtual-screen-start", permit);
+    if (output.startsWith("[POLICY_BLOCKED] ROOT_AUTHORITY_CHANGED_BEFORE_DISPATCH"))
+      return com.deepseekharness.app.device.DeviceTransportResult.notSent(
+          "root", "ROOT_AUTHORITY_CHANGED_BEFORE_DISPATCH", output);
     // 槽位已满时 su 未启动，虚拟屏核心确定未拉起，按未发送报告。
     if (isBusy(output))
       return com.deepseekharness.app.device.DeviceTransportResult.notSent(
@@ -197,7 +205,8 @@ public final class RootShell {
       long timeoutMs,
       String expectedRoot,
       java.util.function.BooleanSupplier dispatchCurrent) {
-    if (!enabled(ctx))
+    var permit = new com.deepseekharness.app.core.ConfigStore(ctx).captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
     if (executable() == null)
@@ -238,7 +247,7 @@ public final class RootShell {
               .put("expectedRoot", expectedRoot)
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
-      return runPrivilegedExternal(ctx, request, timeoutMs, dispatchCurrent);
+      return runPrivilegedExternal(ctx, request, timeoutMs, dispatchCurrent, permit);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
@@ -253,7 +262,8 @@ public final class RootShell {
       long timeoutMs,
       String expectedRoot,
       java.util.function.BooleanSupplier dispatchCurrent) {
-    if (!enabled(ctx))
+    var permit = new com.deepseekharness.app.core.ConfigStore(ctx).captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
     if (executable() == null)
@@ -297,7 +307,7 @@ public final class RootShell {
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
       // server 就绪等待最多 15 秒，再加客户端期限与 su 启动余量。
-      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent);
+      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent, permit);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
@@ -319,7 +329,8 @@ public final class RootShell {
       String nonce,
       boolean continueOnFailure,
       java.util.function.BooleanSupplier dispatchCurrent) {
-    if (!enabled(ctx))
+    var permit = new com.deepseekharness.app.core.ConfigStore(ctx).captureRootRequest();
+    if (permit == null)
       return com.deepseekharness.app.util.UiText.text(
           "[POLICY_BLOCKED] 未允许 root shell\n[EXIT=126]");
     if (executable() == null)
@@ -370,7 +381,7 @@ public final class RootShell {
               .put("continueOnFailure", continueOnFailure)
               .put("selfPackage", ctx.getPackageName())
               .put("selfUid", ctx.getApplicationInfo().uid);
-      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent);
+      return runPrivilegedExternal(ctx, request, timeoutMs + 25_000, dispatchCurrent, permit);
     } catch (Exception error) {
       return "[EXECUTION_UNKNOWN] " + SensitiveData.redact(String.valueOf(error)) + "\n[EXIT=125]";
     }
@@ -380,8 +391,11 @@ public final class RootShell {
       Context ctx,
       org.json.JSONObject request,
       long timeoutMs,
-      java.util.function.BooleanSupplier dispatchCurrent) {
-    if (!dispatchCurrent.getAsBoolean()) return externalAuthorityChanged();
+      java.util.function.BooleanSupplier dispatchCurrent,
+      com.deepseekharness.app.util.RootRequestGate.Permit permit) {
+    var config = new com.deepseekharness.app.core.ConfigStore(ctx);
+    if (!config.rootRequestCurrent(permit) || !dispatchCurrent.getAsBoolean())
+      return externalAuthorityChanged();
     String su = executable();
     if (su == null) return "[ROOT_UNAVAILABLE] 未找到 su\n[EXIT=124]";
     String label = request.optString("operation", "external");
@@ -392,15 +406,19 @@ public final class RootShell {
     boolean timedOut = false;
     try {
       bindOwner(request, timeoutMs);
+      String handoverNonce = java.util.UUID.randomUUID().toString().replace("-", "");
+      request.put("handoverNonce", handoverNonce);
       byte[] payload = request.toString().getBytes(StandardCharsets.UTF_8);
       process = startHelper(ctx, su, ticket);
-      try (java.io.OutputStream input = process.getOutputStream()) {
-        // A helper cannot execute an external command without its request. Claim immediately
-        // before handing over the immutable argv, after potentially slow su startup and checks.
-        if (!writeExternalRequest(
-            input, payload, () -> enabled(ctx) && dispatchCurrent.getAsBoolean()))
-          return externalAuthorityChanged();
-      }
+      Process helper = process;
+      // writeRootRequest 拥有并关闭 stdin；EOF 也属于与撤销串行的交付边界。
+      if (!dispatchCurrent.getAsBoolean()
+          || !config.writeRootRequest(
+              helper.getOutputStream(),
+              payload,
+              permit,
+              () -> awaitStaged(helper, handoverNonce, timeoutMs),
+              dispatchCurrent)) return externalAuthorityChanged();
       BoundedProcessRunner.Result result =
           BoundedProcessRunner.collect(process, timeoutMs, 768 * 1024, RootShell::destroyQuietly);
       timedOut = result.timedOut;
@@ -432,6 +450,33 @@ public final class RootShell {
     if (!dispatchCurrent.getAsBoolean()) return false;
     input.write(payload);
     return true;
+  }
+
+  private static void awaitStaged(Process helper, String nonce, long timeoutMs)
+      throws java.io.IOException, InterruptedException {
+    String expected = RootShellMain.STAGED + nonce;
+    long budgetMs = Math.min(timeoutMs, ROOT_WAIT_MS);
+    long deadline =
+        System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(budgetMs);
+    java.io.InputStream output = helper.getInputStream();
+    var line = new java.io.ByteArrayOutputStream();
+    int total = 0;
+    while (System.nanoTime() < deadline) {
+      if (output.available() == 0) {
+        if (!helper.isAlive()) throw new java.io.IOException("ROOT_HELPER_EXITED_BEFORE_STAGED");
+        Thread.sleep(20);
+        continue;
+      }
+      int next = output.read();
+      if (next < 0) throw new java.io.IOException("ROOT_HELPER_CLOSED_BEFORE_STAGED");
+      if (++total > 8192) throw new java.io.IOException("ROOT_HELPER_STAGE_OUTPUT_LIMIT");
+      if (next == '\n') {
+        String candidate = line.toString(StandardCharsets.US_ASCII).trim();
+        if (candidate.equals(expected)) return;
+        line.reset();
+      } else line.write(next);
+    }
+    throw new java.io.IOException("ROOT_HELPER_STAGE_TIMEOUT");
   }
 
   /**
@@ -553,7 +598,14 @@ public final class RootShell {
   }
 
   private static String runPrivileged(
-      Context ctx, String command, int authorizedSmsUser, String operation) {
+      Context ctx,
+      String command,
+      int authorizedSmsUser,
+      String operation,
+      com.deepseekharness.app.util.RootRequestGate.Permit permit) {
+    com.deepseekharness.app.core.ConfigStore config =
+        new com.deepseekharness.app.core.ConfigStore(ctx);
+    if (!config.rootRequestCurrent(permit)) return rootAuthorityChanged();
     String su = executable();
     if (su == null)
       return com.deepseekharness.app.util.UiText.text("[ROOT_UNAVAILABLE] 未找到 su\n[EXIT=124]");
@@ -573,10 +625,15 @@ public final class RootShell {
               .put("selfUid", ctx.getApplicationInfo().uid);
       if (!operation.isEmpty()) request.put("operation", operation);
       bindOwner(request, ROOT_WAIT_MS);
+      String handoverNonce = java.util.UUID.randomUUID().toString().replace("-", "");
+      request.put("handoverNonce", handoverNonce);
       process = startHelper(ctx, su, ticket);
-      try (java.io.OutputStream input = process.getOutputStream()) {
-        input.write(request.toString().getBytes(StandardCharsets.UTF_8));
-      }
+      Process helper = process;
+      if (!config.writeRootRequest(
+          helper.getOutputStream(),
+          request.toString().getBytes(StandardCharsets.UTF_8),
+          permit,
+          () -> awaitStaged(helper, handoverNonce, ROOT_WAIT_MS))) return rootAuthorityChanged();
       BoundedProcessRunner.Result result =
           BoundedProcessRunner.collect(process, ROOT_WAIT_MS, 400_000, RootShell::destroyQuietly);
       timedOut = result.timedOut;
@@ -610,6 +667,10 @@ public final class RootShell {
     } finally {
       finish(ctx, ticket, process, label, timedOut);
     }
+  }
+
+  private static String rootAuthorityChanged() {
+    return "[POLICY_BLOCKED] ROOT_AUTHORITY_CHANGED_BEFORE_DISPATCH\n[EXIT=126]";
   }
 
   /** 普通 root 命令的 App 侧等待；helper 内部单条命令 30 秒，余量给 su 授权与 JVM 启动。 */
