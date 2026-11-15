@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic APK identity checks only; never signs, builds or installs an APK."""
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -8,6 +9,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import warnings
 import zipfile
 
@@ -166,6 +168,84 @@ class ApkCheckTest(unittest.TestCase):
             with self.subTest(code=code, output=output):
                 with self.assertRaisesRegex(ValueError, 'REBIRTH_UNSIGNED_VERIFIER_UNEXPECTED_RESULT'):
                     CHECK.require_unsigned_verifier(SimpleNamespace(returncode=code, stdout=output, stderr=''))
+
+    def test_diagnostic_exact_whitelist_only(self):
+        for original, safe in CHECK.SAFE_REASONS.items():
+            self.assertEqual(safe, CHECK.diagnostic_reason(ValueError(original)))
+            self.assertRegex(safe, r'^REBIRTH_[A-Z0-9_]+$')
+        for error in (ValueError('REBIRTH_MANIFEST_PACKAGE\n::error::secret'),
+                      ValueError('REBIRTH_MANIFEST_PACKAGE extra'),
+                      ValueError('prefix REBIRTH_MANIFEST_PACKAGE'),
+                      ValueError('REBIRTH_KEY_ASSET_DIGEST:unknown/path'),
+                      ValueError('REBIRTH_PLATFORM_IDENTITY:unknown'),
+                      ValueError('REBIRTH_MANIFEST_PACKAGE', 'secret'),
+                      ValueError({'secret': 'value'}), RuntimeError('REBIRTH_MANIFEST_PACKAGE')):
+            with self.subTest(error=type(error).__name__):
+                self.assertEqual('STEP_FAILED', CHECK.diagnostic_reason(error))
+
+    def test_failure_annotation_once_and_original_exception_propagates(self):
+        for stage in CHECK.PHASES:
+            original = ValueError('REBIRTH_MANIFEST_PACKAGE')
+            def failing():
+                CHECK.phase(stage)
+                raise original
+            output = io.StringIO()
+            with patch.object(CHECK, 'main', failing), contextlib.redirect_stdout(output):
+                with self.assertRaises(ValueError) as raised:
+                    CHECK.run_with_diagnostic()
+            self.assertIs(original, raised.exception)
+            self.assertEqual(['::error::gate=unsigned-candidate-check phase=' + stage
+                              + ' reason=REBIRTH_MANIFEST_PACKAGE'], output.getvalue().splitlines())
+
+    def test_unknown_failure_cannot_inject_annotation_and_success_is_quiet(self):
+        original = RuntimeError('secret\n::error::gate=forged reason=forged')
+        def failing():
+            CHECK.phase('MANIFEST')
+            raise original
+        output = io.StringIO()
+        with patch.object(CHECK, 'main', failing), contextlib.redirect_stdout(output):
+            with self.assertRaises(RuntimeError) as raised:
+                CHECK.run_with_diagnostic()
+        self.assertIs(original, raised.exception)
+        self.assertEqual('::error::gate=unsigned-candidate-check phase=MANIFEST reason=STEP_FAILED\n', output.getvalue())
+        output = io.StringIO()
+        with patch.object(CHECK, 'main', lambda: None), contextlib.redirect_stdout(output):
+            CHECK.run_with_diagnostic()
+        self.assertEqual('', output.getvalue())
+        self.assertEqual('COMPLETE', CHECK._PHASE)
+        with self.assertRaises(ValueError):
+            CHECK.phase('MANIFEST\n::error::forged')
+
+    def test_system_exit_zero_is_quiet_and_nonzero_remains_failure(self):
+        for code in (None, 0, 2):
+            original = SystemExit(code)
+            def exiting():
+                CHECK.phase('INPUT_IDENTITY')
+                raise original
+            output = io.StringIO()
+            with patch.object(CHECK, 'main', exiting), contextlib.redirect_stdout(output):
+                with self.assertRaises(SystemExit) as raised:
+                    CHECK.run_with_diagnostic()
+            self.assertIs(original, raised.exception)
+            self.assertEqual('' if code is None or code == 0 else
+                             '::error::gate=unsigned-candidate-check phase=INPUT_IDENTITY reason=STEP_FAILED\n',
+                             output.getvalue())
+
+    def test_helpers_set_precise_phase_without_printing_annotation(self):
+        self.make_apk()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            CHECK.inspect_apk(self.apk, self.root)
+        self.assertEqual('ZIP_BOUNDARY', CHECK._PHASE)
+        self.assertEqual('', output.getvalue())
+        self.make_apk(replace={'assets/dsh-runtime.bin': b'mismatch'})
+        with self.assertRaises(ValueError):
+            CHECK.inspect_apk(self.apk, self.root)
+        self.assertEqual('ASSETS', CHECK._PHASE)
+        self.make_apk([('assets/dsh-runtime.bin', b'duplicate')])
+        with self.assertRaises(ValueError):
+            CHECK.inspect_apk(self.apk, self.root)
+        self.assertEqual('ZIP', CHECK._PHASE)
 
     def test_cli_keeps_original_signature_and_verifier_chain(self):
         source = (ROOT / 'tools/rebirth-apk-check.py').read_text()

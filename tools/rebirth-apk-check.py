@@ -16,6 +16,57 @@ SOFTWARE_RUN = 43692535293
 KEY_ASSETS = ('builtin-plugins/dsh-web-mobile/lib/client.js',
               'app-integration/client.js', 'dsh-runtime.bin')
 CHUNK = 1024 * 1024
+PHASES = frozenset(('INPUT_IDENTITY', 'BADGING', 'MANIFEST', 'ZIP', 'ASSETS',
+                    'ZIP_BOUNDARY', 'SIGNATURE', 'SUBSCRIPT_UPGRADE', 'RECOVERY',
+                    'MANAGED', 'THIRD_PARTY', 'SOURCE_CLEAN', 'DELIVERY', 'COMPLETE'))
+_PHASE = 'INPUT_IDENTITY'
+SAFE_REASONS = {value: value for value in (
+    'REBIRTH_BADGING_IDENTITY', 'REBIRTH_LABEL_OR_DEBUGGABLE', 'REBIRTH_LOCALIZED_LABEL',
+    'REBIRTH_ABI_IDENTITY', 'REBIRTH_MANIFEST_PACKAGE', 'REBIRTH_MANIFEST_AUTHORITIES',
+    'REBIRTH_MANIFEST_ENTRY', 'REBIRTH_MANIFEST_LEGACY_IDENTITY', 'REBIRTH_ZIP_EOCD',
+    'REBIRTH_ZIP_CENTRAL_DIRECTORY', 'REBIRTH_UNEXPECTED_APK_SIGNING_BLOCK',
+    'REBIRTH_DUPLICATE_ZIP_MEMBER', 'REBIRTH_UNEXPECTED_V1_SIGNATURE', 'REBIRTH_ZIP_ABI_IDENTITY',
+    'REBIRTH_DESCRIPTOR_SIZE', 'REBIRTH_DESCRIPTOR_SOURCE', 'REBIRTH_RUNTIME_IDENTITY',
+    'REBIRTH_UNSIGNED_VERIFIER_UNEXPECTED_RESULT', 'REBIRTH_OUTPUT_IDENTITY',
+    'REBIRTH_UNSIGNED_OUTPUT_PATH', 'REBIRTH_APKSIGNER_UNAVAILABLE',
+    'REBIRTH_TRACKED_SOURCE_CHANGED', 'REBIRTH_DELIVERY_EXISTS', 'REBIRTH_DELIVERY_DIGEST')}
+SAFE_REASONS.update({
+    'REBIRTH_PLATFORM_IDENTITY:sdkVersion': 'REBIRTH_PLATFORM_SDK',
+    'REBIRTH_PLATFORM_IDENTITY:targetSdkVersion': 'REBIRTH_PLATFORM_TARGET_SDK',
+    'REBIRTH_KEY_ASSET_DIGEST:builtin-plugins/dsh-web-mobile/lib/client.js': 'REBIRTH_MOBILE_DIGEST',
+    'REBIRTH_KEY_ASSET_DIGEST:app-integration/client.js': 'REBIRTH_INTEGRATION_DIGEST',
+    'REBIRTH_KEY_ASSET_DIGEST:dsh-runtime.bin': 'REBIRTH_RUNTIME_ARCHIVE_DIGEST',
+})
+
+
+def phase(value):
+    global _PHASE
+    if value not in PHASES:
+        raise ValueError('INVALID_DIAGNOSTIC_PHASE')
+    _PHASE = value
+
+
+def diagnostic_reason(error):
+    if isinstance(error, ValueError) and len(error.args) == 1 and type(error.args[0]) is str:
+        return SAFE_REASONS.get(error.args[0], 'STEP_FAILED')
+    return 'STEP_FAILED'
+
+
+def run_with_diagnostic():
+    phase('INPUT_IDENTITY')
+    try:
+        main()
+    except SystemExit as error:
+        if error.code is not None and error.code != 0:
+            print('::error::gate=unsigned-candidate-check phase=' + _PHASE
+                  + ' reason=STEP_FAILED', flush=True)
+        raise
+    except BaseException as error:
+        print('::error::gate=unsigned-candidate-check phase=' + _PHASE
+              + ' reason=' + diagnostic_reason(error), flush=True)
+        raise
+    else:
+        phase('COMPLETE')
 
 
 def stream_digest(stream):
@@ -72,6 +123,7 @@ def verify_manifest(manifest):
 
 
 def unsigned_zip_boundary(apk):
+    phase('ZIP_BOUNDARY')
     # 仅读取EOCD有界尾部，不把数百MiB APK再次载入内存。
     size = apk.stat().st_size
     with apk.open('rb') as stream:
@@ -92,6 +144,7 @@ def unsigned_zip_boundary(apk):
 
 
 def inspect_apk(apk, root=ROOT):
+    phase('ZIP')
     with zipfile.ZipFile(apk) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)):
@@ -101,6 +154,7 @@ def inspect_apk(apk, root=ROOT):
         abis = {name.split('/')[1] for name in names if name.startswith('lib/') and not name.endswith('/')}
         if abis != {'arm64-v8a'}:
             raise ValueError('REBIRTH_ZIP_ABI_IDENTITY')
+        phase('ASSETS')
         descriptor_name = 'assets/runtime-descriptor.json'
         if archive.getinfo(descriptor_name).file_size > 2 * CHUNK:
             raise ValueError('REBIRTH_DESCRIPTOR_SIZE')
@@ -134,6 +188,7 @@ def run(argv):
 
 
 def main():
+    phase('INPUT_IDENTITY')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-tools', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
@@ -147,11 +202,14 @@ def main():
     if Path(name).name != name or not name.endswith('-unsigned.apk'):
         raise ValueError('REBIRTH_UNSIGNED_OUTPUT_PATH')
     apk = folder / name
+    phase('BADGING')
     badging = run([args.build_tools / 'aapt2', 'dump', 'badging', apk])
     version_name = verify_badging(badging)
+    phase('MANIFEST')
     manifest = run([args.build_tools / 'aapt2', 'dump', 'xmltree', apk, '--file', 'AndroidManifest.xml'])
     verify_manifest(manifest)
     actual = inspect_apk(apk)
+    phase('SIGNATURE')
     # Tool availability is separate from expected unsigned rejection; retain failures too.
     args.output.mkdir(parents=True, exist_ok=True)
     tool = subprocess.run([str(args.build_tools / 'apksigner'), 'version'], capture_output=True, text=True)
@@ -169,12 +227,18 @@ def main():
     (args.output / 'apk-badging.txt').write_text(badging, encoding='utf-8')
     (args.output / 'apk-manifest.txt').write_text(manifest, encoding='utf-8')
     for script in ('verify-dsh-upgrade-apk.py', 'verify-recovery-apk.py', 'verify-apk-managed-assets.py'):
+        phase({'verify-dsh-upgrade-apk.py': 'SUBSCRIPT_UPGRADE',
+               'verify-recovery-apk.py': 'RECOVERY',
+               'verify-apk-managed-assets.py': 'MANAGED'}[script])
         result = run(['python3', 'tools/' + script, apk])
         (args.output / (script + '.log')).write_text(result, encoding='utf-8')
+    phase('THIRD_PARTY')
     run(['python3', 'tools/verify-third-party-apk.py', apk, '--output', args.output / 'third-party-apk.json'])
+    phase('SOURCE_CLEAN')
     commit = run(['git', 'rev-parse', 'HEAD']).strip()
     if run(['git', 'status', '--porcelain', '--untracked-files=no']).strip():
         raise ValueError('REBIRTH_TRACKED_SOURCE_CHANGED')
+    phase('DELIVERY')
     digest = file_digest(apk)
     target = args.output / ('DSHA-Rebirth-Sprout-b359-' + commit[:12] + '-unsigned.apk')
     if target.exists():
@@ -195,4 +259,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    run_with_diagnostic()
