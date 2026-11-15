@@ -63,7 +63,9 @@
 - `43705255618`（head `f9bac8e8`，dry_run、`rust_native_mode=prebuilt`、`test_packages=debug`）：`bind` 与 Kotlin 格式通过；`contracts` 在 `generate-third-party-notices.py --check` 报 `THIRD_PARTY_NOTICES_STALE`；`host-regression` 仅 `test-ci-package.py` 失败，其余宿主测试通过。
 - 原因：A8-P1 把 `coreLibraryDesugaring` 移入 [`build-logic/android.gradle`](../../../build-logic/android.gradle)；notices 生成器只扫 `app/build.gradle`，会漏掉 `desugar_jdk_libs`；`ci-toolchain` 从该约定读取 Java 目标，`test-ci-package` 合成根缺该文件。
 - 修复：`4c2f9d0f` 让 [`generate-third-party-notices.py`](../../../tools/generate-third-party-notices.py) 扫描 `build-logic/*.gradle` 并补测试（`THIRD_PARTY_NOTICES.md` 重生成无差异）；`a2c87b5b` 给 [`test-ci-package.py`](../../../tools/test-ci-package.py) 合成根补 `build-logic/android.gradle`。本机复验 notices 5/5、ci-package 9/9、ci-toolchain 6/6，完整 contracts 12 项 exit0。
-- 修复提交尚待用户批准 push；当前 main 仍为 `f9bac8e8`，P1 出口未通过。
+- 同轮 `build-unsigned` / `test-packages` 在 **prebuilt** 路径失败：`app/build.gradle` 的 `if (rustNativeMode == 'prebuilt') android.sourceSets.main.assets.srcDir(rustAssetsDirectory)` 把 `Provider` 加入 Android SourceSet，AGP 9.1.1 拒绝；该行在 `b3602555` 已存在，属已合入 Rust 入包路径的既有缺陷，不是 A8-P1 引入。P1 出口按 off 重跑，prebuilt 缺陷另记 Rust 后续。
+- `3d4fed03` 把 `release-production.yml` 的 `options: [off, prebuilt]` / `default: off` 改为带引号的字符串，并同步 [`test-ci-workflows.py`](../../../tools/test-ci-workflows.py)（135/135）；`workflow_dispatch` 现在可按 `off` 运行。
+- 三处修复（notices `4c2f9d0f`、ci-package `a2c87b5b`、off `3d4fed03`）尚待用户批准 push；当前 main 仍为 `f9bac8e8`，P1 出口未通过。
 
 ## 边界与回退
 
