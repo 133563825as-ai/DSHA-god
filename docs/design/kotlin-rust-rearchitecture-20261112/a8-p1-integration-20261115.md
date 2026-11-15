@@ -65,7 +65,9 @@
 - 修复：`4c2f9d0f` 让 [`generate-third-party-notices.py`](../../../tools/generate-third-party-notices.py) 扫描 `build-logic/*.gradle` 并补测试（`THIRD_PARTY_NOTICES.md` 重生成无差异）；`a2c87b5b` 给 [`test-ci-package.py`](../../../tools/test-ci-package.py) 合成根补 `build-logic/android.gradle`。本机复验 notices 5/5、ci-package 9/9、ci-toolchain 6/6，完整 contracts 12 项 exit0。
 - 同轮 `build-unsigned` / `test-packages` 在 **prebuilt** 路径失败：`app/build.gradle` 的 `if (rustNativeMode == 'prebuilt') android.sourceSets.main.assets.srcDir(rustAssetsDirectory)` 把 `Provider` 加入 Android SourceSet，AGP 9.1.1 拒绝；该行在 `b3602555` 已存在，属已合入 Rust 入包路径的既有缺陷，不是 A8-P1 引入。P1 出口按 off 重跑，prebuilt 缺陷另记 Rust 后续。
 - `3d4fed03` 把 `release-production.yml` 的 `options: [off, prebuilt]` / `default: off` 改为带引号的字符串，并同步 [`test-ci-workflows.py`](../../../tools/test-ci-workflows.py)（135/135）；`workflow_dispatch` 现在可按 `off` 运行。
-- 三处修复（notices `4c2f9d0f`、ci-package `a2c87b5b`、off `3d4fed03`）尚待用户批准 push；当前 main 仍为 `f9bac8e8`，P1 出口未通过。
+- `unit`（full 契约）在 `:app:testStandardDebugUnitTest` 的 task-begin 退出 1；job log 未带出 Python stderr。通过 API+token 取得 `release-unit-results` artifact（绕过旧 ZIP 403）：run/plan/proof 与 4 个 compile-execution receipt。receipt 含 `:app:compileStandardDebugJavaWithJavac`（1059 源）及主 Kotlin/测试 Java/测试 Kotlin；但 compile proof 只有 3 行，缺主 Java。validator 的 :app 主 Java 上下文会以 `COMPILE_TASK_MISSING` 拒绝（CI stderr 未随日志输出；本机对 CI proof 复验先因本地 BuildConfig 生成差异在 `COMPILE_FILE_CHANGED` 停下，未把该本地差异算作 CI 结果）。
+- `165bce6b` 在 proof 生成中补入同一 state 内已执行且有 receipt 的本模块 Compile 任务，保证主 Java 编译行入证，不放宽源码/编译证明。该 unit 修复待用户批准追加。
+- 三处修复（notices `4c2f9d0f`、ci-package `a2c87b5b`、off `3d4fed03`）已获用户批准（将推送 `1d8b3c39`）；unit 修复 `165bce6b` 待批准；当前 main 仍为 `f9bac8e8`，P1 出口未通过。
 
 ## 边界与回退
 
