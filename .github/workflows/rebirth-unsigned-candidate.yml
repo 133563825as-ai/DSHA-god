@@ -116,12 +116,16 @@ jobs:
               def emptySigningValidation = t.path == ':app:validateSigningStandardRelease' &&
                 chain.contains('com.android.build.gradle.internal.tasks.ValidateSigningTask') &&
                 gradle.rootProject.project(':app').extensions.getByName('android').buildTypes.release.signingConfig == null
+              // AGP9.1.1真实release图中的元数据任务，不是Debug变体；只豁免此名称过滤。
+              def releaseDebugMetadata =
+                (t.path == ':app:stripStandardReleaseDebugSymbols' && chain.contains('com.android.build.gradle.internal.tasks.StripDebugSymbolsTask')) ||
+                (t.path == ':app:mergeStandardReleaseNativeDebugMetadata' && chain.contains('com.android.build.gradle.internal.tasks.MergeNativeDebugMetadataTask'))
               def forbiddenName = n ==~ /(?i)(publish|upload|deploy|install|uninstall|connected|clean|sign).*/ ||
                 n == 'verifyPublishCertificate' ||
                 (n.startsWith('validateSigning') && !emptySigningValidation) ||
                 (n.startsWith('assemble') && t.path != ':app:assembleStandardRelease') ||
                 n ==~ /(?i).*AndroidTest.*/ ||
-                n ==~ /(?i).*(Debug|Low).*/ ||
+                ((n ==~ /(?i).*(Debug|Low).*/) && !releaseDebugMetadata) ||
                 n ==~ /(?i)bundleStandard(Debug|Release)/ ||
                 (n.startsWith('package') && !n.endsWith('Resources') && t.path != ':app:packageStandardRelease') ||
                 (t.path == ':app:packageStandardRelease' && !chain.contains('com.android.build.gradle.tasks.PackageApplication'))

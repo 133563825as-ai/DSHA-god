@@ -142,6 +142,37 @@ class CandidateWorkflowTest(unittest.TestCase):
         self.assertIn('n ==~ /(?i).*(Debug|Low).*/', text)
         self.assertIn("'JAVA_TOOL_OPTIONS'", text)
 
+    def test_only_two_exact_agp_release_metadata_tasks_escape_debug_name_filter(self):
+        text = (ROOT/'.github/workflows/rebirth-unsigned-candidate.yml').read_text()
+        block = text.split('def releaseDebugMetadata =', 1)[1].split('def forbiddenName', 1)[0]
+        pairs = re.findall(r"t.path == '([^']+)' && chain.contains\('([^']+)'\)", block)
+        self.assertEqual([
+            (':app:stripStandardReleaseDebugSymbols', 'com.android.build.gradle.internal.tasks.StripDebugSymbolsTask'),
+            (':app:mergeStandardReleaseNativeDebugMetadata', 'com.android.build.gradle.internal.tasks.MergeNativeDebugMetadataTask'),
+        ], pairs)
+        self.assertIn('((n ==~ /(?i).*(Debug|Low).*/) && !releaseDebugMetadata)', text)
+        self.assertIn('forbiddenName || actualSigning', text)
+        self.assertIn('graph.allTasks.findAll', text)  # 包含已进入图的finalizer，不仅入口任务。
+        def denied(path, chain):
+            name = path.rsplit(':', 1)[-1]
+            metadata = any(path == p and c in chain for p, c in pairs)
+            name_denied = bool(re.fullmatch(r'(?i).*(Debug|Low).*', name)) and not metadata
+            name_denied |= bool(re.match(r'(?i)(publish|upload|deploy|install|uninstall|connected|clean|sign)', name))
+            return name_denied or any('SignApk' in c or 'PackageBundleTask' in c or 'FinalizeBundleTask' in c for c in chain)
+        for path, cls in pairs:
+            self.assertFalse(denied(path, [cls]))
+            self.assertTrue(denied(path, ['wrong.Type']))
+            self.assertTrue(denied(path.replace('StandardRelease', 'StandardDebug'), [cls]))
+            self.assertTrue(denied(path.replace(':app:', ':other:'), [cls]))
+            self.assertTrue(denied(path, [cls, 'com.android.SignApk']))
+            self.assertTrue(denied(path, [cls, 'com.android.PackageBundleTask']))
+        self.assertTrue(denied(':app:extractStandardReleaseNativeDebugMetadata', ['com.android.build.gradle.internal.tasks.ExtractNativeDebugMetadataTask']))
+        # 精确允许的任务也不能通过其他finalizer引入签名/AAB/安装/清理。
+        graph = [pairs[0], (':app:signRelease', 'SignApk')]
+        self.assertTrue(any(denied(path, [cls]) for path, cls in graph))
+        for name in ['installStandardRelease', 'clean', 'publishRelease']:
+            self.assertTrue(denied(':app:'+name, ['DefaultTask']))
+
     def test_unsigned_artifact_success_only_and_evidence_no_wide_builds(self):
         text = (ROOT/'.github/workflows/rebirth-unsigned-candidate.yml').read_text()
         artifact = text.split('      - name: Upload unsigned candidate not for installation', 1)[1].split('      - name: Upload package check evidence', 1)[0]
