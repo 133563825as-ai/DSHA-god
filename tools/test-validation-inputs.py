@@ -112,7 +112,9 @@ class ValidationInputsTest(unittest.TestCase):
         self.assertNotIn('set -x', text)
         for value in ['l1_source', 'l1_fast', 'l2_unit', 'l2_xml', 'l2_lint', 'l2_map', 'l3_runtime', 'l3_software']:
             self.assertIn('id: ' + value, text)
-        self.assertEqual(2, text.count("if: failure() && steps."))
+        self.assertEqual(3, text.count("if: failure() && steps."))
+        self.assertIn("if: failure() && steps.l3_software.outcome == 'failure'", text)
+        self.assertEqual(1, text.count('python3 -B tools/ci-safe-test-diagnostics.py --software'))
         self.assertEqual(1, text.count('if: always()'))
         for block in text.split('      - name: ')[1:]:
             if 'if: always()' in block:

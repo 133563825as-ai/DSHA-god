@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path('app/build/host-runtime-rebirth-ci')
@@ -123,6 +124,67 @@ def annotations(root=ROOT):
     return lines
 
 
+SOFTWARE_LOG = Path('out/rebirth-validation/software.log')
+SOFTWARE_PHASES = ('java-version', 'node-version', 'gradle-version', 'gradle-verification',
+    'startup-observer', 'issue67', 'runtime-input-contract', 'architecture-boundaries',
+    'plugin-downloads', 'release-acceptance-contract', 'release-evidence-contract', 'adb-flow',
+    'adb-vscreen-bridge', 'third-party-notices', 'pnpm-version', 'plugin-discovery',
+    'plugin-dependencies', 'plugin-transactions', 'plugin-review')
+
+
+def software_annotation(data):
+    completed = []
+    terminal = None
+    try:
+        for line in data.split(b'\n'):
+            if not line.strip():
+                continue
+            # 普通诊断文本忽略；疑似producer JSON必须严格校验，不从正文猜原因。
+            if not line.lstrip().startswith(b'{'):
+                continue
+            if len(line) > MAX_LINE or any(byte < 32 or byte == 127 for byte in line):
+                raise ValueError('line')
+            value = json.loads(line.decode('utf-8'), object_pairs_hook=no_duplicates)
+            if not isinstance(value, dict) or terminal is not None:
+                raise ValueError('shape')
+            if set(value) == {'phase', 'exitCode', 'log'}:
+                if len(completed) >= len(SOFTWARE_PHASES) or value['phase'] != SOFTWARE_PHASES[len(completed)]:
+                    raise ValueError('order')
+                if completed and completed[-1][1] != 0:
+                    raise ValueError('after failure')
+                code = value['exitCode']
+                if type(code) is not int or not -255 <= code <= 255 or not isinstance(value['log'], str):
+                    raise ValueError('type')
+                completed.append((SOFTWARE_PHASES[len(completed)], code))
+            elif set(value) == {'status', 'report'}:
+                if value['status'] not in ('INCOMPLETE_OR_FAILED', 'PASS_SOFTWARE') or not isinstance(value['report'], str):
+                    raise ValueError('terminal')
+                terminal = value['status']
+                # 此入口只从失败step调用；成功终态与当前失败上下文矛盾，不授成功。
+                if terminal == 'PASS_SOFTWARE':
+                    raise ValueError('success contradiction')
+            else:
+                raise ValueError('keys')
+        if terminal != 'INCOMPLETE_OR_FAILED' or not completed:
+            return '::error::gate=l3-software diag=DIAG_UNAVAILABLE'
+        if completed[-1][1] != 0:
+            phase, code = completed[-1]
+            return '::error::gate=l3-software reason=COMMAND_FAILED phase=' + phase + ' exitCode=' + str(code)
+        return '::error::gate=l3-software reason=INTERNAL_CHECK_FAILED lastCompleted=' + completed[-1][0]
+    except (ValueError, UnicodeError, TypeError, RecursionError):
+        return '::error::gate=l3-software diag=DIAG_INVALID'
+
+
+def software_annotations(root=ROOT):
+    try:
+        data = read_owned(root, SOFTWARE_LOG, MAX_LOG)
+    except (OSError, ValueError):
+        return ['::error::gate=l3-software diag=DIAG_UNAVAILABLE']
+    return [software_annotation(data)]
+
+
 if __name__ == '__main__':
-    for line in annotations():
+    if sys.argv[1:] not in ([], ['--software']):
+        raise SystemExit(2)
+    for line in software_annotations() if sys.argv[1:] else annotations():
         print(line)

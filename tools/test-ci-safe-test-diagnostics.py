@@ -134,9 +134,85 @@ class SafeDiagnosticsTest(unittest.TestCase):
         text = (ROOT/'.github/workflows/rebirth-validation.yml').read_text()
         block = text.split('      - name: L3 safe failure summary', 1)[1].split('      - name: L3 software gates', 1)[0]
         self.assertIn("if: failure() && steps.l3_runtime.outcome == 'failure'", block)
-        self.assertEqual(1, text.count('python3 -B tools/ci-safe-test-diagnostics.py'))
+        self.assertEqual(1, sum(line.strip() == 'python3 -B tools/ci-safe-test-diagnostics.py' for line in text.splitlines()))
         self.assertIn('python3 -B tools/ci-safe-test-diagnostics.py', block)
         self.assertNotIn('continue-on-error', text)
+
+
+class SoftwareDiagnosticsTest(unittest.TestCase):
+    def record(self, phase='java-version', code=0, **extra):
+        return (json.dumps({'phase': phase, 'exitCode': code, 'log': 'PRIVATE_PATH', **extra})+'\n').encode()
+
+    def sequence(self, count, failed=None):
+        return b''.join(self.record(phase, -1 if failed == i else 0) for i, phase in enumerate(mod.SOFTWARE_PHASES[:count]))
+
+    def terminal(self):
+        return b'{"status":"INCOMPLETE_OR_FAILED","report":"PRIVATE_PATH"}\n'
+
+    def test_exact_failed_command_only_exposes_fixed_name_and_int(self):
+        value = mod.software_annotation(self.sequence(4, 3) + self.terminal())
+        self.assertEqual('::error::gate=l3-software reason=COMMAND_FAILED phase=gradle-verification exitCode=-1', value)
+        self.assertNotIn('PRIVATE', value)
+
+    def test_internal_check_only_reports_last_completed_not_failure_phase(self):
+        data = self.sequence(4) + b'{"status":"INCOMPLETE_OR_FAILED","report":"PRIVATE_PATH"}\n'
+        self.assertEqual('::error::gate=l3-software reason=INTERNAL_CHECK_FAILED lastCompleted=gradle-verification', mod.software_annotation(data))
+
+    def test_truncated_prefix_with_no_terminal_is_unavailable(self):
+        for data in [self.sequence(2), self.sequence(4, 3)]:
+            self.assertEqual('::error::gate=l3-software diag=DIAG_UNAVAILABLE', mod.software_annotation(data))
+
+    def test_plain_lines_are_ignored_never_exposed(self):
+        result = mod.software_annotation(b'PRIVATE_SECRET ::error::raw\n' + self.sequence(1, 0) + self.terminal())
+        self.assertNotIn('PRIVATE', result); self.assertIn('COMMAND_FAILED', result)
+
+    def test_missing_records_unavailable(self):
+        self.assertEqual('::error::gate=l3-software diag=DIAG_UNAVAILABLE', mod.software_annotation(b'ordinary PRIVATE text\n'))
+
+    def test_duplicate_phase_or_second_sequence_rejected(self):
+        for data in [self.record()*2, self.sequence(19)+self.record()]:
+            self.assertIn('DIAG_INVALID', mod.software_annotation(data))
+
+    def test_out_of_order_or_unknown_phase_rejected(self):
+        for phase in ['node-version', 'UNKNOWN', 'java-version\n::error::PRIVATE', ['java-version']]:
+            self.assertIn('DIAG_INVALID', mod.software_annotation(self.record(phase)))
+
+    def test_exit_bool_string_or_out_of_range_rejected(self):
+        for value in [True, '1', 1.0, 256, -256, None]:
+            self.assertIn('DIAG_INVALID', mod.software_annotation(self.record(code=value)))
+
+    def test_nonzero_cannot_be_followed_by_another_command(self):
+        self.assertIn('DIAG_INVALID', mod.software_annotation(self.record(code=1)+self.record('node-version')))
+
+    def test_bad_keys_duplicate_keys_or_truncated_json_rejected(self):
+        for data in [self.record(extra='PRIVATE'), b'{"phase":"java-version","phase":"java-version","exitCode":1,"log":"x"}\n', b'{', b'{"phase":"java-version"}\n']:
+            self.assertIn('DIAG_INVALID', mod.software_annotation(data))
+
+    def test_terminal_wrong_shape_success_or_repeated_rejected(self):
+        for data in [b'{"status":"PASS_SOFTWARE","report":"PRIVATE"}\n', b'{"status":"OTHER","report":"PRIVATE"}\n',
+                     b'{"status":"INCOMPLETE_OR_FAILED","report":"PRIVATE"}\n'*2,
+                     b'{"status":"INCOMPLETE_OR_FAILED","report":"PRIVATE"}\n'+self.record('node-version')]:
+            self.assertIn('DIAG_INVALID', mod.software_annotation(self.record()+data))
+
+    def test_oversized_or_control_json_is_fixed_invalid(self):
+        for data in [b'{'+b'x'*mod.MAX_LINE, b'{\t"phase":"java-version","exitCode":1,"log":"PRIVATE"}']:
+            self.assertEqual('::error::gate=l3-software diag=DIAG_INVALID', mod.software_annotation(data))
+
+    def test_fixed_software_path_nofollow_and_bounds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); target=root/mod.SOFTWARE_LOG;target.parent.mkdir(parents=True)
+            outside=root/'outside';outside.write_bytes(self.record(code=1));target.symlink_to(outside)
+            self.assertIn('DIAG_UNAVAILABLE', mod.software_annotations(root)[0])
+            target.unlink();target.write_bytes(b'x'*(mod.MAX_LOG+1))
+            self.assertIn('DIAG_UNAVAILABLE', mod.software_annotations(root)[0])
+
+    def test_workflow_summary_failure_only_and_original_software_invocation(self):
+        text=(ROOT/'.github/workflows/rebirth-validation.yml').read_text()
+        block=text.split('      - name: L3 safe software failure summary',1)[1].split('      - name: Upload test evidence',1)[0]
+        self.assertIn("if: failure() && steps.l3_software.outcome == 'failure'",block)
+        self.assertIn('run: python3 -B tools/ci-safe-test-diagnostics.py --software',block)
+        self.assertIn('python3 tools/verify-stability.py --stage software --java-home "$JAVA_HOME" --sdk "$ANDROID_HOME" --test-forks 1',text)
+        self.assertNotIn('continue-on-error',text)
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)
