@@ -29,7 +29,8 @@ SAFE_REASONS = {value: value for value in (
     'REBIRTH_DESCRIPTOR_SIZE', 'REBIRTH_DESCRIPTOR_SOURCE', 'REBIRTH_RUNTIME_IDENTITY',
     'REBIRTH_UNSIGNED_VERIFIER_UNEXPECTED_RESULT', 'REBIRTH_OUTPUT_IDENTITY',
     'REBIRTH_UNSIGNED_OUTPUT_PATH', 'REBIRTH_APKSIGNER_UNAVAILABLE',
-    'REBIRTH_TRACKED_SOURCE_CHANGED', 'REBIRTH_DELIVERY_EXISTS', 'REBIRTH_DELIVERY_DIGEST')}
+    'REBIRTH_TRACKED_SOURCE_CHANGED', 'REBIRTH_DELIVERY_EXISTS', 'REBIRTH_DELIVERY_DIGEST',
+    'REBIRTH_NOTICE_INVALID')}
 SAFE_REASONS.update({
     'REBIRTH_PLATFORM_IDENTITY:sdkVersion': 'REBIRTH_PLATFORM_SDK',
     'REBIRTH_PLATFORM_IDENTITY:targetSdkVersion': 'REBIRTH_PLATFORM_TARGET_SDK',
@@ -81,18 +82,26 @@ def file_digest(path):
         return stream_digest(stream)
 
 
-def sdk_observation(badging, key):
-    expected = {'sdkVersion': '30', 'targetSdkVersion': '37'}[key]
-    # 独立按精确字段起始计数，不复用拒绝用的整行predicate；只接受ASCII缩进。
+def sdk_rows(badging, key):
+    aliases = {'sdkVersion': ('sdkVersion', 'minSdkVersion'),
+               'targetSdkVersion': ('targetSdkVersion',)}[key]
     rows = []
     for row in badging.splitlines():
         stripped = row.lstrip(' \t')
-        if stripped.startswith(key + ':'):
-            rows.append(stripped[len(key) + 1:])
+        for alias in aliases:
+            if stripped.startswith(alias + ':'):
+                rows.append((alias, row, stripped[len(alias) + 1:]))
+    return rows
+
+
+def sdk_observation(badging, key):
+    expected = {'sdkVersion': '30', 'targetSdkVersion': '37'}[key]
+    # min SDK两别名合并计数，不能让合法行掩盖额外畸形行。
+    rows = sdk_rows(badging, key)
     count = 'ZERO' if not rows else 'ONE' if len(rows) == 1 else 'MANY'
     shape, value = 'OTHER', 'UNPARSEABLE'
     if len(rows) == 1:
-        payload = rows[0].strip(' \t\r')
+        payload = rows[0][2].strip(' \t\r')
         quoted = re.fullmatch(r"'([0-9]+)'", payload)
         integer = re.fullmatch(r'[0-9]+', payload)
         trailing = re.fullmatch(r"'([0-9]+)'[ \t]+[^ \t].*", payload)
@@ -106,7 +115,7 @@ def sdk_observation(badging, key):
             decimal = None
         if decimal is not None:
             value = 'EXPECTED' if decimal == expected else 'OTHER_DECIMAL'
-    return dict(field=key, count=count, shape=shape, value=value)
+    return dict(field=rows[0][0] if len(rows) == 1 else key, count=count, shape=shape, value=value)
 
 
 def print_sdk_observation(badging, key):
@@ -128,7 +137,8 @@ def verify_badging(badging):
     if not labels or any(label != 'DSHA 新生' for label in labels):
         raise ValueError('REBIRTH_LOCALIZED_LABEL')
     for key, expected in (('sdkVersion', '30'), ('targetSdkVersion', '37')):
-        if re.findall(r"^" + key + r":'([^']*)'\s*$", badging, re.M) != [expected]:
+        rows = sdk_rows(badging, key)
+        if len(rows) != 1 or re.fullmatch(re.escape(rows[0][0]) + ":'" + expected + r"'[ \t]*", rows[0][1]) is None:
             print_sdk_observation(badging, key)
             raise ValueError('REBIRTH_PLATFORM_IDENTITY:' + key)
     native = re.findall(r'^native-code:(.*)$', badging, re.M)
@@ -223,6 +233,21 @@ def run(argv):
     return subprocess.check_output([str(value) for value in argv], cwd=ROOT, text=True)
 
 
+def success_notice(receipt):
+    if (receipt.get('signed') is not False or receipt.get('signature') is not None
+            or 'signature' not in receipt or receipt.get('installable') is not False
+            or receipt.get('signatureStatus') != 'NOT_SIGNED'
+            or type(receipt.get('bytes')) is not int or receipt['bytes'] <= 0):
+        raise ValueError('REBIRTH_NOTICE_INVALID')
+    for name, length in (('sourceCommit', 40), ('sha256', 64), ('actualRuntimeId', 64)):
+        value = receipt.get(name)
+        if type(value) is not str or re.fullmatch('[a-f0-9]{' + str(length) + '}', value) is None:
+            raise ValueError('REBIRTH_NOTICE_INVALID')
+    print('::notice::status=VERIFIED_UNSIGNED_NOT_INSTALLABLE sourceCommit=' + receipt['sourceCommit']
+          + ' bytes=' + str(receipt['bytes']) + ' sha256=' + receipt['sha256']
+          + ' actualRuntimeId=' + receipt['actualRuntimeId'], flush=True)
+
+
 def main():
     phase('INPUT_IDENTITY')
     parser = argparse.ArgumentParser(description=__doc__)
@@ -292,6 +317,7 @@ def main():
     receipt.update(actual)
     (args.output / 'candidate-receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(receipt, ensure_ascii=False))
+    success_notice(receipt)
 
 
 if __name__ == '__main__':

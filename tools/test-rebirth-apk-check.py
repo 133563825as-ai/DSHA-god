@@ -173,6 +173,55 @@ class ApkCheckTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             CHECK.sdk_observation('irrelevant', 'sdkVersion\n::error::forged')
 
+    def test_sdk_aliases_are_unique_canonical_quoted_values(self):
+        for key in ('sdkVersion', 'minSdkVersion'):
+            valid = self.badging.replace("sdkVersion:'30'", key + ":'30'")
+            self.assertEqual('candidate-Rebirth-Sprout.1', CHECK.verify_badging(valid))
+            self.assertEqual('candidate-Rebirth-Sprout.1', CHECK.verify_badging(valid.replace('\n', '\r\n')))
+            for payload in ("'030'", "'+30'", "'29'", '30', "'30' garbage", "'30'x", "'30'\tsecret"):
+                with self.subTest(key=key, payload=payload):
+                    with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+                        CHECK.verify_badging(valid.replace(key + ":'30'", key + ':' + payload))
+        for extra in ("sdkVersion:'30'", "minSdkVersion:'30'", "minSdkVersion:'31'",
+                      'minSdkVersion:bad', 'sdkVersion:bad', " \tminSdkVersion:'30'"):
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+                CHECK.verify_badging(self.badging + '\n' + extra)
+            self.assertEqual('MANY', CHECK.sdk_observation(self.badging + '\n' + extra, 'sdkVersion')['count'])
+        observed = CHECK.sdk_observation("minSdkVersion:'30'", 'sdkVersion')
+        self.assertEqual(dict(field='minSdkVersion', count='ONE', shape='LEGACY_QUOTED_DECIMAL', value='EXPECTED'), observed)
+        for payload in ("'037'", "'+37'", "'36'", "'37' garbage"):
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+                CHECK.verify_badging(self.badging.replace("targetSdkVersion:'37'", 'targetSdkVersion:' + payload))
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+            CHECK.verify_badging(self.badging + "\ntargetSdkVersion:malformed")
+
+    def test_success_notice_has_only_validated_fixed_fields(self):
+        receipt = dict(sourceCommit='a' * 40, bytes=123, sha256='b' * 64, actualRuntimeId='c' * 64,
+                       signed=False, signature=None, signatureStatus='NOT_SIGNED', installable=False,
+                       path='/private/not-for-notice', appName='not-for-notice')
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            CHECK.success_notice(receipt)
+        self.assertEqual('::notice::status=VERIFIED_UNSIGNED_NOT_INSTALLABLE sourceCommit=' + 'a' * 40
+                         + ' bytes=123 sha256=' + 'b' * 64 + ' actualRuntimeId=' + 'c' * 64 + '\n', output.getvalue())
+        for key, values in {'signed': (True, 0, None), 'signature': ('signed', False),
+                            'signatureStatus': ('SIGNED', None), 'installable': (True, 0),
+                            'bytes': (0, -1, True, '123'), 'sourceCommit': ('A' * 40, 'a' * 39, 'secret\n::notice::'),
+                            'sha256': ('b' * 63, 'B' * 64), 'actualRuntimeId': ('c' * 65, None)}.items():
+            for value in values:
+                changed = dict(receipt, **{key: value})
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output), self.assertRaisesRegex(ValueError, 'REBIRTH_NOTICE_INVALID'):
+                    CHECK.success_notice(changed)
+                self.assertEqual('', output.getvalue())
+        for key in ('signature', 'signed', 'bytes', 'sourceCommit', 'sha256', 'actualRuntimeId', 'installable'):
+            changed = dict(receipt)
+            del changed[key]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(ValueError):
+                CHECK.success_notice(changed)
+            self.assertEqual('', output.getvalue())
+
     def test_manifest_exact_authorities_and_entry(self):
         CHECK.verify_manifest(self.manifest)
         for changed in (self.manifest.replace('.updates', '.updates.extra'),
