@@ -23,6 +23,7 @@ _PHASE = 'INPUT_IDENTITY'
 SAFE_REASONS = {value: value for value in (
     'REBIRTH_BADGING_IDENTITY', 'REBIRTH_LABEL_OR_DEBUGGABLE', 'REBIRTH_LOCALIZED_LABEL',
     'REBIRTH_ABI_IDENTITY', 'REBIRTH_MANIFEST_PACKAGE', 'REBIRTH_MANIFEST_AUTHORITIES',
+    'REBIRTH_MANIFEST_STARTUP_PROVIDER',
     'REBIRTH_MANIFEST_ENTRY', 'REBIRTH_MANIFEST_LEGACY_IDENTITY', 'REBIRTH_ZIP_EOCD',
     'REBIRTH_ZIP_CENTRAL_DIRECTORY', 'REBIRTH_UNEXPECTED_APK_SIGNING_BLOCK',
     'REBIRTH_DUPLICATE_ZIP_MEMBER', 'REBIRTH_UNEXPECTED_V1_SIGNATURE', 'REBIRTH_ZIP_ABI_IDENTITY',
@@ -147,13 +148,57 @@ def verify_badging(badging):
     return package.group(3)
 
 
+def startup_provider_valid(manifest):
+    # aapt2 xmltree的E节点缩进界定provider；只读它的直接A属性，不借子节点/兄弟属性。
+    blocks = []
+    current = None
+    child_started = False
+    for row in manifest.splitlines():
+        element = re.match(r'^( *)E: ([^ (]+)(?:[ (]|$)', row)
+        if element:
+            indent, name = len(element.group(1)), element.group(2)
+            if current is not None:
+                if indent <= current[0]:
+                    current = None
+                else:
+                    if name == 'provider':
+                        return False
+                    child_started = True
+            if name == 'provider':
+                current = (indent, [])
+                blocks.append(current[1])
+                child_started = False
+            continue
+        if current is None or child_started:
+            continue
+        attribute = re.match(r'^( *)A: (.*)$', row)
+        if attribute and len(attribute.group(1)) == current[0] + 2:
+            current[1].append(attribute.group(2))
+    selected = []
+    for block in blocks:
+        text = '\n'.join(block)
+        authority = re.findall(r'android:authorities(?:\([^)]*\))?="([^"]*)"', text)
+        if PACKAGE + '.androidx-startup' in authority:
+            selected.append(block)
+    if len(selected) != 1:
+        return False
+    block = selected[0]
+    text = '\n'.join(block)
+    names = re.findall(r'android:name(?:\([^)]*\))?="([^"]*)"', text)
+    exported = [row for row in block if re.match(r'android:exported(?:\([^)]*\))?=', row)]
+    return (names == ['androidx.startup.InitializationProvider'] and len(exported) == 1
+            and re.fullmatch(r'android:exported(?:\([^)]*\))?=\(type 0x12\)0x0', exported[0]) is not None)
+
+
 def verify_manifest(manifest):
     if re.findall(r'\bA: package="([^"]*)"', manifest) != [PACKAGE]:
         raise ValueError('REBIRTH_MANIFEST_PACKAGE')
     authorities = re.findall(r'android:authorities(?:\([^)]*\))?="([^"]*)"', manifest)
-    expected = {PACKAGE + '.' + suffix for suffix in ('updates', 'shizuku', 'documents')}
-    if len(authorities) != 3 or set(authorities) != expected:
+    expected = {PACKAGE + '.' + suffix for suffix in ('updates', 'shizuku', 'documents', 'androidx-startup')}
+    if len(authorities) != 4 or set(authorities) != expected:
         raise ValueError('REBIRTH_MANIFEST_AUTHORITIES')
+    if not startup_provider_valid(manifest):
+        raise ValueError('REBIRTH_MANIFEST_STARTUP_PROVIDER')
     affinities = re.findall(r'android:taskAffinity(?:\([^)]*\))?="([^"]*)"', manifest)
     if affinities != [PACKAGE + '.entry']:
         raise ValueError('REBIRTH_MANIFEST_ENTRY')
@@ -163,6 +208,8 @@ def verify_manifest(manifest):
     for value in re.findall(r'="([^"]*)"', manifest):
         if 'io.github.sunsetrne.dsha' in value:
             raise ValueError('REBIRTH_MANIFEST_LEGACY_IDENTITY')
+        if value in candidate_values:
+            continue
         identities = re.findall(r'dsh\.android\.client[\w.]*', value)
         if any(identity not in candidate_values for identity in identities):
             raise ValueError('REBIRTH_MANIFEST_LEGACY_IDENTITY')

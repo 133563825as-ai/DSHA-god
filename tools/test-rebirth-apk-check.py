@@ -37,11 +37,16 @@ class ApkCheckTest(unittest.TestCase):
             "package: name='dsh.android.client.rebirth' versionCode='359' versionName='candidate-Rebirth-Sprout.1'",
             "sdkVersion:'30'", "targetSdkVersion:'37'", "application-label:'DSHA 新生'",
             "application-label-zh:'DSHA 新生'", "native-code: 'arm64-v8a'"])
-        self.manifest = '\n'.join(
-            'A: android:authorities(0x01010018)="' + CHECK.PACKAGE + '.' + suffix + '" (Raw: "ignored")'
-            for suffix in ('updates', 'shizuku', 'documents'))
-        self.manifest += '\nA: android:taskAffinity(0x01010012)="' + CHECK.PACKAGE + '.entry"'
-        self.manifest += '\nA: package="' + CHECK.PACKAGE + '"'
+        self.manifest = 'E: manifest (line=1)\n  A: package="' + CHECK.PACKAGE + '"\n  E: application (line=2)'
+        for suffix, name in (('updates', 'androidx.core.content.FileProvider'),
+                             ('shizuku', 'rikka.shizuku.ShizukuProvider'),
+                             ('documents', 'com.deepseekharness.app.DshaDocumentsProvider'),
+                             ('androidx-startup', 'androidx.startup.InitializationProvider')):
+            self.manifest += ('\n    E: provider (line=3)\n'
+                              + '      A: android:name(0x01010003)="' + name + '"\n'
+                              + '      A: android:authorities(0x01010018)="' + CHECK.PACKAGE + '.' + suffix + '"\n'
+                              + '      A: android:exported(0x01010010)=(type 0x12)0x0')
+        self.manifest += '\n    E: activity (line=4)\n      A: android:taskAffinity(0x01010012)="' + CHECK.PACKAGE + '.entry"'
 
     def write_descriptor(self):
         self.descriptor_path.write_text(json.dumps(self.descriptor))
@@ -231,6 +236,40 @@ class ApkCheckTest(unittest.TestCase):
                         self.manifest.replace('.documents', '.test.documents')):
             with self.assertRaises(ValueError):
                 CHECK.verify_manifest(changed)
+
+    def test_startup_provider_class_and_exported_are_bound_to_parent(self):
+        CHECK.verify_manifest(self.manifest)
+        start = self.manifest.index('    E: provider', self.manifest.index('.documents'))
+        end = self.manifest.index('    E: activity', start)
+        startup = self.manifest[start:end]
+        variants = [
+            startup.replace('androidx.startup.InitializationProvider', 'other.Provider'),
+            startup.replace('(type 0x12)0x0', '(type 0x12)0xffffffff'),
+            startup.replace('(type 0x12)0x0', '(type 0x10)0x0'),
+            startup.replace('      A: android:exported(0x01010010)=(type 0x12)0x0', ''),
+            startup.replace('      A: android:name(0x01010003)="androidx.startup.InitializationProvider"', ''),
+            startup + '      A: android:exported(0x01010010)=(type 0x12)0x0\n',
+            startup + '      A: android:name(0x01010003)="androidx.startup.InitializationProvider"\n',
+        ]
+        # 子meta-data与兄弟provider中的正确属性都不能补父provider缺项。
+        missing_name = variants[4]
+        variants.append(missing_name + '      E: meta-data (line=5)\n        A: android:name(0x01010003)="androidx.startup.InitializationProvider"\n')
+        variants.append(variants[3] + '      E: meta-data (line=5)\n        A: android:exported(0x01010010)=(type 0x12)0x0\n')
+        variants.append(missing_name + '    E: provider (line=5)\n      A: android:name(0x01010003)="androidx.startup.InitializationProvider"\n')
+        variants.append(startup.replace('    E: provider', '      E: provider'))
+        for changed in variants:
+            with self.assertRaisesRegex(ValueError, 'REBIRTH_MANIFEST_STARTUP_PROVIDER'):
+                CHECK.verify_manifest(self.manifest[:start] + changed + self.manifest[end:])
+
+    def test_four_authorities_reject_duplicate_unknown_and_truncated_startup(self):
+        for changed in (self.manifest.replace('.androidx-startup', '.androidx'),
+                        self.manifest.replace('.androidx-startup', '.androidx-startup.extra'),
+                        self.manifest + '\nA: android:authorities="' + CHECK.PACKAGE + '.androidx-startup"',
+                        self.manifest + '\nA: android:authorities="unknown.authority"',
+                        self.manifest.replace('.androidx-startup', '.androidx-startup;old.authority')):
+            with self.assertRaises(ValueError):
+                CHECK.verify_manifest(changed)
+        CHECK.verify_manifest(self.manifest)
 
     def test_manifest_rejects_legacy_and_candidate_test_identity_values(self):
         for value in ('io.github.sunsetrne.dsha', 'io.github.sunsetrne.dsha.test.provider',
