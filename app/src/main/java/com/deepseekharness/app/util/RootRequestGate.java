@@ -6,8 +6,8 @@ import java.util.function.BooleanSupplier;
 
 /**
  * 普通 Root 请求交付前的进程内代次许可；不替代 Root 管理器授权。
- * 设置变更与 claim 串行，输出流 I/O 不持锁。claim 仅表示许可已消费，不证明载荷已发送。
- * 已知限制：claim 后、首次写入前的撤销仍不能取消写入；Root-01 完整验收因此受阻。
+ * 请求可在锁外预写；helper 只暂存，直到收到锁内的一字节确认及 EOF 才执行。
+ * 撤销与最终确认串行，预写阻塞不妨碍撤销。
  */
 public final class RootRequestGate {
   private long generation;
@@ -22,6 +22,11 @@ public final class RootRequestGate {
       this.owner = owner;
       this.generation = owner.generation;
     }
+  }
+
+  @FunctionalInterface
+  public interface AwaitStaged {
+    void await() throws IOException, InterruptedException;
   }
 
   public synchronized Permit capture(BooleanSupplier enabled) {
@@ -54,17 +59,39 @@ public final class RootRequestGate {
     }
   }
 
-  private synchronized boolean claim(Permit permit, BooleanSupplier enabled) {
-    if (!current(permit, enabled)) return false;
-    permit.consumed = true;
-    return true;
+  public boolean write(OutputStream input, byte[] payload, Permit permit, BooleanSupplier enabled)
+      throws IOException, InterruptedException {
+    return write(input, payload, permit, enabled, () -> {});
   }
 
-  public boolean write(OutputStream input, byte[] payload, Permit permit, BooleanSupplier enabled)
-      throws IOException {
-    // claim 后写入失败可能只发送了一部分：许可已消费，调用方必须报告结果未知，不能自动重放。
-    if (!claim(permit, enabled)) return false;
-    input.write(payload);
-    return true;
+  public boolean write(
+      OutputStream input,
+      byte[] payload,
+      Permit permit,
+      BooleanSupplier enabled,
+      AwaitStaged staged)
+      throws IOException, InterruptedException {
+    boolean closed = false;
+    try {
+      synchronized (this) {
+        if (!current(permit, enabled)) return false;
+        permit.consumed = true;
+      }
+      RootRequestWire.stage(input, payload);
+      staged.await();
+      synchronized (this) {
+        if (settingsUnavailable
+            || permit.owner != this
+            || permit.generation != generation
+            || !allowed(enabled)) return false;
+        // 确认字节或 EOF 失败可能已经派发：许可已消费，调用方报告 UNKNOWN。
+        RootRequestWire.commit(input);
+        input.close();
+        closed = true;
+        return true;
+      }
+    } finally {
+      if (!closed) input.close();
+    }
   }
 }

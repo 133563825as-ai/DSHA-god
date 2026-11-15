@@ -63,20 +63,33 @@ public final class DeviceChannelsFragment extends Fragment {
 
     CompoundButton root = view.findViewById(R.id.config_root_shell);
     root.setContentDescription(getString(R.string.ui_m0062));
-    view.findViewById(R.id.device_root_title).setOnClickListener(v -> root.toggle());
+    view.findViewById(R.id.device_root_title)
+        .setOnClickListener(
+            v -> {
+              if (root.isEnabled()) root.toggle();
+            });
     root.setChecked(new ConfigStore(ctx).isRootShellAllowed());
     root.setOnCheckedChangeListener(
         (button, enabled) -> {
           if (updating) return;
-          new ConfigStore(ctx).setRootShellAllowed(enabled);
+          button.setEnabled(false);
           if (!enabled)
             com.deepseekharness.app.vscreen.VirtualScreenManager.from(ctx)
                 .revokeFor("ROOT_DISABLED");
-          else
-            // 放宽到 root 属于高风险档位：展开通道说明，把后果与拦截范围直接显示出来。
-            expandChannelsDisclosure(view);
-          syncSettings();
+          new ConfigStore(ctx)
+              .setRootShellAllowedAsync(
+                  enabled,
+                  persisted -> {
+                    if (!isAdded()) return;
+                    syncRootToggle();
+                    root.setEnabled(true);
+                    if (!persisted) toast(UiText.text("Root 设置保存失败，权限保持关闭。请重试。"));
+                    else if (enabled) expandChannelsDisclosure(view);
+                    syncSettings();
+                    refreshChannelLabels();
+                  });
           refreshChannelLabels();
+          toast(UiText.text("Root 设置保存中"));
         });
     addRootModeControls(ctx, view);
     refreshRootPolicy();
@@ -701,19 +714,42 @@ public final class DeviceChannelsFragment extends Fragment {
     return GrantsUi.dp(requireContext(), value);
   }
 
+  private void syncRootToggle() {
+    View page = getView();
+    if (page == null || !isAdded()) return;
+    CompoundButton root = page.findViewById(R.id.config_root_shell);
+    updating = true;
+    root.setChecked(new ConfigStore(requireContext()).isRootShellAllowed());
+    updating = false;
+  }
+
   private void saveRootPolicy(DeviceShellPolicy.Mode mode) {
     if (!isAdded()) return;
     final Context ctx = requireContext();
-    new ConfigStore(ctx).setRootPolicyMode(mode);
-    refreshRootPolicy();
+    CompoundButton root = requireView().findViewById(R.id.config_root_shell);
+    root.setEnabled(false);
+    new ConfigStore(ctx)
+        .setRootPolicyModeAsync(
+            mode,
+            saved -> {
+              if (!isAdded()) return;
+              syncRootToggle();
+              root.setEnabled(true);
+              refreshRootPolicy();
+              refreshChannelLabels();
+              if (saved) toast(UiText.format("已保存拦截档位：%s", RootShell.policyLabel(ctx)));
+              else toast(UiText.text("Root 档位保存失败，权限保持关闭。请重试。"));
+            });
+    syncRootToggle();
     refreshChannelLabels();
-    toast(UiText.format("已保存拦截档位：%s", RootShell.policyLabel(ctx)));
+    toast(UiText.text("Root 档位保存中"));
   }
 
   @Override
   public void onResume() {
     super.onResume();
     ShizukuShell.ensureBound(requireContext());
+    syncRootToggle();
     refreshChannelLabels();
     refreshExternalDeviceStatus();
     View page = getView();

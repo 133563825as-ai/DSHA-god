@@ -24,9 +24,13 @@ public final class RootRequestGateTest {
     var permit = gate.capture(enabled::get);
     var output = new ByteArrayOutputStream();
     assertTrue(gate.write(output, PAYLOAD, permit, enabled::get));
-    assertArrayEquals(PAYLOAD, output.toByteArray());
+    assertArrayEquals(
+        PAYLOAD,
+        RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(output.toByteArray())));
     assertFalse(gate.write(output, PAYLOAD, permit, enabled::get));
-    assertArrayEquals(PAYLOAD, output.toByteArray());
+    assertArrayEquals(
+        PAYLOAD,
+        RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(output.toByteArray())));
   }
 
   @Test
@@ -67,7 +71,9 @@ public final class RootRequestGateTest {
       assertFalse("旧代次不能借用重新开启后的权限", sent.get(5, TimeUnit.SECONDS));
       assertEquals(0, output.size());
       assertTrue(gate.write(output, PAYLOAD, gate.capture(enabled::get), enabled::get));
-      assertArrayEquals(PAYLOAD, output.toByteArray());
+      assertArrayEquals(
+          PAYLOAD,
+          RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(output.toByteArray())));
     } finally {
       releaseHelper.countDown();
       worker.shutdownNow();
@@ -148,7 +154,9 @@ public final class RootRequestGateTest {
       int sent = 0;
       for (var result : results) if (result.get(5, TimeUnit.SECONDS)) sent++;
       assertEquals(1, sent);
-      assertArrayEquals(PAYLOAD, output.toByteArray());
+      assertArrayEquals(
+          PAYLOAD,
+          RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(output.toByteArray())));
     } finally {
       start.countDown();
       workers.shutdownNow();
@@ -177,12 +185,13 @@ public final class RootRequestGateTest {
   }
 
   @Test
-  public void knownGapClaimedRequestCanWriteAfterRevocation() throws Exception {
+  public void revocationDuringStagingPreventsCommitAndHelperExecution() throws Exception {
     var permit = gate.capture(enabled::get);
     var writing = new CountDownLatch(1);
     var releaseWrite = new CountDownLatch(1);
-    var worker = Executors.newSingleThreadExecutor();
+    var worker = Executors.newFixedThreadPool(2);
     var output = new ByteArrayOutputStream();
+    var closed = new AtomicBoolean();
     try {
       var sent =
           worker.submit(
@@ -195,7 +204,8 @@ public final class RootRequestGateTest {
                         }
 
                         @Override
-                        public void write(byte[] bytes) throws IOException {
+                        public void write(byte[] bytes, int offset, int length) throws IOException {
+                          output.write(bytes, offset, length);
                           writing.countDown();
                           try {
                             if (!releaseWrite.await(5, TimeUnit.SECONDS))
@@ -204,20 +214,34 @@ public final class RootRequestGateTest {
                             Thread.currentThread().interrupt();
                             throw new IOException(error);
                           }
-                          output.write(bytes);
+                        }
+
+                        @Override
+                        public void close() {
+                          closed.set(true);
                         }
                       },
                       PAYLOAD,
                       permit,
                       enabled::get));
       assertTrue(writing.await(5, TimeUnit.SECONDS));
-      // 缺陷表征：撤销完成时仍为 0 字节，随后旧请求却继续写入。不能算 INV-03 通过。
-      assertEquals(0, output.size());
-      gate.update(() -> enabled.set(false));
-      assertFalse(gate.current(permit, enabled::get));
+      assertTrue("请求已预写，但还不能执行", output.size() > 0);
+      var revoked =
+          worker.submit(
+              () -> {
+                gate.update(() -> enabled.set(false));
+                return true;
+              });
+      assertTrue("撤销不应等待预写流", revoked.get(1, TimeUnit.SECONDS));
       releaseWrite.countDown();
-      assertTrue(sent.get(5, TimeUnit.SECONDS));
-      assertArrayEquals(PAYLOAD, output.toByteArray());
+      assertFalse("旧请求不能发送最终确认", sent.get(5, TimeUnit.SECONDS));
+      assertTrue(closed.get());
+      try {
+        RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(output.toByteArray()));
+        fail("没有最终确认的旧请求不能被 helper 接受");
+      } catch (java.io.EOFException expected) {
+        // 预写字节不是业务派发。
+      }
     } finally {
       releaseWrite.countDown();
       worker.shutdownNow();

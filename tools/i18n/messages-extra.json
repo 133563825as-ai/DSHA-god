@@ -16058,5 +16058,29 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java"
     ]
+  },
+  {
+    "id": "x2100205",
+    "zh": "Root 设置保存中",
+    "en": "Saving Root setting",
+    "files": ["app/src/main/java/com/deepseekharness/app/ui/DeviceChannelsFragment.java"]
+  },
+  {
+    "id": "x2100206",
+    "zh": "Root 设置保存失败，权限保持关闭。请重试。",
+    "en": "Could not save Root setting; access stays off. Please retry.",
+    "files": ["app/src/main/java/com/deepseekharness/app/ui/DeviceChannelsFragment.java"]
+  },
+  {
+    "id": "x2100207",
+    "zh": "Root 档位保存中",
+    "en": "Saving Root policy",
+    "files": ["app/src/main/java/com/deepseekharness/app/ui/DeviceChannelsFragment.java"]
+  },
+  {
+    "id": "x2100208",
+    "zh": "Root 档位保存失败，权限保持关闭。请重试。",
+    "en": "Could not save Root policy; access stays off. Please retry.",
+    "files": ["app/src/main/java/com/deepseekharness/app/ui/DeviceChannelsFragment.java"]
   }
 ]

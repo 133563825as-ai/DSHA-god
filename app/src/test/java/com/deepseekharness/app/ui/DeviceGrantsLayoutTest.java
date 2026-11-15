@@ -440,6 +440,25 @@ public final class DeviceGrantsLayoutTest {
     assertFalse(((RadioButton) root.getChildAt(1)).isChecked());
   }
 
+  @Test
+  public void rootSwitchReflectsFailedSaveDisarmEvenWithPersistedTrue() {
+    Context context = org.robolectric.RuntimeEnvironment.getApplication();
+    ConfigStore config = new ConfigStore(context);
+    config.setRootShellAllowed(true);
+    View page = startChannels(360);
+    MaterialSwitch root = page.findViewById(R.id.config_root_shell);
+    assertTrue(root.isChecked());
+    config.beginRootSettingsChange();
+    assertTrue(
+        context
+            .getSharedPreferences(Constants.PREFS, 0)
+            .getBoolean(Constants.KEY_ALLOW_ROOT_SHELL, false));
+    ((DeviceChannelsFragment)
+            host.get().getSupportFragmentManager().findFragmentById(R.id.fragment_container))
+        .onResume();
+    assertFalse("本进程已撤销时，界面不能继续显示开启", root.isChecked());
+  }
+
   /**
    * 十语种状态词：中文保留「关闭 / 關閉」，其余语种用「已关闭」译条（x1970619），
    * 不能复用「关闭按钮」词条，否则会得到 Close / Fermer / Закрыть 这类动词译法。

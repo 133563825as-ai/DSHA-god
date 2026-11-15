@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 /** 由 su 启动的短期进程；在真正的 root 身份下复用路径、应用清单与命令守卫。 */
 public final class RootShellMain {
   public static final String RESULT = "DSHA_ROOT_RESULT=";
+  public static final String STAGED = "DSHA_ROOT_STAGED=";
 
   private RootShellMain() {}
 
@@ -70,16 +71,15 @@ public final class RootShellMain {
     startWatchdog();
     try {
       if (android.os.Process.myUid() != 0) throw new SecurityException("su 未授予 root 身份");
-      java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
-      byte[] buffer = new byte[2048];
-      int count;
-      // 原始 root 命令的 JSON 请求比严格档单条命令更大；仍设硬上限，避免无限读入。
-      while ((count = System.in.read(buffer)) != -1) {
-        if (bytes.size() + count > 65_536) throw new IllegalArgumentException("设备命令过长");
-        bytes.write(buffer, 0, count);
-      }
+      byte[] bytes = com.deepseekharness.app.util.RootRequestWire.readStaged(System.in);
       org.json.JSONObject request =
-          new org.json.JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+          new org.json.JSONObject(new String(bytes, StandardCharsets.UTF_8));
+      String handoverNonce = request.getString("handoverNonce");
+      if (!handoverNonce.matches("[a-f0-9]{32}"))
+        throw new SecurityException("ROOT_HANDOVER_NONCE_INVALID");
+      System.out.println(STAGED + handoverNonce);
+      System.out.flush();
+      com.deepseekharness.app.util.RootRequestWire.requireCommit(System.in);
       // 旧版 App 不传这些字段：沿用兜底期限，不按 owner 判定。
       deadlineMs =
           com.deepseekharness.app.util.RootHelperWatchdog.deadlineMs(

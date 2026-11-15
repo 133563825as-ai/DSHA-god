@@ -406,13 +406,19 @@ public final class RootShell {
     boolean timedOut = false;
     try {
       bindOwner(request, timeoutMs);
+      String handoverNonce = java.util.UUID.randomUUID().toString().replace("-", "");
+      request.put("handoverNonce", handoverNonce);
       byte[] payload = request.toString().getBytes(StandardCharsets.UTF_8);
       process = startHelper(ctx, su, ticket);
-      try (java.io.OutputStream input = process.getOutputStream()) {
-        // 外接业务授权与 App Root 代次分别检查；Root 关开不能复活旧外接请求。
-        if (!dispatchCurrent.getAsBoolean() || !config.writeRootRequest(input, payload, permit))
-          return externalAuthorityChanged();
-      }
+      Process helper = process;
+      // writeRootRequest 拥有并关闭 stdin；EOF 也属于与撤销串行的交付边界。
+      if (!dispatchCurrent.getAsBoolean()
+          || !config.writeRootRequest(
+              helper.getOutputStream(),
+              payload,
+              permit,
+              () -> awaitStaged(helper, handoverNonce, timeoutMs),
+              dispatchCurrent)) return externalAuthorityChanged();
       BoundedProcessRunner.Result result =
           BoundedProcessRunner.collect(process, timeoutMs, 768 * 1024, RootShell::destroyQuietly);
       timedOut = result.timedOut;
@@ -444,6 +450,33 @@ public final class RootShell {
     if (!dispatchCurrent.getAsBoolean()) return false;
     input.write(payload);
     return true;
+  }
+
+  private static void awaitStaged(Process helper, String nonce, long timeoutMs)
+      throws java.io.IOException, InterruptedException {
+    String expected = RootShellMain.STAGED + nonce;
+    long budgetMs = Math.min(timeoutMs, ROOT_WAIT_MS);
+    long deadline =
+        System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(budgetMs);
+    java.io.InputStream output = helper.getInputStream();
+    var line = new java.io.ByteArrayOutputStream();
+    int total = 0;
+    while (System.nanoTime() < deadline) {
+      if (output.available() == 0) {
+        if (!helper.isAlive()) throw new java.io.IOException("ROOT_HELPER_EXITED_BEFORE_STAGED");
+        Thread.sleep(20);
+        continue;
+      }
+      int next = output.read();
+      if (next < 0) throw new java.io.IOException("ROOT_HELPER_CLOSED_BEFORE_STAGED");
+      if (++total > 8192) throw new java.io.IOException("ROOT_HELPER_STAGE_OUTPUT_LIMIT");
+      if (next == '\n') {
+        String candidate = line.toString(StandardCharsets.US_ASCII).trim();
+        if (candidate.equals(expected)) return;
+        line.reset();
+      } else line.write(next);
+    }
+    throw new java.io.IOException("ROOT_HELPER_STAGE_TIMEOUT");
   }
 
   /**
@@ -592,12 +625,15 @@ public final class RootShell {
               .put("selfUid", ctx.getApplicationInfo().uid);
       if (!operation.isEmpty()) request.put("operation", operation);
       bindOwner(request, ROOT_WAIT_MS);
+      String handoverNonce = java.util.UUID.randomUUID().toString().replace("-", "");
+      request.put("handoverNonce", handoverNonce);
       process = startHelper(ctx, su, ticket);
-      try (java.io.OutputStream input = process.getOutputStream()) {
-        if (!config.writeRootRequest(
-            input, request.toString().getBytes(StandardCharsets.UTF_8), permit))
-          return rootAuthorityChanged();
-      }
+      Process helper = process;
+      if (!config.writeRootRequest(
+          helper.getOutputStream(),
+          request.toString().getBytes(StandardCharsets.UTF_8),
+          permit,
+          () -> awaitStaged(helper, handoverNonce, ROOT_WAIT_MS))) return rootAuthorityChanged();
       BoundedProcessRunner.Result result =
           BoundedProcessRunner.collect(process, ROOT_WAIT_MS, 400_000, RootShell::destroyQuietly);
       timedOut = result.timedOut;

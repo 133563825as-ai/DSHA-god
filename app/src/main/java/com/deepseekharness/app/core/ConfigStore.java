@@ -18,6 +18,15 @@ public class ConfigStore {
   private static final Object COLD_SELECTION_LOCK = new Object();
   private static final com.deepseekharness.app.util.RootRequestGate ROOT_REQUESTS =
       new com.deepseekharness.app.util.RootRequestGate();
+  private static final com.deepseekharness.app.util.RootSettingsAuthority ROOT_SETTINGS =
+      new com.deepseekharness.app.util.RootSettingsAuthority();
+  private static final java.util.concurrent.ExecutorService ROOT_SETTINGS_IO =
+      java.util.concurrent.Executors.newSingleThreadExecutor(
+          task -> {
+            Thread worker = new Thread(task, "root-settings-persist");
+            worker.setDaemon(true);
+            return worker;
+          });
 
   public ConfigStore(Context ctx) {
     this.prefs = ctx.getSharedPreferences(Constants.PREFS, Context.MODE_PRIVATE);
@@ -280,16 +289,50 @@ public class ConfigStore {
   }
 
   public boolean isRootShellAllowed() {
-    try {
-      // 授权不是可迁移的普通偏好；字符串 true 或数字 1 均不能授予 Root。
-      return Boolean.TRUE.equals(prefs.getAll().get(Constants.KEY_ALLOW_ROOT_SHELL));
-    } catch (RuntimeException unavailable) {
-      return false;
-    }
+    // 磁盘中的旧 true 不能在新进程自动恢复权限，用户必须在本进程明确开启。
+    return ROOT_SETTINGS.allowed(
+        () -> Boolean.TRUE.equals(prefs.getAll().get(Constants.KEY_ALLOW_ROOT_SHELL)));
   }
 
   public void setRootShellAllowed(boolean v) {
-    ROOT_REQUESTS.update(() -> prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, v).apply());
+    persistRootSetting(beginRootSettingsChange(), v);
+  }
+
+  private void persistRootSetting(
+      com.deepseekharness.app.util.RootSettingsAuthority.Change change, boolean enabled) {
+    ROOT_SETTINGS.saveRoot(
+        change,
+        enabled,
+        () -> prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, enabled).commit());
+  }
+
+  /** UI callers disarm immediately; durable save and any gate handover wait stay off main thread. */
+  public void setRootShellAllowedAsync(
+      boolean enabled, java.util.function.Consumer<Boolean> completion) {
+    var change = beginRootSettingsChange();
+    ROOT_SETTINGS_IO.execute(
+        () -> {
+          boolean saved;
+          try {
+            persistRootSetting(change, enabled);
+            saved = true;
+          } catch (RuntimeException unavailable) {
+            saved = false;
+          }
+          boolean result = saved;
+          new android.os.Handler(android.os.Looper.getMainLooper())
+              .post(() -> completion.accept(result));
+        });
+  }
+
+  /** The UI can show a pending state while an earlier handover finishes. */
+  public com.deepseekharness.app.util.RootSettingsAuthority.Change beginRootSettingsChange() {
+    var change =
+        new java.util.concurrent.atomic.AtomicReference<
+            com.deepseekharness.app.util.RootSettingsAuthority.Change>();
+    // 撤销生效与最终 commit/EOF 共用同一门锁，不能在校验与确认字节之间插入。
+    ROOT_REQUESTS.update(() -> change.set(ROOT_SETTINGS.disarm()));
+    return change.get();
   }
 
   /** 许可仅对本进程、本次 Root 设置代次有效；关闭再开启也不能复活旧请求。 */
@@ -306,28 +349,71 @@ public class ConfigStore {
       java.io.OutputStream input,
       byte[] payload,
       com.deepseekharness.app.util.RootRequestGate.Permit permit)
-      throws java.io.IOException {
+      throws java.io.IOException, InterruptedException {
     return ROOT_REQUESTS.write(input, payload, permit, this::isRootShellAllowed);
+  }
+
+  public boolean writeRootRequest(
+      java.io.OutputStream input,
+      byte[] payload,
+      com.deepseekharness.app.util.RootRequestGate.Permit permit,
+      com.deepseekharness.app.util.RootRequestGate.AwaitStaged staged)
+      throws java.io.IOException, InterruptedException {
+    return ROOT_REQUESTS.write(input, payload, permit, this::isRootShellAllowed, staged);
+  }
+
+  /** External business authority must still hold at the final helper commit boundary. */
+  public boolean writeRootRequest(
+      java.io.OutputStream input,
+      byte[] payload,
+      com.deepseekharness.app.util.RootRequestGate.Permit permit,
+      com.deepseekharness.app.util.RootRequestGate.AwaitStaged staged,
+      java.util.function.BooleanSupplier dispatchCurrent)
+      throws java.io.IOException, InterruptedException {
+    return ROOT_REQUESTS.write(
+        input,
+        payload,
+        permit,
+        () -> isRootShellAllowed() && dispatchCurrent.getAsBoolean(),
+        staged);
   }
 
   /** root 命令拦截档位；非法或缺失一律回落严格档（fail-closed）。 */
   public com.deepseekharness.app.util.DeviceShellPolicy.Mode rootPolicyMode() {
-    return com.deepseekharness.app.util.DeviceShellPolicy.Mode.parse(
-        text(Constants.KEY_ROOT_POLICY_MODE, "strict"));
+    return ROOT_SETTINGS.policy();
   }
 
   public void setRootPolicyMode(com.deepseekharness.app.util.DeviceShellPolicy.Mode mode) {
-    ROOT_REQUESTS.update(
-        () ->
-            prefs
-                .edit()
-                .putString(
-                    Constants.KEY_ROOT_POLICY_MODE,
-                    (mode == null
-                            ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT
-                            : mode)
-                        .id)
-                .apply());
+    persistRootPolicy(beginRootSettingsChange(), mode);
+  }
+
+  private void persistRootPolicy(
+      com.deepseekharness.app.util.RootSettingsAuthority.Change change,
+      com.deepseekharness.app.util.DeviceShellPolicy.Mode mode) {
+    var selected = mode == null ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT : mode;
+    ROOT_SETTINGS.savePolicy(
+        change,
+        selected,
+        () -> prefs.edit().putString(Constants.KEY_ROOT_POLICY_MODE, selected.id).commit());
+  }
+
+  public void setRootPolicyModeAsync(
+      com.deepseekharness.app.util.DeviceShellPolicy.Mode mode,
+      java.util.function.Consumer<Boolean> completion) {
+    var change = beginRootSettingsChange();
+    ROOT_SETTINGS_IO.execute(
+        () -> {
+          boolean saved;
+          try {
+            persistRootPolicy(change, mode);
+            saved = true;
+          } catch (RuntimeException unavailable) {
+            saved = false;
+          }
+          boolean result = saved;
+          new android.os.Handler(android.os.Looper.getMainLooper())
+              .post(() -> completion.accept(result));
+        });
   }
 
   public boolean isCheckUpdate() {
