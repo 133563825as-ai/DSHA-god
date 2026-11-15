@@ -3400,6 +3400,17 @@
       "reason": "Execute the guest builtin-registry default-off policy in an isolated fake root: clean install and over-the-top APK generations disable dsh-web-mobile, only an explicit enable recorded for the current generation survives restarts, older-generation enables are reset, explicit disable wins and re-enable round-trips; no device or Web."
     },
     {
+      "path": "tools/test-backup-signed-builtin-files.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Generate the additive signedBuiltinFiles proof from isolated signed install rows; verify exact scope, file hashes, installed permission modes, sizes and bounded fail-closed inputs without restoring a runtime archive or writing production proof JSON."
+    },
+    {
       "path": "tools/test-git-guard.py",
       "stage": "fast",
       "requires": [
