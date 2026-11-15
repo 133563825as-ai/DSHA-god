@@ -84,6 +84,22 @@ class SourceLayoutTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'DUPLICATE_IDENTITY'):
             SourceLayout(self.root).source_files()
 
+    def test_compile_head_check_rejects_changed_and_untracked_code_without_requiring_clean_tools(self):
+        source = self.put('app/src/main/java/Value.java', 'class Value {}')
+        for args in (('init', '-q'), ('add', 'app', 'ci'),
+                     ('-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
+                      'commit', '-qm', 'HEAD source fixture')):
+            subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True)
+        self.put('tools/uncommitted.py', '# engineering edits do not replace compiler inputs')
+        self.assertEqual(1, SourceLayout(self.root).verify_compile_head()['sources'])
+        source.write_text('class Value { int drift; }')
+        with self.assertRaisesRegex(ValueError, 'SOURCE_COMPILE_NOT_IN_HEAD'):
+            SourceLayout(self.root).verify_compile_head()
+        source.write_text('class Value {}')
+        self.put('app/src/main/kotlin/Added.kt', 'class Added')
+        with self.assertRaisesRegex(ValueError, 'SOURCE_COMPILE_NOT_IN_HEAD'):
+            SourceLayout(self.root).verify_compile_head()
+
     def test_missing_identity_does_not_guess_another_source_set(self):
         self.put('app/src/test/java/' + PACKAGE + '/Policy.java')
         with self.assertRaisesRegex(ValueError, 'MISSING_OR_DUPLICATE'):
@@ -96,6 +112,49 @@ class SourceLayoutTest(unittest.TestCase):
         path = self.root / 'app/src/main/kotlin'
         path.parent.mkdir(parents=True)
         path.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'SOURCE_LAYOUT_LINK'):
+            SourceLayout(self.root).source_files()
+
+    def test_nested_language_links_are_rejected_by_inventory_and_full_plan_before_cleanup(self):
+        from unit_test_contract import plan, begin, write_json
+        for language in ('java', 'kotlin'):
+            for outside in (False, True):
+                with self.subTest(language=language, outside=outside), tempfile.TemporaryDirectory(prefix='nested-language-proof-') as folder:
+                    root = Path(folder) / 'repo'
+                    root.mkdir()
+                    def put(name, text):
+                        target = root / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(text)
+                        return target
+                    put(MANIFEST, json.dumps(self.spec))
+                    suffix = '.java' if language == 'java' else '.kt'
+                    put('app/src/main/' + language + '/Visible' + suffix, 'class Visible {}')
+                    put('app/src/test/java/VisibleTest.java',
+                        'class VisibleTest { @org.junit.Test public void visible() {} }')
+                    hidden = (Path(folder) / 'outside' if outside else root / 'hidden')
+                    hidden.mkdir()
+                    (hidden / ('Hidden' + suffix)).write_text('class Hidden {}')
+                    link = root / 'app/src/main' / language / 'ordinary-package'
+                    link.symlink_to(hidden, target_is_directory=True)
+                    report = put('app/build/test-results/test/TEST-old.xml', 'old-report-must-remain')
+                    for operation in (lambda: SourceLayout(root).source_files(), lambda: plan(root)):
+                        with self.assertRaisesRegex(ValueError, 'SOURCE_LAYOUT_(LINK|OUTSIDE)'):
+                            operation()
+                    plan_path = root / 'out/plan.json'
+                    write_json(plan_path, {})
+                    with self.assertRaisesRegex(ValueError, 'SOURCE_LAYOUT_(LINK|OUTSIDE)'):
+                        begin(root, plan_path, root / 'out/run', '123', rust_library=None, rust_receipt=None)
+                    self.assertEqual('old-report-must-remain', report.read_text())
+                    self.assertFalse((root / 'out/run').exists())
+
+    def test_undeclared_language_source_tree_checks_nested_links_before_suffix(self):
+        hidden = self.root / 'hidden'
+        hidden.mkdir()
+        for language in ('java', 'kotlin'):
+            directory = self.root / 'app/src/variant' / language
+            directory.mkdir(parents=True)
+            (directory / 'ordinary-package').symlink_to(hidden, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, 'SOURCE_LAYOUT_LINK'):
             SourceLayout(self.root).source_files()
 

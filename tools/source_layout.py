@@ -81,6 +81,22 @@ class SourceLayout:
                 raise ValueError("SOURCE_LAYOUT_LINK: " + str(parent))
         return path
 
+    def bounded_files(self, directory):
+        """遍历前拒绝每个条目的链接/越界；后缀与目录名都不能成为漏检条件。"""
+        directory = self._bounded(directory)
+        if not directory.exists():
+            return
+        if not directory.is_dir():
+            raise ValueError('SOURCE_LAYOUT_NOT_DIRECTORY: ' + str(directory))
+        for entry in sorted(directory.iterdir()):
+            self._bounded(entry)
+            if entry.is_dir():
+                yield from self.bounded_files(entry)
+            elif entry.is_file():
+                yield entry
+            else:
+                raise ValueError('SOURCE_LAYOUT_NONFILE: ' + str(entry))
+
     def classify(self, name):
         """只按声明的源集分类；生成源、第三方文件与未知模块不自动取得受管身份。"""
         name = relative(name)
@@ -110,8 +126,9 @@ class SourceLayout:
                     self._bounded(directory)
                     if not directory.is_dir() or directory.name in module['sourceSets']:
                         continue
-                    if any(path.suffix in SOURCE_SUFFIXES for language in SOURCE_ROOTS
-                           for path in (directory / language).rglob('*')):
+                    unexpected = [path for language in SOURCE_ROOTS
+                                  for path in self.bounded_files(directory / language)]
+                    if any(path.suffix in SOURCE_SUFFIXES for path in unexpected):
                         raise ValueError('SOURCE_LAYOUT_UNDECLARED_SOURCE_SET: ' + str(directory))
             for source_set in module["sourceSets"]:
                 for language in SOURCE_ROOTS:
@@ -120,12 +137,9 @@ class SourceLayout:
                         continue  # 空的语言源根合法，缺模块任务不由空源根豁免。
                     if not directory.is_dir():
                         raise ValueError("SOURCE_LAYOUT_NOT_DIRECTORY: " + str(directory))
-                    for path in sorted(directory.rglob("*")):
+                    for path in self.bounded_files(directory):
                         if path.suffix not in SOURCE_SUFFIXES:
                             continue
-                        self._bounded(path)
-                        if not path.is_file():
-                            raise ValueError("SOURCE_LAYOUT_NONFILE: " + str(path))
                         entry = self.classify(path.relative_to(self.root).as_posix())
                         key = entry.identity.casefold()
                         stem = entry.source_set + ":" + str(PurePosixPath(entry.logical_path).with_suffix("")).casefold()
@@ -168,6 +182,22 @@ class SourceLayout:
         return [entry for entry in self.source_files((source_set,), suffixes)
                 if entry.logical_path.startswith(prefix)]
 
+    def compile_inputs(self):
+        return {'schema': 1, 'modules': self.modules, 'sources': [
+            {'module': entry.module, 'sourceSet': entry.source_set, 'path': entry.relative,
+             'logicalPath': entry.logical_path} for entry in self.source_files()]}
+
+    def verify_compile_head(self):
+        """编译前核代码输入的 HEAD blob；工程脚本的未提交改动仍可做配置负控。"""
+        from unit_test_contract import commit_blobs, git_blob_sha, head
+        commit = head(self.root)
+        blobs = commit_blobs(self.root, commit)
+        sources = self.source_files()
+        for entry in sources:
+            if blobs.get(entry.relative) != git_blob_sha(entry.path):
+                raise ValueError('SOURCE_COMPILE_NOT_IN_HEAD: ' + entry.relative)
+        return {'commit': commit, 'sources': len(sources)}
+
     def test_tasks(self):
         return [{"module": module["path"], "task": module["path"] + ":" + module["testTask"],
                  "reports": module["directory"] + "/build/test-results/" + module["testTask"],
@@ -179,10 +209,16 @@ def main(argv=None):
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--test-tasks", action="store_true")
     parser.add_argument("--launcher-inputs", action="store_true")
+    parser.add_argument("--compile-inputs", action="store_true")
+    parser.add_argument("--verify-compile-head", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     layout = SourceLayout(args.root)
-    if args.launcher_inputs:
+    if args.verify_compile_head:
+        result = layout.verify_compile_head()
+    elif args.compile_inputs:
+        result = layout.compile_inputs()
+    elif args.launcher_inputs:
         from runtime_input_contract import launcher_paths
         result = {key: path.relative_to(layout.root).as_posix()
                   for key, path in launcher_paths(layout.root).items()}

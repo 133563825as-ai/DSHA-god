@@ -4,6 +4,8 @@ tasks.register('verifyDshaBuildConventions') {
     group = 'verification'
     description = '核验实际模块的 DSHA 编译和测试约定（默认单 fork）。'
     doLast {
+        // 真实源码根 / JavaCompile 与 KotlinCompile 输入核验，不运行编译或资产任务。
+        rootProject.ext.dshaAuditSourceInputs(false)
         if (gradle.ext.kotlinVersion != '2.2.10')
             throw new GradleException('DSHA_KOTLIN_VERSION_DRIFT')
         def sourceOnly = providers.gradleProperty('dsha.sourceOnlyTests').orElse('false').get()

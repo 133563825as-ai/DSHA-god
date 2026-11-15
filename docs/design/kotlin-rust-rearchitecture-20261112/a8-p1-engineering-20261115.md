@@ -1,6 +1,6 @@
 # A8 P1：工程门禁准备实现与验证（2026-11-15）
 
-本批已实现共享源码映射、全仓测试身份/新鲜报告门禁和可直接应用的构建约定，**不提取生产类，不创建产品模块，不解锁 P2–P7**。P1 完整出口尚未通过：开工主线的真实完整 CI 成功，但原始 JUnit artifact 下载返回 HTTP 403，历史执行身份尚不能冻结；最终受管输入登记、归档重建与 descriptor 仍由 main 串行完成。待完成这些步骤后再做候选完整 CI，不能把本页本机夹具测试写成整仓通过。
+本批已实现共享源码映射、全仓测试身份/新鲜报告门禁和可直接应用的构建约定，**不提取生产类，不创建产品模块，不解锁 P2–P7**。P1 完整出口尚未通过：原始历史 CI 材料已恢复并通过导入预核，正式身份基线在追加代码提交后冻结；最终受管输入登记、归档重建与 descriptor 仍由 main 串行完成。待完成这些步骤后再做候选完整 CI，不能把本页本机夹具测试写成整仓通过。
 
 依据：[A8 基线 §9](a8-task-baseline-20261114.md#9-convention-plugin-与测试数硬门禁)、[§11](a8-task-baseline-20261114.md#11-实现阶段与逐提交回退点待批准)、[ADR-0004](../../adr/0004-kotlin-rust-direction.md)及[工具链](../../kotlin-toolchain.md)。用户本次直接授权的是独立 P1 工程准备；基线的 P2–P7 前置与业务收口不因此获准。
 
@@ -14,7 +14,7 @@
 
 主会话核实的完整软件基线为 [full run 43661288065](https://github.com/SunsetRNE/DSHA-Sunset-mod/actions/runs/43661288065)：head 精确为上述 main，full、空筛选、forks=1、host Rust required、七个外部夹具要求均生效，运行/验证步骤 success。[Source checks 43661155033](https://github.com/SunsetRNE/DSHA-Sunset-mod/actions/runs/43661155033) 也成功。这是开工基线 CI，不是本批未推送代码的 CI。
 
-真实 artifact 为 `unit-results` / id `14140142885`，API 摘要为 `sha256:c3be158f43b65d72a67d166777ac76c101bdf6a6dcfc5455233644ceadfb6eb0`。本机未下载到原 ZIP/XML，不能声称已核对 ZIP 摘要、精确执行总数或参数化/SDK 展开的全集。没有为获取材料重新 dispatch、换身份或放宽权限。
+真实 artifact 为 `unit-results` / id `14140142885`，API 摘要为 `sha256:c3be158f43b65d72a67d166777ac76c101bdf6a6dcfc5455233644ceadfb6eb0`。首轮本机 ZIP 下载返回 403，未据元数据猜测试身份；新 main 后来按同一 GitHub 身份取得原始字节并核对 API 摘要，连同原始 unit job log 一并交付。材料预核导入已得到 755 XML / 5,107 个精确 testcase、零失败/错误/跳过、七夹具各一次。正式冻结仍以追加代码提交后的导入回执为准；没有重新 dispatch 或借用后来 S1a 的测试身份。
 
 ## 源码身份与物理布局接口
 
@@ -68,7 +68,9 @@ begin 校验计划、HEAD/源码输入、Rust 构建 receipt 和库摘要后，�
 
 本轮独审关闭了 CI 读取器旧路径、未跟踪资源和 Kotlin 组注解/分类筛选三项问题。无法可靠解析的 Kotlin 注解组与 use-site 注解会明确拒绝；Java17 record 与嵌套 record helper 也要求真实编译输出。完整 Test 的实际 JUnit4 分类过滤与错误测试框架均被拒绝。
 
-接口边界：工具只自动枚举声明的标准源集；仓库根 out、local.properties、module/build 不属于这份源资源清单。树外自定义 sourceDirs/manifest、java/kotlin 根内非源码文件不会自动取得输入证明；集成方须单独拒绝或登记明确 owner。实际构建审计已经拒绝非标准 res/resources 根，不能将此扩大描述为已覆盖任意自定义 Gradle 输入。
+接口边界：自动清单覆盖标准源集，真实 Gradle 代码根与 Compile 有效输入同时受审。编译前用 `source_layout.py --verify-compile-head` 核查 HEAD 字节，配置审计核 Android/JVM Java/Kotlin 的实际源根、官方 component 选中源集和有效文件；生成源仅允许真实 UiLanguage、BuildConfig、AIDL producer 对应的精确根与文件。每个非空编译阶段保存本次 before/after 同字节的执行回执，Test 前重新核有效集合并写固定任务路径的 compile proof；Python 再独立校验库存、根、文件摘要、生成 owner、运行身份和执行回执原始摘要。额外/替换/过滤代码输入不能以文档声明 unsupported 的方式静默放过。
+
+仓库根 out、local.properties、module/build 不作为普通受管源资源；后者仅通过上述精确生成器取得编译输入证明。自定义 manifest 等其他外部 Gradle 输入、java/kotlin 根内非代码文件、任意外部 fixture owner 仍须由集成方单独拒绝或登记，不能扩大本工具对标准代码根/资源根的保证。
 
 [历史基线文件](../../../ci/unit-test-baseline.json) 明确保持 pending，不填猜测的执行数字，不提供自动 bootstrap。历史导入必须读取成功 CI 元数据、同 run 的原 artifact 元数据与 ZIP、原 XML/summary 和真实 unit job log：
 
@@ -127,6 +129,22 @@ main 在串行集成树必须：
 独立只读审查完整覆盖本批 diff 和新增文件，首次 REQUEST_CHANGES 的三项（CI 工具链旧锚点、未跟踪资源、隐藏 Kotlin 注解/JUnit 分类过滤）全部整改后增量结论为 **APPROVE，未发现剩余 P0/P1/P2**。审查者还只读核对了真实 Gradle 正负控日志、当前 plan、配方差异摘要及原先的输入/历史导入修复；没有把代码审查批准写成合入授权或 P1 软件出口通过。
 
 最终父会话独立复跑报告契约 47 项、旧 handoff 10 项，均通过；没有把作者同一套重跑叠加成独特覆盖数。已审核心文件摘要和完整本机日志路径随会话交付保存。自定义 manifest 等外部 Gradle 输入与外部 fixture owner 的限制仍按上文保留，不能将标准 res/resources 源根拒绝扩大为任意自定义输入都已覆盖。
+
+## review#6 追加整改（原提交之后）
+
+main 对冻结 `10a1ff7e`（前置 `87a03970`）完成全部 42 路径独审后提出 **REQUEST_CHANGES：2 P1 / 1 P2**。前文初轮作者独审和验证仅绑定原两提交，不能据其解除本次主审发现；代码在原工作树最小追加，不重写原提交、不吸收后来 S1a 的实现或 CI。
+
+- P1-1：原扫描先筛后缀，普通目录名的嵌套 symlink 被 `rglob` 略过。新增 Java/Kotlin × 仓内/仓外四案及未声明源集反例，旧代码五个子例均未报错；改为每个目录/文件先有界校验再分类。full plan/begin 前置拒绝时保持旧 XML 原字节，不以“不跟随链接”冒充拒绝。
+- P1-2：原 Gradle 只核资源根，实际 Java/Kotlin sourceDirs 和 Compile 有效输入未与布局对等。新增根与实际 Compile 输入审计，以及由真实生产者负责的 UiLanguage/BuildConfig/AIDL 精确生成文件证明；完整 Test 前还须重新读取有效输入并绑定到本次任务证据。旧门禁的八个代码根/Compile 替换配置案例已实跑接受；首次 Android Kotlin 注入用错 API 的失败单列，纠正后也复现接受，不计为守卫生效。具体修后实跑与审查结果以追加提交的会话交付为准。
+- P2-1：原任务开始后不再读实际 Rust 库。新增最后 task-begin 后持续同大小改库、task-end 后 live verify 前持续改库两个确定性反例，旧代码均未拒；整改在结束和 live verify 重读同路径类型、大小和摘要。archived 仅验证保存的 start/end/receipt 闭环，不要求原 runner 的绝对库路径仍存在。不能据此承诺检测所有瞬时替换或进程已加载映射。
+
+review#6 追加整改的独立增量审查已给出 **APPROVE**，三项代码问题无剩余 P0/P1/P2；这不等于 P1 完整出口或合入授权。父会话独立最终回归为报告契约 64、旧 handoff 10、构建约定 25、布局 16，均通过，原边界与入口回归保留。真实 app+三类外部模块正控通过，16 项代码根/Compile 替换、额外和过滤负控全部命中 `DSHA_SOURCE_INPUT`，没有执行产品编译或 Test。
+
+额外的仓库外完整门禁冒烟使用明确标记的合成项目：r1 是 Java 的 8 个 JUnit 用例，r3 是 Java/Kotlin 的 9 个 JUnit 用例。r3 实际离线执行全部编译阶段、Test、编译前后回执、Test proof 与 Python 聚合，零 failure/error/skipped。七夹具与 RustDigest 的同名类只断言合成值与配置，opaque 假 so 从不被 JNI 加载，fake CI baseline 只作严格 schema 样本；它们不是产品 CI、真实外部夹具或 native 验收，重复的八个用例不跨两次运行相加。
+
+过程日志全部保留：r1 曾打印 US-ASCII 编码诊断但返回成功并产出实际 class/XML；r2 KGP 单独 classpath 的离线传递依赖缺项未到编译；r3 复用真实仓库固定 AGP/KGP classpath 并显式 UTF-8 后干净成功，没有新增依赖 pin、豁免或 force。已有夹具目录的重复创建被拒绝，没有覆写或重放消耗过的 state。
+
+历史材料已由新 main 取得：原 ZIP 的 SHA-256 与 GitHub API 摘要一致；真实 job log/元数据/755 XML 的材料预核导入得到 5,107 项 testcase 身份。该预核产物只在 ignored 构建目录，正式基线须在追加代码提交后通过 `import-ci-baseline` 再生成，不能把材料恢复当成本批候选完整 CI 成功。
 
 ## 提交与回退
 

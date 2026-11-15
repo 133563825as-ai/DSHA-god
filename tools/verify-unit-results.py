@@ -93,7 +93,7 @@ def main(argv=None):
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as stream:
-            title = "Full unit tests with fixed inputs" if args.mode == "full" else "Source-only unit tests (not a complete fixed-input run)"
+            title = "Unit-test report summary (not a full repository aggregate)" if args.mode == "full" else "Source-only unit-test report summary (not a full repository aggregate)"
             if args.state:
                 title = "Full repository unit tests with fresh task evidence"
                 counts = {key: result[key] for key in ("tests", "failures", "errors", "skipped")}

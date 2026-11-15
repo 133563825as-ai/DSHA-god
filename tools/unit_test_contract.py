@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -425,31 +428,114 @@ def file_evidence(root, path):
             "mtimeNs": after.st_mtime_ns, "ctimeNs": after.st_ctime_ns}
 
 
+def rust_library_path(root, library, code):
+    if not isinstance(library, (str, Path)) or not str(library):
+        fail(code, "缺少库路径")
+    path = Path(library)
+    if not path.is_absolute():
+        path = root / path
+    if not path.name or ".." in path.parts:
+        fail(code, path)
+    return path
+
+
+@contextmanager
+def rust_parent_fd(path):
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    current = os.open(path.anchor, flags)
+    try:
+        for part in path.parts[1:-1]:
+            following = os.open(part, flags, dir_fd=current)
+            os.close(current)
+            current = following
+        yield current
+    finally:
+        os.close(current)
+
+
+def rust_library_snapshot(root, library, code="TASK_RUST_LIBRARY"):
+    """只证明本次观察到的路径/常规文件类型/大小/字节；不证明加载映射或所有瞬时替换。"""
+    path = rust_library_path(root, library, code)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        fail(code, "当前平台缺少 NOFOLLOW/目录描述符能力")
+    def stamp(info):
+        return (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode), info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns)
+    try:
+        with rust_parent_fd(path) as parent:
+            before = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(before.st_mode) or before.st_size == 0:
+                fail(code, path)
+            flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+            descriptor = os.open(path.name, flags, dir_fd=parent)
+            with os.fdopen(descriptor, "rb") as stream:
+                opened = os.fstat(stream.fileno())
+                if not stat.S_ISREG(opened.st_mode) or stamp(opened) != stamp(before):
+                    fail(code, path)
+                value = hashlib.sha256()
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    value.update(block)
+                after = os.fstat(stream.fileno())
+            named = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            if stamp(before) != stamp(after) or stamp(after) != stamp(named):
+                fail(code, path)
+        # 重走目录链，拒绝持续存在的祖先替换/link；不把旧 parent fd 当作当前路径。
+        with rust_parent_fd(path) as current_parent:
+            current = os.stat(path.name, dir_fd=current_parent, follow_symlinks=False)
+            if stamp(current) != stamp(after):
+                fail(code, path)
+    except OSError as error:
+        fail(code, f"{path}: {error}")
+    return {"path": str(path), "fileType": "regular", "size": after.st_size, "sha256": value.hexdigest()}
+
+
+def expected_rust_library(run):
+    rust = run.get("rust", {})
+    body = rust.get("receipt", {})
+    artifact = body.get("artifact", {})
+    if body.get("kind") != "dsha-rust-native" or body.get("target") != "host" \
+            or body.get("commit") != run["commit"] or str(body.get("runId")) != run["runId"] \
+            or str(body.get("runAttempt")) != run["runAttempt"]:
+        fail("RUST_RECEIPT_IDENTITY")
+    path = rust_library_path(Path("/"), rust.get("library"), "TASK_RUST_EVIDENCE")
+    if not Path(rust["library"]).is_absolute() or str(path) != rust["library"] \
+            or not isinstance(rust.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", rust["sha256"]) \
+            or type(rust.get("size")) is not int or rust["size"] <= 0 \
+            or artifact.get("sha256") != rust["sha256"] or artifact.get("size") != rust["size"] \
+            or artifact.get("artifactFile") != path.name:
+        fail("TASK_RUST_EVIDENCE")
+    return {"path": str(path), "fileType": "regular", "size": rust["size"], "sha256": rust["sha256"]}
+
+
+def check_rust_library(root, run, library=None):
+    expected = expected_rust_library(run)
+    observed = rust_library_snapshot(root, library if library is not None else expected["path"])
+    if observed != expected:
+        fail("TASK_RUST_LIBRARY", observed["path"])
+    return observed
+
+
 def rust_evidence(root, library, receipt, commit, run_id, attempt):
     if not library or not receipt:
         fail("RUST_REQUIRED", "full 需要主机库与真实 build.py receipt")
-    library = Path(library)
+    observed = rust_library_snapshot(root, library, "RUST_LIBRARY")
     receipt = Path(receipt)
-    if not library.is_absolute():
-        library = root / library
     if not receipt.is_absolute():
         receipt = root / receipt
-    if not library.is_file() or library.is_symlink() or library.stat().st_size == 0:
-        fail("RUST_LIBRARY", library)
     body = load(receipt)
     if body.get("kind") != "dsha-rust-native" or body.get("target") != "host" \
             or body.get("commit") != commit or str(body.get("runId")) != run_id \
             or str(body.get("runAttempt")) != attempt:
         fail("RUST_RECEIPT_IDENTITY")
     artifact = body.get("artifact", {})
-    if artifact.get("sha256") != digest(library) or artifact.get("size") != library.stat().st_size \
-            or artifact.get("artifactFile") != library.name:
+    if artifact.get("sha256") != observed["sha256"] or artifact.get("size") != observed["size"] \
+            or artifact.get("artifactFile") != Path(observed["path"]).name:
         fail("RUST_RECEIPT_ARTIFACT")
     cargo = root / "rust/Cargo.lock"
     if cargo.is_file() and body.get("sources", {}).get("cargoLockSha256") != digest(cargo):
         fail("RUST_RECEIPT_SOURCE")
-    return {"library": str(library.resolve()), "sha256": artifact["sha256"],
-            "size": artifact["size"], "receipt": body, "receiptSha256": digest(receipt)}
+    return {"library": observed["path"], "sha256": observed["sha256"],
+            "size": observed["size"], "receipt": body, "receiptSha256": digest(receipt)}
 
 
 def commit_blobs(root, commit):
@@ -583,20 +669,365 @@ def class_directory_evidence(root, plan_value, task, directories, *, includes, e
     return outputs
 
 
+def compile_inventory(root, layout=None):
+    if layout is None:
+        from source_layout import SourceLayout
+        return SourceLayout(root).compile_inputs()
+    if hasattr(layout, "compile_inputs"):
+        return layout.compile_inputs()
+    # 仅显式注入的 host 夹具可省略方法；生产 CLI 没有此降级分支。
+    entries = layout.source_files()
+    entries = sorted(entries, key=lambda entry: (entry.source_set + ":" + entry.logical_path, entry.module))
+    return {"schema": 1, "modules": layout.modules, "sources": [
+        {"module": entry.module, "sourceSet": entry.source_set, "path": entry.relative,
+         "logicalPath": entry.logical_path} for entry in entries]}
+
+
+def compile_proof_file(state, task):
+    return within(state, "compile-proofs/" + hashlib.sha256(task.encode("utf-8")).hexdigest() + ".json")
+
+
+def android_component(component, declared):
+    """AGP 9.1.1 实测的单 Standard / 无 flavor Debug/Release component 静态根。"""
+    match = re.fullmatch(r"(Standard)?(Debug|Release)(UnitTest|AndroidTest)?", component)
+    if match is None:
+        fail("COMPILE_COMPONENT_UNSUPPORTED", component)
+    flavor, build_type, tests = match.groups()
+    build_type = build_type.lower()
+    if tests:
+        base = "test" if tests == "UnitTest" else "androidTest"
+        selected = {base, base + match.group(2)}
+        if flavor:
+            selected.add(base + flavor)
+            combined = base + flavor + match.group(2)
+            if combined in declared:
+                selected.add(combined)
+    else:
+        selected = {"main", build_type}
+        if flavor:
+            selected.add(flavor.lower())
+            combined = flavor.lower() + match.group(2)
+            if combined in declared:
+                selected.add(combined)
+    return selected, flavor.lower() if flavor else "", build_type, tests
+
+
+def compile_context(module, task, compiler, component=None):
+    if not isinstance(task, str) or not task.startswith(module["path"] + ":"):
+        fail("COMPILE_TASK_BINDING", task)
+    name = task[len(module["path"]) + 1:]
+    kind = module.get("kind", "jvm")
+    declared = set(module.get("sourceSets", ["main", *module["testSourceSets"]]))
+    if kind == "jvm":
+        suffix = "Java" if compiler == "java" else "Kotlin"
+        matches = [source_set for source_set in declared if name == "compile" + (
+            "" if source_set == "main" else source_set[:1].upper() + source_set[1:]) + suffix]
+        if len(matches) != 1 or component is not None:
+            fail("COMPILE_TASK_BINDING", task)
+        return {"sets": {matches[0]}, "component": None, "flavor": "", "buildType": "", "tests": None}
+    if kind not in ("android-application", "android-library") or not isinstance(component, dict):
+        fail("COMPILE_COMPONENT_MISSING", task)
+    component_name = component.get("name")
+    if not isinstance(component_name, str) or not re.fullmatch(r"[a-z][A-Za-z0-9]*", component_name):
+        fail("COMPILE_COMPONENT_SCHEMA", task)
+    # 任务名来自官方 component.computeTaskName，不自行拼装 compile/generator 名称。
+    field = "compileJavaTask" if compiler == "java" else "compileKotlinTask"
+    if component.get(field) != task:
+        fail("COMPILE_TASK_BINDING", task)
+    for key in ("compileJavaTask", "compileKotlinTask", "aidlTask", "buildConfigTask"):
+        value = component.get(key)
+        if value is not None and (not isinstance(value, str) or not value.startswith(module["path"] + ":")
+                                  or not re.fullmatch(r":[\w:-]+", value)):
+            fail("COMPILE_COMPONENT_SCHEMA", key)
+    selected, flavor, build_type, tests = android_component(
+        component_name[:1].upper() + component_name[1:], declared)
+    # 真实 component API 的值仍须符合本仓固定 AGP 契约，不能同时篡改 task 与 owner 后自证。
+    stem = component_name[:1].upper() + component_name[1:]
+    roles = {"compileJavaTask": "compile" + stem + "JavaWithJavac",
+             "compileKotlinTask": "compile" + stem + "Kotlin",
+             "aidlTask": "compile" + stem + "Aidl", "buildConfigTask": "generate" + stem + "BuildConfig"}
+    for key, expected in roles.items():
+        value = component.get(key)
+        if value is not None and value != module["path"] + ":" + expected:
+            fail("COMPILE_COMPONENT_TASK_ROLE", key)
+    if module["path"] == ":app" and tests is None and component.get("buildConfigTask") is None:
+        fail("COMPILE_COMPONENT_TASK_ROLE", "app BuildConfig owner missing")
+    flavors = [{"dimension": "androidSupport", "name": "standard"}] if flavor else []
+    if component.get("buildType") != build_type or component.get("productFlavors") != flavors \
+            or not isinstance(component.get("namespace"), str) \
+            or not re.fullmatch(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+", component["namespace"]):
+        fail("COMPILE_COMPONENT_SCHEMA", task)
+    java_roots = {module["directory"] + "/src/" + source_set + "/java" for source_set in selected}
+    kotlin_roots = java_roots | {module["directory"] + "/src/" + source_set + "/kotlin" for source_set in selected}
+    if module["path"] == ":app" and "main" in selected:
+        java_roots.add(module["directory"] + "/build/generated/uiLanguage")
+    for key, expected in (("javaStatic", java_roots), ("kotlinStatic", kotlin_roots)):
+        actual = component.get(key)
+        if not isinstance(actual, list) or len(actual) != len(set(actual)) or set(actual) != expected:
+            fail("COMPILE_COMPONENT_ROOTS", {"task": task, "field": key})
+    return {"sets": selected, "component": component, "flavor": flavor, "buildType": build_type, "tests": tests}
+
+
+def compile_roots(root, proof, modules):
+    rows = proof.get("sourceRoots")
+    if not isinstance(rows, list) or not rows:
+        fail("COMPILE_ROOTS_MISSING")
+    result = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            fail("COMPILE_ROOT_SCHEMA", row)
+        module = modules.get(row.get("module"))
+        source_set, api, roots = row.get("sourceSet"), row.get("api"), row.get("roots")
+        if module is None or not isinstance(source_set, str) or not re.fullmatch(r"[A-Za-z][\w]*", source_set) \
+                or not isinstance(roots, list) or any(not isinstance(path, str) for path in roots):
+            fail("COMPILE_ROOT_SCHEMA", row)
+        key = (module["path"], source_set, api)
+        if key in result or len(set(roots)) != len(roots):
+            fail("COMPILE_ROOT_DUPLICATE", key)
+        android = module.get("kind", "jvm") != "jvm"
+        prefix = module["directory"] + "/src/" + source_set + "/"
+        if api == ("android-java" if android else "jvm-java"):
+            expected = {prefix + "java"}
+            if android and module["path"] == ":app" and source_set == "main":
+                expected.add(module["directory"] + "/build/generated/uiLanguage")
+        elif api == "kotlin" or (api == "kotlin-extension" and not android):
+            expected = {prefix + "java", prefix + "kotlin"}
+        elif api == "kotlin-extension" and android:
+            expected = set()
+        else:
+            fail("COMPILE_ROOT_API", key)
+        if set(roots) != expected:
+            fail("COMPILE_ROOT_MISMATCH", row)
+        for path in roots:
+            within(root, path)
+        result[key] = roots
+    return result
+
+
+def compile_file_rows(root, rows, *, archived=False):
+    if not isinstance(rows, list):
+        fail("COMPILE_FILES_SCHEMA")
+    result = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            fail("COMPILE_FILES_SCHEMA", row)
+        path, sha, origin = row.get("path"), row.get("sha256"), row.get("origin")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha) \
+                or origin not in ("source", "generated"):
+            fail("COMPILE_FILES_SCHEMA", row)
+        physical = within(root, path)
+        if path in result:
+            fail("COMPILE_FILE_DUPLICATE", path)
+        if not archived and (not physical.is_file() or digest(physical) != sha):
+            fail("COMPILE_FILE_CHANGED", path)
+        result[path] = {"path": path, "sha256": sha, "origin": origin}
+    return result
+
+
+def generated_compile_files(root, run, module, context, rows, *, archived=False):
+    if not isinstance(rows, list):
+        fail("COMPILE_GENERATOR_SCHEMA")
+    seen, generated = set(), {}
+    directory = module["directory"]
+    ui = module.get("kind", "jvm") != "jvm" and module["path"] == ":app" and "main" in context["sets"]
+    component = context["component"]
+    aidl_sources = [item for item in run["plan"]["resourceInputs"] if item["module"] == module["path"]
+                    and item["sourceSet"] in context["sets"] and item["resourceRoot"] == "aidl"
+                    and item["path"].endswith(".aidl")]
+    expected_aidl = set()
+    for source in aidl_sources:
+        text = source_text(within(root, source["path"]).read_text(encoding="utf-8"))
+        packages = re.findall(r"(?m)^\s*package\s+([\w.]+)\s*;", text)
+        names = re.findall(r"\binterface\s+([A-Za-z][\w]*)", text)
+        if len(packages) != 1 or len(names) != 1:
+            fail("COMPILE_AIDL_UNSUPPORTED", source["path"])
+        expected_aidl.add(packages[0].replace(".", "/") + "/" + names[0] + ".java")
+    for row in rows:
+        if not isinstance(row, dict):
+            fail("COMPILE_GENERATOR_SCHEMA", row)
+        task, target = row.get("task"), row.get("root")
+        if not isinstance(task, str) or task in seen:
+            fail("COMPILE_GENERATOR_DUPLICATE", task)
+        seen.add(task)
+        files = compile_file_rows(root, row.get("files"), archived=archived)
+        if any(item["origin"] != "generated" for item in files.values()):
+            fail("COMPILE_GENERATOR_ORIGIN", task)
+        if ui and task == module["path"] + ":prepareUiLanguages":
+            from ui_language_catalog import LANGUAGES
+            expected_root = directory + "/build/generated/uiLanguage"
+            names = ["UiMessages", *("UiMessages_" + language.replace("-", "_") for language in LANGUAGES)]
+            expected = {expected_root + "/com/deepseekharness/app/util/" + name + ".java" for name in names}
+        elif component and task == component.get("aidlTask"):
+            expected_root = directory + "/build/generated/aidl_source_output_dir/" + component["name"] + "/out"
+            expected = {expected_root + "/" + name for name in expected_aidl}
+        elif component and task == component.get("buildConfigTask"):
+            suffix = ("androidTest/" if context["tests"] == "AndroidTest" else "") + (
+                context["flavor"] + "/" if context["flavor"] else "") + context["buildType"]
+            expected_root = directory + "/build/generated/source/buildConfig/" + suffix
+            namespace = module.get("namespace") or (PREFIX[:-1] if module["path"] == ":app" else None)
+            if context["tests"] == "AndroidTest" and namespace:
+                namespace = module.get("testNamespace", namespace + ".test")
+            if not namespace or component["namespace"] != namespace:
+                fail("COMPILE_BUILD_CONFIG_NAMESPACE", task)
+            expected = {expected_root + "/" + namespace.replace(".", "/") + "/BuildConfig.java"}
+        else:
+            fail("COMPILE_GENERATOR_OWNER", task)
+        within(root, expected_root)
+        if target != expected_root or set(files) != expected or set(generated) & set(files):
+            fail("COMPILE_GENERATOR_FILES", task)
+        generated.update(files)
+        if not archived:
+            actual = {path.relative_to(root).as_posix() for path in within(root, target).rglob("*")
+                      if path.is_file() and path.suffix in (".java", ".kt", ".kts")}
+            if actual != expected:
+                fail("COMPILE_GENERATOR_FILES", target)
+    if ui and module["path"] + ":prepareUiLanguages" not in seen:
+        fail("COMPILE_GENERATOR_MISSING", "prepareUiLanguages")
+    if expected_aidl and (not component or component.get("aidlTask") not in seen):
+        fail("COMPILE_GENERATOR_MISSING", "AIDL")
+    if component and component.get("buildConfigTask") is not None and component["buildConfigTask"] not in seen:
+        fail("COMPILE_GENERATOR_MISSING", "BuildConfig")
+    return generated
+
+
+def compile_execution_file(state, task):
+    return within(state, "compile-executions/" + hashlib.sha256(task.encode("utf-8")).hexdigest() + ".json")
+
+
+def validate_compile_execution(state, run, row, proof_created):
+    reference = row.get("execution")
+    if reference is None:
+        if row["sources"]:
+            fail("COMPILE_EXECUTION_REQUIRED", row["task"])
+        return
+    expected = compile_execution_file(state, row["task"])
+    if not isinstance(reference, dict) or reference.get("file") != expected.relative_to(state).as_posix() \
+            or not expected.is_file() or reference.get("sha256") != digest(expected):
+        fail("COMPILE_EXECUTION_HASH", row["task"])
+    receipt = load(expected)
+    if reference["sha256"] != digest(expected):
+        fail("COMPILE_EXECUTION_HASH", row["task"])
+    if receipt.get("schema") != 1 or receipt.get("kind") != "dsha-compile-execution":
+        fail("COMPILE_EXECUTION_SCHEMA", row["task"])
+    for key in ("commit", "runId", "runAttempt", "planSha256"):
+        if receipt.get(key) != run[key]:
+            fail("COMPILE_EXECUTION_BINDING", row["task"])
+    for key, value in (("compileTask", row["task"]), ("module", row["module"]),
+                       ("compiler", row["compiler"]), ("outcome", "SUCCESS")):
+        if receipt.get(key) != value:
+            fail("COMPILE_EXECUTION_BINDING", row["task"])
+    before, after = receipt.get("startedNs"), receipt.get("finishedNs")
+    if type(before) is not int or type(after) is not int \
+            or not run["startedNs"] // 1_000_000 * 1_000_000 <= before <= after <= proof_created:
+        fail("COMPILE_EXECUTION_TIME", row["task"])
+    model = {key: value for key, value in row.items() if key != "execution"}
+    if receipt.get("before") != model or receipt.get("after") != model:
+        fail("COMPILE_EXECUTION_SOURCES", row["task"])
+
+
+def validate_compile_proof(root, state, run, task, proof_path, *, layout=None, archived=False):
+    expected_path = compile_proof_file(state, task)
+    supplied = Path(proof_path)
+    if not supplied.is_absolute():
+        supplied = Path.cwd() / supplied
+    if supplied != expected_path or not expected_path.is_file():
+        fail("COMPILE_PROOF_PATH", proof_path)
+    before = digest(expected_path)
+    proof = load(expected_path)
+    if digest(expected_path) != before:
+        fail("COMPILE_PROOF_CHANGED", task)
+    if proof.get("schema") != 1 or proof.get("kind") != "dsha-compile-proof":
+        fail("COMPILE_PROOF_SCHEMA")
+    for key in ("commit", "runId", "runAttempt", "planSha256"):
+        if proof.get(key) != run[key]:
+            fail("COMPILE_PROOF_BINDING", key)
+    if proof.get("testTask") != task or type(proof.get("createdNs")) is not int \
+            or not run["startedNs"] // 1_000_000 * 1_000_000 <= proof["createdNs"] <= time.time_ns():
+        fail("COMPILE_PROOF_BINDING", task)
+    inventory = compile_inventory(root, layout)
+    if proof.get("inventory") != inventory:
+        fail("COMPILE_INVENTORY_MISMATCH")
+    owned = {item["path"]: item for item in run["plan"]["inputSources"]}
+    inventory_owned = {item["path"] for item in inventory["sources"]}
+    if inventory_owned != set(owned):
+        fail("COMPILE_INVENTORY_UNSUPPORTED", sorted(inventory_owned ^ set(owned)))
+    modules = {module["path"]: module for module in inventory["modules"]}
+    roots = compile_roots(root, proof, modules)
+    rows = proof.get("compileTasks")
+    if not isinstance(rows, list) or not rows:
+        fail("COMPILE_TASKS_MISSING")
+    seen, contexts = set(), {}
+    for row in rows:
+        if not isinstance(row, dict):
+            fail("COMPILE_TASK_SCHEMA", row)
+        module, compiler = modules.get(row.get("module")), row.get("compiler")
+        if module is None or compiler not in ("java", "kotlin"):
+            fail("COMPILE_TASK_SCHEMA", row)
+        compile_task = row.get("task")
+        if compile_task in seen:
+            fail("COMPILE_TASK_DUPLICATE", compile_task)
+        seen.add(compile_task)
+        context = compile_context(module, compile_task, compiler, row.get("component"))
+        if not isinstance(row.get("sourceSets"), list) or len(set(row["sourceSets"])) != len(row["sourceSets"]) \
+                or set(row["sourceSets"]) != context["sets"]:
+            fail("COMPILE_SOURCE_SETS", compile_task)
+        contexts[(module["path"], compiler, frozenset(context["sets"]))] = row
+        for source_set in context["sets"]:
+            api = "jvm-java" if module.get("kind", "jvm") == "jvm" else "android-java"
+            if (module["path"], source_set, api) not in roots:
+                fail("COMPILE_ROOTS_MISSING", compile_task)
+            if compiler == "kotlin" and (module["path"], source_set, "kotlin") not in roots:
+                fail("COMPILE_ROOTS_MISSING", compile_task)
+        if compiler == "kotlin":
+            extension_sets = context["sets"] if context["component"] is None else {context["component"]["name"]}
+            if any((module["path"], source_set, "kotlin-extension") not in roots for source_set in extension_sets):
+                fail("COMPILE_ROOTS_MISSING", compile_task)
+        generated = generated_compile_files(root, run, module, context, row.get("generators"), archived=archived)
+        expected_java = {path: {"path": path, "sha256": source["sha256"], "origin": "source"}
+                         for path, source in owned.items() if source["module"] == module["path"]
+                         and source["sourceSet"] in context["sets"] and path.endswith(".java")}
+        expected_java.update(generated)
+        expected_kotlin = {path: {"path": path, "sha256": source["sha256"], "origin": "source"}
+                           for path, source in owned.items() if source["module"] == module["path"]
+                           and source["sourceSet"] in context["sets"] and path.endswith(".kt")}
+        actual = compile_file_rows(root, row.get("sources"), archived=archived)
+        java = compile_file_rows(root, row.get("javaSources"), archived=archived)
+        if actual != (expected_java if compiler == "java" else expected_kotlin) \
+                or java != ({} if compiler == "java" else expected_java):
+            fail("COMPILE_EFFECTIVE_SOURCES", compile_task)
+        validate_compile_execution(state, run, row, proof["createdNs"])
+    owner = modules[task_row(run, task)["module"]]
+    if owner.get("kind", "jvm") == "jvm":
+        required = [{"main"}, *({source_set} for source_set in owner["testSourceSets"])]
+    else:
+        match = re.fullmatch(r"test(.+)UnitTest", task.rsplit(":", 1)[1])
+        if match is None:
+            fail("COMPILE_COMPONENT_UNSUPPORTED", task)
+        required = [android_component(match[1], set(owner["sourceSets"]))[0],
+                    android_component(match[1] + "UnitTest", set(owner["sourceSets"]))[0]]
+    for selected in required:
+        for compiler, suffix in (("java", ".java"), ("kotlin", ".kt")):
+            needed = any(item["module"] == owner["path"] and item["sourceSet"] in selected
+                         and item["path"].endswith(suffix) for item in owned.values())
+            needed |= compiler == "java" and owner.get("kind", "jvm") != "jvm" \
+                and owner["path"] == ":app" and "main" in selected
+            if needed and (owner["path"], compiler, frozenset(selected)) not in contexts:
+                fail("COMPILE_TASK_MISSING", {"module": owner["path"], "compiler": compiler, "sourceSets": sorted(selected)})
+    return {"file": expected_path.relative_to(state).as_posix(), "sha256": before, "createdNs": proof["createdNs"]}
+
+
 def task_begin(root, state, task, *, source_only, filters, rust_required, rust_library,
-               includes, excludes, scan_for_test_classes, test_classes_dirs, layout=None):
+               includes, excludes, scan_for_test_classes, test_classes_dirs, compile_proof=None, layout=None):
     root, state, run = read_run(root, state, layout)
     row = task_row(run, task)
     if source_only is not False or filters != [] or rust_required is not True:
         fail("FULL_TASK_CONFIGURATION", task)
     if not rust_library:
         fail("RUST_REQUIRED", task)
-    library = Path(rust_library)
-    if not library.is_absolute():
-        library = root / library
-    if not library.is_file() or library.is_symlink() or digest(library) != run["rust"]["sha256"] \
-            or str(library.resolve()) != run["rust"]["library"]:
-        fail("TASK_RUST_LIBRARY", task)
+    observed_rust = check_rust_library(root, run, rust_library)
+    if compile_proof is None:
+        fail("COMPILE_PROOF_REQUIRED", task)
+    observed_compile = validate_compile_proof(root, state, run, task, compile_proof, layout=layout)
     if report_files(root, row):
         fail("TASK_REPORTS_NOT_EMPTY", task)
     directories = class_directory_evidence(root, run["plan"], row, test_classes_dirs,
@@ -608,7 +1039,8 @@ def task_begin(root, state, task, *, source_only, filters, rust_required, rust_l
     record = {"schema": SCHEMA, "kind": "dsha-unit-task-start", **binding(run, task),
               "startedNs": started, "reportClockStartNs": clock.stat().st_mtime_ns,
               "clockSha256": digest(clock), "sourceOnly": source_only, "filters": filters,
-              "rustRequired": rust_required, "rustSha256": digest(library),
+              "rustRequired": rust_required, "rustSha256": observed_rust["sha256"],
+              "rustLibrary": observed_rust, "compileProof": observed_compile,
               "includes": includes, "excludes": excludes,
               "scanForTestClasses": scan_for_test_classes, "classDirectories": directories,
               "reportsEmpty": True}
@@ -671,6 +1103,8 @@ def task_end(root, state, task, *, outcome, layout=None):
             fail("TASK_BINDING", task)
     if outcome != "SUCCESS":
         fail("TASK_NOT_EXECUTED", f"{task}: {outcome}")
+    if start.get("rustLibrary") != expected_rust_library(run):
+        fail("TASK_RUST_EVIDENCE", task)
     files = report_files(root, row)
     if not files:
         fail("JUNIT_MISSING", task)
@@ -678,6 +1112,10 @@ def task_end(root, state, task, *, outcome, layout=None):
     for path in files:
         parse_xml(path)
         reports.append(file_evidence(root, path))
+    observed_rust = check_rust_library(root, run)
+    observed_compile = validate_compile_proof(root, state, run, task, compile_proof_file(state, task), layout=layout)
+    if start.get("compileProof") != observed_compile or observed_compile["createdNs"] > start["startedNs"]:
+        fail("COMPILE_PROOF_CHANGED", task)
     clock = task_record(state, task, "clock-end")
     write_json(clock, {**binding(run, task), "wallNs": time.time_ns()}, exclusive=True)
     clock_ended = clock.stat().st_mtime_ns
@@ -688,7 +1126,7 @@ def task_end(root, state, task, *, outcome, layout=None):
               "startSha256": digest(task_record(state, task, "start")),
               "reportClockEndNs": clock_ended, "clockSha256": digest(clock),
               "startedNs": start["startedNs"], "endedNs": ended, "outcome": outcome,
-              "reports": reports}
+              "rustLibrary": observed_rust, "compileProof": observed_compile, "reports": reports}
     write_json(task_record(state, task, "end"), record, exclusive=True)
     return record
 
@@ -755,6 +1193,7 @@ def verify_run(root, state, *, run_id=None, run_attempt=None, baseline=None,
         fail("RUN_IDENTITY")
     if run["startedNs"] > time.time_ns():
         fail("RUN_START_IN_FUTURE")
+    expected_rust = expected_rust_library(run)
     expected_files, tasks, identities = set(), [], []
     for task in run["plan"]["tasks"]:
         name = task["task"]
@@ -786,6 +1225,13 @@ def verify_run(root, state, *, run_id=None, run_attempt=None, baseline=None,
                 or start.get("includes") != [] or start.get("excludes") != [] \
                 or start.get("scanForTestClasses") is not True:
             fail("FULL_TASK_CONFIGURATION", name)
+        if start.get("rustLibrary") != expected_rust or end.get("rustLibrary") != expected_rust:
+            fail("TASK_RUST_EVIDENCE", name)
+        observed_compile = validate_compile_proof(root, state, run, name, compile_proof_file(state, name),
+                                                   layout=layout, archived=archived)
+        if start.get("compileProof") != observed_compile or end.get("compileProof") != observed_compile \
+                or observed_compile["createdNs"] > start["startedNs"]:
+            fail("COMPILE_PROOF_CHANGED", name)
         compiled = Counter(c["name"] for directory in start.get("classDirectories", [])
                            for c in directory.get("classes", []))
         for source in run["plan"]["sources"]:
@@ -832,6 +1278,8 @@ def verify_run(root, state, *, run_id=None, run_attempt=None, baseline=None,
             fail("REQUIRED_FIXTURE", pair)
     if not any(owner == PREFIX + "util.RustDigestDifferentialTest" for owner, name in identities):
         fail("RUST_TESTS_MISSING")
+    if not archived:
+        check_rust_library(root, run)
     status = "freeze-candidate" if _freezing else baseline_check(
         Path(baseline) if baseline else root / BASELINE, identities, run["plan"]["sources"])
     return {"schema": SCHEMA, "kind": "dsha-unit-aggregate", "mode": "full",
@@ -1073,6 +1521,7 @@ def main(argv=None):
             command.add_argument("--excludes-json", type=json.loads, required=True)
             command.add_argument("--scan-for-test-classes", type=bool_arg, required=True)
             command.add_argument("--test-classes-dirs-json", type=json.loads, required=True)
+            command.add_argument("--compile-proof", type=Path, required=True)
         if name == "task-end":
             command.add_argument("--outcome", required=True)
         if name == "verify":
@@ -1101,7 +1550,7 @@ def main(argv=None):
                                 filters=args.filters_json, rust_required=args.rust_required,
                                 rust_library=args.rust_library, includes=args.includes_json,
                                 excludes=args.excludes_json, scan_for_test_classes=args.scan_for_test_classes,
-                                test_classes_dirs=args.test_classes_dirs_json)
+                                test_classes_dirs=args.test_classes_dirs_json, compile_proof=args.compile_proof)
         elif args.command == "task-end":
             result = task_end(args.root, args.state, args.task, outcome=args.outcome)
         elif args.command == "verify":

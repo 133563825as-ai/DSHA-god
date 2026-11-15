@@ -17,5 +17,6 @@ plugins {
 }
 
 // applied Groovy 约定复用当前 AGP/KGP classpath，不新增插件仓库或 included build。
+apply from: rootProject.file('build-logic/source-inputs.gradle')
 apply from: rootProject.file('build-logic/verify.gradle')
 apply from: rootProject.file('build-logic/unit-test-contract.gradle')

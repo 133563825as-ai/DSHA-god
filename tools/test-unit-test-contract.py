@@ -152,10 +152,180 @@ class UnitContract(unittest.TestCase):
         return contract.begin(self.root, self.plan_path, self.state, "12345", "1", layout=self.layout,
                               rust_library=self.library, rust_receipt=self.rust_receipt, **kwargs)
 
+    def proof(self, task):
+        path = contract.compile_proof_file(self.state, task["task"])
+        if path.exists():
+            return path
+        run = contract.load(self.state / "run.json")
+        inventory = contract.compile_inventory(self.root, self.layout)
+        module = next(row for row in inventory["modules"] if row["path"] == task["module"])
+        owned = [row for row in self.plan["inputSources"] if row["module"] == task["module"]]
+        source_sets = module.get("sourceSets", sorted({"main", *module["testSourceSets"],
+                                                     *(row["sourceSet"] for row in owned)}))
+        kotlin = any(row["path"].endswith(".kt") for row in owned)
+        roots, compiles = [], []
+        for source_set in source_sets:
+            prefix = module["directory"] + "/src/" + source_set + "/"
+            roots.append({"module": module["path"], "sourceSet": source_set,
+                          "api": "jvm-java", "roots": [prefix + "java"]})
+            if kotlin:
+                for api in ("kotlin", "kotlin-extension"):
+                    roots.append({"module": module["path"], "sourceSet": source_set,
+                                  "api": api, "roots": [prefix + "java", prefix + "kotlin"]})
+        for source_set in ["main", *module["testSourceSets"]]:
+            selected = [row for row in owned if row["sourceSet"] == source_set]
+            java = [{"path": row["path"], "sha256": row["sha256"], "origin": "source"}
+                    for row in selected if row["path"].endswith(".java")]
+            kt = [{"path": row["path"], "sha256": row["sha256"], "origin": "source"}
+                  for row in selected if row["path"].endswith(".kt")]
+            for compiler in (["java", "kotlin"] if kotlin else ["java"]):
+                name = "compile" + ("" if source_set == "main" else source_set[:1].upper() + source_set[1:])
+                name += "Java" if compiler == "java" else "Kotlin"
+                row = {"task": module["path"] + ":" + name, "module": module["path"], "compiler": compiler,
+                       "sourceSets": [source_set], "component": None,
+                       "sources": java if compiler == "java" else kt,
+                       "javaSources": [] if compiler == "java" else java, "generators": []}
+                if row["sources"]:
+                    execution = contract.compile_execution_file(self.state, row["task"])
+                    if not execution.exists():
+                        receipt = {"schema": 1, "kind": "dsha-compile-execution",
+                                   **{key: run[key] for key in ("commit", "runId", "runAttempt", "planSha256")},
+                                   "compileTask": row["task"], "module": module["path"], "compiler": compiler,
+                                   "startedNs": contract.time.time_ns(), "finishedNs": contract.time.time_ns(),
+                                   "outcome": "SUCCESS", "before": copy.deepcopy(row), "after": copy.deepcopy(row)}
+                        contract.write_json(execution, receipt, exclusive=True)
+                    row["execution"] = {"file": execution.relative_to(self.state).as_posix(),
+                                        "sha256": contract.digest(execution)}
+                else:
+                    row["execution"] = None
+                compiles.append(row)
+        value = {"schema": 1, "kind": "dsha-compile-proof",
+                 **{key: run[key] for key in ("commit", "runId", "runAttempt", "planSha256")},
+                 "testTask": task["task"], "createdNs": contract.time.time_ns(), "inventory": inventory,
+                 "sourceRoots": roots, "compileTasks": compiles}
+        contract.write_json(path, value, exclusive=True)
+        return path
+
+    def rewrite_compile_proof(self, task, change, *, sync_execution=False):
+        """只修改显式合成的记录；不是生产编译或 JNI 证明。"""
+        path = self.proof(task)
+        value = contract.load(path)
+        change(value)
+        if sync_execution:
+            run = contract.load(self.state / "run.json")
+            for row in value["compileTasks"]:
+                if row.get("execution") is None:
+                    continue
+                execution = contract.compile_execution_file(self.state, row["task"])
+                receipt = contract.load(execution)
+                model = {key: item for key, item in row.items() if key != "execution"}
+                receipt["before"] = copy.deepcopy(model)
+                receipt["after"] = copy.deepcopy(model)
+                contract.write_json(execution, receipt)
+                row["execution"]["sha256"] = contract.digest(execution)
+        contract.write_json(path, value)
+        return path
+
+    def configure_android_fixture(self):
+        """与实测 AGP schema 同形的合成输入；不调用 Gradle，也不声称编译这些文件。"""
+        base = self.layout
+        modules = [{**module, "kind": "jvm", "sourceSets": ["main", "test"]} for module in base.modules]
+        modules[0].update(kind="android-application", namespace=contract.PREFIX[:-1],
+                          sourceSets=["main", "debug", "standard", "test"])
+        self.layout = SimpleNamespace(modules=modules, source_files=base.source_files,
+                                      test_tasks=base.test_tasks)
+        self.put("app/src/main/aidl/sample/Port.aidl", "package sample; interface Port {}\n")
+        self.commit_candidate()
+        self.refresh_plan()
+
+    def android_proof(self, task):
+        """生成原始 JSON、精确 generated owner 和 before/after receipt 的隔离测试样本。"""
+        path = contract.compile_proof_file(self.state, task["task"])
+        if path.exists():
+            return path
+        run = contract.load(self.state / "run.json")
+        inventory = contract.compile_inventory(self.root, self.layout)
+        module = next(row for row in inventory["modules"] if row["path"] == task["module"])
+        from ui_language_catalog import LANGUAGES
+        generated = []
+        ui_root = "app/build/generated/uiLanguage"
+        ui_files = []
+        for name in ["UiMessages", *("UiMessages_" + value.replace("-", "_") for value in LANGUAGES)]:
+            output = self.put(ui_root + "/com/deepseekharness/app/util/" + name + ".java",
+                              "// synthetic generated-file fixture, no compiler execution\n")
+            ui_files.append({"path": output.relative_to(self.root).as_posix(),
+                             "sha256": contract.digest(output), "origin": "generated"})
+        generated.append({"task": ":app:prepareUiLanguages", "root": ui_root, "files": ui_files})
+        for producer, root, name in (
+                (":app:generateStandardDebugBuildConfig", "app/build/generated/source/buildConfig/standard/debug",
+                 "com/deepseekharness/app/BuildConfig.java"),
+                (":app:compileStandardDebugAidl", "app/build/generated/aidl_source_output_dir/standardDebug/out",
+                 "sample/Port.java")):
+            output = self.put(root + "/" + name, "// synthetic generated-file fixture, no compiler execution\n")
+            generated.append({"task": producer, "root": root, "files": [{
+                "path": output.relative_to(self.root).as_posix(), "sha256": contract.digest(output),
+                "origin": "generated"}]})
+        all_sets = ("main", "debug", "standard", "test", "testDebug", "testStandard")
+        roots = []
+        for source_set in all_sets:
+            prefix = "app/src/" + source_set + "/"
+            roots.append({"module": ":app", "sourceSet": source_set, "api": "android-java",
+                          "roots": [prefix + "java", *([ui_root] if source_set == "main" else [])]})
+            roots.append({"module": ":app", "sourceSet": source_set, "api": "kotlin",
+                          "roots": [prefix + "java", prefix + "kotlin"]})
+        compiles = []
+        for component_name, selected in (("standardDebug", ["main", "debug", "standard"]),
+                                         ("standardDebugUnitTest", ["test", "testDebug", "testStandard"])):
+            task_prefix = component_name[:1].upper() + component_name[1:]
+            production = component_name == "standardDebug"
+            java_static = ["app/src/" + source_set + "/java" for source_set in selected]
+            component = {"name": component_name, "buildType": "debug",
+                         "productFlavors": [{"dimension": "androidSupport", "name": "standard"}],
+                         "namespace": contract.PREFIX[:-1],
+                         "compileJavaTask": ":app:compile" + task_prefix + "JavaWithJavac",
+                         "compileKotlinTask": ":app:compile" + task_prefix + "Kotlin",
+                         "aidlTask": ":app:compileStandardDebugAidl" if production else None,
+                         "buildConfigTask": ":app:generateStandardDebugBuildConfig" if production else None,
+                         "javaStatic": java_static + ([ui_root] if production else []),
+                         "kotlinStatic": java_static + ["app/src/" + source_set + "/kotlin" for source_set in selected]}
+            roots.append({"module": ":app", "sourceSet": component_name, "api": "kotlin-extension", "roots": []})
+            java = [{"path": item["path"], "sha256": item["sha256"], "origin": "source"}
+                    for item in run["plan"]["inputSources"] if item["module"] == ":app"
+                    and item["sourceSet"] in selected and item["path"].endswith(".java")]
+            kotlin = [{"path": item["path"], "sha256": item["sha256"], "origin": "source"}
+                      for item in run["plan"]["inputSources"] if item["module"] == ":app"
+                      and item["sourceSet"] in selected and item["path"].endswith(".kt")]
+            generators = copy.deepcopy(generated) if production else []
+            java += [copy.deepcopy(item) for owner in generators for item in owner["files"]]
+            for compiler in ("java", "kotlin"):
+                row = {"task": component["compileJavaTask" if compiler == "java" else "compileKotlinTask"],
+                       "module": ":app", "compiler": compiler, "sourceSets": selected, "component": component,
+                       "sources": java if compiler == "java" else kotlin,
+                       "javaSources": [] if compiler == "java" else java, "generators": copy.deepcopy(generators)}
+                if row["sources"]:
+                    execution = contract.compile_execution_file(self.state, row["task"])
+                    receipt = {"schema": 1, "kind": "dsha-compile-execution",
+                               **{key: run[key] for key in ("commit", "runId", "runAttempt", "planSha256")},
+                               "compileTask": row["task"], "module": ":app", "compiler": compiler,
+                               "startedNs": contract.time.time_ns(), "finishedNs": contract.time.time_ns(),
+                               "outcome": "SUCCESS", "before": copy.deepcopy(row), "after": copy.deepcopy(row)}
+                    contract.write_json(execution, receipt, exclusive=True)
+                    row["execution"] = {"file": execution.relative_to(self.state).as_posix(),
+                                        "sha256": contract.digest(execution)}
+                else:
+                    row["execution"] = None
+                compiles.append(row)
+        value = {"schema": 1, "kind": "dsha-compile-proof",
+                 **{key: run[key] for key in ("commit", "runId", "runAttempt", "planSha256")},
+                 "testTask": task["task"], "createdNs": contract.time.time_ns(),
+                 "inventory": inventory, "sourceRoots": roots, "compileTasks": compiles}
+        contract.write_json(path, value, exclusive=True)
+        return path
+
     def start(self, task, **overrides):
         args = dict(source_only=False, filters=[], rust_required=True, rust_library=self.library,
                     includes=[], excludes=[], scan_for_test_classes=True,
-                    test_classes_dirs=[str(self.class_dir(task))], layout=self.layout)
+                    test_classes_dirs=[str(self.class_dir(task))], compile_proof=self.proof(task), layout=self.layout)
         args.update(overrides)
         return contract.task_begin(self.root, self.state, task["task"], **args)
 
@@ -559,6 +729,392 @@ class UnitContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
             self.start(self.plan["tasks"][0])
 
+    def test_compile_proof_is_mandatory_in_api_and_real_cli(self):
+        self.begin()
+        task = self.plan["tasks"][0]
+        with self.assertRaisesRegex(ValueError, "COMPILE_PROOF_REQUIRED"):
+            self.start(task, compile_proof=None)
+        self.assertFalse(contract.task_record(self.state, task["task"], "start").exists())
+        result = subprocess.run([sys.executable, str(TOOLS / "unit_test_contract.py"), "task-begin",
+                                 "--root", str(self.root), "--state", str(self.state), "--task", task["task"],
+                                 "--source-only", "false", "--filters-json", "[]", "--rust-required", "true",
+                                 "--rust-library", str(self.library), "--includes-json", "[]", "--excludes-json", "[]",
+                                 "--scan-for-test-classes", "true", "--test-classes-dirs-json", "[]"],
+                                capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("--compile-proof", result.stderr)
+
+    def test_compile_proof_commit_run_task_plan_and_time_bindings_are_exact(self):
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.proof(task)
+        original = contract.load(path)
+        for field, value in (("commit", "0" * 40), ("runId", "other-run"), ("runAttempt", "2"),
+                             ("planSha256", "0" * 64), ("testTask", ":wrong:test"),
+                             ("createdNs", 0), ("createdNs", contract.time.time_ns() + 10**12),
+                             ("schema", 2), ("kind", "summary-not-proof")):
+            candidate = copy.deepcopy(original)
+            candidate[field] = value
+            contract.write_json(path, candidate)
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, "COMPILE_PROOF_"):
+                self.start(task)
+            self.assertFalse(contract.task_record(self.state, task["task"], "start").exists())
+        contract.write_json(path, original)
+        self.start(task)
+
+    def test_compile_proof_inventory_roots_and_kotlin_extension_cannot_be_omitted(self):
+        self.begin()
+        task = self.plan["tasks"][1]
+        path = self.proof(task)
+        original = contract.load(path)
+        mutations = []
+        value = copy.deepcopy(original)
+        value["inventory"]["sources"].pop()
+        mutations.append((value, "COMPILE_INVENTORY_MISMATCH"))
+        value = copy.deepcopy(original)
+        value["sourceRoots"] = [row for row in value["sourceRoots"] if row["api"] != "kotlin-extension"]
+        mutations.append((value, "COMPILE_ROOTS_MISSING"))
+        value = copy.deepcopy(original)
+        value["sourceRoots"][0]["roots"] = ["out/external-code-root"]
+        mutations.append((value, "COMPILE_ROOT_MISMATCH"))
+        value = copy.deepcopy(original)
+        value["sourceRoots"].append(copy.deepcopy(value["sourceRoots"][0]))
+        mutations.append((value, "COMPILE_ROOT_DUPLICATE"))
+        value = copy.deepcopy(original)
+        value["sourceRoots"][0] = "not-a-root-object"
+        mutations.append((value, "COMPILE_ROOT_SCHEMA"))
+        for candidate, expected in mutations:
+            contract.write_json(path, candidate)
+            with self.subTest(expected=expected), self.assertRaisesRegex(ValueError, expected):
+                self.start(task)
+        contract.write_json(path, original)
+        self.start(task)
+
+    def test_compile_effective_inputs_reject_omitted_production_extra_and_changed_bytes(self):
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.proof(task)
+        original = contract.load(path)
+        main = next(row for row in original["compileTasks"] if row["sourceSets"] == ["main"])
+        extra = self.put("out/extra-production.java", "class UnreviewedProduction {}\n")
+        candidates = []
+        value = copy.deepcopy(original)
+        value["compileTasks"] = [row for row in value["compileTasks"] if row["sourceSets"] != ["main"]]
+        candidates.append((value, "COMPILE_TASK_MISSING"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["sources"] = []
+        value["compileTasks"][0]["execution"] = None
+        candidates.append((value, "COMPILE_EFFECTIVE_SOURCES"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["sources"].append({"path": extra.relative_to(self.root).as_posix(),
+                                                   "sha256": contract.digest(extra), "origin": "source"})
+        candidates.append((value, "COMPILE_EFFECTIVE_SOURCES"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["sources"][0]["sha256"] = "0" * 64
+        candidates.append((value, "COMPILE_FILE_CHANGED"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["sources"].append(copy.deepcopy(value["compileTasks"][0]["sources"][0]))
+        candidates.append((value, "COMPILE_FILE_DUPLICATE"))
+        value = copy.deepcopy(original)
+        value["compileTasks"].append(copy.deepcopy(value["compileTasks"][0]))
+        candidates.append((value, "COMPILE_TASK_DUPLICATE"))
+        for candidate, expected in candidates:
+            contract.write_json(path, candidate)
+            with self.subTest(expected=expected), self.assertRaisesRegex(ValueError, expected):
+                self.start(task)
+        contract.write_json(path, original)
+        self.assertTrue(main["sources"])
+        self.start(task)
+
+    def test_compile_execution_receipt_required_for_nonempty_production_sources(self):
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.proof(task)
+        original = contract.load(path)
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["execution"] = None
+        contract.write_json(path, value)
+        with self.assertRaisesRegex(ValueError, "COMPILE_EXECUTION_REQUIRED"):
+            self.start(task)
+        contract.write_json(path, original)
+        reference = original["compileTasks"][0]["execution"]
+        execution = self.state / reference["file"]
+        raw = execution.read_bytes()
+        self.assertEqual(contract.compile_execution_file(self.state, original["compileTasks"][0]["task"]), execution)
+        execution.unlink()
+        with self.assertRaisesRegex(ValueError, "COMPILE_EXECUTION_HASH"):
+            self.start(task)
+        execution.write_bytes(raw)
+        self.start(task)
+
+    def test_compile_execution_receipt_checks_binding_success_time_and_pre_post_sources(self):
+        self.begin()
+        task = self.plan["tasks"][0]
+        proof_path = self.proof(task)
+        original_proof = contract.load(proof_path)
+        row = original_proof["compileTasks"][0]
+        execution_path = self.state / row["execution"]["file"]
+        original = contract.load(execution_path)
+        mutations = [("runId", "wrong", "COMPILE_EXECUTION_BINDING"),
+                     ("compileTask", ":other:compileJava", "COMPILE_EXECUTION_BINDING"),
+                     ("module", ":other", "COMPILE_EXECUTION_BINDING"),
+                     ("outcome", "FROM-CACHE", "COMPILE_EXECUTION_BINDING"),
+                     ("finishedNs", 0, "COMPILE_EXECUTION_TIME"),
+                     ("after", {}, "COMPILE_EXECUTION_SOURCES"),
+                     ("before", {}, "COMPILE_EXECUTION_SOURCES")]
+        for field, value, expected in mutations:
+            candidate = copy.deepcopy(original)
+            candidate[field] = value
+            contract.write_json(execution_path, candidate)
+            changed_proof = copy.deepcopy(original_proof)
+            changed_proof["compileTasks"][0]["execution"]["sha256"] = contract.digest(execution_path)
+            contract.write_json(proof_path, changed_proof)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, expected):
+                self.start(task)
+        contract.write_json(execution_path, original)
+        contract.write_json(proof_path, original_proof)
+        self.start(task)
+
+    def test_compile_proof_and_receipt_bytes_cannot_change_between_start_end_and_verify(self):
+        self.finish()
+        self.freeze()
+        task = self.plan["tasks"][0]
+        proof_path = self.proof(task)
+        raw = proof_path.read_bytes()
+        proof_path.write_bytes(raw + b"\n")
+        with self.assertRaisesRegex(ValueError, "COMPILE_PROOF_CHANGED"):
+            self.verify()
+        proof_path.write_bytes(raw)
+        proof = contract.load(proof_path)
+        execution = self.state / proof["compileTasks"][0]["execution"]["file"]
+        receipt_raw = execution.read_bytes()
+        execution.write_bytes(receipt_raw + b"\n")
+        with self.assertRaisesRegex(ValueError, "COMPILE_EXECUTION_HASH"):
+            self.verify(archived=True)
+        execution.write_bytes(receipt_raw)
+        self.assertEqual("matched", self.verify()["baselineStatus"])
+
+    def test_compile_proof_generated_files_bind_exact_android_owners_and_namespace(self):
+        self.configure_android_fixture()
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.android_proof(task)
+        original = contract.load(path)
+        # 构造的三个 generator 的真实临时文件只用于证明校验器按精确集合工作。
+        self.assertEqual(3, len(original["compileTasks"][0]["generators"]))
+        mutations = []
+        for index in range(3):
+            value = copy.deepcopy(original)
+            value["compileTasks"][0]["generators"][index]["task"] = ":app:unreviewedGenerator"
+            mutations.append((value, "COMPILE_GENERATOR_OWNER"))
+            value = copy.deepcopy(original)
+            del value["compileTasks"][0]["generators"][index]
+            mutations.append((value, "COMPILE_GENERATOR_MISSING"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["component"]["namespace"] = "wrong.namespace"
+        mutations.append((value, "COMPILE_BUILD_CONFIG_NAMESPACE"))
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["generators"][0]["root"] = "app/build"
+        mutations.append((value, "COMPILE_GENERATOR_FILES"))
+        for candidate, expected in mutations:
+            contract.write_json(path, candidate)
+            with self.subTest(expected=expected), self.assertRaisesRegex(ValueError, expected):
+                self.start(task)
+        contract.write_json(path, original)
+        self.start(task)
+
+    def test_compile_proof_component_and_generator_cannot_jointly_invent_a_producer(self):
+        self.configure_android_fixture()
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.android_proof(task)
+        original = contract.load(path)
+        for key, old in (("aidlTask", ":app:compileStandardDebugAidl"),
+                         ("buildConfigTask", ":app:generateStandardDebugBuildConfig")):
+            candidate = copy.deepcopy(original)
+            for row in candidate["compileTasks"]:
+                if row["component"]["name"] != "standardDebug":
+                    continue
+                row["component"][key] = ":app:unreviewedProducer"
+                for generator in row["generators"]:
+                    if generator["task"] == old:
+                        generator["task"] = ":app:unreviewedProducer"
+            contract.write_json(path, candidate)
+            with self.subTest(role=key), self.assertRaisesRegex(ValueError, "COMPILE_COMPONENT_TASK_ROLE"):
+                self.start(task)
+        candidate = copy.deepcopy(original)
+        for row in candidate["compileTasks"]:
+            if row["component"]["name"] == "standardDebug":
+                row["component"]["buildConfigTask"] = None
+                row["generators"] = [owner for owner in row["generators"]
+                                     if owner["task"] != ":app:generateStandardDebugBuildConfig"]
+        contract.write_json(path, candidate)
+        with self.assertRaisesRegex(ValueError, "COMPILE_COMPONENT_TASK_ROLE"):
+            self.start(task)
+        contract.write_json(path, original)
+        self.start(task)
+
+    def test_compile_proof_android_static_and_extension_roots_are_mandatory(self):
+        self.configure_android_fixture()
+        self.begin()
+        task = self.plan["tasks"][0]
+        path = self.android_proof(task)
+        original = contract.load(path)
+        value = copy.deepcopy(original)
+        value["compileTasks"][0]["component"]["javaStatic"] = ["out/replacement"]
+        contract.write_json(path, value)
+        with self.assertRaisesRegex(ValueError, "COMPILE_COMPONENT_ROOTS"):
+            self.start(task)
+        value = copy.deepcopy(original)
+        value["sourceRoots"] = [row for row in value["sourceRoots"] if row["api"] != "kotlin-extension"]
+        contract.write_json(path, value)
+        with self.assertRaisesRegex(ValueError, "COMPILE_ROOTS_MISSING"):
+            self.start(task)
+        contract.write_json(path, original)
+        self.start(task)
+
+    def test_archived_compile_proof_keeps_exact_generated_and_execution_evidence_without_old_outputs(self):
+        self.configure_android_fixture()
+        self.begin()
+        for task in self.plan["tasks"]:
+            if task["module"] == ":app":
+                self.android_proof(task)
+            self.start(task)
+            xml(self.report_path(task), self.pairs(task))
+            self.end(task)
+        self.freeze()
+        app = self.plan["tasks"][0]
+        proof = contract.load(self.proof(app))
+        generated = {item["path"] for row in proof["compileTasks"] for owner in row["generators"] for item in owner["files"]}
+        for name in generated:
+            target = self.root / name
+            self.assertTrue(target.resolve().is_relative_to(self.root / "app/build/generated"))
+            target.unlink()
+        self.library.unlink()
+        self.rust_receipt.unlink()
+        self.assertEqual("matched", self.verify(archived=True)["baselineStatus"])
+        with self.assertRaisesRegex(ValueError, "COMPILE_FILE_CHANGED"):
+            self.verify()
+        execution = self.state / proof["compileTasks"][0]["execution"]["file"]
+        original = contract.load(execution)
+        original["after"]["sources"] = []
+        contract.write_json(execution, original)
+        with self.assertRaisesRegex(ValueError, "COMPILE_EXECUTION_HASH"):
+            self.verify(archived=True)
+
+    def test_rust_library_persistent_change_after_last_start_is_rejected_at_end(self):
+        self.begin()
+        for task in self.plan["tasks"][:-1]:
+            self.start(task)
+            xml(self.report_path(task), self.pairs(task))
+            self.end(task)
+        last = self.plan["tasks"][-1]
+        self.start(last)
+        original = self.library.read_bytes()
+        self.library.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+        self.assertNotEqual(contract.load(self.rust_receipt)["artifact"]["sha256"], contract.digest(self.library))
+        xml(self.report_path(last), self.pairs(last))
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.end(last)
+
+    def test_rust_library_persistent_change_after_end_is_rejected_by_live_verify(self):
+        self.finish()
+        self.freeze()
+        original = self.library.read_bytes()
+        self.library.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+        self.assertNotEqual(contract.load(self.rust_receipt)["artifact"]["sha256"], contract.digest(self.library))
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+
+    def test_rust_live_verify_rejects_missing_non_regular_and_size_changes(self):
+        self.finish()
+        self.freeze()
+        original = self.library.read_bytes()
+        self.library.unlink()
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+        self.library.mkdir()
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+        self.library.rmdir()
+        self.library.write_bytes(original + b"changed size")
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+        self.library.write_bytes(original)
+        self.assertEqual("matched", self.verify()["baselineStatus"])
+
+    def test_rust_reopen_rejects_final_and_ancestor_links_even_with_identical_bytes(self):
+        self.finish()
+        self.freeze()
+        original = self.library.read_bytes()
+        target = self.root / "out/identical-lib.so"
+        target.write_bytes(original)
+        self.library.unlink()
+        self.library.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+        self.library.unlink()
+        self.library.write_bytes(original)
+        parent = self.library.parent
+        moved = self.root / "out/rust-moved"
+        self.assertEqual(self.root / "out/rust", parent.resolve())
+        self.assertEqual(self.root / "out/rust-moved", moved.resolve())
+        parent.rename(moved)
+        parent.symlink_to(moved, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+
+    def test_archived_rust_checks_saved_start_end_without_original_library(self):
+        self.finish()
+        self.freeze()
+        expected = contract.expected_rust_library(contract.load(self.state / "run.json"))
+        for task in self.plan["tasks"]:
+            start = contract.load(contract.task_record(self.state, task["task"], "start"))
+            end = contract.load(contract.task_record(self.state, task["task"], "end"))
+            self.assertEqual(expected, start["rustLibrary"])
+            self.assertEqual(expected, end["rustLibrary"])
+        self.library.unlink()
+        self.rust_receipt.unlink()
+        self.assertEqual("matched", self.verify(archived=True)["baselineStatus"])
+        with self.assertRaisesRegex(ValueError, "TASK_RUST_LIBRARY"):
+            self.verify()
+        end_path = contract.task_record(self.state, self.plan["tasks"][-1]["task"], "end")
+        original = contract.load(end_path)
+        for field, value in (("path", "/different/runner/libdsha_rs.so"), ("fileType", "symlink"),
+                             ("size", expected["size"] + 1), ("sha256", "0" * 64), (None, None)):
+            changed = copy.deepcopy(original)
+            if field is None:
+                del changed["rustLibrary"]
+            else:
+                changed["rustLibrary"][field] = value
+            contract.write_json(end_path, changed)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "TASK_RUST_EVIDENCE"):
+                self.verify(archived=True)
+        contract.write_json(end_path, original)
+        run_path = self.state / "run.json"
+        run = contract.load(run_path)
+        run["rust"]["receipt"]["runId"] = "wrong"
+        contract.write_json(run_path, run)
+        with self.assertRaisesRegex(ValueError, "RUST_RECEIPT_IDENTITY"):
+            self.verify(archived=True)
+
+    def test_summary_only_cli_title_does_not_claim_full_fixed_input_aggregate(self):
+        report = self.report_path(self.plan["tasks"][0])
+        xml(report, self.pairs(self.plan["tasks"][0]))
+        for mode in ("full", "source-only"):
+            summary = self.root / ("out/legacy-" + mode + ".md")
+            output = self.root / ("out/legacy-" + mode + ".json")
+            result = subprocess.run([sys.executable, str(TOOLS / "verify-unit-results.py"),
+                                     "--mode", mode, "--reports", str(report.parent), "--output", str(output)],
+                                    capture_output=True, text=True,
+                                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)})
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIs(False, contract.load(output)["aggregate"])
+            rendered = summary.read_text(encoding="utf-8").lower()
+            self.assertIn("report summary", rendered)
+            self.assertNotIn("with fixed inputs", rendered)
+            self.assertNotIn("full repository unit tests", rendered)
+
     def test_kotlin_top_level_helper_facade_is_part_of_compiled_inventory(self):
         self.put("core/policy/src/test/kotlin/two/TopLevel.kt", "package two\nfun helperAnswer() = 42\n")
         self.commit_candidate()
@@ -909,6 +1465,8 @@ class UnitContract(unittest.TestCase):
         self.assertEqual(7, summary["flavors"]["Standard"]["requiredFixtureTestsPassed"])
         with self.assertRaisesRegex(ValueError, "CONTRACT_JSON"):
             self.verify()
+        from source_layout import SourceLayout
+        self.layout = SourceLayout(self.root)
         self.finish()
         self.freeze()
         aggregate = self.root / "out/aggregate-cli.json"

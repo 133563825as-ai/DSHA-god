@@ -103,6 +103,24 @@ Kotlin JVM 2.2.10 编译/JDK17、Android library built-in Kotlin/Robolectric 真
 `--offline`、既有严格依赖校验和真实编译测试必须全过，才可登记该环境的离线接口验收。
 缓存缺项要如实报告，不加仓库、不放宽校验、不为 library 另加 Kotlin Android 插件。
 
+## 实际编译输入证明
+
+[source-inputs.gradle](source-inputs.gradle) 将共享布局与真实 Android/JVM Java/Kotlin 源根、
+官方 AGP component 静态源集、JavaCompile/KotlinCompile 有效文件逐项对等。额外、替换或过滤
+输入直接拒绝，生成源只允许 UiLanguage、BuildConfig、AIDL 的精确 producer、输出根和文件。
+配置期仅允许尚未完成的已知 generator provider 延后；编译前和 Test 前必须完整解析，不能
+以 pending 进入完整测试。
+
+编译前调用 `source_layout.py --verify-compile-head`，完整运行的每个非空编译阶段还保存本次
+before/after 同字节执行回执。Test 前重读模型和回执，独占写入 `compile-proofs/<task-sha>.json`；
+Python 校验器独立核运行身份、库存、根、生产/测试源全集合、生成 owner、执行时间和原始摘要。
+archived 模式仍要求这些证据文件闭环，只免除旧 runner 的库和生成文件物理路径重读。
+
+`test-build-conventions.py --emit-full-contract-fixture NEWDIR --with-kotlin` 可生成仓库外合成
+JVM 门禁项目。它含真实 Java/Kotlin 编译和 JUnit 用例，但 opaque 假 so 与 fake CI baseline
+明确只用于门禁接线，不证明 JNI、产品夹具或产品完整 CI。先运行生成项目的 prepare-synthetic，
+再经 `dsha-gradle` 串行执行，已消费的 state 不复用；详细实测见 P1 回执。
+
 ## CI 行为门禁
 
 `unit-test-contract.gradle` 与上述结构抽取分开，由根工程应用。只有完整未过滤 CI 设置
