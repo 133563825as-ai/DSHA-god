@@ -1,6 +1,6 @@
 # SAF 整域 Kotlin 迁移：本地实现与 API 对照（2026-11-15）
 
-本批已交付实际生产替换及本地提交，等待主会话独立逐行审查、受管 descriptor 重算和用户合入批准。开工 fetch/远端读回基线为 `e2e6e341b3061de61df32090c9b044eab5bdd686`；实现提交已无冲突 rebase 到 `b3602555b39056279bc5131e7eaefc1a6be114ae`，代码提交为 `56cc4ccaa992aa6e87e60766b60a50fc4c721121`。发布仍为 build366 / `5ccc8aa3`，本批没有 push、合并、发布、安装或手机操作。
+当前复验与集成以 `e368e6d8a0b8679faa138feb51dd70f2447860e1` 为基线，15 类实现提交为 `c06d8a8ba4432b64374c0871846ff97b9929d288`、配套原回执提交为 `5591633196ffc0a4161b7e8d8c0f8b164823d045`；本轮追加仅修回执和文档注记，生产不变。开工 fetch/远端读回曾为 `e2e6e341`，不能用旧基线日志代替以下新基线复验。发布仍为 build366 / `5ccc8aa3`；本 worker 不 push、合并、发布、安装或操作手机。
 
 遵循 [ADR0004](../../adr/0004-kotlin-rust-direction.md)、[Kotlin 工具链](../../kotlin-toolchain.md) 和 [A2 原实现回执](a2-task-baseline-20261113.md)。本文件记录 Java/Kotlin 互调与 JVM 可见性的实际差异，不把 `internal` 当作 JVM 包访问控制。
 
@@ -36,7 +36,7 @@ SAF 生产目录的跟踪清单为 15 个 Java；本批全部删除，以下 15 
 
 本机使用缓存 Kotlin 2.2.10、JDK17、Android SDK37 和缓存依赖，先让 Kotlin 编译器读取实际混合源，再由 javac 编译实际 Java 生产/测试源。只为资源引用从真实 XML 与当前 Gradle resValue/发行身份构造临时 R/BuildConfig 符号；SAF、transfer、宿主和测试均使用真实源码，没有用 API stub 掩盖互调变化。这不是 AAPT、APK 或 Gradle 完整构建。
 
-rebase 后显式生产输入为 **1045 Java + 41 Kotlin**，包含 main/standard/debug、AIDL stub 与生成文案；测试显式输入为 **17 Java + 1 Kotlin**。原基线 main/standard/生成源为 1021 Java + 26 Kotlin，另补编原 39 个 debug Java，合计 **1060 Java + 26 Kotlin**。
+实际树的跟踪生产输入（含仓库既有 1 个 AIDL stub）为 **1047 Java + 26 Kotlin → 1032 Java + 41 Kotlin**。其中 SourceLayout 的 main/standard/debug 映射根为 1046 Java + 26 Kotlin → 1031 Java + 41 Kotlin；两边各加既有 1 个 AIDL stub。补充混编另实际生成 13 个 Java（文案及临时 R/BuildConfig 符号），因此新版本显式 javac 输入为 **1045 Java**、Kotlin 为 **41**；不把额外生成源算进跟踪生产清单。测试显式输入为 **17 Java + 1 Kotlin**。分项清单和命令保存在本轮 inventory-receipt 与 compile 回执。
 
 真实 Java 消费点包含：
 
@@ -258,7 +258,7 @@ Kotlin 对已有 final 类的实例实现及 @JvmStatic 包装增加 **139 项 A
 
 ## 迁移前后行为与 Java 编译对照
 
-最终证明脚本 exit **0**，绑定代码头 `56cc4cca`。迁移前 Java 与 rebase 后 Kotlin 各运行 **200 / 0 failures / 0 ignored / 0 assumptions**；200 条排序后的测试身份逐条相同（以 LF 连接、不加末尾 LF 的 `TEST 类#方法` 清单 SHA-256：`9c8648bdf9d6b7b8338cf1f082fe868ad61f24e5943dc3f61c49e80b36b98308`），没有丢失/改名既有测试。
+本轮 P1 证明脚本 exit **0**，绑定 HEAD `55916331`（实现 `c06d8a8b`、基线 `e368e6d8`）。原 Java 对照类文件来自开工基线；已逐文件核对其 15 个 SAF Java blob 与 `e368e6d8` 完全一致。迁移前 Java 与 rebase 后 Kotlin 各运行 **200 / 0 failures / 0 ignored / 0 assumptions**；200 条排序后的测试身份逐条相同（以 LF 连接、不加末尾 LF 的 `TEST 类#方法` 清单 SHA-256：`9c8648bdf9d6b7b8338cf1f082fe868ad61f24e5943dc3f61c49e80b36b98308`），没有丢失/改名既有测试。
 
 | 实际 javac 控制（覆盖表中全部 34 入口及 5 类型，含接口 extends/implements/override） | 原 Java | 迁移后 Kotlin | 结论 |
 |---|---|---|---|
@@ -274,16 +274,16 @@ Kotlin 对已有 final 类的实例实现及 @JvmStatic 包装增加 **139 项 A
 实际命令与本机回执位于仓库外：
 
 ```sh
-python3 /tmp/saf-compile-7cf7bc9f.py "$PWD" /tmp/saf-after-rebased-7cf7bc9f
-python3 /tmp/saf-abi-check-7cf7bc9f.py /tmp/saf-before-7cf7bc9f/abi.json /tmp/saf-after-rebased-7cf7bc9f/abi.json
-python3 /tmp/saf-final-proof-7cf7bc9f.py "$PWD"
+python3 /tmp/saf-p1-compile-7cf7bc9f.py "$PWD" /tmp/saf-after-p1-7cf7bc9f
+python3 /tmp/saf-abi-check-7cf7bc9f.py /tmp/saf-before-7cf7bc9f/abi.json /tmp/saf-after-p1-7cf7bc9f/abi.json
+python3 /tmp/saf-p1-proof-7cf7bc9f.py "$PWD"
 ```
 
 Robolectric 本机配置为 SDK34 缓存、offline、conscrypt OFF、`--add-opens=java.base/java.io=ALL-UNNAMED`；不替代 CI 默认配置。长 classpath 通过 @args 文件传入。重编译与 transfer 会话协调串行，仅通过 dsha-gradle 启动 Gradle，没有抢占/结束其它会话构建。
 
 ## 格式、边界、失败与未验项
 
-以下在 rebase 后代码 `56cc4cca` 上执行，逐项日志与 exit 保存在仓库外 `/tmp/saf-final-gates-7cf7bc9f/receipt.json`：
+以下计数须与 `e368e6d8` 基线、实现 `c06d8a8b` 和本轮 P1 命令日志对应；旧基线计数不混用。日志入口见文末命令，host manifest 以本轮 `--check-manifest` 实际输出 264 为准：
 
 | 检查 | 实际结果 | exit |
 |---|---|---|
@@ -293,9 +293,9 @@ Robolectric 本机配置为 SDK34 缓存、offline、conscrypt OFF、`--add-open
 | core boundaries | 25 tests / 0 failure，基线未扩大 | 0 |
 | runtime descriptor source 单测 | 4 tests / 0 failure | 0 |
 | source hygiene | PASS，LF/managed byte pins 等原政策不改 | 0 |
-| host test manifest | PASS_MANIFEST / 260 项登记（不是 260 项执行） | 0 |
-| 当前文档链接 | 56 文档 / 1324 有效 / 0 警告 / 0 错误 | 0 |
-| 本次回执与 A2 最小链接修订 | 2 文档 / 60 有效 / 0 警告 / 0 错误 | 0 |
+| host test manifest | PASS_MANIFEST / 264 项登记（不是 264 项执行） | 0 |
+| 当前文档链接 | 56 文档 / 1328 有效 / 0 警告 / 0 错误 | 0 |
+| 本次回执与 A2 最小链接修订 | 2 文档 / 61 有效 / 0 警告 / 0 错误 | 0 |
 | diff whitespace | PASS | 0 |
 | runtime-input-contract | 18 项：17 通过、1 固定输入缺失错误 | 1 |
 | runtime-descriptor-inputs | DESCRIPTOR_LAUNCHER_MEMBER_SET；旧描述符尚未由 main 重算 | 1 |
@@ -304,7 +304,9 @@ Robolectric 本机配置为 SDK34 缓存、offline、conscrypt OFF、`--add-open
 
 已知失败与未验范围：
 
-- 原 Gradle 基线经 dsha-gradle 在 prepareBackupAssets 因缺固定输入 dsh-runtime.bin 退出 1，未执行到 JUnit；rebase 后再次通过 dsha-gradle 串行尝试 compileStandardDebugKotlin、compileStandardDebugJavaWithJavac、compileStandardDebugUnitTestKotlin、compileStandardDebugUnitTestJavaWithJavac（no-daemon、max-workers=1），仍在同一 prepareBackupAssets 配置核验停止，**exit 1 / 14s**。不把手工混编写成 Gradle 完整构建通过。
+- `SafGrantRecord.kt` 的 4 处 `@Suppress("VAL_REASSIGNMENT")` 在 kotlinc 2.2.10 实际输出警告：compiler behavior is **UNSPECIFIED and WILL NOT BE PRESERVED**。当前固定版本的 record 形态、构造归一化和 Java 值语义已做真实编译/双端回归；不能据此保证未来编译器行为。任何 Kotlin 升级必须重新验证警告对应的构造字节码、组件顺序、归一化、equals/hashCode/toString 及 Java 消费者。
+- source hygiene 的 UUID 源码扫描尚只覆盖 Java；扩到 Kotlin 按主会话安排在合并后补，不把本轮 hygiene PASS 写成这项覆盖已修复。
+- 原 Gradle 基线经 dsha-gradle 在 prepareBackupAssets 因缺固定输入 dsh-runtime.bin 退出 1，未执行到 JUnit；新基线通过 dsha-gradle 串行执行三项生成器后尝试 compileStandardDebugKotlin/定向 testStandardDebugUnitTest（no-daemon、max-workers=1），仍在同一 prepareBackupAssets 配置核验停止，**exit 1 / 20s**。不把手工混编写成 Gradle 完整构建通过。
 - 首次仓库外 JUnit 使用错误 SDK 缓存路径失败，改为本机已存在的缓存后原 188 项通过。一次超长 classpath 直接 argv 的 Java API 编译未解析到 JUnit，改 @args 后 9 项通过；这些是 harness/环境问题，失败日志保留。
 - 最终证明表最初把人工误计的 37 写成断言，机器展开后更正为 34；一次自定义结果 runner 已输出原 Java 200/0/0/0，但 Robolectric 非 daemon 线程使 JVM 未退出，收集结果后终止本轮，补显式 System.exit 后完整证明脚本重新执行 exit 0。均为仓库外 harness 修正，生产与既有测试不改。
 - 第一轮 Kotlin 编译发现 2 个 SDK nullable/fcntlInt 位置、一个不适用仓库默认模式的 JvmDefaultWithCompatibility 注解和清理列表的可空解引用位置；均按原 null 行为/默认接口形态修正后，R2/R3/最终混编与 Java default/ABI 回归通过，没有放宽原 private 字段以求编译。
@@ -312,11 +314,11 @@ Robolectric 本机配置为 SDK34 缓存、offline、conscrypt OFF、`--add-open
 - runtime-input-contract 的 18 项有 1 项因固定输入缺失错误，其余 17 项通过；runtime-descriptor-inputs 按预期拒绝旧 descriptor 的 15 删 15 增，报 DESCRIPTOR_LAUNCHER_MEMBER_SET。没有改检查逻辑或伪造受管证明。
 - 未做 Gradle 全量/默认 CI 矩阵、Lint、AAPT/APK/签名、安装、SAF DocumentsUI/外部 Provider/真机、LayoutAuditInstrumentation 或覆盖升级验收。
 
-A2 历史文档仅改 6 个 SAF 源码链接的扩展名与行号，历史叙述/结论不改。Java 格式清单仅删除 15 个 SAF 生产 Java 条目、新增 SafJavaApiTest 1 条，其余顺序/政策字段不变，完整性检查全条目存在。
+A2 历史文档保留原散文/结论，仅改 6 个 SAF 源码链接并加一条 2026-11-15 整域迁移注记；syscall 镜像脚本仅修 docstring 的 Kotlin 引用/迁移注记，AST 已核对执行代码与基线相同。Java 格式清单仅删除 15 个 SAF 生产 Java 条目、新增 SafJavaApiTest 1 条，其余顺序/政策字段不变，完整性检查全条目存在。
 
 ## 受管输入、集成与回退
 
-只读枚举显示 launcherInputs 总数 **515→515**，精确删除以下 15 个 `saf/*.java` 键，加入同名 `saf/*.kt` 键；除本域后缀替换外没有其它输入改动。managed-runtime-inputs、managed-package-proofs、runtime-descriptor 均未由本 worker 修改。主会话须在合并树按最终固定输入重算 descriptor/runtimeId；runtimeId 预期改变，按既有契约触发一次运行时维护页，不由 worker 沿用旧 pin。
+只读枚举显示 launcherInputs 总数 **517→517**，精确删除以下 15 个 `saf/*.java` 键，加入同名 `saf/*.kt` 键；除本域后缀替换外没有其它输入改动。managed-runtime-inputs、managed-package-proofs、runtime-descriptor 均未由本 worker 修改。主会话须在合并树按最终固定输入重算 descriptor/runtimeId；runtimeId 预期改变，按既有契约触发一次运行时维护页，不由 worker 沿用旧 pin。
 
 | 删除的 launcherInputs 键 | 加入的键 | 新源码 SHA-256 |
 |---|---|---|
@@ -338,4 +340,28 @@ A2 历史文档仅改 6 个 SAF 源码链接的扩展名与行号，历史叙述
 
 集成顺序：核对本地提交与本回执 → 非实现者审查全部 diff → 用户明确批准（明示 34 成员 + 5 类型 JVM 可见性放宽及编译器方法标志差异）→ 主会话串行整合格式清单与受管 descriptor、运行 CI/full 门禁。进 main 不等于发布。
 
-回退可 revert 本批代码提交 `56cc4cca` 与回执提交，再由主会话重算受管 descriptor；15 个原 Java 与原格式条目恢复，15 个 Kotlin 删除。无 namespace/schema/数据格式/权限/包名变化，不需要清数据或重置授权。回退同样交主会话协调，不在本 worker 执行发布或设备动作。
+新基线回退按逆序 revert 本轮回执追加、`55916331` 与实现 `c06d8a8b`，再由主会话重算受管 descriptor；15 个原 Java 与原格式条目恢复，15 个 Kotlin 删除。无 namespace/schema/数据格式/权限/包名变化，不需要清数据或重置授权。回退同样交主会话协调，不在本 worker 执行发布或设备动作。
+
+## A8-P1 落地后复验（最新，2026-11-15）
+
+main 通知 P1 出口通过后，无冲突 rebase 到 `e368e6d8`，当前实现/配套回执为 `c06d8a8b + 55916331`。15 个 SAF Kotlin 生产文件逐字节与旧交付一致，没有借工程更新修改业务。此节更新验证边界，不把 main 的 P1 CI 结果当作本分支的 CI。
+
+新 `SourceLayout` 的 compile-inputs、verify-compile-head、launcher-inputs 均 exit 0；完整测试计划生成 exit 0，实际 **779 测试源 / 5209 方法声明 / 593 资源输入**，任务仍为 `:app:testStandardDebugUnitTest`。这些是计划/声明计数，不是全量测试执行结果。源码布局 16 项、unit contract 64 项、构建约定 25 项、core 边界 25 项及 architecture 边界全部通过。builtin/credential/changelog/notices 生成器只读检查和 UiLanguage 临时目录实际生成均 exit 0；不修改共享工具或生成政策。
+
+新单一映射下受管 launcher 成员 **517→517**：仅删除表中 15 个 SAF Java 键并加入同名 Kotlin 键，其余成员与摘要全部不变。worker 不写 descriptor/proof；最终 descriptor/runtimeId **由 main 合并时按真实固定输入重算，并与合入同推**。本分支只保留成员和源码摘要影响检查，不把旧描述符或只读投影当作完整生成证明。
+
+本轮基于 SourceLayout 的真实补充混编 exit **0**：跟踪生产输入 1032 Java + 41 Kotlin（含既有 AIDL stub），另 13 个实际临时生成 Java，显式编译 1045 Java + 41 Kotlin；测试为 17 Java + 1 Kotlin。双端证明 exit **0**，绑定 HEAD `55916331` / 实现 `c06d8a8b`：旧 Java 与新 Kotlin 各 **200 / 0 failures / 0 ignored / 0 assumptions**，200 条测试身份相同，SHA-256 仍为 `9c8648bdf9d6b7b8338cf1f082fe868ad61f24e5943dc3f61c49e80b36b98308`。原 345 个源级成员 + 13 个 clinit 的 descriptor/static/字段 final/synchronized/throws 对照通过；34 成员 + 5 类型可见性、139 新增方法 final 的逐项表与私有 FD/closed/token/构造核验不变。
+
+Gradle 经 dsha-gradle 串行实际执行 prepareUiLanguages、verifyBuiltinRegistry、verifyCredentialRegistry 均通过（UI 5851 entries × 10 languages）；随后在 prepareBackupAssets 因缺固定 dsh-runtime.bin 停止，**exit 1 / 20s**，未到 Kotlin/单测执行。不能把补充混编/定向 JUnit 写成 Gradle full 新鲜报告或 APK 通过。
+
+最终 P1 门禁与本轮日志对应：Java 全树 **1799/0**（missing=0/extra=0）、Kotlin 全树 **45/0**；source-layout **16/0**、unit contract **64/0**、build conventions **25/0**、core **25/0**、architecture PASS；builtin/credential/changelog/notices 检查和 UiLanguage 生成全部 exit 0；host manifest **264** 条登记、hygiene PASS、当前文档 **56/1328/0 error**。18 项 runtime-input-contract 中 17 通过、1 因固定资产缺失错误；descriptor input/source-set 影响检查如实保留 517/15:15 的拒绝点，worker 不写 descriptor/proof，main 合并时重算。未执行本分支的 CI full、Lint、AAPT/APK、真实 Provider/设备或 LayoutAudit。
+
+本轮原始命令/exit 与输出保存在仓库外，主要入口为：
+
+```sh
+python3 tools/unit_test_contract.py plan --root "$PWD" --output /tmp/saf-p1-7cf7bc9f/unit-plan.json
+python3 /tmp/saf-p1-compile-7cf7bc9f.py "$PWD" /tmp/saf-after-p1-7cf7bc9f
+python3 /tmp/saf-p1-proof-7cf7bc9f.py "$PWD"
+```
+
+补充混编改为消费当前共享 `SourceLayout` 的实际 main/standard/debug/test 枚举，仍不是 Gradle full 新鲜报告证明；不得拿临时 R/BuildConfig 符号和定向 Robolectric 代替 P1 的 full/Rust/七夹具/编译输入执行回执。新基线回退应按相反顺序 revert 本轮回执追加、`55916331`、`c06d8a8b`，再由 main 重算受管身份。

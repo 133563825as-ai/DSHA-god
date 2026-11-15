@@ -4,6 +4,8 @@
 > 状态：slice 1/2 已合入；slice 3/4 完成 P2-1..8 增量复核及接管追加修复，两份非实现者逐行审查均为 **APPROVE**（代码头 `e1b20ab1`）。十类定向 JUnit **147/0/0/0**，本地静态门禁通过；完整证据及限制见 §13.2。**A2 整轮仍不可合并/未验收：合并树 descriptor、固定输入完整 CI、真机/布局与发版待 Lead；N3/N4 已知窗口保留。**
 > 依据：[迭代路径](iteration-roadmap-20261112.md) §4 跨轮不变式 + §5 A2、[A1 任务基线](a1-task-baseline-20261113.md) 模板与已知 P2、[A1 契约草案](a1-contract-draft-20261112.md)（形状内部冻结）、[安全模型](../../security-model.md) SAF 一节。
 > 历史：slice 1/2 曾 rebase 到 `3a8204fe`（Source checks 43332430587 / Doc 43332430557 绿）；当前轮不继承旧 CI 作为新实现通过证明。main 的 Kotlin/Rust 改动保持，合入与 descriptor 由 Lead 处理。
+>
+> **整域迁移注记（2026-11-15）**：本页 Java 路径、切片范围和验证数字是原实现的历史记录；当前 SAF 的 15 个生产类已整域等价迁移为同 FQCN 的 Kotlin，旧 Java 已删除。当前源码、Java API 对照、A8-P1 新基线复验及限制见 [SAF 整域迁移回执](saf-kotlin-migration-evidence-20261115.md)。本页原授权/FD/发布不变量及 N3/N4 历史窗口不因语言切换改变。
 
 ## 1. 范围
 
