@@ -57,6 +57,14 @@
 2. `release-production.yml` 的 `dry_run=true`：`expected_sha=<候选>`、`release_tag=dsha-a-su-build367-20261115-<HHMMSS>`（dry-run 不建 tag/Release）、`rust_native_mode=off`、`test_packages=none`。该 run 的 `inputs` 以 `rebuild_runtime=true` 重建运行时与描述符；`unit` 走 A8-P1 full 契约，`lint` 走 `lintStandardRelease`，`build-unsigned` 做 APK 清单/受管资产/未签名与 Rust off 检查。
 3. 收集 full XML/5107 基线聚合、Lint、unsigned APK 回执；任一步失败都不算 P1 出口。
 
+## P1 出口 CI 首轮与修复（2026-11-15）
+
+- `43705093134`（dry_run、未显式传 `rust_native_mode`）：`bind` 失败；workflow_dispatch 的 `rust_native_mode` 选项 `off` 未被 API 接受。未改 main。
+- `43705255618`（head `f9bac8e8`，dry_run、`rust_native_mode=prebuilt`、`test_packages=debug`）：`bind` 与 Kotlin 格式通过；`contracts` 在 `generate-third-party-notices.py --check` 报 `THIRD_PARTY_NOTICES_STALE`；`host-regression` 仅 `test-ci-package.py` 失败，其余宿主测试通过。
+- 原因：A8-P1 把 `coreLibraryDesugaring` 移入 [`build-logic/android.gradle`](../../../build-logic/android.gradle)；notices 生成器只扫 `app/build.gradle`，会漏掉 `desugar_jdk_libs`；`ci-toolchain` 从该约定读取 Java 目标，`test-ci-package` 合成根缺该文件。
+- 修复：`4c2f9d0f` 让 [`generate-third-party-notices.py`](../../../tools/generate-third-party-notices.py) 扫描 `build-logic/*.gradle` 并补测试（`THIRD_PARTY_NOTICES.md` 重生成无差异）；`a2c87b5b` 给 [`test-ci-package.py`](../../../tools/test-ci-package.py) 合成根补 `build-logic/android.gradle`。本机复验 notices 5/5、ci-package 9/9、ci-toolchain 6/6，完整 contracts 12 项 exit0。
+- 修复提交尚待用户批准 push；当前 main 仍为 `f9bac8e8`，P1 出口未通过。
+
 ## 边界与回退
 
 - 未 push、未合并、未打 tag、未发 Release、未 dispatch CI、未安装、未操作手机；未把其它会话的批准扩大解释。
