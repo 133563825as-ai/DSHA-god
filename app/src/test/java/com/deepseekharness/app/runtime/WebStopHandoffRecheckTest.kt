@@ -18,8 +18,7 @@ import org.junit.rules.TemporaryFolder
 class WebStopHandoffRecheckTest {
     // A8 P1 身份解析只接受已审的 Kotlin 注解形式；JUnit4 方法规则与
     // `@get:Rule` 等价，避免 use-site 注解被当作无法核验的测试声明。
-    @Rule
-    fun temporaryFolder(): TemporaryFolder = temporary
+    @Rule fun temporaryFolder(): TemporaryFolder = temporary
 
     private val temporary = TemporaryFolder()
     private val fs = JvmBackupFileSystem()
