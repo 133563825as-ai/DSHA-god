@@ -2,6 +2,26 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-rebirth-unsigned-workflow.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic unsigned candidate admission and workflow boundaries; does not build, sign, publish, install or use the network.",
+      "cli": "No arguments; baseline software success reuse requires exact production-byte preservation."
+    },
+    {
+      "path": "tools/test-rebirth-apk-check.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic actual APK checker rejection controls for duplicate members, full ABI and candidate manifest/signature identity; no real APK build or signing.",
+      "cli": "No arguments; synthetic checks do not substitute the real built candidate inspection."
+    },
+    {
       "path": "tools/test-mobile-scroll-lifecycle.mjs",
       "stage": "fast",
       "requires": ["node24"],

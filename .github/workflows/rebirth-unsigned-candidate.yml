@@ -1,0 +1,156 @@
+name: Rebirth unsigned candidate package only
+
+# 独立候选分支；复用已核固定软件基线，不是发布或设备安装授权。
+on:
+  push:
+    branches: ['validate/rebirth-unsigned-20261115']
+permissions:
+  contents: read
+concurrency:
+  group: rebirth-unsigned-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  unsigned:
+    if: github.event_name == 'push' && github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-unsigned-20261115'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-pack-ci
+      DSHA_PYTHON: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Admit exact successful software baseline and reviewed CI check delta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=package-admission exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 -B tools/check-rebirth-package-admission.py --output out/rebirth-unsigned/package-admission.json
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          gradle-cache: 'false'
+      - uses: ./.github/actions/android-sdk
+        with:
+          ndk: 'true'
+      - name: Restore fixed binary inputs with current HEAD receipts and native host reference
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=package-inputs exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 tools/prepare-validation-inputs.py --url 'https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261105e/dsha-a-su-fixed-inputs-20261105e.zip' --sha256 be97d9f0a45f408d3a7de83ae55a00a85a5154343589571c6d159a0fe58f08f5 --report out/rebirth-unsigned/input-receipt.json
+          python3 tools/prepare-test-runtime.py --platform host
+          python3 - <<'PY'
+          import json, os, pathlib
+          pointer = json.loads(pathlib.Path('app/build/test-runtimes/current.json').read_text())
+          if pointer['platform'] != {'os': 'linux', 'cpu': 'x64'} or pointer['archiveCurrent'] is not True:
+              raise SystemExit('CURRENT_NATIVE_HOST_FIXTURE_REQUIRED')
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('DSHA_TEST_RUNTIME=' + pointer['raw'] + '\n')
+              out.write('DSHA_TEST_MANAGED_RUNTIME=' + pointer['managed'] + '\n')
+          PY
+      - name: Current source and candidate CI check gates only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=package-source-checks exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 -B tools/test-rebirth-unsigned-workflow.py
+          python3 -B tools/test-rebirth-apk-check.py
+          python3 tools/test-release-identity.py
+          python3 tools/release-identity.py --check
+          python3 tools/prepare-runtime-descriptor.py --check
+          python3 tools/run-host-tests.py --check-manifest
+          python3 tools/check-source-hygiene.py
+          python3 tools/check-ui-i18n.py
+          python3 tools/localize-android-ui.py --resources-only --check
+          python3 tools/generate-changelog.py --check
+          python3 tools/check-document-links.py
+      - name: Build one isolated unsigned Rebirth Standard release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=unsigned-candidate-build exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          # 全新CI home只放此固定受管init，不继承tests-only围栏或任何密钥配置。
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cat > "$GRADLE_USER_HOME/gradle.properties" <<'PROPERTIES'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          org.gradle.workers.max=2
+          PROPERTIES
+          cat > "$GRADLE_USER_HOME/init.d/rebirth-unsigned.gradle" <<'GRADLE'
+          def expectedTasks = [':app:printReleaseIdentity', ':app:assembleStandardRelease']
+          if (gradle.startParameter.taskNames != expectedTasks)
+            throw new GradleException('REBIRTH_PACK_TASK_ENTRY')
+          def required = ['dsha.identity': 'upstream', 'dsha.unsignedPackage': 'true', 'dsha.rebirthCandidate': 'true']
+          if (gradle.startParameter.projectProperties != required)
+            throw new GradleException('REBIRTH_PACK_PROPERTIES')
+          def forbiddenEnv = ['DSHA_KEYSTORE', 'DSHA_KEYSTORE_PASSWORD', 'DSHA_KEY_PASSWORD', 'DSHA_KEY_ALIAS', 'DSHA_SUNSET_TEST', 'DSHA_DEBUG_PACKAGE', 'DSHA_DEV_PACKAGE', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'GRADLE_OPTS', 'JAVA_OPTS']
+          if (forbiddenEnv.any { System.getenv(it) } || System.getenv().keySet().any { it.startsWith('ORG_GRADLE_PROJECT_') })
+            throw new GradleException('REBIRTH_PACK_ENVIRONMENT')
+          gradle.startParameter.setParallelProjectExecutionEnabled(false)
+          gradle.startParameter.setMaxWorkerCount(2)
+          gradle.projectsEvaluated {
+            def app = gradle.rootProject.findProject(':app')
+            def android = app?.extensions?.findByName('android')
+            if (android == null || android.defaultConfig.applicationId != 'dsh.android.client.rebirth' ||
+                android.buildTypes.release.debuggable || android.buildTypes.release.signingConfig != null)
+              throw new GradleException('REBIRTH_PACK_ANDROID_CONFIGURATION')
+          }
+          gradle.taskGraph.whenReady { graph ->
+            def forbidden = graph.allTasks.findAll { t ->
+              def n = t.name
+              def type = t.class
+              def chain = []
+              while (type != null) { chain.add(type.name); type = type.superclass }
+              def emptySigningValidation = t.path == ':app:validateSigningStandardRelease' &&
+                chain.contains('com.android.build.gradle.internal.tasks.ValidateSigningTask') &&
+                gradle.rootProject.project(':app').extensions.getByName('android').buildTypes.release.signingConfig == null
+              def forbiddenName = n ==~ /(?i)(publish|upload|deploy|install|uninstall|connected|clean|sign).*/ ||
+                n == 'verifyPublishCertificate' ||
+                (n.startsWith('validateSigning') && !emptySigningValidation) ||
+                (n.startsWith('assemble') && t.path != ':app:assembleStandardRelease') ||
+                n ==~ /(?i).*AndroidTest.*/ ||
+                n ==~ /(?i).*(Debug|Low).*/ ||
+                n ==~ /(?i)bundleStandard(Debug|Release)/ ||
+                (n.startsWith('package') && !n.endsWith('Resources') && t.path != ':app:packageStandardRelease') ||
+                (t.path == ':app:packageStandardRelease' && !chain.contains('com.android.build.gradle.tasks.PackageApplication'))
+              def actualSigning = chain.any { it.contains('SignApk') || it.contains('PackageBundleTask') || it.contains('FinalizeBundleTask') }
+              forbiddenName || actualSigning
+            }
+            if (!forbidden.empty) throw new GradleException('REBIRTH_PACK_FORBIDDEN_GRAPH: ' + forbidden*.path)
+          }
+          GRADLE
+          # 仅候选无签名release；不调用sign/package发布脚本，不生成测试证书。
+          bash gradlew :app:printReleaseIdentity :app:assembleStandardRelease -Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true --no-daemon --max-workers=2 2>&1 | tee out/rebirth-unsigned/candidate-build.log
+      - name: Verify actual unsigned candidate package and payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=unsigned-candidate-check exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 tools/rebirth-apk-check.py --build-tools "$ANDROID_HOME/build-tools/36.0.0" --output out/rebirth-unsigned
+      - name: Upload unsigned candidate not for installation
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: REBIRTH-UNSIGNED-NOT-FOR-INSTALLATION
+          path: |
+            out/rebirth-unsigned/*-unsigned.apk
+            out/rebirth-unsigned/*-unsigned.apk.sha256
+            out/rebirth-unsigned/candidate-receipt.json
+            out/rebirth-unsigned/package-admission.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload package check evidence including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rebirth-unsigned-package-evidence
+          path: |
+            out/rebirth-unsigned/*.log
+            out/rebirth-unsigned/*.json
+            out/rebirth-unsigned/*.txt
+          if-no-files-found: warn
+          retention-days: 14
