@@ -148,38 +148,42 @@ def verify_badging(badging):
     return package.group(3)
 
 
-def startup_provider_valid(manifest):
-    # aapt2 xmltree的E节点缩进界定provider；只读它的直接A属性，不借子节点/兄弟属性。
-    blocks = []
-    current = None
-    child_started = False
+def startup_provider_blocks(manifest):
+    # 同一采集供原严格谓词和只读诊断使用；child/depth仅作事实，不放宽父属性。
+    blocks, current, nested = [], None, False
     for row in manifest.splitlines():
         element = re.match(r'^( *)E: ([^ (]+)(?:[ (]|$)', row)
         if element:
             indent, name = len(element.group(1)), element.group(2)
             if current is not None:
-                if indent <= current[0]:
+                if indent <= current['indent']:
                     current = None
                 else:
                     if name == 'provider':
-                        return False
-                    child_started = True
+                        nested = True
+                    current['child'] = True
             if name == 'provider':
-                current = (indent, [])
-                blocks.append(current[1])
-                child_started = False
-            continue
-        if current is None or child_started:
+                current = dict(indent=indent, child=False, rows=[])
+                blocks.append(current)
             continue
         attribute = re.match(r'^( *)A: (.*)$', row)
-        if attribute and len(attribute.group(1)) == current[0] + 2:
-            current[1].append(attribute.group(2))
+        if current is not None and attribute:
+            current['rows'].append((len(attribute.group(1)), current['child'], attribute.group(2)))
+    return blocks, nested
+
+
+def startup_provider_valid(manifest):
+    blocks, nested = startup_provider_blocks(manifest)
+    if nested:
+        return False
     selected = []
     for block in blocks:
-        text = '\n'.join(block)
+        rows = [row for indent, child, row in block['rows']
+                if not child and indent == block['indent'] + 2]
+        text = '\n'.join(rows)
         authority = re.findall(r'android:authorities(?:\([^)]*\))?="([^"]*)"', text)
         if PACKAGE + '.androidx-startup' in authority:
-            selected.append(block)
+            selected.append(rows)
     if len(selected) != 1:
         return False
     block = selected[0]
@@ -190,6 +194,69 @@ def startup_provider_valid(manifest):
             and re.fullmatch(r'android:exported(?:\([^)]*\))?=\(type 0x12\)0x0', exported[0]) is not None)
 
 
+def startup_provider_observation(manifest):
+    blocks, nested = startup_provider_blocks(manifest)
+    if nested:
+        return 'ATTRIBUTE_DEPTH'
+    selected = [block for block in blocks if any(
+        re.search(r'android:authorities(?:\([^)]*\))?="' + re.escape(PACKAGE + '.androidx-startup') + '"', row)
+        for _, _, row in block['rows'])]
+    if not selected:
+        return 'BLOCK_COUNT_ZERO'
+    if len(selected) != 1:
+        return 'BLOCK_COUNT_MANY'
+    block = selected[0]
+    if any(re.match(r'http://schemas\.android\.com/apk/res/android:(?:name|authorities|exported)(?:\([^)]*\))?=', row)
+           for _, _, row in block['rows']):
+        return 'ATTRIBUTE_NAMESPACE_URI'
+    relevant = [(indent, child, row) for indent, child, row in block['rows']
+                if re.match(r'android:(?:name|authorities|exported)(?:\([^)]*\))?=', row)]
+    if any(indent != block['indent'] + 2 or child for indent, child, _ in relevant):
+        return 'ATTRIBUTE_DEPTH'
+    names = [row for _, _, row in relevant if re.match(r'android:name(?:\([^)]*\))?=', row)]
+    if not names:
+        return 'CLASS_MISSING'
+    if len(names) != 1:
+        return 'CLASS_DUPLICATE'
+    if re.findall(r'android:name(?:\([^)]*\))?="([^"]*)"', names[0]) != ['androidx.startup.InitializationProvider']:
+        return 'CLASS_MISMATCH'
+    exported = [row for _, _, row in relevant if re.match(r'android:exported(?:\([^)]*\))?=', row)]
+    if not exported:
+        return 'EXPORTED_MISSING'
+    if len(exported) != 1:
+        return 'EXPORTED_MULTIPLE'
+    return 'EXPORTED_TYPE_OR_VALUE'
+
+
+def startup_provider_format(manifest):
+    blocks, nested = startup_provider_blocks(manifest)
+    selected = [block for block in blocks if any(
+        re.search(r'android:authorities(?:\([^)]*\))?="' + re.escape(PACKAGE + '.androidx-startup') + '"', row)
+        for _, _, row in block['rows'])]
+    if nested or len(selected) != 1:
+        return 'OTHER', 'OTHER'
+    block = selected[0]
+    rows = [row for indent, child, row in block['rows']
+            if not child and indent == block['indent'] + 2]
+    short = any(re.match(r'android:(?:name|authorities|exported)(?:\([^)]*\))?=', row) for row in rows)
+    uri = any(re.match(r'http://schemas\.android\.com/apk/res/android:(?:name|authorities|exported)(?:\([^)]*\))?=', row) for row in rows)
+    namespace = 'SHORT' if short and not uri else 'ANDROID_URI' if uri and not short else 'OTHER'
+    exported = []
+    for row in rows:
+        match = re.fullmatch(r'(?:android:|http://schemas\.android\.com/apk/res/android:)exported(?:\([^)]*\))?=(.*)', row)
+        if match:
+            exported.append(match.group(1))
+    shape = 'OTHER'
+    if len(exported) == 1:
+        if exported[0] == '(type 0x12)0x0':
+            shape = 'TYPED_FALSE_ONLY'
+        elif exported[0] == '(type 0x12)0x0 (Raw: "false")':
+            shape = 'TYPED_FALSE_WITH_RAW_FALSE'
+        elif exported[0] in ('false', '"false"'):
+            shape = 'BOOLEAN_FALSE'
+    return namespace, shape
+
+
 def verify_manifest(manifest):
     if re.findall(r'\bA: package="([^"]*)"', manifest) != [PACKAGE]:
         raise ValueError('REBIRTH_MANIFEST_PACKAGE')
@@ -198,6 +265,10 @@ def verify_manifest(manifest):
     if len(authorities) != 4 or set(authorities) != expected:
         raise ValueError('REBIRTH_MANIFEST_AUTHORITIES')
     if not startup_provider_valid(manifest):
+        namespace, exported_shape = startup_provider_format(manifest)
+        print('::error::gate=unsigned-candidate-startup reason='
+              + startup_provider_observation(manifest) + ' namespace=' + namespace
+              + ' exportedShape=' + exported_shape, flush=True)
         raise ValueError('REBIRTH_MANIFEST_STARTUP_PROVIDER')
     affinities = re.findall(r'android:taskAffinity(?:\([^)]*\))?="([^"]*)"', manifest)
     if affinities != [PACKAGE + '.entry']:

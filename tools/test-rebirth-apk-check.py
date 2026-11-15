@@ -258,8 +258,66 @@ class ApkCheckTest(unittest.TestCase):
         variants.append(missing_name + '    E: provider (line=5)\n      A: android:name(0x01010003)="androidx.startup.InitializationProvider"\n')
         variants.append(startup.replace('    E: provider', '      E: provider'))
         for changed in variants:
-            with self.assertRaisesRegex(ValueError, 'REBIRTH_MANIFEST_STARTUP_PROVIDER'):
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, 'REBIRTH_MANIFEST_STARTUP_PROVIDER'):
                 CHECK.verify_manifest(self.manifest[:start] + changed + self.manifest[end:])
+
+    def test_startup_failure_observation_fixed_reasons_only(self):
+        start = self.manifest.index('    E: provider', self.manifest.index('.documents'))
+        end = self.manifest.index('    E: activity', start)
+        startup = self.manifest[start:end]
+        name = '      A: android:name(0x01010003)="androidx.startup.InitializationProvider"'
+        exported = '      A: android:exported(0x01010010)=(type 0x12)0x0'
+        variants = [
+            ('BLOCK_COUNT_ZERO', startup.replace('    E: provider', '    E: service')),
+            ('BLOCK_COUNT_MANY', startup + startup),
+            ('CLASS_MISSING', startup.replace(name, '')),
+            ('CLASS_MISMATCH', startup.replace('androidx.startup.InitializationProvider', 'SECRET.Provider')),
+            ('CLASS_DUPLICATE', startup + name + '\n'),
+            ('EXPORTED_MISSING', startup.replace(exported, '')),
+            ('EXPORTED_MULTIPLE', startup + exported + '\n'),
+            ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0xffffffff')),
+            ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0x0 (Raw: "SECRET")')),
+            ('ATTRIBUTE_DEPTH', startup.replace('      A:', '        A:')),
+            ('ATTRIBUTE_NAMESPACE_URI', startup.replace('android:', 'http://schemas.android.com/apk/res/android:')),
+            ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '(type 0x12)0x0 (Raw: "false")')),
+            ('EXPORTED_TYPE_OR_VALUE', startup.replace('(type 0x12)0x0', '"false"')),
+        ]
+        for reason, changed in variants:
+            manifest = self.manifest[:start] + changed + self.manifest[end:]
+            self.assertEqual(reason, CHECK.startup_provider_observation(manifest))
+            self.assertFalse(CHECK.startup_provider_valid(manifest))
+            # MANY会先命中原4authority总数门禁；直接helper仅观察，不给放行许可。
+            if reason == 'BLOCK_COUNT_MANY':
+                continue
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(ValueError):
+                CHECK.verify_manifest(manifest)
+            rows = output.getvalue().splitlines()
+            self.assertEqual(1, len(rows))
+            self.assertRegex(rows[0], '^::error::gate=unsigned-candidate-startup reason=' + reason
+                             + r' namespace=(SHORT|ANDROID_URI|OTHER) exportedShape=(TYPED_FALSE_ONLY|TYPED_FALSE_WITH_RAW_FALSE|BOOLEAN_FALSE|OTHER)$')
+            self.assertNotIn('SECRET', output.getvalue())
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            CHECK.verify_manifest(self.manifest)
+        self.assertEqual('', output.getvalue())
+
+    def test_startup_format_observation_is_enum_only_and_does_not_admit(self):
+        start = self.manifest.index('    E: provider', self.manifest.index('.documents'))
+        end = self.manifest.index('    E: activity', start)
+        startup = self.manifest[start:end]
+        for prefix, namespace in (('android:', 'SHORT'),
+                                  ('http://schemas.android.com/apk/res/android:', 'ANDROID_URI'),
+                                  ('https://evil.invalid/android:', 'OTHER')):
+            for value, shape in (('(type 0x12)0x0', 'TYPED_FALSE_ONLY'),
+                                 ('(type 0x12)0x0 (Raw: "false")', 'TYPED_FALSE_WITH_RAW_FALSE'),
+                                 ('"false"', 'BOOLEAN_FALSE'), ('"SECRET"', 'OTHER')):
+                changed = startup.replace('android:', prefix).replace('(type 0x12)0x0', value)
+                manifest = self.manifest[:start] + changed + self.manifest[end:]
+                expected_shape = shape if namespace != 'OTHER' else 'OTHER'
+                self.assertEqual((namespace, expected_shape), CHECK.startup_provider_format(manifest))
+                if namespace != 'SHORT' or value != '(type 0x12)0x0':
+                    self.assertFalse(CHECK.startup_provider_valid(manifest))
 
     def test_four_authorities_reject_duplicate_unknown_and_truncated_startup(self):
         for changed in (self.manifest.replace('.androidx-startup', '.androidx'),
