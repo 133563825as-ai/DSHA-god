@@ -17,6 +17,7 @@
 - [`tools/host-tests.manifest.json`](../../../tools/host-tests.manifest.json)：T2 的 `test-backup-signed-builtin-files.py` 与 A8-P1 的 `test-ci-toolchain.py` 均保留；`test-host-test-runner` 10/10。
 - [`tools/test-ci-workflows.py`](../../../tools/test-ci-workflows.py)：自动合并后 135/135；Rust 图、`rust-native`/`rust-differential` 断言保留。
 - 追加测试修正 [`tools/test-runtime-descriptor-source.py`](../../../tools/test-runtime-descriptor-source.py)：A8-P1 起启动输入统一经 `SourceLayout` 解析，合成根补最小 `ci/source-layout.json`；生产校验仍 fail-closed。
+- 主线 S1b 的 [`WebStopHandoffRecheckTest.kt`](../../../app/src/test/java/com/deepseekharness/app/runtime/WebStopHandoffRecheckTest.kt) 使用 `@get:Rule`；A8-P1 的 Kotlin 声明解析拒绝未登记 use-site 注解，full plan 因此失败。改为等价方法级 `@Rule`（`c988f51c`），测试类/方法身份与 TemporaryFolder 行为不变，plan 已通过。
 
 ## 受管输入、归档与描述符（main 串行）
 
@@ -41,11 +42,12 @@
 | `tools/rust/test_apk_injection.py` / `test_android_candidate.py` | 57 / 17 全过 |
 | `check-source-hygiene.py` / `check-ui-i18n.py` | PASS / newFindings=0 |
 | `check-document-links.py` | 56 文档 / 1328 链接 / 0 error |
+| `unit_test_contract.py plan` | PASS：777 测试源 / 5197 声明 / 593 资源输入；冻结基线 5107 身份均有声明源覆盖（32 个 `BrowserTasksTest[23]` 是参数化 XML 后缀，不是缺失） |
 | `:app:lintStandardRelease`（`-Pdsha.unsignedPackage=true`） | BUILD SUCCESSFUL；617 issues = 609 Warning / 8 Hint / 0 Error |
 
 阻塞（本机环境，不是集成失败）：
 
-- `:app:testStandardDebugUnitTest` 在 `:app:processStandardDebugResources` 失败：`AAPT2 Daemon startup failed`；`:app:assembleStandardRelease` 同样在 `Aapt2CompileRunnable` 失败。本机 aapt2 与 Gradle 缓存 aapt2 均为 x86_64（ELF `e_machine=62`），宿主为 aarch64（`183`），daemon 无法启动；仓库 [`tools/run-unit-tests.py`](../../../tools/run-unit-tests.py) 已把该限制写成既有事实。因此 **5107 身份的新鲜 full 聚合、unsigned APK 内容/身份检查未在本机完成**，不写成通过；`lintStandardRelease` 不走该 daemon 路径，已实际通过。
+- `:app:testStandardDebugUnitTest` 在 `:app:processStandardDebugResources` 失败：`AAPT2 Daemon startup failed`；`:app:compileStandardDebugUnitTestKotlin` 同样在该 AAR transform 前被阻断，`:app:assembleStandardRelease` 在 `Aapt2CompileRunnable` 失败。本机 aapt2 与 Gradle 缓存 aapt2 均为 x86_64（ELF `e_machine=62`），宿主为 aarch64（`183`），daemon 无法启动；仓库 [`tools/run-unit-tests.py`](../../../tools/run-unit-tests.py) 已把该限制写成既有事实。因此 **5107 身份的新鲜 full 聚合、unsigned APK 内容/身份检查未在本机完成**，不写成通过；`lintStandardRelease` 不走该 daemon 路径，已实际通过。
 - 主机 Rust 库由 `cargo` 在 `/tmp` 目标目录构建后复制为 `out/rust-host/libdsha_rs.so`（348736 B / `04f07e7a…`）；`rust/artifact.lock.json` 的主机项仍为 `pending-cross-run`（未 pin size/sha），不声称跨 runner 固定。仅用于本机测试，不改变仓库锁。
 
 ## P1 出口所需的 CI（待用户批准）
