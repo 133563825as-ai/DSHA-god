@@ -1135,7 +1135,6 @@
     "app/src/test/java/com/deepseekharness/app/bridge/BridgeImageDecoderTest.java",
     "app/src/test/java/com/deepseekharness/app/capabilities/CapabilityBrokerTest.java",
     "app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.java",
-    "app/src/test/java/com/deepseekharness/app/contract/ContractJavaBoundaryTest.java",
     "app/src/test/java/com/deepseekharness/app/contract/ContractLifecycleInteropTest.java",
     "app/src/test/java/com/deepseekharness/app/contract/ContractTestSupport.java",
     "app/src/test/java/com/deepseekharness/app/contract/ContractValueInteropTest.java",

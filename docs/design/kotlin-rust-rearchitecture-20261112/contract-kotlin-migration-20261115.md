@@ -160,3 +160,7 @@ contract 不在受管 launcherSources/launcherTrees。实测本批改变的受�
 - contractVersion/describe 生命周期校验、ModuleHost scope、启停意图持久化、AboutLicense 聚合等原 deferred 项继续保留；本批不补协议或新行为。
 
 回退时先 revert 本轮追加的 P2 等价修复，再 revert 原文档 `7e9862a3` 与代码 `86a8c5e3`，恢复 18 个原 Java 文件、删除 18 个 Kotlin 实现和新测试，并恢复本域格式登记。仅撤销 P2 修复会回到已知清理差异的旧 Kotlin 候选，不应作为可合入状态。无需清数据、改偏好键/数据格式、改包名/签名或降级已安装环境。回退后重新执行本域 Java 测试与输入检查；main 在自己的串行树处理最终 descriptor。不得重置或清理其它活跃工作树。
+
+## main 集成修订（2026-11-15）
+
+GitHub Source CI（run 43687532114）的 `unit-source` 与 `host-fast` 在 `ContractJavaBoundaryTest.java` 处编译失败：该测试使用 `javax.tools`（java.compiler），而 AGP 的 Android 单元测试编译类路径不含该模块。main 在串行集成树删除该测试文件，并从 `tools/java-format-files.json` 移除其条目；因此本批新增 Java 测试源由 3 个变为 2 个，全仓 Java 净变化由 -15 变为 -16。197 个原成员与 7 个包内入口的 javac 正/负控证据保留为作者本机验证，未进入仓库自动门禁；host 侧 javac 边界检查列为后续待办（可放入 tools/ 的 host 测试）。
