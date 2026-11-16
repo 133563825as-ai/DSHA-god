@@ -338,7 +338,13 @@ class ProductionTestPackageAttachments(unittest.TestCase):
         # 只有 none 时的 skipped 可以放行；测试包节点失败导致的 skipped 必须挡住发布。
         self.assertIn("needs.test-packages.result == 'success'", publish)
         self.assertIn("(needs.test-packages.result == 'skipped' && inputs.test_packages == 'none')", publish)
-        self.assertIn("pattern: release-test-package-evidence-*", publish)
+        # download-artifact 在只有一个 artifact 命中时直接解压到 path（不建 artifact 名子目录），
+        # `test_packages=debug` 这类单变体请求必须按变体显式下载到 <artifact 名> 目录，
+        # 否则 merge 脚本找不到 `<artifact_prefix>-evidence-<variant>/` 布局。不要退回 pattern。
+        self.assertNotIn("pattern: release-test-package-evidence-*", publish)
+        for variant in ("debug", "dev"):
+            self.assertIn(f"name: release-test-package-evidence-{variant}", publish)
+            self.assertIn(f"path: out/test-packages/release-test-package-evidence-{variant}", publish)
         self.assertIn("release-test-packages.py merge", publish)
         self.assertIn('--requested "$TEST_PACKAGES"', publish)
         self.assertIn("test-package-assets.txt", publish)
@@ -350,6 +356,11 @@ class ProductionTestPackageAttachments(unittest.TestCase):
         self.assertIn("!cancelled()", summary)
         self.assertIn("inputs.dry_run", summary)
         self.assertIn("release-test-packages.py merge", summary)
+        # dry-run 与 publish 共用同一份证据布局契约：单变体也必须落在 <artifact 名> 子目录。
+        self.assertNotIn("pattern: release-test-package-evidence-*", summary)
+        for variant in ("debug", "dev"):
+            self.assertIn(f"name: release-test-package-evidence-{variant}", summary)
+            self.assertIn(f"path: out/test-packages/release-test-package-evidence-{variant}", summary)
         self.assertIn("GITHUB_STEP_SUMMARY", summary)
         self.assertIn("gh release create", summary)
         self.assertNotIn("contents: write", summary)

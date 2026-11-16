@@ -675,12 +675,21 @@ jobs:
         with:
           name: release-bundle
           path: out
-      - name: Download co-installable test packages
-        if: ${{ inputs.test_packages != 'none' }}
+      # download-artifact 在只有一个 artifact 命中时直接解压到 path（不建 artifact 名子目录），
+      # `test_packages=debug` 这类单变体请求会因此破坏 merge 脚本的
+      # `<test-packages>/<artifact_prefix>-evidence-<variant>/` 布局；按变体显式下载。
+      - name: Download debug co-installable test package evidence
+        if: ${{ inputs.test_packages == 'debug' || inputs.test_packages == 'debug+dev' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: release-test-package-evidence-*
-          path: out/test-packages
+          name: release-test-package-evidence-debug
+          path: out/test-packages/release-test-package-evidence-debug
+      - name: Download dev co-installable test package evidence
+        if: ${{ inputs.test_packages == 'dev' || inputs.test_packages == 'debug+dev' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-test-package-evidence-dev
+          path: out/test-packages/release-test-package-evidence-dev
       - name: Verify bundle checksums and commit binding
         working-directory: out
         run: |
@@ -770,12 +779,21 @@ jobs:
         with:
           name: release-bundle
           path: out
-      - name: Download co-installable test packages
-        if: ${{ inputs.test_packages != 'none' }}
+      # download-artifact 在只有一个 artifact 命中时直接解压到 path（不建 artifact 名子目录），
+      # `test_packages=debug` 这类单变体请求会因此破坏 merge 脚本的
+      # `<test-packages>/<artifact_prefix>-evidence-<variant>/` 布局；按变体显式下载。
+      - name: Download debug co-installable test package evidence
+        if: ${{ inputs.test_packages == 'debug' || inputs.test_packages == 'debug+dev' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: release-test-package-evidence-*
-          path: out/test-packages
+          name: release-test-package-evidence-debug
+          path: out/test-packages/release-test-package-evidence-debug
+      - name: Download dev co-installable test package evidence
+        if: ${{ inputs.test_packages == 'dev' || inputs.test_packages == 'debug+dev' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-test-package-evidence-dev
+          path: out/test-packages/release-test-package-evidence-dev
       - name: Verify bundle checksums and commit binding
         working-directory: out
         run: |
