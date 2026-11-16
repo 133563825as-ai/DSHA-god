@@ -10,23 +10,29 @@ import android.os.Process;
 import android.system.Os;
 import android.system.OsConstants;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.Random;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.json.JSONObject;
 
 /**
- * 显式选择的 Android Rust 加载候选：真实 JNI、真实私有文件 FD，不改变生产后端开关。
+ * 显式选择的 Android Rust 候选：真实加载/FD 摘要、archive 流与 PlanView，不改变生产后端开关。
  *
  * <p>仅由 -Pdsha.testRunner=com.deepseekharness.app.util.RustNativeInstrumentation 构建；
  * 运行时必须传入 commit/runId/runAttempt/repository，并与目标 APK 内的 Rust 回执逐项绑定。
@@ -39,6 +45,9 @@ public final class RustNativeInstrumentation extends Instrumentation {
   private static final int MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
   private static final long MAX_LIBRARY_BYTES = 16L * 1024 * 1024;
   private static final int SHA256 = 1;
+  private static final int ARCHIVE_SESSIONS = 4;
+  private static final int PLAN_MAX_REASONS = 8;
+  private static final byte PLAN_SENTINEL = 0x5a;
   private static final String ABC_SHA256 =
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
   private Bundle arguments;
@@ -64,6 +73,16 @@ public final class RustNativeInstrumentation extends Instrumentation {
     NATIVE_DIGEST_ERROR,
     NATIVE_DIGEST_LENGTH_MISMATCH,
     NATIVE_DIGEST_MISMATCH,
+    NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH,
+    NATIVE_ARCHIVE_REJECTION_MISSING,
+    NATIVE_ARCHIVE_CLOSE_MISMATCH,
+    NATIVE_ARCHIVE_CONTRACT_MISMATCH,
+    NATIVE_ARCHIVE_CLEANUP_FAILED,
+    NATIVE_PLAN_VERDICT_MISMATCH,
+    NATIVE_PLAN_REASONS_MISMATCH,
+    NATIVE_PLAN_INPUT_MUTATED,
+    NATIVE_PLAN_ERROR_MISMATCH,
+    NATIVE_PLAN_PARTIAL_OUTPUT,
     OWNED_TEMP_CLEANUP_FAILED,
     NATIVE_LINK_ERROR,
     IO_OR_RUNTIME_ERROR
@@ -88,6 +107,7 @@ public final class RustNativeInstrumentation extends Instrumentation {
   public void onStart() {
     Bundle output = new Bundle();
     output.putString("probe", "dsha-rust-android-jni-v1");
+    output.putInt("probeEvidenceRevision", 2);
     output.putString("result", "FAIL");
     output.putString("failure", Failure.IO_OR_RUNTIME_ERROR.name());
     output.putString("stage", "platform");
@@ -233,6 +253,8 @@ public final class RustNativeInstrumentation extends Instrumentation {
         output.putString("knownVectorSha256", hex(actual));
       }
       output.putBoolean("nativeFdDigestVerified", true);
+      probeArchive(output);
+      probePlanView(output);
       require(!RustBackends.enabled(), Failure.BACKENDS_NOT_DEFAULT_OFF);
       success = true;
       output.putString("failure", Failure.NONE.name());
@@ -261,6 +283,555 @@ public final class RustNativeInstrumentation extends Instrumentation {
       output.putString("result", success ? "PASS" : "FAIL");
       finish(success ? Activity.RESULT_OK : Activity.RESULT_CANCELED, output);
     }
+  }
+
+  private interface IoProbe {
+    void run() throws IOException;
+  }
+
+  private static IOException expectIOException(IoProbe probe, Failure failure) throws ProbeFailure {
+    try {
+      probe.run();
+    } catch (IOException expected) {
+      return expected;
+    }
+    throw new ProbeFailure(failure);
+  }
+
+  /** 只持有探针自己生成的字节；失败用对象身份核对，不读取或输出异常正文。 */
+  private static final class ArchiveSource extends InputStream {
+    final ByteArrayInputStream bytes;
+    final IOException closeFailure = new IOException("PROBE_SOURCE_CLOSE");
+    final int chunk;
+    boolean failClose;
+    int closes;
+
+    ArchiveSource(byte[] bytes, int chunk) {
+      this.bytes = new ByteArrayInputStream(bytes);
+      this.chunk = chunk;
+    }
+
+    @Override
+    public int read() {
+      return bytes.read();
+    }
+
+    @Override
+    public int read(byte[] target, int offset, int length) {
+      return bytes.read(target, offset, Math.min(length, chunk));
+    }
+
+    @Override
+    public void close() throws IOException {
+      closes++;
+      bytes.close();
+      if (failClose) throw closeFailure;
+    }
+  }
+
+  private static final class ArchiveTarget extends OutputStream {
+    final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    final IOException writeFailure = new IOException("PROBE_TARGET_WRITE");
+    final IOException closeFailure = new IOException("PROBE_TARGET_CLOSE");
+    boolean failWrite;
+    boolean failClose;
+    int writes;
+    int closes;
+
+    @Override
+    public void write(int value) throws IOException {
+      write(new byte[] {(byte) value}, 0, 1);
+    }
+
+    @Override
+    public void write(byte[] source, int offset, int length) throws IOException {
+      writes++;
+      if (failWrite) throw writeFailure;
+      bytes.write(source, offset, length);
+    }
+
+    @Override
+    public void close() throws IOException {
+      closes++;
+      bytes.close();
+      if (failClose) throw closeFailure;
+    }
+  }
+
+  private static void probeArchive(Bundle output) throws Exception {
+    output.putString("stage", "archive-session-baseline");
+    output.putString("archiveEntryPoint", "RustGzipOutputStream/RustGzipInputStream");
+    requireArchiveSessionsFree(output);
+    output.putString("stage", "archive-roundtrip");
+    byte[] plaintext = new byte[RustArchiveCodec.CHUNK + 73];
+    new Random(20_261_116L).nextBytes(plaintext);
+    ArchiveTarget target = new ArchiveTarget();
+    RustGzipOutputStream encoder = new RustGzipOutputStream(target);
+    try (RustGzipOutputStream stream = encoder) {
+      stream.write(plaintext, 0, plaintext.length);
+      stream.finish();
+      require(stream.isFinished(), Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+      stream.finish();
+    }
+    encoder.close();
+    require(target.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    expectIOException(() -> encoder.write(1), Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    byte[] gzip = target.bytes.toByteArray();
+    require(gzip.length >= 18, Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+    require(
+        RustArchiveCodec.HEADER_HEX.equals(hex(Arrays.copyOf(gzip, 10))),
+        Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+    CRC32 crc = new CRC32();
+    crc.update(plaintext);
+    ByteBuffer trailer = ByteBuffer.wrap(gzip).order(ByteOrder.LITTLE_ENDIAN);
+    require(
+        trailer.getInt(gzip.length - 8) == (int) crc.getValue()
+            && trailer.getInt(gzip.length - 4) == plaintext.length,
+        Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+    ArchiveSource source = new ArchiveSource(gzip, 4093);
+    RustGzipInputStream decoder = new RustGzipInputStream(source);
+    try (RustGzipInputStream stream = decoder) {
+      requireArchivePayload(stream, plaintext);
+      require(stream.isFinished(), Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+    }
+    decoder.close();
+    require(source.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    expectIOException(() -> decoder.read(), Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    requireArchiveSessionsFree(output);
+    output.putInt("archivePlaintextBytes", plaintext.length);
+    output.putInt("archiveGzipBytes", gzip.length);
+    output.putBoolean("archiveRoundtripVerified", true);
+    output.putBoolean("archiveHeaderTrailerVerified", true);
+    output.putBoolean("archiveClosedStreamsRejected", true);
+    output.putBoolean("archiveRoundtripCleanupVerified", true);
+    probeArchiveReadFailure(output, gzip, plaintext);
+
+    output.putString("stage", "archive-native-finish");
+    byte[] emptyGzip = probeArchiveNativeFinish(output);
+    requireArchiveSessionsFree(output);
+    byte[] badHeader = emptyGzip.clone();
+    badHeader[0] ^= 1;
+    probeMalformedArchive(
+        output, "archiveBadHeader", badHeader, RustArchiveCodec.GZIP_HEADER, false);
+    byte[] badTrailer = emptyGzip.clone();
+    badTrailer[badTrailer.length - 8] ^= 1;
+    probeMalformedArchive(
+        output, "archiveBadTrailer", badTrailer, RustArchiveCodec.GZIP_TRAILER, false);
+    // native 不知道底层是否已 EOF；截断由生产 RustGzipInputStream 桥判定。
+    probeMalformedArchive(
+        output, "archiveTruncated", Arrays.copyOf(emptyGzip, emptyGzip.length - 1), 0, false);
+    probeMalformedArchive(
+        output,
+        "archiveTrailingData",
+        Arrays.copyOf(emptyGzip, emptyGzip.length + 1),
+        RustArchiveCodec.GZIP_TRAILING_DATA,
+        false);
+    byte[] twoMembers = new byte[emptyGzip.length * 2];
+    System.arraycopy(emptyGzip, 0, twoMembers, 0, emptyGzip.length);
+    System.arraycopy(emptyGzip, 0, twoMembers, emptyGzip.length, emptyGzip.length);
+    probeMalformedArchive(
+        output, "archiveTwoMembers", twoMembers, RustArchiveCodec.GZIP_TRAILING_DATA, false);
+    probeMalformedArchive(
+        output, "archiveConstructorCloseFailure", badTrailer, RustArchiveCodec.GZIP_TRAILER, true);
+    probeArchiveCloseFailures(output, emptyGzip);
+    output.putBoolean("archiveAbortCleanupVerified", true);
+  }
+
+  private static void probeArchiveReadFailure(Bundle output, byte[] gzip, byte[] plaintext)
+      throws Exception {
+    output.putString("stage", "archive-read-failure");
+    byte[] damaged = gzip.clone();
+    damaged[damaged.length - 8] ^= 1;
+    ArchiveSource source = new ArchiveSource(damaged, 4093);
+    try (RustGzipInputStream stream = new RustGzipInputStream(source)) {
+      require(!stream.isFinished(), Failure.NATIVE_ARCHIVE_REJECTION_MISSING);
+      boolean rejected = false;
+      try {
+        requireArchivePayload(stream, plaintext);
+      } catch (IOException expected) {
+        rejected = true;
+      }
+      require(rejected, Failure.NATIVE_ARCHIVE_REJECTION_MISSING);
+    }
+    require(source.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    requireArchiveSessionsFree(output);
+    output.putBoolean("archiveReadFailureRejected", true);
+    output.putBoolean("archiveReadFailureCleanupVerified", true);
+  }
+
+  private static void requireArchivePayload(InputStream stream, byte[] expected) throws Exception {
+    byte[] buffer = new byte[7919];
+    int offset = 0;
+    int count;
+    while ((count = stream.read(buffer, 0, buffer.length)) != -1) {
+      require(
+          count > 0 && count <= expected.length - offset,
+          Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+      for (int index = 0; index < count; index++) {
+        require(
+            buffer[index] == expected[offset + index], Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+      }
+      offset += count;
+    }
+    require(offset == expected.length, Failure.NATIVE_ARCHIVE_ROUNDTRIP_MISMATCH);
+  }
+
+  /** 四槽共享表必须全部可复得；每次 abort 后同时检查操作与重复 abort 的 stale 码。 */
+  private static void requireArchiveSessionsFree(Bundle output) throws ProbeFailure {
+    long[] handles = new long[ARCHIVE_SESSIONS];
+    long extraPack = 0;
+    long extraUnpack = 0;
+    try {
+      for (int index = 0; index < handles.length; index++) {
+        handles[index] =
+            index < 2
+                ? RustNative.archivePackCreate(RustArchiveCodec.DEFAULT_LEVEL)
+                : RustNative.archiveUnpackCreate();
+        require(handles[index] > 0, Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+      }
+      extraPack = RustNative.archivePackCreate(RustArchiveCodec.DEFAULT_LEVEL);
+      extraUnpack = RustNative.archiveUnpackCreate();
+      require(
+          extraPack == RustArchiveCodec.SESSION_LIMIT
+              && extraUnpack == RustArchiveCodec.SESSION_LIMIT,
+          Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+      // 释放前推进真实编码状态和一个合法 gzip 头前缀，避免只验证空会话 abort。
+      ByteBuffer prefix = ByteBuffer.allocateDirect(1);
+      prefix.put(0, (byte) 0x1f);
+      long update =
+          RustNative.archivePackUpdate(
+              handles[0], prefix, ByteBuffer.allocateDirect(RustArchiveCodec.packBound(1)));
+      require(
+          update >= 0 && RustArchiveCodec.consumed(update) == 1,
+          Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+      require(
+          RustNative.archiveUnpackWrite(handles[2], prefix) == 1,
+          Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+      long waiting = RustNative.archiveUnpackRead(handles[2], ByteBuffer.allocateDirect(1));
+      require(
+          waiting >= 0
+              && RustArchiveCodec.unpackProduced(waiting) == 0
+              && (RustArchiveCodec.unpackFlags(waiting) & RustArchiveCodec.FLAG_NEED_INPUT) != 0,
+          Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+    } finally {
+      // 先释放所有已取得的句柄，再裁决清理；单个断言不能截断剩余句柄的释放。
+      boolean released = true;
+      if (extraPack > 0) released &= RustNative.archivePackAbort(extraPack) == RustArchiveCodec.OK;
+      if (extraUnpack > 0)
+        released &= RustNative.archiveUnpackAbort(extraUnpack) == RustArchiveCodec.OK;
+      for (int index = 0; index < handles.length; index++) {
+        if (handles[index] <= 0) continue;
+        int code =
+            index < 2
+                ? RustNative.archivePackAbort(handles[index])
+                : RustNative.archiveUnpackAbort(handles[index]);
+        released &= code == RustArchiveCodec.OK;
+      }
+      require(released, Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+    }
+    for (int index = 0; index < handles.length; index++) {
+      requireArchiveHandleStale(handles[index], index < 2);
+    }
+    output.putInt(
+        "archiveSessionCapacityChecks", output.getInt("archiveSessionCapacityChecks", 0) + 1);
+  }
+
+  private static void requireArchiveHandleStale(long handle, boolean pack) throws ProbeFailure {
+    ByteBuffer input = ByteBuffer.allocateDirect(1);
+    ByteBuffer result = ByteBuffer.allocateDirect(RustArchiveCodec.FINISH_BOUND);
+    long operation =
+        pack
+            ? RustNative.archivePackUpdate(handle, input, result)
+            : RustNative.archiveUnpackRead(handle, result);
+    int abort = pack ? RustNative.archivePackAbort(handle) : RustNative.archiveUnpackAbort(handle);
+    require(
+        operation == RustArchiveCodec.STALE_HANDLE && abort == RustArchiveCodec.STALE_HANDLE,
+        Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+  }
+
+  private static byte[] probeArchiveNativeFinish(Bundle output) throws ProbeFailure {
+    long handle = RustNative.archivePackCreate(RustArchiveCodec.DEFAULT_LEVEL);
+    require(handle > 0, Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+    boolean finished = false;
+    try {
+      ByteBuffer bytes = ByteBuffer.allocateDirect(RustArchiveCodec.FINISH_BOUND);
+      long count = RustNative.archivePackFinish(handle, bytes);
+      require(count >= 18 && count <= bytes.capacity(), Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+      finished = true;
+      byte[] gzip = new byte[(int) count];
+      bytes.get(gzip);
+      require(
+          RustNative.archivePackFinish(handle, bytes) == RustArchiveCodec.STALE_HANDLE,
+          Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+      requireArchiveHandleStale(handle, true);
+      output.putBoolean("archiveNativeFinishStaleVerified", true);
+      return gzip;
+    } finally {
+      int code = RustNative.archivePackAbort(handle);
+      require(
+          code == (finished ? RustArchiveCodec.STALE_HANDLE : RustArchiveCodec.OK),
+          Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+    }
+  }
+
+  private static void probeMalformedArchive(
+      Bundle output, String name, byte[] gzip, int nativeError, boolean failClose)
+      throws Exception {
+    output.putString("stage", name);
+    if (nativeError != 0) {
+      long handle = RustNative.archiveUnpackCreate();
+      require(handle > 0, Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+      try {
+        ByteBuffer input = ByteBuffer.allocateDirect(gzip.length);
+        input.put(gzip);
+        require(
+            RustNative.archiveUnpackWrite(handle, input) == gzip.length,
+            Failure.NATIVE_ARCHIVE_CONTRACT_MISMATCH);
+        long code = RustNative.archiveUnpackRead(handle, ByteBuffer.allocateDirect(32));
+        output.putLong(name + "NativeReturn", code);
+        require(code == nativeError, Failure.NATIVE_ARCHIVE_REJECTION_MISSING);
+      } finally {
+        require(
+            RustNative.archiveUnpackAbort(handle) == RustArchiveCodec.OK,
+            Failure.NATIVE_ARCHIVE_CLEANUP_FAILED);
+      }
+      requireArchiveHandleStale(handle, false);
+    }
+    ArchiveSource source = new ArchiveSource(gzip, gzip.length);
+    source.failClose = failClose;
+    boolean[] constructed = {false};
+    // 空成员不产出明文，因此这些损坏都须在生产构造泵内拒绝并关闭 source。
+    IOException error =
+        expectIOException(
+            () -> {
+              try (RustGzipInputStream stream = new RustGzipInputStream(source)) {
+                constructed[0] = true;
+              }
+            },
+            Failure.NATIVE_ARCHIVE_REJECTION_MISSING);
+    require(
+        !constructed[0] && source.closes == 1 && error != source.closeFailure,
+        Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    if (failClose) {
+      require(
+          error.getSuppressed().length == 1 && error.getSuppressed()[0] == source.closeFailure,
+          Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    }
+    requireArchiveSessionsFree(output);
+    output.putBoolean(name + "Rejected", true);
+    output.putBoolean(name + "CleanupVerified", true);
+  }
+
+  private static void probeArchiveCloseFailures(Bundle output, byte[] emptyGzip) throws Exception {
+    output.putString("stage", "archive-source-close-failure");
+    ArchiveSource source = new ArchiveSource(emptyGzip, emptyGzip.length);
+    source.failClose = true;
+    RustGzipInputStream decoder = new RustGzipInputStream(source);
+    try (RustGzipInputStream stream = decoder) {
+      requireArchivePayload(stream, new byte[0]);
+      require(
+          expectIOException(stream::close, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH)
+              == source.closeFailure,
+          Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+      stream.close();
+      require(source.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    }
+    requireArchiveSessionsFree(output);
+    output.putBoolean("archiveSourceCloseFailureVerified", true);
+
+    output.putString("stage", "archive-target-close-failure");
+    ArchiveTarget closeTarget = new ArchiveTarget();
+    closeTarget.failClose = true;
+    RustGzipOutputStream closeEncoder = new RustGzipOutputStream(closeTarget);
+    try (RustGzipOutputStream stream = closeEncoder) {
+      require(
+          expectIOException(stream::close, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH)
+              == closeTarget.closeFailure,
+          Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+      require(
+          stream.isFinished() && closeTarget.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    }
+    requireArchiveSessionsFree(output);
+    output.putBoolean("archiveTargetCloseFailureVerified", true);
+
+    output.putString("stage", "archive-finish-write-failure");
+    ArchiveTarget writeTarget = new ArchiveTarget();
+    RustGzipOutputStream writeEncoder = new RustGzipOutputStream(writeTarget);
+    try (RustGzipOutputStream stream = writeEncoder) {
+      stream.write(new byte[] {1, 2, 3});
+      writeTarget.failWrite = true;
+      writeTarget.failClose = true;
+      require(
+          expectIOException(stream::close, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH)
+              == writeTarget.writeFailure,
+          Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+      int attempts = writeTarget.writes;
+      require(
+          stream.isFinished() && writeTarget.closes == 1, Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+      stream.finish();
+      stream.close();
+      require(
+          writeTarget.writes == attempts && writeTarget.closes == 1,
+          Failure.NATIVE_ARCHIVE_CLOSE_MISMATCH);
+    }
+    requireArchiveSessionsFree(output);
+    output.putBoolean("archiveFinishWriteFailureVerified", true);
+    output.putBoolean("archiveFailureNoReplayVerified", true);
+    output.putBoolean("archiveCloseFailureCleanupVerified", true);
+  }
+
+  private static void probePlanView(Bundle output) throws Exception {
+    output.putString("planEntryPoint", "RustNative.verifyPlan");
+    output.putString("stage", "plan-valid");
+    byte[] valid =
+        PlanViewCodec.encode(
+            PlanViewCodec.View.builder().appVersion("android-native-probe").build());
+    probePlanVerdict(output, "planValid", valid, PlanViewValidator.VALID, new int[0]);
+    byte[] invalid =
+        PlanViewCodec.encode(
+            PlanViewCodec.View.builder()
+                .appVersion("android-native-probe")
+                .policyVersion(2)
+                .rootCount(0)
+                .hasExpiry(true)
+                .generatedAtMs(10)
+                .expiresAtMs(20)
+                .nowMs(20)
+                .build());
+    output.putString("stage", "plan-invalid");
+    probePlanVerdict(
+        output,
+        "planInvalid",
+        invalid,
+        PlanViewValidator.INVALID,
+        new int[] {
+          PlanViewValidator.REASON_FIELD_RANGE,
+          PlanViewValidator.REASON_POLICY_VERSION,
+          PlanViewValidator.REASON_EXPIRED
+        });
+    probePlanVerdict(
+        output,
+        "planMalformed",
+        new byte[PlanViewCodec.HEADER_BYTES - 1],
+        PlanViewValidator.INVALID,
+        new int[] {PlanViewValidator.REASON_STRUCTURE});
+    output.putString("stage", "plan-jni-errors");
+    ByteBuffer nativeInvalid = ByteBuffer.allocateDirect(invalid.length);
+    nativeInvalid.put(invalid);
+    ByteBuffer nativeValid = ByteBuffer.allocateDirect(valid.length);
+    nativeValid.put(valid);
+    probePlanError(
+        output,
+        "planOutputBound",
+        nativeInvalid,
+        invalid.length,
+        PLAN_MAX_REASONS,
+        1,
+        RustArchiveCodec.OUTPUT_BOUND);
+    probePlanError(
+        output,
+        "planHeapInput",
+        ByteBuffer.wrap(valid),
+        valid.length,
+        PLAN_MAX_REASONS,
+        PLAN_MAX_REASONS,
+        RustArchiveCodec.INVALID_ARGUMENT);
+    probePlanError(
+        output,
+        "planNullInput",
+        null,
+        0,
+        PLAN_MAX_REASONS,
+        PLAN_MAX_REASONS,
+        RustArchiveCodec.INVALID_ARGUMENT);
+    probePlanError(
+        output,
+        "planLengthError",
+        nativeValid,
+        valid.length + 1,
+        PLAN_MAX_REASONS,
+        PLAN_MAX_REASONS,
+        RustArchiveCodec.INVALID_ARGUMENT);
+    probePlanError(
+        output,
+        "planSmallReasons",
+        nativeValid,
+        valid.length,
+        0,
+        PLAN_MAX_REASONS,
+        RustArchiveCodec.INVALID_ARGUMENT);
+    probePlanVerdict(output, "planAfterErrors", valid, PlanViewValidator.VALID, new int[0]);
+    output.putBoolean("planErrorOutputUntouched", true);
+    output.putBoolean("planInputUnchanged", true);
+    output.putBoolean("planDeterministicRepeatsVerified", true);
+  }
+
+  private static ByteBuffer planReasons(int capacityReasons) {
+    ByteBuffer reasons =
+        ByteBuffer.allocateDirect(4 + 4 * capacityReasons).order(ByteOrder.LITTLE_ENDIAN);
+    for (int index = 0; index < reasons.capacity(); index++) reasons.put(index, PLAN_SENTINEL);
+    return reasons;
+  }
+
+  /** JVM 只作独立对照；固定预期、原生返回值、完整原因集合必须同时吻合。 */
+  private static void probePlanVerdict(
+      Bundle output, String name, byte[] view, int expectedCode, int[] expectedReasons)
+      throws ProbeFailure {
+    PlanViewValidator.Result reference = PlanViewValidator.validate(view);
+    require(
+        reference.valid() == (expectedCode == PlanViewValidator.VALID)
+            && Arrays.equals(reference.reasons(), expectedReasons),
+        Failure.NATIVE_PLAN_VERDICT_MISMATCH);
+    ByteBuffer input = ByteBuffer.allocateDirect(view.length);
+    input.put(view);
+    int[] actualReasons = new int[0];
+    for (int repeat = 0; repeat < 2; repeat++) {
+      ByteBuffer reasons = planReasons(PLAN_MAX_REASONS);
+      int code = RustNative.verifyPlan(input, view.length, reasons, PLAN_MAX_REASONS);
+      output.putInt("nativePlanCalls", output.getInt("nativePlanCalls", 0) + 1);
+      output.putInt(name + "Return", code);
+      require(code == expectedCode, Failure.NATIVE_PLAN_VERDICT_MISMATCH);
+      int count = reasons.getInt(0);
+      require(count == expectedReasons.length, Failure.NATIVE_PLAN_REASONS_MISMATCH);
+      actualReasons = new int[count];
+      for (int index = 0; index < count; index++) {
+        actualReasons[index] = reasons.getInt(4 + 4 * index);
+      }
+      require(Arrays.equals(actualReasons, expectedReasons), Failure.NATIVE_PLAN_REASONS_MISMATCH);
+      for (int index = 4 + 4 * count; index < reasons.capacity(); index++) {
+        require(reasons.get(index) == PLAN_SENTINEL, Failure.NATIVE_PLAN_PARTIAL_OUTPUT);
+      }
+      for (int index = 0; index < view.length; index++) {
+        require(input.get(index) == view[index], Failure.NATIVE_PLAN_INPUT_MUTATED);
+      }
+    }
+    output.putString(name + "Reasons", Arrays.toString(actualReasons));
+    output.putBoolean(name + "Verified", true);
+  }
+
+  private static void probePlanError(
+      Bundle output,
+      String name,
+      ByteBuffer input,
+      int length,
+      int capacityReasons,
+      int maxReasons,
+      int expectedCode)
+      throws ProbeFailure {
+    ByteBuffer reasons = planReasons(capacityReasons);
+    byte[] snapshot = new byte[input == null ? 0 : input.capacity()];
+    for (int index = 0; index < snapshot.length; index++) snapshot[index] = input.get(index);
+    int code = RustNative.verifyPlan(input, length, reasons, maxReasons);
+    output.putInt("nativePlanCalls", output.getInt("nativePlanCalls", 0) + 1);
+    output.putInt(name + "Return", code);
+    require(code == expectedCode && code < 0, Failure.NATIVE_PLAN_ERROR_MISMATCH);
+    for (int index = 0; index < reasons.capacity(); index++) {
+      require(reasons.get(index) == PLAN_SENTINEL, Failure.NATIVE_PLAN_PARTIAL_OUTPUT);
+    }
+    for (int index = 0; index < snapshot.length; index++) {
+      require(input.get(index) == snapshot[index], Failure.NATIVE_PLAN_INPUT_MUTATED);
+    }
+    output.putBoolean(name + "Verified", true);
   }
 
   private String binding(String name, String expression) throws ProbeFailure {

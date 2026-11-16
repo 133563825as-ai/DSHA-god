@@ -65,6 +65,32 @@ class CandidateWorkflow(unittest.TestCase):
         self.assertNotEqual(subprocess.run(['bash', '-c', validate], env=env,
                                           capture_output=True).returncode, 0)
 
+    def test_real_gradle_prebuilt_check_is_scoped_to_unsigned_debug_and_same_run_input(self):
+        """只审查真实 Gradle 步骤的接线；本测试不调用 Gradle 或 Android。"""
+        exercise = self.blocks['Exercise real Gradle Rust prebuilt consumption']
+        condition = ("inputs.unsigned_only && inputs.unsigned_artifact_prefix == '' && "
+                     "inputs.rust_native_mode == 'prebuilt' && matrix.variant == 'debug'")
+        self.assertIn('if: ${{ ' + condition + ' }}', exercise)
+        shell = script(exercise)
+        self.assertIn('python3 -B tools/rust/check_gradle_prebuilt.py --gradle ./gradlew', shell)
+        self.assertIn('--artifact-dir out/rust-native', shell)
+        self.assertIn('--output out/rust-gradle-integration/report.json', shell)
+        self.assertNotIn('--synthetic-fixture', shell)
+        self.assertLess(self.source.index('name: Download same-run Rust native artifact'),
+                        self.source.index('name: Exercise real Gradle Rust prebuilt consumption'))
+        self.assertLess(self.source.index('name: Exercise real Gradle Rust prebuilt consumption'),
+                        self.source.index('name: Build unsigned ${{ matrix.variant }} package'))
+        upload = self.blocks['Upload Rust Gradle integration evidence']
+        self.assertIn('if: ${{ always() && ' + condition + ' }}', upload)
+        self.assertIn('out/rust-gradle-integration/report.json', upload)
+        self.assertIn('out/rust-gradle-integration/**/*.log', upload)
+        self.assertIn('if-no-files-found: error', upload)
+        runner = (ROOT / 'tools/rust/check_gradle_prebuilt.py').read_text(encoding='utf-8')
+        self.assertIn('androidLoadTested=False, apkAssembled=False', runner)
+        candidate = self.blocks['Prepare Rust debug instrumentation candidate (not executed)']
+        self.assertIn("'execution': 'NOT_RUN'", candidate)
+        self.assertIn("'androidNativeLoadVerified': False", candidate)
+
     def test_prebuilt_download_cannot_select_another_run(self):
         block = self.blocks['Download same-run Rust native artifact']
         self.assertIn("if: ${{ inputs.rust_native_mode == 'prebuilt' }}", block)
@@ -360,6 +386,130 @@ class InstrumentationSource(unittest.TestCase):
         for text in ('Build.SUPPORTED_ABIS', 'Build.VERSION.SDK_INT', 'Build.FINGERPRINT',
                      'Os.sysconf(OsConstants._SC_PAGESIZE)', '"librarySha256"'):
             self.assertIn(text, self.source)
+
+    def test_extended_probe_keeps_identity_and_requires_all_native_stages_before_pass(self):
+        self.assertIn('output.putString("probe", "dsha-rust-android-jni-v1")', self.source)
+        self.assertIn('output.putInt("probeEvidenceRevision", 2)', self.source)
+        stages = ['requireMappedLibrary(installedLibrary)',
+                  'output.putBoolean("nativeFdDigestVerified", true)',
+                  'probeArchive(output)', 'probePlanView(output)', 'success = true']
+        positions = [self.source.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        for forbidden in ('RustBackends.archiveSelection()', 'RustBackends.planSelection()',
+                          'RustArchiveCodec.packStream(', 'StrictGzipInputStream.open(',
+                          'GZIPOutputStream(', 'GZIPInputStream(', 'getDeclaredField(',
+                          'getLocalizedMessage()', 'error.toString()', 'System.out', 'System.err'):
+            self.assertNotIn(forbidden, self.source)
+        self.assertEqual(self.source.count('File.createTempFile('), 1)
+        self.assertEqual(self.source.count('ownedTemporary.delete()'), 1)
+
+    def test_archive_roundtrip_uses_production_streams_and_checks_framing_and_eof(self):
+        compact = re.sub(r'\s+', ' ', self.source)
+        for text in ('new byte[RustArchiveCodec.CHUNK + 73]',
+                     'new RustGzipOutputStream(target)', 'new RustGzipInputStream(source)',
+                     'try (RustGzipOutputStream stream = encoder)',
+                     'try (RustGzipInputStream stream = decoder)',
+                     'RustArchiveCodec.HEADER_HEX.equals(hex(Arrays.copyOf(gzip, 10)))',
+                     'trailer.getInt(gzip.length - 8) == (int) crc.getValue()',
+                     'trailer.getInt(gzip.length - 4) == plaintext.length',
+                     'requireArchivePayload(stream, plaintext)', 'stream.isFinished()',
+                     'buffer[index] == expected[offset + index]', 'offset == expected.length',
+                     'expectIOException(() -> encoder.write(1)',
+                     'expectIOException(() -> decoder.read()'):
+            self.assertIn(text, compact)
+        for evidence in ('archiveRoundtripVerified', 'archiveHeaderTrailerVerified',
+                         'archiveClosedStreamsRejected', 'archiveRoundtripCleanupVerified'):
+            self.assertIn('output.putBoolean("' + evidence + '", true)', self.source)
+
+    def test_malformed_archive_and_close_failures_are_observed_without_replay(self):
+        compact = re.sub(r'\s+', ' ', self.source)
+        for case in ('archiveBadHeader', 'archiveBadTrailer', 'archiveTruncated',
+                     'archiveTrailingData', 'archiveTwoMembers', 'archiveConstructorCloseFailure'):
+            self.assertIn('"' + case + '"', self.source)
+        for text in ('probeArchiveReadFailure(output, gzip, plaintext)',
+                     'require(!stream.isFinished(), Failure.NATIVE_ARCHIVE_REJECTION_MISSING)',
+                     'RustArchiveCodec.GZIP_HEADER', 'RustArchiveCodec.GZIP_TRAILER',
+                     'RustArchiveCodec.GZIP_TRAILING_DATA',
+                     'RustNative.archiveUnpackWrite(handle, input) == gzip.length',
+                     'RustNative.archiveUnpackRead(handle, ByteBuffer.allocateDirect(32))',
+                     'code == nativeError', '!constructed[0] && source.closes == 1',
+                     'error != source.closeFailure', 'error.getSuppressed()[0] == source.closeFailure',
+                     '== writeTarget.writeFailure', '== closeTarget.closeFailure',
+                     '== source.closeFailure', 'writeTarget.writes == attempts',
+                     'writeTarget.closes == 1', 'output.putBoolean(name + "Rejected", true)',
+                     'output.putBoolean(name + "CleanupVerified", true)'):
+            self.assertIn(text, compact)
+        for evidence in ('archiveReadFailureRejected', 'archiveReadFailureCleanupVerified',
+                         'archiveSourceCloseFailureVerified', 'archiveTargetCloseFailureVerified',
+                         'archiveFinishWriteFailureVerified', 'archiveFailureNoReplayVerified',
+                         'archiveCloseFailureCleanupVerified'):
+            self.assertIn('output.putBoolean("' + evidence + '", true)', self.source)
+
+    def test_archive_cleanup_reacquires_all_slots_and_checks_frozen_stale_handles(self):
+        compact = re.sub(r'\s+', ' ', self.source)
+        self.assertIn('ARCHIVE_SESSIONS = 4', compact)
+        for text in ('long[] handles = new long[ARCHIVE_SESSIONS]',
+                     'extraPack == RustArchiveCodec.SESSION_LIMIT',
+                     'extraUnpack == RustArchiveCodec.SESSION_LIMIT',
+                     'handles[0], prefix, ByteBuffer.allocateDirect(RustArchiveCodec.packBound(1))',
+                     'RustArchiveCodec.consumed(update) == 1',
+                     'RustNative.archiveUnpackWrite(handles[2], prefix) == 1',
+                     'RustArchiveCodec.unpackProduced(waiting) == 0',
+                     'RustArchiveCodec.FLAG_NEED_INPUT',
+                     'RustNative.archivePackAbort(handles[index])',
+                     'RustNative.archiveUnpackAbort(handles[index])',
+                     'released &= code == RustArchiveCodec.OK',
+                     'requireArchiveHandleStale(handles[index], index < 2)',
+                     'operation == RustArchiveCodec.STALE_HANDLE && abort == RustArchiveCodec.STALE_HANDLE',
+                     'RustNative.archivePackFinish(handle, bytes) == RustArchiveCodec.STALE_HANDLE',
+                     'code == (finished ? RustArchiveCodec.STALE_HANDLE : RustArchiveCodec.OK)',
+                     'NATIVE_ARCHIVE_CLEANUP_FAILED'):
+            self.assertIn(text, compact)
+        self.assertGreaterEqual(self.source.count('requireArchiveSessionsFree(output)'), 7)
+        self.assertIn('"archiveSessionCapacityChecks"', self.source)
+        self.assertIn('"archiveNativeFinishStaleVerified"', self.source)
+        self.assertIn('"archiveAbortCleanupVerified"', self.source)
+
+    def test_plan_verdicts_compare_real_native_returns_and_complete_reason_sets(self):
+        compact = re.sub(r'\s+', ' ', self.source)
+        for text in ('PlanViewCodec.encode(', '.policyVersion(2)', '.rootCount(0)',
+                     '.generatedAtMs(10)', '.expiresAtMs(20)', '.nowMs(20)',
+                     'PlanViewValidator.REASON_FIELD_RANGE', 'PlanViewValidator.REASON_POLICY_VERSION',
+                     'PlanViewValidator.REASON_EXPIRED', 'PlanViewValidator.REASON_STRUCTURE',
+                     'new byte[PlanViewCodec.HEADER_BYTES - 1]',
+                     'PlanViewValidator.Result reference = PlanViewValidator.validate(view)',
+                     'ByteBuffer.allocateDirect(view.length)', 'ByteOrder.LITTLE_ENDIAN',
+                     'for (int repeat = 0; repeat < 2; repeat++)',
+                     'int code = RustNative.verifyPlan(input, view.length, reasons, PLAN_MAX_REASONS)',
+                     'code == expectedCode', 'count == expectedReasons.length',
+                     'actualReasons[index] = reasons.getInt(4 + 4 * index)',
+                     'Arrays.equals(actualReasons, expectedReasons)',
+                     'input.get(index) == view[index]',
+                     'output.putString(name + "Reasons", Arrays.toString(actualReasons))'):
+            self.assertIn(text, compact)
+        self.assertLess(self.source.index('require(code == expectedCode,'),
+                        self.source.index('int count = reasons.getInt(0)'))
+        for case in ('planValid', 'planInvalid', 'planMalformed', 'planAfterErrors'):
+            self.assertIn('"' + case + '"', self.source)
+
+    def test_plan_jni_errors_preserve_output_and_input_then_allow_new_valid_verification(self):
+        compact = re.sub(r'\s+', ' ', self.source)
+        for case in ('planOutputBound', 'planHeapInput', 'planNullInput',
+                     'planLengthError', 'planSmallReasons'):
+            self.assertIn('"' + case + '"', self.source)
+        for text in ('RustArchiveCodec.OUTPUT_BOUND', 'RustArchiveCodec.INVALID_ARGUMENT',
+                     'reasons.put(index, PLAN_SENTINEL)',
+                     'RustNative.verifyPlan(input, length, reasons, maxReasons)',
+                     'code == expectedCode && code < 0',
+                     'reasons.get(index) == PLAN_SENTINEL',
+                     'input.get(index) == snapshot[index]', '"nativePlanCalls"'):
+            self.assertIn(text, compact)
+        error = self.source.split('private static void probePlanError(', 1)[1].split('private String binding(', 1)[0]
+        self.assertNotIn('getInt(', error.replace('output.getInt("nativePlanCalls", 0)', ''))
+        self.assertLess(self.source.index('"planSmallReasons"'), self.source.index('"planAfterErrors"'))
+        for evidence in ('planErrorOutputUntouched', 'planInputUnchanged',
+                         'planDeterministicRepeatsVerified'):
+            self.assertIn('output.putBoolean("' + evidence + '", true)', self.source)
 
     def test_default_runner_unchanged_and_exact_format_inventory_entry(self):
         gradle = (ROOT / 'app/build.gradle').read_text(encoding='utf-8')

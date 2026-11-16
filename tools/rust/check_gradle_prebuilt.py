@@ -208,6 +208,9 @@ class GradleCheck:
             self.assert_staged(build, library, receipt_bytes)
         self.run('off-rejects-residue', mode='off', failure='RUST_OFF_RESIDUE:', build='accepted-stage')
         self.assert_staged(build, library, receipt_bytes)
+        self.run('prebuilt-after-rejections', directory=supplied, task=':app:rustPrebuiltConsumerProbe',
+                 marker='RUST_GRADLE_CONSUMER_PATHS_PASS', build='accepted-stage')
+        self.assert_staged(build, library, receipt_bytes)
         if artifact.artifact_files(supplied) != (library, receipt_bytes):
             raise CheckError('RUST_GRADLE_INPUT_ARTIFACT_CHANGED')
         self.report['status'] = 'PASS_GRADLE_WITH_SYNTHETIC_ELF' if self.fixture else 'PASS_GRADLE_WITH_ANDROID_ARTIFACT'
