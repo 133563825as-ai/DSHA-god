@@ -82,6 +82,16 @@ def synthetic_pair(directory: Path) -> None:
     (directory / artifact.RECEIPT_NAME).write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
 
 
+def checked_report_output(output: Path, supplied: Path | None) -> Path:
+    """任何 mkdir/mkdtemp/报告写入之前，拒绝报告和工作目录覆盖输入。"""
+    output = artifact.checked_path(output.absolute())
+    if supplied is not None:
+        supplied = artifact.checked_path(supplied.absolute())
+        if output == supplied or supplied in output.parents or output in supplied.parents:
+            raise CheckError('RUST_GRADLE_REPORT_INPUT_OVERLAP')
+    return output
+
+
 class GradleCheck:
     def __init__(self, executable: str, output: Path, fixture: bool):
         self.output = artifact.checked_path(output.absolute())
@@ -100,7 +110,8 @@ class GradleCheck:
         self.write_report()
 
     def write_report(self):
-        self.output.write_text(json.dumps(self.report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        artifact.write_regular(self.output, (json.dumps(self.report, ensure_ascii=False, indent=2)
+                                             + '\n').encode('utf-8'))
 
     def run(self, name: str, *, mode: str | None = 'prebuilt', directory: Path | None = None,
             task: str = ':app:prepareRustNative', failure: str | None = None,
@@ -226,6 +237,7 @@ def main():
     parser.add_argument('--gradle', default='dsha-gradle')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    args.output = checked_report_output(args.output, args.artifact_dir)
     if not artifact.in_ci() and args.gradle != 'dsha-gradle':
         raise CheckError('RUST_GRADLE_LOCAL_WRAPPER_REQUIRED: 本机只允许 dsha-gradle')
     if not shutil.which(args.gradle):

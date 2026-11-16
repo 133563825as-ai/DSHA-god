@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -516,6 +517,44 @@ class InstrumentationSource(unittest.TestCase):
         self.assertRegex(gradle, r'''testInstrumentationRunner project.findProperty\('dsha.testRunner'\)\s*\?:\s*"com.deepseekharness.app.Rc13Instrumentation"''')
         manifest = json.loads((ROOT / 'tools/java-format-files.json').read_text(encoding='utf-8'))
         self.assertEqual(manifest['files'].count(JAVA_PATH), 1)
+
+
+class GradleRunnerInputProtection(unittest.TestCase):
+    def reject_overlap(self, relative_output):
+        with tempfile.TemporaryDirectory(prefix='rust-gradle-report-overlap-') as directory:
+            root = Path(directory)
+            native = root / 'artifact'
+            native.mkdir()
+            (native / 'libdsha_rs.so').write_bytes(b'original library bytes, not a compiled ELF')
+            (native / 'rust-receipt.json').write_bytes(b'{"original":"receipt bytes"}\n')
+
+            def snapshot():
+                return {path.relative_to(root).as_posix():
+                        None if path.is_dir() else path.read_bytes() for path in root.rglob('*')}
+
+            before = snapshot()
+            result = subprocess.run(
+                [sys.executable, '-B', str(ROOT / 'tools/rust/check_gradle_prebuilt.py'),
+                 '--artifact-dir', str(native), '--output', str(root / relative_output),
+                 '--gradle', str(root / 'gradle-must-never-execute')],
+                cwd=ROOT, capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('RUST_GRADLE_REPORT_INPUT_OVERLAP', result.stderr)
+            self.assertNotIn('RUST_GRADLE_EXECUTABLE_MISSING', result.stderr)
+            self.assertEqual(before, snapshot())
+
+    def test_report_cannot_replace_the_original_library_or_receipt(self):
+        for name in ('libdsha_rs.so', 'rust-receipt.json'):
+            with self.subTest(name=name):
+                self.reject_overlap('artifact/' + name)
+
+    def test_report_and_scratch_directory_cannot_be_nested_in_original_artifact(self):
+        for name in ('artifact/report.json', 'artifact/nested/report.json', 'artifact'):
+            with self.subTest(name=name):
+                self.reject_overlap(name)
+
+    def test_report_cannot_replace_an_ancestor_of_the_original_artifact(self):
+        self.reject_overlap('.')
 
 
 if __name__ == '__main__':
