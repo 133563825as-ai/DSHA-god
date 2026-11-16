@@ -1,3 +1,15 @@
+## 0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1 / build368（Rust prebuilt 装配默认 + Rust 运行时后端默认启用；runtimeId 52624be1，覆盖升级一次整屏维护页）
+
+- Rust 发布装配（默认 prebuilt）：`release-production` 的 `rust_native_mode` 默认从 `off` 改为 `prebuilt`，把同一 run 构建并核验的 arm64 `libdsha_rs.so` 与 `rust-native-receipt.json` 随正式包装配；`off` 仍保留为不随包选项。同 run 产物绑定、提交 / run 回执核对、签名后逐成员重核照旧，绑定失败即中止；正式签名仍由 release 工作流用 Mod 自有证书执行。bind 步骤不再硬拒 prebuilt 非 dry-run 发布，旧 `RUST_PREBUILT_REQUIRES_DRY_RUN_DEBUG_CANDIDATE` 护栏与对应 workflow 契约断言同步改写。
+- Rust 运行时后端默认启用：`DshaApp.onCreate()` 在语言 / 设置初始化后显式 `RustBackends.setEnabled(true)`，库随包时 digest、archive 与 `verify_plan` 默认走原生。进程内字段仍保持默认 false，普通 JVM 单测不受原生装载影响；`setEnabled(false)` 一键回 JVM。`.so` 未随包、加载失败或 ABI 不符时按类型化原因留在 JVM；`verify_plan` 一旦选中 Rust，内部错误或双实现分歧仍 fail-closed 中止，不用 JVM 结果覆盖。`RustBackends` 与 archive / gzip 桥的 javadoc 同步更新，不改默认字段。
+- Android Rust 探针适配：`RustNativeInstrumentation` 先核验 App 启动后的默认值，APK 内含收据时要求后端启用（`BACKENDS_NOT_DEFAULT_ON`）；随后临时 `setEnabled(false)` 跑原有 native 差分与失败清理探针，finally 恢复初始状态并断言恢复成功（`BACKENDS_RESTORE_FAILED`）；无收据的 `.so` 未随包构建只记录默认值，不误报。该探针仍直接调用 `RustNative` 与生产流桥，不走后端选择。
+- 发布流水线修复：修正 dry-run/publish 单变体测试包证据下载布局（`bf491c77`），只请求 `debug` 测试包时不再因证据目录合并失败；补齐 androidTest 的 `refreshPowerMode(Context)` 调用（`872d48ac`），恢复 prebuilt debug 构建的 androidTest 编译。两项均为本轮 build368 之前的 main 修复。
+- 覆盖升级影响：runtimeId 更新为 **52624be1ad386017c68c2fc986c0e834eaeec5364e9539bd0f3aa8dc74e1daba**（517 个启动输入、205 个资产输入；启动源码含 439 Java + 18 Kotlin），原因是 `DshaApp.java` 与 Rust 后端 / 桥注释进入受管启动输入。baseVersion 10、dataWrite dsh-0.2.2-rc.1 不变。**367→368 覆盖升级后首次启动会进入一次整屏运行环境维护页**，个人数据保留；未发布的中间提交不累加维护次数，版本号提升本身不改 runtimeId。
+- 固定构建输入：沿用 fixed-inputs-20261113，资产 dsha-a-su-fixed-inputs-20261113-build364.zip（716,787,167 B；SHA-256 2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad）。基础 Ubuntu、内置 DSH 0.2.2-rc.1、应急归档、运行时依赖与固定离线输入不升级；内置 dsh-web-mobile 3.3.5 与默认启用、数据格式、恢复语义保持。
+- 版本与范围：版本码提升为 368，基于已发布 build367（tag dsha-a-su-build367-20261115-230955 @ f3f8fc03）。DSHA 修订保持 0.2.1-rc.5，包名 io.github.sunsetrne.dsha、Mod 自有证书、单一 Standard 与签名方案保持；本候选尚未发布，计划由用户批准后的 Android release 工作流构建，并附带 .debug / .dev 共存测试包。设备验收计划在第二台手机用 .debug / .dev 测试包与 ADB 日志完成，不在本机安装官方包。
+- 验证范围与限制：build368 之前的 main（`bf491c77`）prebuilt dry-run 43804700097 已全绿（含 debug/instrumentation assemble、测试包签名与 Dry-run release plan），该历史结果只证明流水线，不等于 build368 提交的完整门禁。**build368 完整 Gradle 单测、Lint、APK/测试包与正式签名仍待本版 release 工作流实跑；尚未做设备验收。** 本机定向 Gradle 在 `:app:prepareStandardAssets` 因缺少派生资产 `python-support.bin` 中止（未到 Test，只尝试一次）；维护页/READY、Rust 原生加载与回退、备份/恢复、SAF 传输与双屏敏感页待设备核对，不宣称广泛 ROM/管理器兼容。
+- 十语种更新说明见 [build368 更新说明](docs/releases/build368-changes.zh.md)；实际门禁与未跑项见 [build368 发布准备回执](docs/releases/build368-preparation-20261116.md)。
+
 ## 0.2.1-rc.5-20261115.1335-dsh0.2.2-rc.1 / build367（主动 APK 更新检查 + 内置插件启用修复 + 启动交接 / 备份流桥 / Kotlin 迁移 / A8-P1；runtimeId 63adce0a，覆盖升级一次整屏维护页）
 
 - APK 更新（M17）：更新检查改为用户主动触发；启动、返回、窗口聚焦和首次打开更新页不再自动检查或弹出升级提示。下载与串行任务由应用级所有者管理，页面重建继续观察原任务；授权和安装结果只续接用户的原请求，失效回调不创建新请求，UNKNOWN 不重放。
