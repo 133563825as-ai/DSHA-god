@@ -309,7 +309,8 @@ def prepareRustNative = tasks.register('prepareRustNative', Exec) {
     }
 }
 // 加性登记独立资产目录，保留既有 sourceSets/受管资产准备结构。
-if (rustNativeMode == 'prebuilt') android.sourceSets.main.assets.srcDir(rustAssetsDirectory)
+// SourceSet API 不接受 Provider；目录在配置期解析，任务依赖仍由下方显式登记。
+if (rustNativeMode == 'prebuilt') android.sourceSets.main.assets.srcDir(rustAssetsDirectory.get().asFile)
 // 库 receipt 绑定完整字节，AGP 不得再 strip 此成员。
 android.packaging.jniLibs.keepDebugSymbols.add('**/libdsha_rs.so')
 tasks.named('preBuild').configure { dependsOn(prepareRustNative) }
