@@ -111,7 +111,9 @@ public final class RustNativeInstrumentation extends Instrumentation {
 
   @Override
   public void onStart() {
-    // DshaApp.onCreate() 在 instrumentation 之前运行；先记下 App 的默认开关，finally 恢复。
+    // 框架顺序是 instrumentation.onCreate/onStart 先于 Application.onCreate；先同步等主线程
+    // 完成 App 初始化（DshaApp.onCreate 在此启用 Rust 后端），再记下默认开关，finally 恢复。
+    runOnMainSync(() -> {});
     final boolean initialEnabled = RustBackends.enabled();
     Bundle output = new Bundle();
     output.putString("probe", "dsha-rust-android-jni-v1");
