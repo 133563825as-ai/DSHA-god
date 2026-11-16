@@ -13,7 +13,7 @@ name: DSH-A-Su production release
 #         ├─► host-regression ──────────┤
 #         └─► inputs ─┬─► unit ─────────┤
 #                     ├─► lint ─────────┤
-#                     ├─► rust-native（同 run arm64 artifact；显式 prebuilt 候选经核验后入包）
+#                     ├─► rust-native（同 run arm64 artifact；prebuilt 为生产默认并经核验后入包）
 #                     ├─► rust-differential（主机 .so + JDK17 JVM 探针，依赖 rust-native）
 #                     ├─► build-unsigned（无 Secrets，可读写共享缓存）
 #                     └─► test-packages-unsigned（无 Secrets，可读写共享缓存）
@@ -41,11 +41,11 @@ on:
         options: [debug+dev, debug, none]
         default: debug+dev
       rust_native_mode:
-        description: 'off preserves released APK contents; prebuilt is a dry-run Android loading candidate only'
+        description: 'prebuilt ships the same-run arm64 native artifact; default for production; off keeps the Rust library out of the APK'
         required: false
         type: choice
         options: ["off", prebuilt]
-        default: "off"
+        default: "prebuilt"
       dry_run:
         description: Build and verify everything (including test packages) without creating the tag or Release
         required: false
@@ -72,8 +72,6 @@ jobs:
       RELEASE_TAG: ${{ inputs.release_tag }}
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       RUST_NATIVE_MODE: ${{ inputs.rust_native_mode }}
-      RUST_DRY_RUN: ${{ inputs.dry_run }}
-      RUST_TEST_PACKAGES: ${{ inputs.test_packages }}
     outputs:
       apk_name: ${{ steps.bind.outputs.apk_name }}
     steps:
@@ -91,9 +89,9 @@ jobs:
           rust_mode = os.environ['RUST_NATIVE_MODE']
           if rust_mode not in ('off', 'prebuilt'):
               raise SystemExit('RUST_NATIVE_MODE')
-          if rust_mode == 'prebuilt' and (os.environ['RUST_DRY_RUN'] != 'true'
-                  or os.environ['RUST_TEST_PACKAGES'] not in ('debug', 'debug+dev')):
-              raise SystemExit('RUST_PREBUILT_REQUIRES_DRY_RUN_DEBUG_CANDIDATE')
+          # prebuilt 允许正式发布：同 run 产物绑定由 build-unsigned 下载 needs.rust-native
+          # 的 artifact、check-rust-native-apk 的 commit/runId/runAttempt/repository 回执核对
+          # 以及 sign-verify 的逐成员重核保证，bind 不再强制 dry-run 或测试包。
           if expected != os.environ['GITHUB_SHA'] or not re.fullmatch(r'[a-f0-9]{40}', expected):
               raise SystemExit('RELEASE_COMMIT_MISMATCH')
           tag = os.environ['RELEASE_TAG']

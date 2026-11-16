@@ -181,7 +181,7 @@ class ReleaseGraph(unittest.TestCase):
             self.assertEqual(needs(self.jobs["dry-run-summary"]), {"bind", "sign-verify", "test-packages"})
             for name in ("contracts", "java-format", "kotlin-format", "host-regression", "inputs"):
                 self.assertEqual(needs(self.jobs[name]), {"bind"}, name)
-            # Rust 生产者与编译接线显式依赖；正式默认 off，prebuilt 仅 dry-run 候选。
+            # Rust 生产者与编译接线显式依赖；正式默认 prebuilt，off 保留不随包选项。
             self.assertEqual(needs(self.jobs["rust-native"]), {"bind"})
             self.assertEqual(needs(self.jobs["rust-differential"]),
                              {"bind", "inputs", "rust-native"})
@@ -598,17 +598,27 @@ class RustGraph(unittest.TestCase):
         self.assertIn("'rustAndroidLoad': 'NOT_RUN'", sign)
         self.assertIn("rust-apk-signed.json", sign)
 
-    def test_prebuilt_production_is_only_a_dry_run_debug_candidate(self):
+    def test_prebuilt_production_is_the_default_and_keeps_same_run_binding(self):
         source = text("release-production.yml")
         request = source.split("      rust_native_mode:", 1)[1].split("      dry_run:", 1)[0]
-        self.assertIn('default: "off"', request)
+        self.assertIn('default: "prebuilt"', request)
         self.assertIn('options: ["off", prebuilt]', request)
-        self.assertIn("RUST_PREBUILT_REQUIRES_DRY_RUN_DEBUG_CANDIDATE", self.graph["bind"])
-        self.assertIn("os.environ['RUST_DRY_RUN'] != 'true'", self.graph["bind"])
-        self.assertIn("os.environ['RUST_TEST_PACKAGES'] not in ('debug', 'debug+dev')", self.graph["bind"])
+        self.assertIn("same-run", request)
+        # 正式发布允许 prebuilt：旧“必须 dry-run + debug 测试包”的护栏已删除。
+        self.assertNotIn("RUST_PREBUILT_REQUIRES_DRY_RUN_DEBUG_CANDIDATE", source)
+        self.assertNotIn("os.environ['RUST_DRY_RUN']", self.graph["bind"])
+        self.assertNotIn("RUST_DRY_RUN", self.graph["bind"])
+        # 同 run 产物绑定仍由 unsigned 构建、测试包与签名节点逐项复核。
+        for consumer in ("build-unsigned", "test-packages-unsigned", "test-packages"):
+            with self.subTest(consumer=consumer):
+                self.assertIn("needs.rust-native.outputs.artifact", self.graph[consumer])
+        self.assertIn("--receipt out/rust-native/rust-receipt.json", self.graph["build-unsigned"])
+        self.assertIn("rustNativeMode", self.graph["build-unsigned"])
+        # 签名节点只消费已绑定的 unsigned 交接，并重核 rustNativeMode 与收据摘要。
+        self.assertIn("receipt.get('rustNativeMode')", self.graph["sign-verify"])
+        self.assertIn("unsigned/rust-receipt.json", self.graph["sign-verify"])
         for consumer in ("test-packages-unsigned", "test-packages"):
             self.assertIn("rust_native_mode: ${{ inputs.rust_native_mode }}", self.graph[consumer])
-            self.assertIn("needs.rust-native.outputs.artifact", self.graph[consumer])
 
     def test_package_checks_actual_apk_and_cannot_use_budget_only_as_evidence(self):
         graph = jobs(text("ci-package.yml"))

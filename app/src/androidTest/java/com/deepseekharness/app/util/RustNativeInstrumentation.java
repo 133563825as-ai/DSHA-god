@@ -32,7 +32,11 @@ import java.util.zip.ZipFile;
 import org.json.JSONObject;
 
 /**
- * 显式选择的 Android Rust 候选：真实加载/FD 摘要、archive 流与 PlanView，不改变生产后端开关。
+ * 显式选择的 Android Rust 候选：真实加载/FD 摘要、archive 流与 PlanView。
+ *
+ * <p>先核验 App 启动后的后端默认值（随包收据存在时必须为启用），随后临时
+ * {@code setEnabled(false)} 跑原始 native 差分与失败清理探针，finally 恢复并断言恢复成功；
+ * 不把探针期间的临时关闭当作新的生产默认值。
  *
  * <p>仅由 -Pdsha.testRunner=com.deepseekharness.app.util.RustNativeInstrumentation 构建；
  * 运行时必须传入 commit/runId/runAttempt/repository，并与目标 APK 内的 Rust 回执逐项绑定。
@@ -57,7 +61,9 @@ public final class RustNativeInstrumentation extends Instrumentation {
     ARGUMENT_BINDING_INVALID,
     ANDROID_PLATFORM_UNSUPPORTED,
     PAGE_SIZE_UNAVAILABLE,
-    BACKENDS_NOT_DEFAULT_OFF,
+    BACKENDS_NOT_DEFAULT_ON,
+    BACKENDS_PROBE_SWITCH_MUTATED,
+    BACKENDS_RESTORE_FAILED,
     RECEIPT_MISSING_OR_DUPLICATE,
     RECEIPT_INVALID,
     RECEIPT_BINDING_MISMATCH,
@@ -105,6 +111,8 @@ public final class RustNativeInstrumentation extends Instrumentation {
 
   @Override
   public void onStart() {
+    // DshaApp.onCreate() 在 instrumentation 之前运行；先记下 App 的默认开关，finally 恢复。
+    final boolean initialEnabled = RustBackends.enabled();
     Bundle output = new Bundle();
     output.putString("probe", "dsha-rust-android-jni-v1");
     output.putInt("probeEvidenceRevision", 2);
@@ -120,7 +128,7 @@ public final class RustNativeInstrumentation extends Instrumentation {
     output.putString("buildId", Build.ID);
     output.putString("buildFingerprint", Build.FINGERPRINT);
     output.putBoolean("process64Bit", Process.is64Bit());
-    output.putBoolean("rustBackendsEnabledBefore", RustBackends.enabled());
+    output.putBoolean("rustBackendsEnabledBefore", initialEnabled);
     File ownedTemporary = null;
     boolean success = false;
     try {
@@ -132,7 +140,6 @@ public final class RustNativeInstrumentation extends Instrumentation {
       long pageSize = Os.sysconf(OsConstants._SC_PAGESIZE);
       output.putLong("pageSize", pageSize);
       require(pageSize > 0, Failure.PAGE_SIZE_UNAVAILABLE);
-      require(!RustBackends.enabled(), Failure.BACKENDS_NOT_DEFAULT_OFF);
 
       output.putString("stage", "receipt");
       String commit = binding("commit", "[0-9a-f]{40}");
@@ -147,6 +154,17 @@ public final class RustNativeInstrumentation extends Instrumentation {
       String expectedHash;
       long expectedSize;
       try (ZipFile apk = new ZipFile(application.sourceDir)) {
+        // 新语义：随包 .so 的 prebuilt 构建里 App 启动后后端默认启用。用本探针自己解析的
+        // 收据存在性判断期望；没有收据（.so 未随包的 off 构建）只记录、不误报默认值，
+        // 随后由 RECEIPT_MISSING_OR_DUPLICATE 明确失败。
+        boolean receiptPresent = containsEntry(apk, RECEIPT);
+        output.putBoolean("rustNativeReceiptPresent", receiptPresent);
+        if (receiptPresent) {
+          require(initialEnabled, Failure.BACKENDS_NOT_DEFAULT_ON);
+          output.putString("rustBackendsDefaultExpectation", "ENABLED_WITH_RECEIPT");
+        } else {
+          output.putString("rustBackendsDefaultExpectation", "RECEIPT_ABSENT_RECORD_ONLY");
+        }
         ZipEntry entry = uniqueEntry(apk, RECEIPT, Failure.RECEIPT_MISSING_OR_DUPLICATE);
         byte[] receiptBytes;
         try (InputStream input = apk.getInputStream(entry)) {
@@ -190,6 +208,11 @@ public final class RustNativeInstrumentation extends Instrumentation {
         }
         output.putBoolean("apkLibraryVerified", true);
       }
+      // 收据与 APK 字节核验完成后，临时关闭运行层开关跑原始 native 差分与失败清理探针：
+      // 这些探针直接调用 RustNative / 生产桥，不依赖 RustBackends；关闭只为证明探针不
+      // 改变 App 的默认开关，finally 会恢复初始状态并断言恢复成功。
+      RustBackends.setEnabled(false);
+      output.putBoolean("rustBackendsDisabledForProbes", true);
 
       output.putString("stage", "installed-library");
       // 当前 Standard 使用 useLegacyPackaging=true，Android 从这个只读安装目录加载库。
@@ -255,7 +278,7 @@ public final class RustNativeInstrumentation extends Instrumentation {
       output.putBoolean("nativeFdDigestVerified", true);
       probeArchive(output);
       probePlanView(output);
-      require(!RustBackends.enabled(), Failure.BACKENDS_NOT_DEFAULT_OFF);
+      require(!RustBackends.enabled(), Failure.BACKENDS_PROBE_SWITCH_MUTATED);
       success = true;
       output.putString("failure", Failure.NONE.name());
       output.putString("stage", "complete");
@@ -275,10 +298,14 @@ public final class RustNativeInstrumentation extends Instrumentation {
       }
       output.putBoolean(
           "ownedTemporaryRemoved", ownedTemporary == null || !ownedTemporary.exists());
+      // 恢复 App 启动后的默认开关，并核验恢复本身；恢复失败不能报告 PASS。
+      RustBackends.setEnabled(initialEnabled);
+      boolean restored = RustBackends.enabled() == initialEnabled;
+      output.putBoolean("rustBackendsRestored", restored);
       output.putBoolean("rustBackendsEnabledAfter", RustBackends.enabled());
-      if (RustBackends.enabled()) {
+      if (!restored) {
         success = false;
-        output.putString("failure", Failure.BACKENDS_NOT_DEFAULT_OFF.name());
+        output.putString("failure", Failure.BACKENDS_RESTORE_FAILED.name());
       }
       output.putString("result", success ? "PASS" : "FAIL");
       finish(success ? Activity.RESULT_OK : Activity.RESULT_CANCELED, output);
@@ -842,6 +869,15 @@ public final class RustNativeInstrumentation extends Instrumentation {
 
   private static void require(boolean condition, Failure failure) throws ProbeFailure {
     if (!condition) throw new ProbeFailure(failure);
+  }
+
+  /** 只判断条目是否存在；重复/合法性仍由 {@link #uniqueEntry} 裁决。 */
+  private static boolean containsEntry(ZipFile apk, String name) {
+    Enumeration<? extends ZipEntry> entries = apk.entries();
+    while (entries.hasMoreElements()) {
+      if (name.equals(entries.nextElement().getName())) return true;
+    }
+    return false;
   }
 
   private static ZipEntry uniqueEntry(ZipFile apk, String name, Failure failure)

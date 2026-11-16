@@ -345,19 +345,28 @@ class InstrumentationSource(unittest.TestCase):
     def setUpClass(cls):
         cls.source = (ROOT / JAVA_PATH).read_text(encoding='utf-8')
 
-    def test_self_contained_real_android_jni_without_fallback_or_switch_mutation(self):
+    def test_self_contained_real_android_jni_without_fallback_and_restores_default(self):
         for text in ('extends Instrumentation', 'void onStart()', 'RustNative.ensureLoaded()',
                      'RustNative.status()', 'RustNative.statusCode()', 'RustNative.isAvailable()',
                      'RustNative.abiVersion()', 'abiVersion == 1', 'RustNative.ABI_VERSION == 1',
                      'RustNative.digest(descriptor.getFd()', 'ByteBuffer.allocateDirect(32)',
-                     'ABC_SHA256.equals(hex(actual))', 'knownBytes.length'):
+                     'ABC_SHA256.equals(hex(actual))', 'knownBytes.length',
+                     'containsEntry(apk, RECEIPT)',
+                     'require(initialEnabled, Failure.BACKENDS_NOT_DEFAULT_ON)',
+                     'RustBackends.setEnabled(false)', 'RustBackends.setEnabled(initialEnabled)',
+                     'rustBackendsDefaultExpectation', 'rustBackendsRestored',
+                     'BACKENDS_RESTORE_FAILED', 'BACKENDS_PROBE_SWITCH_MUTATED'):
             self.assertIn(text, self.source)
-        for forbidden in ('loadFromPath', 'RustBackends.setEnabled', 'RustDigest.', 'Assume.',
+        # 只有临时关闭与 finally 恢复；不得用 setEnabled(true) 改写 App 的默认决定。
+        for forbidden in ('loadFromPath', 'RustBackends.setEnabled(true)', 'RustDigest.', 'Assume.',
                           'org.junit', 'androidx.', 'System.load(', 'skip', 'fallback'):
             self.assertNotIn(forbidden, self.source)
         self.assertIn('!RustBackends.enabled()', self.source)
         self.assertIn('rustBackendsEnabledBefore', self.source)
         self.assertIn('rustBackendsEnabledAfter', self.source)
+        self.assertNotIn('BACKENDS_NOT_DEFAULT_OFF', self.source)
+        self.assertEqual(self.source.count('RustBackends.setEnabled(false)'), 1)
+        self.assertEqual(self.source.count('RustBackends.setEnabled(initialEnabled)'), 1)
 
     def test_receipt_schema_and_budget_match_artifact_contract(self):
         self.assertIn('receipt.getInt("schema") == 2', self.source)
