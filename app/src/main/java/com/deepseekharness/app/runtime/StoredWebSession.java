@@ -2,6 +2,7 @@ package com.deepseekharness.app.runtime;
 
 import android.content.Context;
 import com.deepseekharness.app.backup.AndroidBackupFileSystem;
+import com.deepseekharness.app.backup.BackupFileSystem;
 import com.deepseekharness.app.data.KeyVault;
 import com.deepseekharness.app.util.DshAuthUrl;
 import com.deepseekharness.app.util.WebSessionProof;
@@ -24,6 +25,8 @@ public final class StoredWebSession {
 
   // 多个控制器门面共享同一文件；比较退休与新记录写入必须串行。
   private static final Object RECORD_LOCK = new Object();
+  // 约束最终 UTF-8 密文封装，不是明文字符数；读写必须使用同一预算。
+  static final int ENVELOPE_BYTES = 32768;
 
   private final Context context;
   private final AndroidBackupFileSystem fs = new AndroidBackupFileSystem();
@@ -72,7 +75,7 @@ public final class StoredWebSession {
       return null;
     }
     try {
-      String encrypted = new String(fs.small(file, 32768), StandardCharsets.UTF_8);
+      String encrypted = new String(fs.small(file, ENVELOPE_BYTES), StandardCharsets.UTF_8);
       String plain = vault.decryptChecked(encrypted); // 读取失败绝不新建或替换旧密钥。
       JSONObject j = new JSONObject(plain);
       if (j.getInt("schema") != 1) throw new IOException("WEB_SESSION_SCHEMA");
@@ -149,18 +152,38 @@ public final class StoredWebSession {
               .put("descriptor", record.descriptor())
               .put("compatible", record.compatible())
               .put("taskToken", record.taskToken());
-      String encrypted = vault.encrypt(j.toString());
-      if (encrypted.isEmpty() || !j.toString().equals(vault.decryptChecked(encrypted)))
-        throw new IOException("WEB_SESSION_ENCRYPTION_UNAVAILABLE");
-      home.verify(fs);
-      fs.atomic(home.directory, "web-session.enc", encrypted.getBytes(StandardCharsets.UTF_8));
-      fs.syncDirectory(home.directory);
-      home.verify(fs);
+      publishEnvelope(fs, home, j.toString(), vault::encrypt, vault::decryptChecked);
     } catch (IOException failure) {
       throw failure;
     } catch (Exception invalid) {
       throw new IOException("WEB_SESSION_WRITE", invalid);
     }
+  }
+
+  @FunctionalInterface
+  interface EnvelopeCodec {
+    String apply(String value) throws IOException;
+  }
+
+  /** 纯 Java 发布边界：预算与认证往返都成功之前，不触碰旧记录或 atomic 恢复槽位。 */
+  static void publishEnvelope(
+      BackupFileSystem fs,
+      WebSessionStorage.Home home,
+      String plain,
+      EnvelopeCodec encrypt,
+      EnvelopeCodec decrypt)
+      throws IOException {
+    String encrypted = encrypt.apply(plain);
+    if (encrypted == null || encrypted.isEmpty())
+      throw new IOException("WEB_SESSION_ENCRYPTION_UNAVAILABLE");
+    byte[] envelope = encrypted.getBytes(StandardCharsets.UTF_8);
+    if (envelope.length > ENVELOPE_BYTES) throw new IOException("WEB_SESSION_ENVELOPE_LIMIT");
+    if (!plain.equals(decrypt.apply(encrypted)))
+      throw new IOException("WEB_SESSION_ENCRYPTION_UNAVAILABLE");
+    home.verify(fs);
+    fs.atomic(home.directory, "web-session.enc", envelope);
+    fs.syncDirectory(home.directory);
+    home.verify(fs);
   }
 
   /** 调用方必须持有对应停止已完成或旧实例已退休的新启动围栏。 */

@@ -15,5 +15,27 @@
     "preWorkerSha256": "1eb661c0f36bcc5dcf47570f0c09ae26215bcf449031f218bc32bf6dc98a3d85",
     "oldV1ModuleSha256": "8043321a15a77b0559a03165b253bf366ea04abc4397a808828d083e9c5d87ea"
   },
-  "assets": "assets/runtime-patches.json + 6 plugin-manager recipes, extracted from app/src/main/assets at generationCommit"
+  "assets": "6 plugin-manager recipe files are exact extractions from app/src/main/assets at generationCommit; assets/runtime-patches.json is a derived registry subset containing only those six recipes, not the original full registry",
+  "registry": {
+    "kind": "derived-ordered-subset",
+    "sourceCommit": "00c3821d5d84b9ae1b9845167bcc01d4e441062d",
+    "sourcePath": "app/src/main/assets/runtime-patches.json",
+    "sourceSha256": "25ffd47e51605a25605c051899a2a7f3a7689e531c612b22d76c906933d58139",
+    "derivedPath": "assets/runtime-patches.json",
+    "derivedSha256": "f3665748027ab5fc60bd093f666093c6badc1b16df4130f24c1399c1d941ad9e",
+    "retainedActiveInSourceOrder": [
+      "plugin-manager-policy-patch.json",
+      "plugin-pnpm-argv-patch.json",
+      "retired-market-catalog-patch.json",
+      "auto-review-native-disabled-patch.json",
+      "plugin-manager-entries-patch.json",
+      "plugin-bundle-proof-workers-patch.json"
+    ],
+    "rule": "Copy schema and dshVersion; retain only the six named active entries verbatim in their original order; set specialized and retired to empty arrays. Recipe files themselves remain exact historical blobs, not registry reconstructions."
+  },
+  "license": "MIT",
+  "licenseFile": "LICENSE",
+  "licenseSha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+  "licenseAppliesTo": ["canonical.js"],
+  "licenseSource": "package/LICENSE from the canonical packageResolved tarball bound by packageIntegrity"
 }

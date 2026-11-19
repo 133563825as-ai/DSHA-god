@@ -1,5 +1,6 @@
 package com.deepseekharness.app.backup;
 
+import com.deepseekharness.app.util.Rc1MigrationReuse;
 import java.io.*;
 import java.util.*;
 
@@ -600,7 +601,8 @@ public final class RetainedCatalogue {
           "prepared".equals(prepare) || "failed".equals(prepare) ? "PENDING_RETRY" : "UNKNOWN",
           " · " + ((String) generation).substring(0, 8));
     }
-    String settings = settingsLedgerState(root, folder, index);
+    var evidence = settingsLedgerState(folder, index);
+    String settings = evidence.state;
     String status;
     if ("committed".equals(receipt)) {
       status =
@@ -614,7 +616,11 @@ public final class RetainedCatalogue {
     } else {
       status = "PENDING_RETRY";
     }
-    return new MigrationReport(status, " · " + ((String) generation).substring(0, 8));
+    return new MigrationReport(
+        status,
+        " · "
+            + ((String) generation).substring(0, 8)
+            + (evidence.reason == null ? "" : " · " + evidence.reason));
   }
 
   /** 公开兼容索引只有 prepare/receipt；旧字段只作历史事实，不升级为当前健康。 */
@@ -665,47 +671,50 @@ public final class RetainedCatalogue {
     return "RETAINED";
   }
 
-  /** settings 完成账本：verified / pending / unknown；无 settings 输入时返回 null。 */
-  private String settingsLedgerState(File root, File folder, Map<String, Object> index)
-      throws IOException {
+  /** 只读设置证据与启动门禁共用；无 settings 输入为 not-required。 */
+  private Rc1MigrationReuse.LedgerEvidence settingsLedgerState(
+      File folder, Map<String, Object> index) throws IOException {
     Object inputs = index.get("inputs");
-    if (!com.deepseekharness.app.util.Rc1MigrationReuse.validInputs(inputs)) return "unknown";
-    boolean settings =
-        ((Map<?, ?>) inputs).containsKey("settings.yaml")
-            || ((Map<?, ?>) inputs).containsKey("settings.yaml.imported");
-    if (!settings) return null;
+    if (!Rc1MigrationReuse.validInputs(inputs))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_INPUTS_UNKNOWN");
+    Map<?, ?> inputMap = (Map<?, ?>) inputs;
+    String generation = (String) index.get("generation");
+    if (!inputMap.containsKey("settings.yaml") && !inputMap.containsKey("settings.yaml.imported"))
+      return Rc1MigrationReuse.ledgerEvidence(generation, null, null, null);
+    Object sha =
+        inputMap.containsKey("settings.yaml")
+            ? inputMap.get("settings.yaml")
+            : inputMap.get("settings.yaml.imported");
+    if (!(sha instanceof String))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_IDENTITY");
     File ledger = new File(folder, "settings-result.json");
-    if (!fs.stat(ledger).type.equals("FILE")) return "unknown";
+    if (!fs.stat(ledger).type.equals("FILE"))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_MISSING");
     Map<String, Object> value;
     try {
       value = BackupJson.read(fs.small(ledger, BackupLimits.MANIFEST), BackupLimits.MANIFEST);
     } catch (IOException unreadable) {
-      return "unknown";
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_UNREADABLE");
     }
-    String generation = (String) index.get("generation");
-    Object expectedSha =
-        ((Map<?, ?>) inputs).containsKey("settings.yaml")
-            ? ((Map<?, ?>) inputs).get("settings.yaml")
-            : ((Map<?, ?>) inputs).get("settings.yaml.imported");
-    if (!com.deepseekharness.app.util.Rc1MigrationReuse.ledgerBinding(
-        generation, (String) expectedSha, value)) return "unknown";
     Map<String, Object> checkpoint = null;
-    File reuse = new File(folder, "reuse.json");
-    if (!fs.stat(reuse).type.equals("MISSING")) {
+    {
+      File reuse = new File(folder, "reuse.json");
       try {
-        checkpoint = BackupJson.read(fs.small(reuse, 65536), 65536);
+        if (fs.stat(reuse).type.equals("FILE"))
+          checkpoint = BackupJson.read(fs.small(reuse, 64 * 1024), 64 * 1024);
       } catch (IOException unreadable) {
-        return "unknown";
+        // 不可读的可选 checkpoint 不是期望集合证据，仍显示 unknown 并保留导出。
       }
-      if (!com.deepseekharness.app.util.Rc1MigrationReuse.checkpointBinding(index, checkpoint))
-        return "unknown";
     }
+    if (checkpoint != null
+        && checkpoint.containsKey("inputs")
+        && !Rc1MigrationReuse.checkpointBinding(index, checkpoint))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_CHECKPOINT_IDENTITY");
     if (value.containsKey("inputDigest")
         && (checkpoint == null
             || !Objects.equals(value.get("inputDigest"), checkpoint.get("inputDigest"))))
-      return "unknown";
-    return com.deepseekharness.app.util.Rc1MigrationReuse.ledgerState(
-        value, com.deepseekharness.app.util.Rc1MigrationReuse.expectedSections(value, checkpoint));
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_IDENTITY");
+    return Rc1MigrationReuse.ledgerEvidence(generation, (String) sha, value, checkpoint);
   }
 
   private void add(

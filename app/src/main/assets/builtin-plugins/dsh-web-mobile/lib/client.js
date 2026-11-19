@@ -5775,6 +5775,36 @@ function dshaGearFits(rowWidth, usedWidth) {
 exports.dshaGearFits = dshaGearFits;
 exports.GEAR_SLOT_PX = GEAR_SLOT_PX;
 function createDrawerQuickSettingsTask(ctx) {
+    // reconciler 的 deactivate 会 dispose，activate 会复用同一 registered task。
+    // 仅退休本次租期，不退休 task；新租期重建闭包，使旧 timer/RAF/监听永远绑定旧 token。
+    let activation = null;
+    return {
+        name: 'drawer-quick-settings',
+        scopes: ['*'],
+        ensure: () => {
+            activation ??= createGearActivation();
+            activation.ensure();
+        },
+        dispose: () => {
+            const previous = activation;
+            activation = null;
+            previous?.dispose();
+        },
+    };
+    function createGearActivation() {
+    // DSHA_GEAR_OWNER_V1：window 跨模块热换持有唯一 owner。第一个 ensure 取得 token；
+    // 当前 owner 退休/清空前其它实例的 ensure 直接返回，不再互删 wrap 触发 childList→RAF 循环。
+    const lifecycle = window.__dshaMobileGearOwnerV1 ??= {};
+    const owner = { retired: false, claimed: false };
+    const current = () => !owner.retired && lifecycle.owner === owner;
+    const claim = () => {
+        if (owner.retired || owner.claimed) return;
+        if (lifecycle.owner !== undefined && !lifecycle.owner.retired) return;
+        owner.claimed = true;
+        lifecycle.owner = owner;
+    };
+    const later = (callback, millis) => window.setTimeout(() => { if (current()) callback(); }, millis);
+    const frame = (callback) => requestAnimationFrame(() => { if (current()) callback(); });
     const t = ctx.locale.bind(locales_ts_1.NS);
     let wrap = null;
     let button = null;
@@ -5799,8 +5829,10 @@ function createDrawerQuickSettingsTask(ctx) {
     /** 账户行按下态的计时。 */
     let rowPressTimer = 0;
     let rowPressedAt = 0;
+    let pressedRow = null;
     /** 摘掉 pointerdown 预标记（幂等）。 */
     const clearPendingMark = () => {
+        if (lifecycle.owner !== owner) return;
         if (pendingMark === 0)
             return;
         window.clearTimeout(pendingMark);
@@ -5821,27 +5853,33 @@ function createDrawerQuickSettingsTask(ctx) {
      * 松开后再留 140ms，CSS 见 base.css 同族规则。
      */
     const pressRow = (on) => {
-        const target = row();
-        if (target === null)
+        if (lifecycle.owner !== owner) return;
+        if (!on) {
+            pressedRow?.removeAttribute(ROW_PRESSED_ATTR);
+            pressedRow = null;
             return;
-        if (on)
-            target.setAttribute(ROW_PRESSED_ATTR, '');
-        else
-            target.removeAttribute(ROW_PRESSED_ATTR);
+        }
+        const target = row();
+        if (target === null) return;
+        if (pressedRow !== target) pressedRow?.removeAttribute(ROW_PRESSED_ATTR);
+        pressedRow = target;
+        target.setAttribute(ROW_PRESSED_ATTR, '');
     };
     const onRowPressEnd = () => {
+        if (!current()) return;
         if (rowPressedAt === 0)
             return;
         const remain = PRESS_MIN_MS - (performance.now() - rowPressedAt);
         rowPressedAt = 0;
         window.clearTimeout(rowPressTimer);
         if (remain > 0) {
-            rowPressTimer = window.setTimeout(() => pressRow(false), remain);
+            rowPressTimer = later(() => pressRow(false), remain);
             return;
         }
         pressRow(false);
     };
     const onRowPointerDown = (event) => {
+        if (!current()) return;
         // 鸭子类型而不是 instanceof Element：跨 realm（iframe / 测试桩）时 instanceof 会假阴性，
         // 而这颗监听只需要 closest/contains 两个能力（同 open-files-panel 的写法）。
         const target = event.target;
@@ -5854,7 +5892,7 @@ function createDrawerQuickSettingsTask(ctx) {
             return;
         document.documentElement.setAttribute(PENDING_ATTR, '');
         window.clearTimeout(pendingMark);
-        pendingMark = window.setTimeout(clearPendingMark, PENDING_MS);
+        pendingMark = later(clearPendingMark, PENDING_MS);
         window.clearTimeout(rowPressTimer);
         rowPressedAt = performance.now();
         pressRow(true);
@@ -5886,6 +5924,7 @@ function createDrawerQuickSettingsTask(ctx) {
      * 不要求元素可见，链照旧点它；改成「点第一个可见项」会点到 Feedback。
      */
     const selectSettingsItem = (trigger) => {
+        if (!current()) return;
         const root = document.documentElement;
         root.setAttribute('data-mobile-nav-quick', '');
         let settled = false;
@@ -5900,7 +5939,7 @@ function createDrawerQuickSettingsTask(ctx) {
         if (!expanded())
             trigger.click();
         // 中间帧不闪：标记在场时 CSS 让菜单不可见，`click()` 不要求元素可见。
-        requestAnimationFrame(() => {
+        frame(() => {
             const menus = document.querySelectorAll('[role="menu"]');
             const menu = expanded() && menus.length > 0 ? menus[menus.length - 1] : null;
             const item = menu?.querySelector('[role="menuitem"]') ?? null;
@@ -5912,7 +5951,7 @@ function createDrawerQuickSettingsTask(ctx) {
                 return;
             }
             item.click();
-            pending = window.setTimeout(() => {
+            pending = later(() => {
                 // 选中后菜单自己会关；仍展开说明宿主结构漂移，回点一次兜底。
                 if (expanded())
                     trigger.click();
@@ -5921,6 +5960,7 @@ function createDrawerQuickSettingsTask(ctx) {
         });
     };
     const onClick = () => {
+        if (!current()) return;
         const target = row();
         if (target === null)
             return;
@@ -5944,15 +5984,17 @@ function createDrawerQuickSettingsTask(ctx) {
             button.removeAttribute(PRESSED_ATTR);
     };
     const onPressStart = () => {
+        if (!current()) return;
         window.clearTimeout(pressTimer);
         press(true);
         pressedAt = performance.now();
     };
     const onPressEnd = () => {
+        if (!current()) return;
         const remain = PRESS_MIN_MS - (performance.now() - pressedAt);
         window.clearTimeout(pressTimer);
         if (remain > 0) {
-            pressTimer = window.setTimeout(() => press(false), remain);
+            pressTimer = later(() => press(false), remain);
             return;
         }
         press(false);
@@ -6043,10 +6085,12 @@ function createDrawerQuickSettingsTask(ctx) {
         // 正式标记已到位，预标记可以撤了（CSS 两条并联，撤了也不跳）。
         clearPendingMark();
     };
-    return {
+    const task = {
         name: 'drawer-quick-settings',
         scopes: ['*'],
         ensure: () => {
+            claim();
+            if (!current()) return;
             const target = row();
             if (target === null)
                 return;
@@ -6061,8 +6105,14 @@ function createDrawerQuickSettingsTask(ctx) {
                     button.title = label;
                 }) ?? null;
             }
-            if (wrap !== null && wrap.parentElement !== target)
-                target.appendChild(wrap);
+            if (wrap !== null) {
+                // DSHA_GEAR_SINGLETON_V1：清掉同一行里其它实例遗留的齿轮。
+                for (const stale of target.querySelectorAll('[data-mobile-nav="quick-settings-wrap"]')) {
+                    if (stale !== wrap) stale.remove();
+                }
+                if (wrap.parentElement !== target)
+                    target.appendChild(wrap);
+            }
             bindRowHook();
             // DSHA_GEAR_FIT_V1：可见性只由实测宽度决定，结论写在插件自己的属性上；
             // 幂等写入（值没变就不写），避免自己的 mutation 再把任务唤醒一轮。
@@ -6074,6 +6124,10 @@ function createDrawerQuickSettingsTask(ctx) {
             syncMenuEntry(target, gearVisible);
         },
         dispose: () => {
+            if (owner.retired) return;
+            owner.retired = true;
+            pressRow(false);
+            press(false);
             window.clearTimeout(pressTimer);
             unsubscribeLocale?.();
             unsubscribeLocale = null;
@@ -6081,13 +6135,18 @@ function createDrawerQuickSettingsTask(ctx) {
             clearPending();
             clearPendingMark();
             unbindRowHook();
-            document.documentElement.removeAttribute('data-mobile-nav-quick');
-            clearMenuEntry();
+            if (lifecycle.owner === owner) {
+                document.documentElement.removeAttribute('data-mobile-nav-quick');
+                clearMenuEntry();
+                delete lifecycle.owner;
+            }
             wrap?.remove();
             wrap = null;
             button = null;
         },
     };
+    return task;
+    }
 }
 };
 __modules["core/image-zoom-core.js"] = function (require, module, exports) {
@@ -12015,8 +12074,12 @@ function installTabletQuickSettings(ctx) {
     (0, breakpoints_ts_1.installMobileEffect)(ctx, 'tablet-quick-settings', () => {
         const task = (0, drawer_quick_settings_ts_1.createDrawerQuickSettingsTask)(ctx);
         task.ensure();
+        let alive = true;
         let queued = false;
+        let pendingFrame = null;
         const run = () => {
+            if (!alive) return;
+            pendingFrame = null;
             queued = false;
             try {
                 task.ensure();
@@ -12027,14 +12090,19 @@ function installTabletQuickSettings(ctx) {
             }
         };
         const observer = new MutationObserver(() => {
-            if (queued)
+            if (!alive || queued)
                 return;
             queued = true;
-            requestAnimationFrame(run);
+            pendingFrame = requestAnimationFrame(run);
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
         return () => {
+            if (!alive) return;
+            alive = false;
             observer.disconnect();
+            if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+            pendingFrame = null;
+            queued = false;
             task.dispose();
         };
     }, breakpoints_ts_1.TABLET_TOUCH_QUERY);

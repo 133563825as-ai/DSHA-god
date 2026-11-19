@@ -50,6 +50,37 @@ class ThirdPartyNoticesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'NEW_NATIVE'):
             gate.verify_native_members(self.root)
 
+    def test_gradle_coordinates_scan_build_logic_runtime_dependencies(self):
+        (self.root / 'app').mkdir()
+        (self.root / 'app/build.gradle').write_text(
+            "dependencies {\n    implementation 'a:b:1'\n}\n", encoding='utf-8')
+        logic = self.root / 'build-logic'
+        logic.mkdir()
+        (logic / 'android.gradle').write_text(
+            "dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n"
+            "    testImplementation 'org.robolectric:robolectric:4.15.1'\n}\n", encoding='utf-8')
+        self.assertEqual(
+            ['a:b:1', 'com.android.tools:desugar_jdk_libs:2.0.4'],
+            gate.generator.gradle_coordinates(self.root))
+
+    def test_rust_vendor_license_bytes_are_bound_to_the_vendor_tree(self):
+        gate.generator.verify_rust_licenses()
+        lock_dir = self.root / 'ci'
+        lock_dir.mkdir()
+        (lock_dir / 'rust-toolchain.lock.json').write_text(json.dumps({
+            'dependencies': [{'name': 'demo', 'version': '1.0.0', 'licenseFiles': ['LICENSE']}],
+            'vendor': {'bytes': 0, 'files': 0}}), encoding='utf-8')
+        vendor = self.root / 'rust/vendor/demo-1.0.0'
+        vendor.mkdir(parents=True)
+        (vendor / 'LICENSE').write_bytes(b'fixture license')
+        target = self.root / 'app/src/main/assets/licenses/rust/demo-1.0.0/LICENSE'
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b'fixture license')
+        gate.generator.verify_rust_licenses(self.root)
+        target.write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'RUST_LICENSE_BYTES'):
+            gate.generator.verify_rust_licenses(self.root)
+
     def test_source_license_bytes_and_required_missing_file_are_rejected(self):
         gate.verify_licenses()
         licenses = self.root / 'app/src/main/assets/licenses'

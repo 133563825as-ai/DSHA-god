@@ -5,7 +5,10 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { readFile, writeFile, mkdir, symlink, lstat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-const [checkout, root, state, expected] = process.argv.slice(2);
+const [checkout, root, state, expected, scenario = 'retained'] = process.argv.slice(2);
+assert.ok(['retained', 'missing-ledger'].includes(scenario));
+assert.ok(expected === '0' || expected === '1');
+if (scenario === 'missing-ledger') assert.equal(expected, '0');
 const runtime = testRuntime('raw');
 const require = createRequire(join(runtime, 'package.json'));
 const mod = name => import(pathToFileURL(require.resolve(name)));
@@ -45,7 +48,7 @@ for (const patch of recipe.patches) {
 const fixed = 'file:///root/.dsh/rc1-settings-migration.cjs';
 assert.equal(patched.split(fixed).length, 2);
 const wrapper = join(root, 'hook-wrapper.cjs');
-await writeFile(wrapper, `const real=require(${JSON.stringify(resolve(checkout,'app/src/main/assets/rc1-settings-migration.cjs'))});module.exports={migrate:(s,p,a)=>real.migrate(s,p,a,{stateRoot:${JSON.stringify(state)}})};`);
+await writeFile(wrapper, `const real=require(${JSON.stringify(resolve(checkout,'app/src/main/assets/rc1-settings-migration.cjs'))});module.exports={migrate:async(s,p,a)=>{const result=await real.migrate(s,p,a,{stateRoot:${JSON.stringify(state)}});globalThis.__rc1HostMigrationResult=result;return result;}};`);
 patched = patched.replace(fixed, pathToFileURL(wrapper).href);
 const module = join(root, 'settings-patched.mjs'); await writeFile(module, patched);
 const { SettingsForms } = await import(pathToFileURL(module));
@@ -57,11 +60,27 @@ try {
   let updates = 0;
   const update = settings.update.bind(settings);
   settings.update = async (...args) => { updates++; return update(...args); };
+  // 第二次独立进程先模拟用户后改；该update不计作迁移派发。
+  if (expected === '0') {
+    const row = settings.describe().find(row => row.ns === 'first');
+    await update('first', { model: 'user-later' }, row.revision);
+    assert.equal(settings.describe().find(row => row.ns === 'first').value.model, 'user-later');
+  }
+  delete globalThis.__rc1HostMigrationResult;
   await SettingsForms.prototype.importLegacyDocument.call(settings);
   assert.equal(updates, Number(expected));
-  assert.equal(settings.describe().find(row => row.ns === 'first').value.model, 'old');
+  assert.equal(settings.describe().find(row => row.ns === 'first').value.model,
+    expected === '0' ? 'user-later' : 'old');
   const current = JSON.parse(await readFile(join(state, 'current.json'), 'utf8'));
-  const ledger = JSON.parse(await readFile(join(state, 'generations', current.generation, 'settings-result.json'), 'utf8'));
-  assert.equal(ledger.status, 'verified');
-  console.log('HOOK_PASS updates=' + updates + ' mode=' + current.startupContext.mode);
+  const ledgerPath = join(state, 'generations', current.generation, 'settings-result.json');
+  if (scenario === 'missing-ledger') {
+    assert.equal(current.startupContext.mode, 'history-only');
+    assert.equal(globalThis.__rc1HostMigrationResult?.status, 'unknown');
+    assert.equal(globalThis.__rc1HostMigrationResult?.reason, 'DSHA_MIGRATION_LEDGER_MISSING');
+    await assert.rejects(readFile(ledgerPath), { code: 'ENOENT' });
+  } else {
+    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8'));
+    assert.equal(ledger.status, 'verified');
+  }
+  console.log('HOOK_PASS updates=' + updates + ' mode=' + current.startupContext.mode + ' scenario=' + scenario);
 } finally { await ctx.fiber.dispose(); }

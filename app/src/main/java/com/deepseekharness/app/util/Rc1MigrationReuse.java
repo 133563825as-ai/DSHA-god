@@ -105,10 +105,100 @@ public final class Rc1MigrationReuse {
     boolean declared = ledger != null && ledger.containsKey("expectedSections");
     boolean saved = checkpoint != null && checkpoint.containsKey("settingsSections");
     Set<String> first = declared ? sectionNames(ledger.get("expectedSections")) : null;
-    Set<String> second = saved ? sectionNames(checkpoint.get("settingsSections")) : null;
+    Set<String> second =
+        saved
+                && ledger != null
+                && ledger.get("generation") instanceof String
+                && ledger.get("sourceSha256") instanceof String
+                && ledgerBinding(
+                    (String) ledger.get("generation"), (String) ledger.get("sourceSha256"), ledger)
+            ? expectedSections(
+                (String) ledger.get("generation"), (String) ledger.get("sourceSha256"), checkpoint)
+            : null;
     if (declared && first == null || saved && second == null) return null;
     if (declared && saved && !first.equals(second)) return null;
     return declared ? first : second;
+  }
+
+  /** 只读证据投影，不持有可变账本，也不授予重新导入、恢复或删除权限。 */
+  public static final class LedgerEvidence {
+    public final String state, reason;
+
+    private LedgerEvidence(String state, String reason) {
+      this.state = state;
+      this.reason = reason;
+    }
+
+    public static LedgerEvidence unknown(String reason) {
+      return new LedgerEvidence("unknown", reason);
+    }
+  }
+
+  /**
+   * 启动门禁和保留清单共用同一证据：身份绑定、完整期望集合、逐节终态。
+   * 缺 expectedSections 时仅接受同代同 SHA 且带 provenance 的 checkpoint，
+   * 键存在但非法时不可回退；不能从现存 sections 自证集合完整。
+   */
+  public static LedgerEvidence ledgerEvidence(
+      String generation,
+      String settingsSha256,
+      Map<String, Object> ledger,
+      Map<String, Object> checkpoint) {
+    if (settingsSha256 == null) return new LedgerEvidence("not-required", null);
+    if (ledger == null) return LedgerEvidence.unknown("SETTINGS_LEDGER_MISSING");
+    if (generation == null
+        || !Ids.uuid(generation)
+        || !settingsSha256.matches("[a-f0-9]{64}")
+        || !generation.equals(ledger.get("generation"))
+        || !settingsSha256.equals(ledger.get("sourceSha256")))
+      return LedgerEvidence.unknown("SETTINGS_LEDGER_IDENTITY");
+    if (!versionTwo(ledger) || "unknown".equals(ledgerState(ledger, sectionKeys(ledger))))
+      return LedgerEvidence.unknown("SETTINGS_LEDGER_UNKNOWN");
+    Set<String> expected;
+    if (ledger.containsKey("expectedSections")) {
+      expected = sectionNames(ledger.get("expectedSections"));
+      if (expected == null) return LedgerEvidence.unknown("SETTINGS_LEDGER_SECTION");
+      if (!expected.equals(sectionKeys(ledger)))
+        return LedgerEvidence.unknown("SETTINGS_LEDGER_INCOMPLETE");
+      if (checkpoint != null
+          && checkpoint.containsKey("settingsSections")
+          && "ledger-expected".equals(checkpoint.get("settingsSectionsSource"))) {
+        Set<String> cached = expectedSections(generation, settingsSha256, checkpoint);
+        if (cached == null || !expected.equals(cached))
+          return LedgerEvidence.unknown("SETTINGS_EXPECTED_SECTIONS_CONFLICT");
+      }
+    } else {
+      expected = expectedSections(generation, settingsSha256, checkpoint);
+      if (expected == null) return LedgerEvidence.unknown("SETTINGS_EXPECTED_SECTIONS_MISSING");
+    }
+    String state = ledgerState(ledger, expected);
+    return new LedgerEvidence(
+        state, "verified".equals(state) ? null : "SETTINGS_LEDGER_INCOMPLETE");
+  }
+
+  private static Set<String> expectedSections(
+      String generation, String settingsSha256, Map<String, Object> checkpoint) {
+    if (checkpoint == null
+        || !checkpointBinding(checkpoint, checkpoint)
+        || !(checkpoint.get("dataRoot") instanceof Map)
+        || !identity(
+            checkpoint.get("dataRoot"),
+            String.valueOf(((Map<?, ?>) checkpoint.get("dataRoot")).get("device")),
+            String.valueOf(((Map<?, ?>) checkpoint.get("dataRoot")).get("inode")))
+        || !generation.equals(checkpoint.get("generation"))
+        || !settingsSha256.equals(checkpoint.get("settingsSha256"))
+        || !"ledger-expected".equals(checkpoint.get("settingsSectionsSource"))) return null;
+    return sectionNames(checkpoint.get("settingsSections"));
+  }
+
+  private static Set<String> sectionKeys(Map<String, Object> ledger) {
+    if (!(ledger.get("sections") instanceof Map)) return null;
+    Set<String> keys = new java.util.LinkedHashSet<>();
+    for (Object key : ((Map<?, ?>) ledger.get("sections")).keySet()) {
+      if (!(key instanceof String) || ((String) key).isEmpty()) return null;
+      keys.add((String) key);
+    }
+    return keys;
   }
 
   private static Set<String> sectionNames(Object value) {

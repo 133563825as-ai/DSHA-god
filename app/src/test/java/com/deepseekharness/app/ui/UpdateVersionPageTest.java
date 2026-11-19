@@ -44,7 +44,7 @@ import org.robolectric.shadows.ShadowDialog;
     sdk = 34,
     qualifiers = "zh",
     application = UpdateVersionPageTest.App.class,
-    shadows = UpdateVersionPageTest.Engine.class)
+    shadows = {UpdateVersionPageTest.Engine.class, UpdateVersionPageTest.Provider.class})
 @LooperMode(LooperMode.Mode.PAUSED)
 public final class UpdateVersionPageTest {
   public static final class App extends DshaApp {
@@ -56,6 +56,9 @@ public final class UpdateVersionPageTest {
   public static final class Engine {
     static MutableLiveData<UpdateRepository.State> states;
     static int checks;
+    static boolean hasTask;
+    static File installApk;
+    static java.util.concurrent.Executor verifierQueue;
 
     @Implementation
     protected static UpdateEngine get(Context context) {
@@ -68,13 +71,33 @@ public final class UpdateVersionPageTest {
     }
 
     @Implementation
+    protected java.util.concurrent.Executor verificationExecutor() {
+      return verifierQueue;
+    }
+
+    @Implementation
+    protected File installableApk() {
+      return installApk;
+    }
+
+    @Implementation
+    protected boolean isCurrentInstall(File file, UpdatePolicy.Release release, String channel) {
+      var current = states.getValue();
+      return current != null
+          && !current.busy
+          && current.release == release
+          && file == installApk
+          && "preview".equals(channel);
+    }
+
+    @Implementation
     protected String channel() {
       return "preview";
     }
 
     @Implementation
     protected boolean hasTask() {
-      return true;
+      return hasTask;
     }
 
     @Implementation
@@ -86,6 +109,15 @@ public final class UpdateVersionPageTest {
     }
   }
 
+  /** 只隔离 URI 提供者；生命周期、仓库领取和 ACTION_VIEW 派发使用实际页面代码。 */
+  @Implements(value = androidx.core.content.FileProvider.class, isInAndroidSdk = false)
+  public static final class Provider {
+    @Implementation
+    protected static android.net.Uri getUriForFile(Context context, String authority, File file) {
+      return android.net.Uri.parse("content://" + authority + "/test/" + file.getName());
+    }
+  }
+
   private String previousLanguage;
 
   @Before
@@ -93,6 +125,9 @@ public final class UpdateVersionPageTest {
     previousLanguage = UiText.language();
     UiText.setLanguage("zh");
     Engine.checks = 0;
+    Engine.hasTask = true;
+    Engine.installApk = null;
+    Engine.verifierQueue = Runnable::run;
     Engine.states = new MutableLiveData<>(state("暂无可用更新"));
   }
 
@@ -118,6 +153,86 @@ public final class UpdateVersionPageTest {
   }
 
   @Test
+  public void idlePageRecreationAndLanguageChangesNeverCheckWithoutAnExplicitAction() {
+    Engine.hasTask = false;
+    var config =
+        new com.deepseekharness.app.core.ConfigStore(
+            org.robolectric.RuntimeEnvironment.getApplication());
+    config.setCheckUpdate(true);
+    try (var controller = Robolectric.buildActivity(UpdateActivity.class).setup()) {
+      assertEquals(0, Engine.checks);
+      controller.recreate();
+      assertEquals(0, Engine.checks);
+      UiText.setLanguage("en");
+      controller.recreate();
+      assertEquals(0, Engine.checks);
+      controller.get().findViewById(R.id.update_check).performClick();
+      assertEquals(1, Engine.checks);
+      controller.recreate();
+      assertEquals(1, Engine.checks);
+      assertTrue(config.isCheckUpdate());
+    }
+  }
+
+  @Test
+  public void verificationAcrossActivityAndLanguageRecreationDispatchesInstallerOnlyOnce()
+      throws Exception {
+    var verification = new java.util.ArrayDeque<Runnable>();
+    Engine.verifierQueue = verification::add;
+    Engine.installApk =
+        new File(org.robolectric.RuntimeEnvironment.getApplication().getFilesDir(), "owned-ui.apk");
+    UpdatePolicy.Release release = release();
+    var constructor =
+        UpdateRepository.State.class.getDeclaredConstructor(
+            String.class,
+            UpdateRepository.Stage.class,
+            long.class,
+            long.class,
+            UpdatePolicy.Release.class,
+            File.class,
+            String.class,
+            String.class);
+    constructor.setAccessible(true);
+    Engine.states.setValue(
+        constructor.newInstance(
+            "已下载",
+            UpdateRepository.Stage.IDLE,
+            release.bytes,
+            release.bytes,
+            release,
+            Engine.installApk,
+            "preview",
+            "preview"));
+    try (var controller = Robolectric.buildActivity(UpdateActivity.class).setup()) {
+      var field = UpdateActivity.class.getDeclaredField("repository");
+      field.setAccessible(true);
+      UpdateRepository repository = (UpdateRepository) field.get(controller.get());
+      repository.requestInstall();
+      repository.requestInstall();
+      assertEquals(1, verification.size());
+      controller.recreate();
+      assertSame(repository, field.get(controller.get()));
+      verification.remove().run();
+      Shadow.<org.robolectric.shadows.ShadowLooper>extract(android.os.Looper.getMainLooper())
+          .idle();
+      var foreground = Shadow.<org.robolectric.shadows.ShadowActivity>extract(controller.get());
+      Intent installer = foreground.getNextStartedActivity();
+      assertNotNull(installer);
+      assertEquals(Intent.ACTION_VIEW, installer.getAction());
+      assertEquals("application/vnd.android.package-archive", installer.getType());
+      assertNull(foreground.getNextStartedActivity());
+      UiText.setLanguage("en");
+      controller.recreate();
+      assertSame(repository, field.get(controller.get()));
+      assertNull(
+          Shadow.<org.robolectric.shadows.ShadowActivity>extract(controller.get())
+              .getNextStartedActivity());
+      assertNull(repository.takeInstallReady());
+      assertEquals(0, verification.size());
+    }
+  }
+
+  @Test
   public void currentRowAndActuallyOpenedNotesUseTheInstalledIdentity() throws IOException {
     try (var controller = Robolectric.buildActivity(UpdateActivity.class).setup()) {
       UpdateActivity activity = controller.get();
@@ -135,8 +250,17 @@ public final class UpdateVersionPageTest {
         bundledNotes(inLanguage(activity, language));
       assertTrue(shown.contains("dsh-web-mobile"));
       assertTrue(shown.contains("3.3.5"));
-      assertTrue(shown.contains("版本码提升为 359"));
-      assertFalse(shown.contains("版本码提升为 358"));
+      assertTrue(shown.contains("0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1"));
+      assertTrue(shown.contains("版本码提升为 368"));
+      assertFalse(shown.contains("版本码提升为 367"));
+      assertFalse(shown.contains("版本码提升为 366"));
+      assertFalse(shown.contains("版本码提升为 365"));
+      assertFalse(shown.contains("版本码提升为 364"));
+      assertFalse(shown.contains("版本码提升为 363"));
+      assertFalse(shown.contains("版本码提升为 362"));
+      assertFalse(shown.contains("版本码提升为 361"));
+      assertFalse(shown.contains("版本码提升为 360"));
+      assertFalse(shown.contains("版本码提升为 359"));
       assertFalse(shown.contains("版本码提升为 357"));
       assertFalse(shown.contains("版本码提升为 356"));
       assertFalse(shown.contains("版本码提升为 355"));
@@ -160,7 +284,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("版本码提升为 336"));
       assertFalse(shown.contains("版本码提升为 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
-      assertFalse(shown.contains("跨应用文件访问"));
+      assertTrue(shown.contains("跨应用文件访问"));
       assertFalse(shown.contains("管理文件访问权限"));
       assertFalse(shown.contains("DisclosureCard"));
       assertFalse(shown.contains("ShellStatusPill"));
@@ -189,7 +313,14 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("5ff08d58"));
       assertFalse(shown.contains("6f31f111"));
       assertFalse(shown.contains("b8c59df9"));
-      assertTrue(shown.contains("4d55973d"));
+      assertTrue(shown.contains("runtimeId"));
+      assertTrue(shown.contains("52624be1"));
+      assertFalse(shown.contains("63adce0a"));
+      assertFalse(shown.contains("f540d7f1"));
+      assertFalse(shown.contains("bd0016c3"));
+      assertFalse(shown.contains("5fd17eac"));
+      assertFalse(shown.contains("4d55973d"));
+      assertFalse(shown.contains("a2847544"));
       assertFalse(shown.contains("c780bc22"));
       assertFalse(shown.contains("8e54085c"));
       assertFalse(shown.contains("Auto review"));
@@ -226,16 +357,58 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("ScreenOperationFragment"));
       assertFalse(shown.contains("GrantSummary"));
       assertFalse(shown.contains("SettingsPanes"));
-      assertTrue(shown.contains("T154"));
-      assertTrue(shown.contains("T153"));
-      assertTrue(shown.contains("5b517e7ff"));
-      assertTrue(shown.contains("81d253428"));
-      assertTrue(shown.contains("4d55973d"));
+      assertFalse(shown.contains("RC1 迁移"));
+      assertFalse(shown.contains("A3 slice2/3"));
+      assertFalse(shown.contains("A4 终端与进程身份"));
+      assertFalse(shown.contains("K1/R3"));
+      assertFalse(shown.contains("expectedSections"));
+      assertFalse(shown.contains("Java↔CJS"));
+      assertFalse(shown.contains("齿轮"));
+      assertFalse(shown.contains("Rust digest"));
+      assertFalse(shown.contains("PlanView v1"));
+      assertFalse(shown.contains("Kotlin 工具链"));
+      assertFalse(shown.contains("Rust 旁路 R0"));
+      assertFalse(shown.contains("SAF 授权簿"));
+      assertFalse(shown.contains("契约底座"));
+      assertFalse(shown.contains("第三方许可"));
+      assertFalse(shown.contains("G0"));
+      assertFalse(shown.contains("dsh.android.client.rebirth"));
+      assertFalse(shown.contains("UNSIGNED_NOT_FOR_INSTALLATION"));
+      assertTrue(shown.contains("runtimeId"));
+      assertTrue(shown.contains("52624be1"));
+      assertFalse(shown.contains("63adce0a"));
+      assertFalse(shown.contains("f540d7f1"));
+      assertFalse(shown.contains("bd0016c3"));
+      assertFalse(shown.contains("5fd17eac"));
+      assertFalse(shown.contains("4d55973d"));
+      assertFalse(shown.contains("a2847544"));
+      assertTrue(shown.contains("A8-P1"));
+      assertTrue(shown.contains("SAF"));
+      assertTrue(shown.contains("contract"));
+      assertTrue(shown.contains("APK 更新（M17）"));
+      assertTrue(shown.contains("内置插件启用（T2）"));
+      assertTrue(shown.contains("S1a/S1b"));
+      assertTrue(shown.contains("UNKNOWN"));
+      assertTrue(shown.contains("367→368"));
+      assertTrue(shown.contains("build367"));
       assertTrue(shown.contains("运行环境维护页"));
-      assertTrue(shown.contains("build358"));
+      assertFalse(shown.contains("A6 插件身份与状态"));
+      assertFalse(shown.contains("A7 设备授权与通道事实"));
+      assertFalse(shown.contains("366→367"));
+      assertFalse(shown.contains("<HHMM>"));
+      assertFalse(shown.contains("<HHMMSS>"));
+      assertTrue(shown.contains("build364"));
+      assertFalse(shown.contains("build363"));
+      assertFalse(shown.contains("build362"));
+      assertFalse(shown.contains("build361"));
+      assertFalse(shown.contains("build360"));
+      assertFalse(shown.contains("build359"));
+      assertFalse(shown.contains("T154"));
+      assertFalse(shown.contains("T153"));
+      assertFalse(shown.contains("5b517e7ff"));
+      assertFalse(shown.contains("81d253428"));
       assertFalse(shown.contains("T141"));
       assertFalse(shown.contains("4e5b17e47"));
-      assertFalse(shown.contains("发布工程维护版"));
       assertFalse(shown.contains("10m56s"));
       assertFalse(shown.contains("18m48s"));
       assertFalse(shown.contains("c780bc22"));
@@ -275,7 +448,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("版本码提升为 330"));
       assertFalse(shown.contains("版本码提升为 329"));
       assertFalse(shown.contains("gh 纳入受管资产"));
-      assertFalse(shown.contains("默认禁用"));
+      assertTrue(shown.contains("自动默认禁用"));
       assertFalse(shown.contains("同一 DSH 版本"));
       assertFalse(shown.contains("版本码提升为 327"));
       assertFalse(shown.contains("技能调用确认"));
@@ -453,8 +626,17 @@ public final class UpdateVersionPageTest {
           englishBody);
       assertTrue(shown.contains("dsh-web-mobile"));
       assertTrue(shown.contains("3.3.5"));
-      assertTrue(shown.contains("versionCode raised to 359"));
-      assertFalse(shown.contains("versionCode raised to 358"));
+      assertTrue(shown.contains("0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1"));
+      assertTrue(shown.contains("versionCode raised to 368"));
+      assertFalse(shown.contains("versionCode raised to 367"));
+      assertFalse(shown.contains("versionCode raised to 366"));
+      assertFalse(shown.contains("versionCode raised to 365"));
+      assertFalse(shown.contains("versionCode raised to 364"));
+      assertFalse(shown.contains("versionCode raised to 363"));
+      assertFalse(shown.contains("versionCode raised to 362"));
+      assertFalse(shown.contains("versionCode raised to 361"));
+      assertFalse(shown.contains("versionCode raised to 360"));
+      assertFalse(shown.contains("versionCode raised to 359"));
       assertFalse(shown.contains("versionCode raised to 357"));
       assertFalse(shown.contains("versionCode raised to 356"));
       assertFalse(shown.contains("versionCode raised to 355"));
@@ -478,7 +660,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("versionCode raised to 336"));
       assertFalse(shown.contains("Raises versionCode to 334"));
       assertFalse(shown.contains("MAINTENANCE_TASK_START"));
-      assertFalse(shown.contains("Cross-app file access"));
+      assertTrue(shown.contains("Cross-app file access"));
       assertFalse(shown.contains("Manage file access"));
       assertFalse(shown.contains("DisclosureCard"));
       assertFalse(shown.contains("ShellStatusPill"));
@@ -507,7 +689,14 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("5ff08d58"));
       assertFalse(shown.contains("6f31f111"));
       assertFalse(shown.contains("b8c59df9"));
-      assertTrue(shown.contains("4d55973d"));
+      assertTrue(shown.contains("runtimeId"));
+      assertTrue(shown.contains("52624be1"));
+      assertFalse(shown.contains("63adce0a"));
+      assertFalse(shown.contains("f540d7f1"));
+      assertFalse(shown.contains("bd0016c3"));
+      assertFalse(shown.contains("5fd17eac"));
+      assertFalse(shown.contains("4d55973d"));
+      assertFalse(shown.contains("a2847544"));
       assertFalse(shown.contains("c780bc22"));
       assertFalse(shown.contains("8e54085c"));
       assertFalse(shown.contains("Auto review"));
@@ -544,16 +733,59 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("ScreenOperationFragment"));
       assertFalse(shown.contains("GrantSummary"));
       assertFalse(shown.contains("SettingsPanes"));
-      assertTrue(shown.contains("T154"));
-      assertTrue(shown.contains("T153"));
-      assertTrue(shown.contains("5b517e7ff"));
-      assertTrue(shown.contains("81d253428"));
-      assertTrue(shown.contains("4d55973d"));
-      assertTrue(shown.contains("enters the runtime maintenance page"));
-      assertTrue(shown.contains("build358"));
+      assertFalse(shown.contains("RC1 migration"));
+      assertFalse(shown.contains("A3 slice2/3"));
+      assertFalse(shown.contains("A4 terminal/process identity"));
+      assertFalse(shown.contains("K1/R3"));
+      assertFalse(shown.contains("expectedSections"));
+      assertFalse(shown.contains("Java↔CJS"));
+      assertFalse(shown.contains("gear"));
+      assertFalse(shown.contains("Rust digest"));
+      assertFalse(shown.contains("PlanView v1"));
+      assertFalse(shown.contains("Kotlin toolchain"));
+      assertFalse(shown.contains("Rust side-path R0"));
+      assertFalse(shown.contains("SAF grant ledger"));
+      assertFalse(shown.contains("contract substrate"));
+      assertFalse(shown.contains("Third-party licenses"));
+      assertFalse(shown.contains("G0"));
+      assertFalse(shown.contains("dsh.android.client.rebirth"));
+      assertFalse(shown.contains("UNSIGNED_NOT_FOR_INSTALLATION"));
+      assertTrue(shown.contains("runtimeId"));
+      assertTrue(shown.contains("52624be1"));
+      assertFalse(shown.contains("63adce0a"));
+      assertFalse(shown.contains("f540d7f1"));
+      assertFalse(shown.contains("bd0016c3"));
+      assertFalse(shown.contains("5fd17eac"));
+      assertFalse(shown.contains("4d55973d"));
+      assertFalse(shown.contains("a2847544"));
+      assertTrue(shown.contains("A8-P1"));
+      assertTrue(shown.contains("SAF"));
+      assertTrue(shown.contains("contract"));
+      assertTrue(shown.contains("APK updates (M17)"));
+      assertTrue(shown.contains("Built-in plugin enablement (T2)"));
+      assertTrue(shown.contains("S1a/S1b"));
+      assertTrue(shown.contains("UNKNOWN"));
+      assertTrue(shown.contains("367→368"));
+      assertTrue(shown.contains("build367"));
+      assertTrue(shown.contains("one full-screen managed runtime maintenance page"));
+      assertFalse(shown.contains("A6 plugin identity and state"));
+      assertFalse(shown.contains("A7 device authorization and channel facts"));
+      assertFalse(shown.contains("366→367"));
+      assertFalse(shown.contains("<HHMM>"));
+      assertFalse(shown.contains("<HHMMSS>"));
+      assertFalse(shown.contains("does not enter the runtime maintenance page"));
+      assertTrue(shown.contains("build364"));
+      assertFalse(shown.contains("build363"));
+      assertFalse(shown.contains("build362"));
+      assertFalse(shown.contains("build361"));
+      assertFalse(shown.contains("build360"));
+      assertFalse(shown.contains("build359"));
+      assertFalse(shown.contains("T154"));
+      assertFalse(shown.contains("T153"));
+      assertFalse(shown.contains("5b517e7ff"));
+      assertFalse(shown.contains("81d253428"));
       assertFalse(shown.contains("T141"));
       assertFalse(shown.contains("4e5b17e47"));
-      assertFalse(shown.contains("Release-engineering maintenance build"));
       assertFalse(shown.contains("10m56s"));
       assertFalse(shown.contains("18m48s"));
       assertFalse(shown.contains("c780bc22"));
@@ -662,7 +894,7 @@ public final class UpdateVersionPageTest {
       assertFalse(shown.contains("Raises versionCode to 292"));
       assertFalse(shown.contains("one-tap backup"));
       assertFalse(shown.contains("Raises versionCode to 291"));
-      assertFalse(shown.contains("network health"));
+      assertFalse(shown.contains("network-health"));
       assertFalse(shown.contains("Raises versionCode to 290"));
       assertFalse(shown.contains("stage segment bar"));
       assertFalse(shown.contains("Raises versionCode to 289"));

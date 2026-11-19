@@ -949,10 +949,10 @@ public class LaunchFragment extends Fragment {
     // 进程与文件身份核验放在工作线程；本次候选只捕获一次，由对话框局部持有至确认。
     new Thread(
             () -> {
-              HarnessController.ForceStopRequest request = null;
+              HarnessController.ForceStopPreparation preparation = null;
               com.deepseekharness.app.util.WebStopDiagnostic diagnostic = null;
               try {
-                request = controller.prepareForceStop();
+                preparation = controller.prepareForceStopResult();
               } catch (java.io.IOException denied) {
                 diagnostic =
                     denied instanceof com.deepseekharness.app.util.WebStopException
@@ -966,7 +966,7 @@ public class LaunchFragment extends Fragment {
                     "WEB_FORCE_STOP_CANDIDATE",
                     diagnostic.code().name());
               }
-              final HarnessController.ForceStopRequest candidate = request;
+              final HarnessController.ForceStopPreparation prepared = preparation;
               final com.deepseekharness.app.util.WebStopDiagnostic deniedEvidence = diagnostic;
               ui.post(
                   () -> {
@@ -990,18 +990,61 @@ public class LaunchFragment extends Fragment {
                           true);
                       return;
                     }
-                    if (candidate == null) {
+                    if (prepared == null) {
                       showStopFailureDialog(
                           activity,
                           root,
                           status,
                           generation,
-                          com.deepseekharness.app.core.WebForceStopText.noCandidate(),
-                          false);
+                          com.deepseekharness.app.core.WebForceStopText.unavailable(null),
+                          true);
                       return;
                     }
-                    showForceStopDialog(
-                        activity, root, status, generation, candidate, consentRevision);
+                    switch (prepared.status()) {
+                      case LIVE_CANDIDATE ->
+                          showForceStopDialog(
+                              activity,
+                              root,
+                              status,
+                              generation,
+                              prepared.request(),
+                              consentRevision);
+                      case UNKNOWN ->
+                          showStopFailureDialog(
+                              activity,
+                              root,
+                              status,
+                              generation,
+                              com.deepseekharness.app.core.WebForceStopText.unavailable(
+                                  prepared.diagnostics().get(0)),
+                              true);
+                      case ALREADY_EXITED -> {
+                        String message =
+                            com.deepseekharness.app.core.WebForceStopText.recordedGuestExited();
+                        status.setText(shortLine(message, ""));
+                        // 这是信息与显式复核选择，不是可被全局策略自动同意的安全确认。
+                        new DshaDialogBuilder(requireContext())
+                            .setTitle(com.deepseekharness.app.util.UiText.text("停止未完成"))
+                            .setMessage(message)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(
+                                com.deepseekharness.app.util.UiText.choose(
+                                    "重新核验停止", "Re-check Stop"),
+                                (dialog, which) -> {
+                                  if (consentRevision
+                                          != new com.deepseekharness.app.core.DeviceGrants(activity)
+                                              .consentPolicy()
+                                              .revision()
+                                      || getView() != root
+                                      || !isResumed()
+                                      || activity.isFinishing()
+                                      || activity.isDestroyed()
+                                      || generation != controller.getWebGeneration()) return;
+                                  requestStop(activity, root, status);
+                                })
+                            .show();
+                      }
+                    }
                   });
             },
             "web-force-stop-candidate")
@@ -1018,28 +1061,44 @@ public class LaunchFragment extends Fragment {
       boolean retryable) {
     if (getContext() == null || !isResumed()) return;
     status.setText(shortLine(message, com.deepseekharness.app.util.UiText.text("停止未完成")));
-    DshaDialogBuilder builder = new DshaDialogBuilder(requireContext(), true);
+    final long consentRevision =
+        new com.deepseekharness.app.core.DeviceGrants(activity).consentPolicy().revision();
+    // 失败说明与重试选择必须由用户点击，不能由全局安全确认策略自动代答。
+    DshaDialogBuilder builder = new DshaDialogBuilder(requireContext());
     builder.setTitle(com.deepseekharness.app.util.UiText.text("停止未完成"));
     builder.setMessage(message);
     builder.setNegativeButton(android.R.string.cancel, null);
-    if (retryable)
-      builder.setPositiveButton(
-          com.deepseekharness.app.core.WebForceStopText.retryButton(),
-          (dialog, which) ->
-              root.postDelayed(
-                  () -> {
-                    if (getView() != root
-                        || !isResumed()
-                        || activity.isFinishing()
-                        || activity.isDestroyed()
-                        || generation != controller.getWebGeneration()) return;
-                    offerForceStop(activity, root, status, generation);
-                  },
-                  com.deepseekharness.app.util.WebStopBudget.FORCE_RETRY_MILLIS));
-    else
-      builder.setPositiveButton(
-          com.deepseekharness.app.util.UiText.choose("重试", "Retry"),
-          (dialog, which) -> requestStop(activity, root, status));
+    builder.setPositiveButton(
+        retryable
+            ? com.deepseekharness.app.core.WebForceStopText.retryButton()
+            : com.deepseekharness.app.util.UiText.choose("重试", "Retry"),
+        (dialog, which) -> {
+          if (consentRevision
+                  != new com.deepseekharness.app.core.DeviceGrants(activity)
+                      .consentPolicy()
+                      .revision()
+              || getView() != root
+              || !isResumed()
+              || activity.isFinishing()
+              || activity.isDestroyed()
+              || generation != controller.getWebGeneration()) return;
+          if (retryable)
+            root.postDelayed(
+                () -> {
+                  if (consentRevision
+                          != new com.deepseekharness.app.core.DeviceGrants(activity)
+                              .consentPolicy()
+                              .revision()
+                      || getView() != root
+                      || !isResumed()
+                      || activity.isFinishing()
+                      || activity.isDestroyed()
+                      || generation != controller.getWebGeneration()) return;
+                  offerForceStop(activity, root, status, generation);
+                },
+                com.deepseekharness.app.util.WebStopBudget.FORCE_RETRY_MILLIS);
+          else requestStop(activity, root, status);
+        });
     builder.show();
   }
 

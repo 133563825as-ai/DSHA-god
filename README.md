@@ -1,8 +1,8 @@
 # DSHA 新生 · Rebirth / Sprout
 
 > **新生计划，代号嫩芽。** 本分支是DSHA核心开发协作中的隔离候选，包名`dsh.android.client.rebirth`、应用名`DSHA 新生`，不覆盖正式包；工作与构建在[DSHA-god](https://github.com/133563825as-ai/DSHA-god)，最终成果面向[DSH-APP/DSHA](https://github.com/DSH-APP/DSHA)。
-> 首次来源冻结参考build359/`92acaa0408cb7b031ee3036c6116c6463ae6b62e`。候选门禁/构建进行中，未真机、未发布；CI无正式密钥，只在全部所需门禁通过后上传unsigned产物，不能直接安装。参考后续Bug选择性跟进，不反复整版追新。
-> 下文是**保留的来源359说明**，其中Mod身份/签名/已发布状态描述来源工程，不表示本候选使用该身份或已通过同等验收。候选构建须显式`-Pdsha.identity=upstream -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true`；仅非调试release候选，无旧测试后缀、无官方自更新。原版权与第三方许可保留。
+> 当前新版整合固定来源为build368对象`e74f9e78d556b70323c03f9152ebe53f1d75f815`，与已交付首包来源`364998a4c267a0234242c2c8e12568f205481ed5`三方整合中，尚无新鲜整合提交或本版工程验收；不追浮动main覆盖现有修复。build359首包已交付且用户已自行安装，其启动慢、无障碍、主题和Web停止反馈有效；历史“未安装”回执只描述当时状态，不证明新版已验收。
+> 下文是**来源工程说明**，其中Mod身份/签名/已发布状态不表示本候选使用该身份或已通过同等验收。候选构建须显式`-Pdsha.identity=rebirth -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true -Pdsha.rust.mode=off`；仅非调试release候选，无旧测试后缀、无官方自更新。固定证书DER SHA-256为`4639e61d95b7ff55271fa8d7d240cb66941da23cdd2b2e69149157110b288479`，alias `rebirth-test`；CI仅unsigned，不持有私钥，后续离线签同一原件。未获本轮构建、签名、安装或发布授权；原版权与第三方许可保留。
 
 ## 来源工程说明（历史，不是候选身份）
 
@@ -14,8 +14,9 @@
 | 项目 | 值 |
 |---|---|
 | 应用名 | **DSH-A-Su**（测试变体为 `DSH-A-Su Test`） |
-| 版本 | `0.2.1-rc.5-20261111.1200-dsh0.2.2-rc.1` |
-| versionCode | 359 |
+| 版本 | `0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1` |
+| versionCode | 368 |
+| 候选状态 | build368 发布准备中（build367 已发布）；完整 CI 与设备验收待完成 |
 | 包名 | `io.github.sunsetrne.dsha`（测试变体 `io.github.sunsetrne.dsha.test`） |
 | 并行安装 | 与原版 `dsh.android.client`、更早的 `com.dsh.client` 完全独立，数据与系统授权互不继承 |
 | 签名 | Mod 自有发布证书，SHA-256 `a4b0413c67fa46dd30dc7e2bce3ad56151ed8bfde2a3315fff685baf786b5d5d` |

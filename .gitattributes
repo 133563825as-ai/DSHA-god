@@ -35,6 +35,12 @@
 # 退休原件必须覆盖后面的按扩展名规则，Git 不得改写原始换行字节。
 tools/history/** -text -eol
 
+# Rust vendor 树按上游字节入库（.cargo-checksum.json 记录逐文件 SHA-256），
+# 禁止 Git 行尾规范化；重新 vendor 后必须逐字节一致。许可副本按 vendor 精确字节
+# 保存（generic-array 的 LICENSE 本身是 CRLF），同样禁止行尾改写。
+rust/vendor/** -text -eol
+app/src/main/assets/licenses/rust/** -text -eol
+
 # Existing managed text is hash-bound to the signed runtime; keep exact bytes.
 app/src/main/assets/builtin-plugins/dsh-auto-review/package.json -text -eol
 app/src/main/assets/builtin-plugins/dsh-computer-use-android/package.json -text -eol
@@ -67,6 +73,8 @@ app/src/main/assets/plugin-manager.py -text -eol
 /tools/i18n/translations-extra/ko.json -text -eol
 /tools/i18n/translations-extra/pt.json -text -eol
 /tools/i18n/translations-extra/ru.json -text -eol
+/tools/i18n/translations-extra/la.json -text -eol
+/tools/i18n/translations-extra/zh-Hant.json -text -eol
 /tools/i18n/translations/ar.json -text -eol
 /tools/i18n/translations/fr.json -text -eol
 /tools/i18n/translations/ja.json -text -eol

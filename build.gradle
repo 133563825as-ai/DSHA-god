@@ -1,3 +1,22 @@
+// KGP 版本固定：AGP 9.1.1 自带 built-in Kotlin（运行时依赖 KGP 2.2.10）。
+// 如未来要升级 KGP，按 AGP 官方说明改这里和 settings.gradle 的 gradle.ext.kotlinVersion，
+// 两者必须一致；不接受动态版本或 -SNAPSHOT。built-in Kotlin 下不应用 kotlin-android 插件。
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${gradle.ext.kotlinVersion}"
+    }
+}
+
 plugins {
     id 'com.android.application' version '9.1.1' apply false
 }
+
+// applied Groovy 约定复用当前 AGP/KGP classpath，不新增插件仓库或 included build。
+apply from: rootProject.file('build-logic/source-inputs.gradle')
+apply from: rootProject.file('build-logic/verify.gradle')
+apply from: rootProject.file('build-logic/unit-test-contract.gradle')

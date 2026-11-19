@@ -37,6 +37,13 @@ public final class WebForceStopText {
         "Stop did not complete: no old instance could be force-stopped.\nWhat happened: a force stop needs an old instance fully verified by PID, birth identity, and command line; no candidate was obtained.\nImpact: no signal was sent. The old instance may have exited, or may not be identifiable from the available evidence; the runtime was kept.\nNext: tap Re-verify or Stop to retry; if it still fails, open Recovery options for diagnostics.");
   }
 
+  /** 仅记录 guest 已退；不把它描述成完整停止或维护可继续。 */
+  public static String recordedGuestExited() {
+    return UiText.choose(
+        "记录中的 Web 进程已确认退出；停止尚未完成。\n容器启动器或后台任务的退出仍需核验。本次未发送强制结束信号，也未改动原运行环境。\n请重新核验停止；若仍未确认，请在「恢复选项」查看诊断。",
+        "The recorded Web process has exited; the stop is not complete.\nThe container launcher or background tasks still need verification. No force-stop signal was sent and the runtime was kept.\nRe-check Stop, or open Recovery options for diagnostics if it remains unconfirmed.");
+  }
+
   /** 刚核验过候选证据时，短状态提示（不重复准备候选、不重复记日志）。 */
   public static String waitBeforeRetry() {
     return UiText.format(

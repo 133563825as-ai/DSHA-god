@@ -27,6 +27,7 @@ import com.deepseekharness.app.util.UiThemePreference;
  */
 public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivity {
   private final java.util.Map<String, Tile> tiles = new java.util.LinkedHashMap<>();
+  private final ThemeChangeRequest changes = new ThemeChangeRequest();
   private float touchX = -1f, touchY = -1f;
 
   static void open(Context context) {
@@ -79,7 +80,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     sync.addView(webSyncRow(page));
 
     // 发起切换的就是本页：重建后领取切换前的截图并扩散。
-    ThemeReveal.consume(this);
+    ThemeReveal.consume(this, changes);
   }
 
   /** 记下最近一次按下位置，作为扩散圆心（窗口坐标）。键盘 / 无障碍点按退回卡片中心。 */
@@ -92,7 +93,15 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     return super.dispatchTouchEvent(event);
   }
 
+  @Override
+  protected void onDestroy() {
+    changes.retire();
+    // 本页已领取的遮罩也须退休；尚待重建页领取的 Pending 不属于本页。
+    super.onDestroy();
+  }
+
   private void choose(String mode, View source) {
+    changes.retire();
     String current = ThemeController.preference(this);
     if (mode.equals(current)) return;
     String message =
@@ -111,16 +120,23 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     float[] center = revealCenter(source);
     String style = new ConfigStore(this).getThemeTransition();
     ThemeReveal.capture(
-        this, center[0], center[1], style, () -> ThemeController.select(this, mode));
+        this,
+        changes.begin(),
+        center[0],
+        center[1],
+        style,
+        () -> ThemeController.select(this, mode));
   }
 
   /** 换调色板：与换明暗走同一套过渡；发起页立即重建，其余页回到前台时重建。 */
   private void choosePalette(String id, View source) {
+    changes.retire();
     if (id.equals(ThemeController.palette(this))) return;
     float[] center = revealCenter(source);
     String style = new ConfigStore(this).getThemeTransition();
     ThemeReveal.capture(
         this,
+        changes.begin(),
         center[0],
         center[1],
         style,
@@ -247,6 +263,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
         });
     row.setOnClickListener(
         v -> {
+          changes.retire();
           new ConfigStore(this).setThemeTransition(style);
           renderStyle(group);
           v.announceForAccessibility(UiText.format("已选择 %s", styleName(style)));
@@ -305,7 +322,11 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     toggle.setChecked(config.isWebThemeSync());
     toggle.setShowText(false);
     toggle.setContentDescription(UiText.text("Web 界面跟随"));
-    toggle.setOnCheckedChangeListener((button, checked) -> config.setWebThemeSync(checked));
+    toggle.setOnCheckedChangeListener(
+        (button, checked) -> {
+          changes.retire();
+          config.setWebThemeSync(checked);
+        });
     row.addView(toggle, new LinearLayout.LayoutParams(-2, -2));
     row.setOnClickListener(v -> toggle.toggle());
     row.setBackgroundResource(R.drawable.bg_action_plain);

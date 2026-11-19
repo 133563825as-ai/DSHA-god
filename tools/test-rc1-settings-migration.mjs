@@ -153,10 +153,12 @@ for (const [label, mutate, status] of [
   ['错inputDigest', c => { c.inputDigest = hash('wrong'); }, 'unknown'],
   ['错inputs', c => { c.inputs['settings.yaml'] = hash('wrong'); }, 'unknown'],
   ['错dataRoot', c => { c.dataRoot.inode = 'wrong'; }, 'unknown'],
+  ['缺provenance', c => { delete c.settingsSectionsSource; }, 'unknown'],
+  ['未知provenance', c => { c.settingsSectionsSource = 'ledger-sections'; }, 'unknown'],
 ]) test(`history checkpoint ${label}与独立源集合绑定零写`, () => fixture('first: {model: old}\n', async f => {
   await f.ledgerWith({ first: { status: 'verified' } }, { expectedSections: ['first'] });
   const checkpoint = await json(join(f.folder, 'prepare.json'));
-  checkpoint.settingsSha256 = f.sourceSha; checkpoint.settingsSections = ['first']; mutate(checkpoint);
+  checkpoint.settingsSha256 = f.sourceSha; checkpoint.settingsSections = ['first']; checkpoint.settingsSectionsSource = 'ledger-expected'; mutate(checkpoint);
   await put(join(f.folder, 'reuse.json'), checkpoint); await f.history();
   const home = await files(f.home), state = await files(f.state);
   assert.equal((await f.run()).status, status); assert.equal(f.dispatches, 0);
@@ -190,6 +192,12 @@ for (const [label, schema, document] of [
   const ledger = await readFile(f.ledger, 'utf8'); assert.equal(ledger.includes('incoming-secret'), false);
   await f.run(); assert.equal(f.dispatches, 0);
 }, { safe: normal, first: schema }));
+test('无法解释的旧诊断正文保持原件且不授权清理或重放', () => fixture('first: {model: old}\n', async f => {
+  await f.ledgerWith({ first: { status: 'pending', before: { apiKey: 'UNKNOWN-OLD-ORIGINAL' } } });
+  const before = await readFile(f.ledger, 'utf8');
+  assert.equal((await f.run()).status, 'unknown'); assert.equal(f.dispatches, 0);
+  assert.equal(await readFile(f.ledger, 'utf8'), before);
+}));
 test('别名多对一及原名冲突整源零派发', () => fixture('legacy: {model: old}\nfirst: {model: other}\n', async f => {
   assert.equal((await f.run({ legacy: 'first' })).status, 'pending'); assert.equal(f.dispatches, 0);
 }));

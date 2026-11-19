@@ -1,7 +1,19 @@
 # 文档总索引与维护规则
 
 
-当前源码：`0.2.1-rc.5-20261111.1200-dsh0.2.2-rc.1` / build359 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。本版是 build358 之后的停止／重启可靠性与问题诊断版：T154（`5b517e7ff` + 门禁修正 `5e4509d2b`）让 proroot 停止后的残留 bridge／启动器在 SIGTERM 优雅窗口后按「同一出生身份 + 本安装 proroot bridge／启动器」双次核验，受控升级 SIGQUIT→SIGKILL；强停证据缺失时用两次内核核验一致的残留事实兜底；启动前置停止失败时启动页直接给出「强制结束」入口，不必重启 App；强停准入改为显式未确认停止结论白名单。T153（`81d253428`）为非主框架子资源加载错误留痕 `WEB_SUBRESOURCE`，`[DSHA_ROUTE]` 探针判定路由稳定空白时记录 `WEB_ROUTE_BLANK` 并显示原生兜底卡（重新加载／安全模式重试／复制诊断摘要）；维护前做有界空间预估，capture 显示文件数／字节心跳并归类类型化失败；救援导出立即给出类型化原因与下一步、SAF 写入失败降级 MediaStore 下载，导出包附 `diagnostics.txt`。受管运行时身份随 launcherInputs 变化：`runtimeId` 更新为 **`4d55973d`**（205 个输入），**358→359 覆盖升级后首次启动会进入一次运行环境维护页并执行受管运行时试运行，这是预期行为**；等待维护完成即可恢复，个人数据保留。fixed-inputs 冻结沿用锁定 20261105e，内置 `dsh-web-mobile` 3.3.5 与默认启用不变。**build359 尚未真机验收**：T154 的停止残留受控升级、强停证据兜底与启动「强制结束」入口，T153 的局部渲染兜底卡与维护／救援导出降级都待真机核对；验收项是 358→359 覆盖安装成功、进入一次维护页完成、数据完好、READY。宿主 contracts 整组、全量单测、lint 与全树格式／文档检查由本轮发布准备执行（结果见工作树声明）。改动说明见 [build359 更新说明](releases/build359-changes.zh.md)。
+当前候选源码：`0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1` / build368 / `io.github.sunsetrne.dsha` / DSH-A-Su（`main`）。build367 已发布；build368 把 Rust prebuilt 作为发布装配默认，并在 App 启动后默认启用 Rust 运行时后端（`.so` 未随包或加载失败按类型化原因留在 JVM，`verify_plan` 仍 fail-closed），同时带入 androidTest 编译修复（`872d48ac`）与 CI dry-run 单变体证据下载修复（`bf491c77`）。此前的 APK 主动更新检查、内置插件启用、S1a/S1b 启动交接、A3 备份流桥、contract/M17 与 SAF/transfer/nethealth 的 Kotlin 迁移、A8-P1 工程门禁，以及 A6 插件 bundle/entry/父组与生命周期、A7 设备授权围栏与实体/虚拟屏动作证据分离、A2 默认关闭的文件工作台/受控传输保持既有语义。受管 `runtimeId` 为 **`52624be1ad386017c68c2fc986c0e834eaeec5364e9539bd0f3aa8dc74e1daba`**（517 个启动输入、205 个资产输入）；**367→368 覆盖升级后首次启动预期进入一次整屏运行环境维护页**。受管启动输入中的源码计数为 439 个 Java + 18 个 Kotlin 文件，不是全仓生产源码总量。`baseVersion=10`、`dataWrite`、数据格式、恢复语义、基础 Ubuntu、内置 `dsh-web-mobile` 3.3.5 与默认启用不变；Rust 发布装配默认 prebuilt、运行时后端默认启用。build368 尚未完成完整 CI 与设备验收；静态结果不构成 Root 管理器、双屏或 SAF 设备兼容证明。改动与验证边界见 [build368 候选更新说明](releases/build368-changes.zh.md)。
+
+build368 候选十语更新说明：[中文](releases/build368-changes.zh.md) · [繁體中文](releases/build368-changes.zh-Hant.md) · [English](releases/build368-changes.en.md) · [日本語](releases/build368-changes.ja.md) · [한국어](releases/build368-changes.ko.md) · [Français](releases/build368-changes.fr.md) · [Português](releases/build368-changes.pt.md) · [Русский](releases/build368-changes.ru.md) · [العربية](releases/build368-changes.ar.md) · [Latina](releases/build368-changes.la.md)。[发布准备与接手回执](releases/build368-preparation-20261116.md) 单列实际门禁及未验范围。
+
+历史 build366 十语更新说明：[中文](releases/build366-changes.zh.md) · [繁體中文](releases/build366-changes.zh-Hant.md) · [English](releases/build366-changes.en.md) · [日本語](releases/build366-changes.ja.md) · [한국어](releases/build366-changes.ko.md) · [Français](releases/build366-changes.fr.md) · [Português](releases/build366-changes.pt.md) · [Русский](releases/build366-changes.ru.md) · [العربية](releases/build366-changes.ar.md) · [Latina](releases/build366-changes.la.md)。
+
+build364 真机覆盖验收：[回执](releases/build364-acceptance-20261113.md)（一加 12，官方包 363→364；一次维护页 SUCCEEDED、runtimeId 迁至 bd0016c3、首次 proroot trial 直接成功且无 ENOENT 重试、READY、无崩溃）。
+
+build363 真机覆盖验收：[回执](releases/build363-acceptance-20261113.md)（一加 12，官方包 362→363；维护最终 SUCCEEDED、runtimeId 迁至 5fd17eac、无崩溃；首次 trial 失败后重试成功，缺陷记录见 [运行时 trial 首次失败分析](design/runtime-trial-profile-node-modules-20261113.md)）。
+
+build362 真机覆盖验收：[回执](releases/build362-acceptance-20261113.md)（一加 12，官方包 361→362；一次维护页完成、READY、无崩溃）。
+
+build361 真机覆盖验收：[回执](releases/build361-acceptance-20261113.md)（一加 12，官方包 358→360→361；360→361 零维护、「关于与许可」与第三方许可实测通过）。
 
 历史版本的构建与验收记录保留在 [releases/](releases/)；各版本结论只在其对应提交与时点成立，不替代当前版本。
 
@@ -12,7 +24,13 @@
 |---|---|
 | [项目维护总手册](project-architecture-handbook.md) | 全部主要功能、框架分层、入口类与修改/测试地图 |
 | [ADB / Root / Shizuku 权限架构](device-permissions-architecture.md) | 系统权限、特权通道、无障碍、自有审批、服务与撤销、故障排查 |
+| [安卓授权申请现状与厂商扩展准备](design/vendor-permissions-20261113/README.md) | 现有权限字段/流程清单、AOSP 与小米/OPPO/vivo/荣耀/三星差异、开发性隐藏 API 基准线、模块化字段与验证计划；2026-11 资料整理，未真机 |
+| [应用内自动缓存回收评估](design/cache-reclaim-20261113/README.md) | 存储缓存与内存两种口径、现有清理资产与缺口、AOSP/Chromium/cacache/pnpm/Gradle 机制、开发属性编译门控与三档回收方案；设计评估，未实现 |
+| [DSH 插件管理模块评估：安装/卸载/更新/读取/守护与壳侧状态缓冲](design/plugin-management-alignment-20261113/README.md) | DSH 0.2.2-rc.1 的 bundle/entry 定义与管理面、壳侧六层状态缓冲（目录快照/展示快照/心跳/激活账本/操作回执/UI）、五个 P1 对齐缺口与 P0–P4 补全切片；只读评估，未实现 |
+| [启动链路压缩与 Kotlin 模块接替评估](startup-kotlin-modularization-assessment.md) | 三条启动入口与实际串行链、已确认压缩候选（停止重复事务、准备复用、插件按职责接替、CAS 证据要求）、必须保留的约束、测量与反例设计；只读评估，未实施 |
+| [启动链路压缩实施方案（K0/S0/S1–S4）](startup-kotlin-implementation-plan.md) | 二次代码核验的四个前置条件（Kotlin 身份/边界缺口、StopProof 范围、共享租约、guest 锁不可重入）；K0 输入与边界门禁、S0 观测基线、S1a/S1b 退出契约、S3 写锁顺序、S4 条件快照；仅方案，未改生产行为 |
 | [环境、数据与插件机制](runtime-data-plugin-architecture.md) | 解压启动、正常/安全/应急、受管更新、pnpm/插件事务、凭据、备份与恢复 |
+| [RC1 迁移问题吸收：内容副本、历史复用与本次核验](design/rc1-migration-20261113/README.md) | 对照 build363 核对外部暂停草稿与本仓 Python/Java/CJS；内容副本与对象身份 unknown、历史 cache/result 最小语义、四项需修 P1 与两项 P2、P0/P1/P2 切片及对外回复草稿；docs-only，未实施 |
 | [运行引擎与运行态](runtime-engines.md) | 当前proot/proroot、DSHA v1.1.6历史、vendor版本、loader/shim、退出监督与兼容边界 |
 | [端口与网络](ports-and-networking.md) | 自动/手动Web端口、备用本机记忆、3090桥/ADB/LAN分域、当前重试接入边界 |
 | [DNS配置](dns-configuration.md) | auto/ipv4/native的真实差异、Node窄lookup重试、glibc no-aaaa与用户选择 |
@@ -20,7 +38,8 @@
 | [虚拟屏架构](virtual-screen-architecture.md) | Core/Manager/工具路由、帧/节点/anchor证据、采集输入、关闭恢复与修改回归 |
 | [实体屏特权执行核心（T130 Phase A，实验）](privileged-screen-core.md) | display 0 镜像抓帧 + 固定动词注入、一次性帧/动作凭据、能力/任务/确认三道门、低延迟 benchmark、无无障碍依赖与未真机验收边界 |
 | [任务状态上岛](island-status.md) | 实时活动/胶囊两代判据、岛位选举、完成态、心跳收敛与验证范围 |
-| [ADR0001](adr/0001-build154-boundaries.md) / [ADR0002](adr/0002-current-threat-model.md) / [ADR0003](adr/0003-virtual-screen-lifecycle-and-input.md) | 架构取舍、权限与数据边界、虚拟屏生命周期及后果 |
+| [ADR0001](adr/0001-build154-boundaries.md) / [ADR0002](adr/0002-current-threat-model.md) / [ADR0003](adr/0003-virtual-screen-lifecycle-and-input.md) / [ADR0004](adr/0004-kotlin-rust-direction.md) | 架构取舍、权限与数据边界、虚拟屏生命周期及后果、Kotlin 引入与 Rust 引擎方向（Accepted 2026-11-12） |
+| [Kotlin 工具链](kotlin-toolchain.md) | AGP 9.1.1 built-in Kotlin + 固定 KGP 2.2.10、依赖校验增量、ktfmt 0.64 格式门禁、迁移规则与回退；首批 `util/ShellQuote` 试点 |
 | [资料与来源依据](references-and-provenance.md) | 官方primary入口、工程上游关系、固定版本/摘要、许可与来源限制 |
 | [固定构建输入](fixed-build-inputs.md) | 公开仓库预发布资产、12 项输入、SHA-256 锁定与还原流程 |
 | [CI 构建与发布](ci-release.md) | 公开仓库 Actions 正式成品：触发参数、Secrets、门禁、签名核验与 Release 产物 |
@@ -34,11 +53,24 @@
 | [物理屏动作提速（T105）](design/physical-screen-speed-20261107/README.md) | 事件驱动 settle、动作即观察（`observe=1`，含 MCP 默认开启）、紧凑识屏 `mode=delta/same`；动作凭据规则不变，未真机测量 |
 | [外接设备页面变化观察（T134）](design/extdev-observation-20261110.md) | 外接 USB-ADB 目标的 logcat events / `dumpsys window` / 画面通道真机测量，`/app/extdev/watch` 事件采样 + `operate observe=1` settle，摘要绑定目标代次、只读不落盘 |
 | [build352 覆盖升级维护页死锁（T139）](design/build352-maintenance-register-deadlock-20261110.md) | 维护事务内注册与 runtime-health 写入顺序冲突导致 ENV_NOT_READY 回滚的真机证据与 build353 修复（注册移到事务完成后、失败不回滚运行时）；含教训与验证清单 |
+| [运行时 trial 首次失败后重试成功（build363 验收注记）](design/runtime-trial-profile-node-modules-20261113.md) | 一加 12 覆盖验收中 proroot 隔离 trial 在鉴权前以 Node `ENOENT`（试运行 profile `node_modules` 目录枚举）退出、同一维护任务内一次兼容回退成功；含证据、只读代码定位、待验证假设与 P1/P2 分级、修复切片；docs-only，未修 |
 | [发布流水线耗时压缩（T141）](design/t141-release-pipeline-speed-20261110.md) | 逐 job 实测基线（build356 15:05）、build-unsigned / sign-verify 拆分、测试包两段式、npm 与 Gradle 缓存、SDK 预装检测与超时、证据包 298 MB→13 MB、预计 −27% 与回退方案 |
 | [ADB 通道原生化设计（T42）](design/adb-native-20261103/README.md) | ADB 配对、私钥与客户端移到安卓壳，容器只经桥提交命令；含用户 Q1–Q9 决定与 E1–E4 取证，未实现 |
+| [A7 设备能力设计核查：Root 权限映射与内置 ADB 客户端](design/a7-root-adb-design-check-20261113.md) | 对照 build361 代码核查：Root 链路与三档成立，但无 A7/F07 可执行设计、授权无单一 owner、ADB+su 不核验身份、R2/R5 无 owner；T42 稿有 4 处事实漂移（备份 P0 已修、协议已是 3 等）与 E5–E8 未做；含 A7-a/A7-b 拆分建议；只读核查，未操作设备 |
+| [R1 Rust 工具链与首期旁路接入方案](design/kotlin-rust-rearchitecture-20261112/r1-rust-toolchain-plan-20261113.md) | NDK r26d + Rust 1.100.0、cargo vendor 与字节复现、CI 产物与 Gradle 注入、三类封闭纯函数 ABI（无 execute/argv）、JVM 差分与回退、R0–R3 拆分；Q1–Q6 已定；仅设计，R0 未开工 |
 | [GitHub 凭据原生化设计（T50）](design/github-credential-native.md) | 壳内 OAuth Device Flow 登录、token 存 Keystore、容器经桥按需取 access token；待确认，未实现 |
 | [物理屏两套观察路径设计（T107）](design/physical-screen-observation-20261107.md) | 无障碍动作 + 特权镜像读屏 + evdev 用户操作检测；A/B/C 对比、接口/授权/兼容/回退与 M1–M3 计划；未实现 |
 | [build351 覆盖升级首启失败排查（T133）](design/build351-first-start-registration-20261110.md) | 插件注册 90s 超时 + 残留 profile 锁 + 「原因未分类」的源码级归因（③ 机制为主、① 锁生命周期与首启重复覆盖层加重、② 语义不足），含最小修复与复现/取证清单；只排查未改代码 |
+| [外壳 Kotlin 模块化 + Rust 引擎可行性评审](design/kotlin-rust-rearchitecture-20261112/README.md) | 五条并行评审线：21 个状态模块 / 9 个 Gradle 模块 / 1 个 Rust crate；用户 10 模块重切 4 处、拆 15 个、再补 6 个净新增；I1–I10 覆盖更新兼容与三段灰度；D1–D9 已于 2026-11-12 全部裁定；未实现 |
+| [DSHA 新生迭代路径（A1–A8）](design/kotlin-rust-rearchitecture-20261112/iteration-roadmap-20261112.md) | 8 轮纵向闭环 + 顶部进度看板（唯一进度事实源）；18/21/9 口径映射、每轮出口判据、覆盖更新检查表、质量门槛与协作约定；P0 已完成、**G0 ✅ 通过**（证书 + signed 候选 + 一加 12 安装/共存）、G2/G3/G5 已收口、**A1 ✅ 已完成**（契约底座 + 关于/许可，APPROVE，full 0 skipped）；发布目标 Rebirth 隔离实验线（`dsh.android.client.rebirth`） |
+| [历史补丁夹具测试报告（复现与修复建议）](design/kotlin-rust-rearchitecture-20261112/patch-fixture-test-report-20261112.md) | 恢复固定输入后实跑三个 patch-chain 测试：welcome/plugin/web-search 各 rc=1，失败点均为跨代次断言；npm 校验 rc.2 真实字节；生产链 46/46 健康；附修法与证据 |
+| [历史补丁夹具与 build359 host runtime 证据](design/kotlin-rust-rearchitecture-20261112/historical-fixtures-and-host-runtime-20261112.md) | welcome-notice / plugin-management pre-worker·V1 / web-search 旧模块的真实字节、摘要、代次与引入提交；两处夹具失配定位；build359 无 host runtime 回执（最近 build357 72/128）与本机固定输入缺失清单 |
+| [G0–G1 合并回执与门禁对齐 v0.1](design/kotlin-rust-rearchitecture-20261112/g0-g1-merge-receipt-20261112.md) | 对方五层门禁（A–E）并入 G0–G5 的逐层回执、我方 G0 七项工程装配、可先行/不可开工边界、两仓签名唯一性与证书保管两个待决问题；2026-11-12 增补 G0 工程装配落地状态（unsigned only，证书未创建） |
+| [收敛表 v0.2（职责/状态 owner/编译模块/测试恢复/失败域/覆盖更新）](design/kotlin-rust-rearchitecture-20261112/convergence-table-20261112.md) | 21 个状态模块六列对照；对方未交「职责/失败域」草稿，t我方按评审主稿与当前代码自拟补全待确认；11 个模块改动必触发维护页、4 个可零维护；测试覆盖与模块权重不匹配的实测 |
+| [A1 契约草案（C01/C02 + 结果五字段 + 投影表）](design/kotlin-rust-rearchitecture-20261112/a1-contract-draft-20261112.md) | G3 草案：C01 模块协议 / C02 宿主核心最小接口、结果五字段 wire 与五态投影表、4 个反例（未知 tag/取消后可能已执行/panic 逃逸/UNKNOWN 冒充已退出）、Rust 首期只读纯函数边界；内部冻结（A1 收敛，五项差异 deferred 到 A2/A8） |
+| [A1 任务基线（G2）](design/kotlin-rust-rearchitecture-20261112/a1-task-baseline-20261113.md) | A1 范围/改动文件/验证/回退/owner；零维护判据（`ui/`+新 `contract/` 不在 launcherInputs）、Java 17 先行、7 步闭环与非实现者评审要求 |
+| [A3 任务基线（G2）：数据保护受管事务 + 恢复计划契约冻结 v1](design/kotlin-rust-rearchitecture-20261112/a3-task-baseline-20261113.md) | A3 现状核对（v5 容器/`validateSummary`/`NativeRestorePlan`/旧格式导入/自动保留/配置快照/宿主事务，逐条 `file:line`）；PlanView v1 冻结（字段 id/类型码/枚举/`selectedMask`/`targetMappingKind`/摘要口径/原因码去重，补齐 §4.6 未定义的编码）；JVM 校验器与 Rust 第二实现差分；R2 零维护页、A3 一次维护页；Lead 已裁决 Q1–Q5（`rootCount` 语义/上限、`sensitivePolicy` 闭集等，R2 已解锁）；docs-only，未实现 |
+| [18 模块方案修订建议（对方 v0.1）](design/kotlin-rust-rearchitecture-20261112/18-modules-revision-notes-20261112.md) | 对对方文档的 6 项必改 + 3 项顺手改：Rebirth 定位、C03 结果态自相矛盾、计数口径、三块失败域、Gecko/自更新、布局恢复；可直接转发 |
 
 ## 用户操作与开发入口
 
@@ -59,7 +91,7 @@
 | 插件安装、系统/用户分层、协议、权限与重启 | [插件操作](plugins.md)、[插件运行与权限](plugin-runtime-and-permissions.md) |
 | 临时内置修复：`file has not been read` 读取提示（上游 #11977）与撤除条件 | [dsh-fs-read-hint](fs-read-hint-plugin.md) |
 | 临时内置修复：glob 跳过嵌套 git 工作树（T45）与撤除条件 | [dsh-fs-search-scope](fs-search-scope-plugin.md) |
-| 内置移动 Web 适配、dsh-web-mobile 上游 3.3.5 与宿主集成最小集（服务端鉴权 / 安全区 / 齿轮几何让位 / 文件传输 / 多语言）；宽屏触屏会话行挤压（上游 3.3.1 已接管） | [移动 Web 适配补丁](web-mobile-patches.md)、[平板会话行挤压（上游 #255）](web-mobile-tablet-rows-20261031.md) |
+| 内置移动 Web 适配、dsh-web-mobile 上游 3.3.5 与宿主集成最小集（服务端鉴权 / 安全区 / 齿轮几何让位 / 齿轮单实例 / 文件传输 / 多语言）；宽屏触屏会话行挤压（上游 3.3.1 已接管） | [移动 Web 适配补丁](web-mobile-patches.md)、[侧栏设置齿轮单实例不变式](mobile-sidebar-settings-gear.md)、[平板会话行挤压（上游 #255）](web-mobile-tablet-rows-20261031.md) |
 | 首次连接提示补丁（T58）：为什么归档、不合并；切页返回黄标的真实行为与再修边界 | [T58 首次连接提示归档](design/first-connect-indicator-20261106/README.md) |
 | PTY/简易终端、WebView/Gecko、桌面UA、PiP | [终端](terminal.md)、[浏览器内核](browser-engines.md)、[画中画](picture-in-picture.md) |
 | 语言锁存、悬浮条、审批和任务通知 | [语言](i18n.md)、[悬浮与通知](overlay-and-notifications.md) |

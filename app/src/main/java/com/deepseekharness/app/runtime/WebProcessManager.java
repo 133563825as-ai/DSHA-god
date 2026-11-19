@@ -3,10 +3,12 @@ package com.deepseekharness.app.runtime;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
+import com.deepseekharness.app.util.StopCompletion;
 import com.deepseekharness.app.util.Compat;
 import com.deepseekharness.app.util.SensitiveData;
 import com.deepseekharness.app.util.WebPidIdentity;
 import com.deepseekharness.app.util.WebProcSel;
+import com.deepseekharness.app.util.WebProcTextReader;
 import com.deepseekharness.app.util.WebStopDiagnostic;
 import com.deepseekharness.app.util.WebStopDiagnostic.Code;
 import com.deepseekharness.app.util.WebStopException;
@@ -178,6 +180,24 @@ public class WebProcessManager {
     }
   }
 
+  public enum ForcePreparationStatus {
+    LIVE_CANDIDATE,
+    ALREADY_EXITED,
+    UNKNOWN
+  }
+
+  /** 仅描述记录 guest 的准备结果；已退不代表启动器、后台任务或停止屏障已完成。 */
+  public record RecordedForcePreparation(
+      ForcePreparationStatus status, ForceCandidate candidate, WebStopDiagnostic diagnostic) {
+    public RecordedForcePreparation {
+      java.util.Objects.requireNonNull(status);
+      if ((status == ForcePreparationStatus.LIVE_CANDIDATE) != (candidate != null))
+        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_CANDIDATE");
+      if (status != ForcePreparationStatus.LIVE_CANDIDATE && diagnostic == null)
+        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_DIAGNOSTIC");
+    }
+  }
+
   /** Capture before the native UI confirmation; trial and unknown processes have no force path. */
   public ForceCandidate prepareForceStop() throws IOException {
     if (records != null)
@@ -253,12 +273,36 @@ public class WebProcessManager {
    */
   public ForceCandidate prepareRecordedForceStop(
       com.deepseekharness.app.util.WebSessionProof.Saved saved) throws IOException {
+    RecordedForcePreparation prepared = prepareRecordedForceStopResult(saved);
+    if (prepared.status() == ForcePreparationStatus.LIVE_CANDIDATE) return prepared.candidate();
+    throw new WebStopException(prepared.diagnostic(), null);
+  }
+
+  /** 只读三态；缺少记录仍为未知，guest 已退也不释放任何停止屏障或记录。 */
+  public RecordedForcePreparation prepareRecordedForceStopResult(
+      com.deepseekharness.app.util.WebSessionProof.Saved saved) throws IOException {
     if (records != null)
       throw new WebStopException(Code.FORCE_EVIDENCE_UNCONFIRMED, "TRIAL_FORBIDDEN");
-    if (saved == null) return null;
-    if (observeRecordedSession(saved) != SessionObservation.LIVE)
-      throw new WebStopException(Code.RECORDED_SESSION_UNCONFIRMED);
-    return new ForceCandidate(saved, false);
+    if (saved == null)
+      return new RecordedForcePreparation(
+          ForcePreparationStatus.UNKNOWN,
+          null,
+          WebStopDiagnostic.of(Code.RECORDED_SESSION_UNCONFIRMED));
+    return switch (observeRecordedSession(saved)) {
+      case LIVE ->
+          new RecordedForcePreparation(
+              ForcePreparationStatus.LIVE_CANDIDATE, new ForceCandidate(saved, false), null);
+      case EXITED ->
+          new RecordedForcePreparation(
+              ForcePreparationStatus.ALREADY_EXITED,
+              null,
+              WebStopDiagnostic.of(Code.RECORDED_GUEST_ALREADY_EXITED));
+      case UNKNOWN ->
+          new RecordedForcePreparation(
+              ForcePreparationStatus.UNKNOWN,
+              null,
+              WebStopDiagnostic.of(Code.RECORDED_SESSION_UNCONFIRMED));
+    };
   }
 
   /**
@@ -587,6 +631,260 @@ public class WebProcessManager {
         WebStopDiagnostic.of(Code.FORCE_EVIDENCE_UNCONFIRMED, facts.toArray()), cause);
   }
 
+  /** 一次调用内的旁路账本；不是 manager/session 的第二个生命周期 owner。 */
+  public static final class StopTrace {
+    private final java.util.EnumMap<StopCompletion.Scope, StopCompletion.Fact> facts =
+        new java.util.EnumMap<>(StopCompletion.Scope.class);
+    private final String root, boot;
+    private final StringBuilder inputs = new StringBuilder();
+    private String record, birth;
+    private boolean inputsKnown = true;
+    private final java.util.List<InputCheck> inputChecks = new java.util.ArrayList<>();
+    private File trialHome;
+    private java.util.List<String> trialEntries;
+    private final java.util.List<StopCompletion.ProcessKey> exitedGuests =
+        new java.util.ArrayList<>();
+
+    private record InputCheck(
+        File path, com.deepseekharness.app.backup.BackupFileSystem.Node node, byte[] bytes) {}
+
+    void rememberInput(
+        File path, com.deepseekharness.app.backup.BackupFileSystem.Node node, byte[] bytes) {
+      if (node == null) {
+        inputsKnown = false;
+        return;
+      }
+      inputChecks.add(new InputCheck(path, node, bytes == null ? null : bytes.clone()));
+      inputs.append("input:").append(node.type).append(node.device).append(':').append(node.key);
+      if (bytes != null) inputs.append(digest(new String(bytes, StandardCharsets.US_ASCII)));
+    }
+
+    void rememberTrialEntries(File home, java.util.List<String> entries) {
+      trialHome = home;
+      trialEntries = java.util.List.copyOf(entries);
+    }
+
+    /** 最终只读回核，不执行任何停止；目录mtime不作为成员或payload身份的替代。 */
+    boolean verifyInputs(com.deepseekharness.app.backup.BackupFileSystem fs) {
+      if (!inputsKnown) return false;
+      try {
+        for (InputCheck saved : inputChecks) {
+          var current = fs.stat(saved.path());
+          var expected = saved.node();
+          if (!current.type.equals(expected.type)
+              || current.device != expected.device
+              || !current.key.equals(expected.key)) return false;
+          if (saved.bytes() != null) {
+            // 必须把读取绑定最初节点，不能让 small() 为替换 inode 重新签发 expected。
+            try (java.io.InputStream in = fs.read(saved.path(), expected);
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+              byte[] buffer = new byte[128];
+              int count;
+              while ((count = in.read(buffer)) != -1) {
+                if (out.size() + count > 128) return false;
+                out.write(buffer, 0, count);
+              }
+              if (!java.util.Arrays.equals(saved.bytes(), out.toByteArray())) return false;
+            }
+          }
+        }
+        if (trialHome != null) {
+          var current = new java.util.ArrayList<>(fs.list(trialHome));
+          var expected = new java.util.ArrayList<>(trialEntries);
+          java.util.Collections.sort(current);
+          java.util.Collections.sort(expected);
+          if (!current.equals(expected)) return false;
+        }
+        return true;
+      } catch (IOException | RuntimeException unknown) {
+        return false;
+      }
+    }
+
+    private com.deepseekharness.app.backup.BackupFileSystem.Node node(
+        com.deepseekharness.app.backup.BackupFileSystem fs, File path) {
+      try {
+        return fs.stat(path);
+      } catch (IOException | RuntimeException unknown) {
+        inputsKnown = false;
+        return null;
+      }
+    }
+
+    StopTrace(String root, String boot) {
+      this.root = root;
+      this.boot = boot;
+    }
+
+    private void mark(StopCompletion.Scope scope, StopCompletion.Outcome outcome, String evidence) {
+      facts.put(
+          scope,
+          new StopCompletion.Fact(
+              scope, outcome, android.os.SystemClock.elapsedRealtime(), digest(evidence)));
+    }
+
+    private void exited(String record, String birth) {
+      // 缺出生记录的旧退休逻辑仍可成功，但不升格为新交接事实。
+      if (record == null || birth == null || boot.isEmpty()) return;
+      int pid = WebProcSel.parsePid(record);
+      if (pid <= 1 || !birth.matches(pid + " [1-9][0-9]*")) return;
+      long started;
+      try {
+        started = Long.parseLong(birth.substring(birth.indexOf(' ') + 1));
+      } catch (NumberFormatException unknown) {
+        return;
+      }
+      exitedGuests.add(new StopCompletion.ProcessKey(boot, pid, started));
+      facts.put(
+          StopCompletion.Scope.GUEST,
+          new StopCompletion.Fact(
+              StopCompletion.Scope.GUEST,
+              StopCompletion.Outcome.EXITED,
+              android.os.SystemClock.elapsedRealtime(),
+              digest(boot + record + birth),
+              new StopCompletion.ProcessKey(boot, pid, started)));
+    }
+  }
+
+  public record StopObservation(
+      StopCompletion.Environment environment,
+      java.util.List<StopCompletion.Fact> facts,
+      boolean unchanged) {
+    public StopObservation {
+      facts = java.util.List.copyOf(facts);
+    }
+  }
+
+  /** 额外只读身份失败只使影子判据未知，不改变既有停止流程。 */
+  public StopTrace beginStopObservation() {
+    try {
+      return new StopTrace(stopRootIdentity(), recoveryBoot());
+    } catch (IOException | RuntimeException unknown) {
+      return new StopTrace("", "");
+    }
+  }
+
+  public StopObservation finishStopObservation(StopTrace trace) {
+    try {
+      String root = stopRootIdentity(), boot = recoveryBoot();
+      if (!trace.verifyInputs(stopFileSystem()))
+        trace.mark(
+            StopCompletion.Scope.TRIALS,
+            StopCompletion.Outcome.UNKNOWN,
+            "final-input-changed-or-unreadable");
+      boolean same = !trace.root.isEmpty() && trace.root.equals(root) && trace.boot.equals(boot);
+      return new StopObservation(
+          new StopCompletion.Environment(root, boot, digest(trace.inputs.toString())),
+          new java.util.ArrayList<>(trace.facts.values()),
+          same);
+    } catch (IOException | RuntimeException unknown) {
+      return new StopObservation(
+          new StopCompletion.Environment("", "", ""),
+          new java.util.ArrayList<>(trace.facts.values()),
+          false);
+    }
+  }
+
+  /** 无信号、无退休的现场复核；不能单独授权启动。 */
+  public interface StopRecheck {
+    boolean unchanged() throws IOException;
+  }
+
+  com.deepseekharness.app.backup.BackupFileSystem stopFileSystem() {
+    return new com.deepseekharness.app.backup.AndroidBackupFileSystem();
+  }
+
+  /**
+   * 同步收尾后冻结本次停止的剩余输入。历史 inputs 摘要仍属于原 trace，不能用新空 trace 代替。
+   * 返回 null 只表示尚未选择交接时缺证据；选中之后任何读取失败都必须阻断续启。
+   */
+  public StopRecheck prepareStopRecheck(StopTrace trace, StopCompletion completion)
+      throws IOException {
+    if (trace == null || completion == null || !completion.complete()) return null;
+    if (!trace.root.equals(completion.environment().getRoot())
+        || !trace.boot.equals(completion.environment().getBoot())
+        || !digest(trace.inputs.toString()).equals(completion.environment().getInputs()))
+      return () -> false;
+    var fs = stopFileSystem();
+    if (!trace.verifyInputs(fs)) return () -> false;
+    StopTrace frozen = new StopTrace(trace.root, trace.boot);
+    frozen.inputChecks.addAll(trace.inputChecks);
+    frozen.trialHome = trace.trialHome;
+    frozen.trialEntries = trace.trialEntries;
+    java.util.List<File> roots = new java.util.ArrayList<>();
+    roots.add(root());
+    for (var input : trace.inputChecks)
+      if (input.path().getName().equals("payload") && input.node().type.equals("DIRECTORY"))
+        roots.add(input.path());
+    for (File directory : roots) {
+      for (String name :
+          java.util.List.of(".dsha-web.pid", ".dsha-web.identity", ".dsha-web.pid.stale")) {
+        File path = fs.child(directory, name);
+        var node = fs.stat(path);
+        if (!node.type.equals("FILE") && !node.type.equals("MISSING")) return () -> false;
+        // 原停止已退休所有活动记录。完成后再出现的记录属于新对象，不能签成post-stop基线。
+        if (!name.equals(".dsha-web.pid.stale") && !node.type.equals("MISSING")) return () -> false;
+        byte[] bytes = null;
+        if (node.type.equals("FILE")) {
+          try (var in = fs.read(path, node);
+              var out = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[128];
+            int count;
+            while ((count = in.read(buffer)) != -1) {
+              if (out.size() + count > 128) return () -> false;
+              out.write(buffer, 0, count);
+            }
+            bytes = out.toByteArray();
+          }
+        }
+        frozen.rememberInput(path, node, bytes);
+      }
+    }
+    var guests = new java.util.ArrayList<>(trace.exitedGuests);
+    var guest = completion.facts().get(StopCompletion.Scope.GUEST).getTarget();
+    if (guest == null) return null;
+    if (!guests.contains(guest)) guests.add(guest);
+    if (!frozen.verifyInputs(fs)
+        || !stopRootIdentity().equals(trace.root)
+        || !recoveryBoot().equals(trace.boot)) return () -> false;
+    return () -> {
+      if (!stopRootIdentity().equals(frozen.root)
+          || !recoveryBoot().equals(frozen.boot)
+          || !frozen.verifyInputs(stopFileSystem())) return false;
+      for (var saved : guests)
+        if (!saved.getBoot().equals(frozen.boot)
+            || !recordedProcessExited(saved.getPid(), saved.getStarted())) return false;
+      // 每次重新核对真实全域；进程内 spawn 计数不能覆盖终端或其它创建源。
+      if (!ownedWebFacts().isEmpty()) return false;
+      return frozen.verifyInputs(stopFileSystem())
+          && stopRootIdentity().equals(frozen.root)
+          && recoveryBoot().equals(frozen.boot);
+    };
+  }
+
+  String stopRootIdentity() throws IOException {
+    var node =
+        new com.deepseekharness.app.backup.AndroidBackupFileSystem().stat(proot.getRootfsDir());
+    var home = new com.deepseekharness.app.backup.AndroidBackupFileSystem().stat(root());
+    if (!node.type.equals("DIRECTORY") || !home.type.equals("DIRECTORY"))
+      throw new IOException("WEB_STOP_ROOT_UNKNOWN");
+    return node.device + ":" + node.key + "/" + home.device + ":" + home.key;
+  }
+
+  private static String digest(String value) {
+    try {
+      byte[] bytes =
+          java.security.MessageDigest.getInstance("SHA-256")
+              .digest(value.getBytes(StandardCharsets.UTF_8));
+      StringBuilder result = new StringBuilder();
+      for (byte item : bytes)
+        result.append(String.format(java.util.Locale.ROOT, "%02x", item & 255));
+      return result.toString();
+    } catch (java.security.NoSuchAlgorithmException impossible) {
+      throw new AssertionError(impossible);
+    }
+  }
+
   public WebProcessManager(ProotBootstrap proot) {
     this.proot = proot;
     records = null;
@@ -671,10 +969,9 @@ public class WebProcessManager {
 
   private static String readProc(int pid, String name) throws IOException {
     try (FileInputStream input = new FileInputStream("/proc/" + pid + "/" + name)) {
-      byte[] bytes = new byte[16384];
-      int count = input.read(bytes);
-      if (count == bytes.length) throw new WebStopException(Code.PROC_INFO_LIMIT);
-      return count <= 0 ? "" : new String(bytes, 0, count, StandardCharsets.UTF_8);
+      return WebProcTextReader.read(input);
+    } catch (WebProcTextReader.LimitException limit) {
+      throw new WebStopException(Code.PROC_INFO_LIMIT, limit);
     }
   }
 
@@ -814,6 +1111,12 @@ public class WebProcessManager {
    * 只读，不发送信号；无法读全的同 UID 进程仍按原有 fail-closed 规则阻塞。
    */
   java.util.List<WebStopDiagnostic> ownedWebFacts() throws IOException {
+    return ownedWebFacts(null);
+  }
+
+  private java.util.List<WebStopDiagnostic> ownedWebFacts(StopTrace trace) throws IOException {
+    if (trace != null)
+      trace.mark(StopCompletion.Scope.RESIDUALS, StopCompletion.Outcome.UNKNOWN, "scan-started");
     String[] entries = recoveryProcessEntries();
     if (entries == null) throw new WebStopException(Code.OWNED_WEB_SCAN_UNCONFIRMED);
     int appUid = recoveryHostUid();
@@ -851,6 +1154,11 @@ public class WebProcessManager {
                     && owner == appUid
                 ? new Residual(pid, state.identity, owner, state.command)
                 : null;
+        if (trace != null)
+          trace.mark(
+              StopCompletion.Scope.RESIDUALS,
+              StopCompletion.Outcome.UNCONFIRMED,
+              state.identity == null ? "unknown" : state.identity.record());
         return java.util.List.of(
             WebStopDiagnostic.of(
                 Code.OWNED_WEB_REMAINS,
@@ -859,6 +1167,11 @@ public class WebProcessManager {
       }
     }
     retainedResidual = null;
+    if (trace != null)
+      trace.mark(
+          StopCompletion.Scope.RESIDUALS,
+          StopCompletion.Outcome.EXITED,
+          "owned-web-scan-completed:" + trace.boot);
     return java.util.List.of();
   }
 
@@ -882,6 +1195,11 @@ public class WebProcessManager {
    * profile 可由该 UUID 唯一推导、命令行是直接 dsh 试运行，并且两次内核身份一致。
    */
   private WebStopDiagnostic stopRecordedTrialProfiles(java.util.Set<String> profiles) {
+    return stopRecordedTrialProfiles(profiles, null);
+  }
+
+  private WebStopDiagnostic stopRecordedTrialProfiles(
+      java.util.Set<String> profiles, StopTrace trace) {
     if (profiles.isEmpty()) return null;
     java.util.LinkedHashMap<Integer, ProcessState> targets = new java.util.LinkedHashMap<>();
     try {
@@ -912,6 +1230,8 @@ public class WebProcessManager {
           if (gone.errno != OsConstants.ESRCH) throw gone;
           continue;
         }
+        if (trace != null)
+          trace.inputs.append("profile:").append(profile).append(state.identity.record());
         targets.put(pid, state);
       }
       long deadline = android.os.SystemClock.elapsedRealtime() + 3000;
@@ -1132,8 +1452,8 @@ public class WebProcessManager {
   public boolean recoveredLauncherExited(com.deepseekharness.app.util.WebSessionProof.Saved saved)
       throws IOException {
     if (saved == null) return true;
-    if (!saved.boot().equals(recoveryBoot())) return true;
     try {
+      if (!saved.boot().equals(recoveryBoot())) return true;
       var process = recoveryProcess(saved.launcherPid());
       return !process.alive() || process.started() != saved.launcherStarted();
     } catch (IOException unavailable) {
@@ -1216,6 +1536,10 @@ public class WebProcessManager {
 
   /** 权限错误本身不构成放行依据，还须确认启动器已退出且没有本应用 Web。 */
   public boolean confirmStopped(boolean trackedProcessAlive) throws IOException {
+    return confirmStopped(trackedProcessAlive, null);
+  }
+
+  public boolean confirmStopped(boolean trackedProcessAlive, StopTrace trace) throws IOException {
     if (trackedProcessAlive) return false;
     if (!root().isDirectory()) return true;
     sentinel();
@@ -1223,9 +1547,14 @@ public class WebProcessManager {
     try {
       if (record != null) {
         int pid = WebProcSel.parsePid(record);
-        if (!mayRetire(inspect(pid), savedIdentity(pid))) return false;
+        ProcessState current = inspect(pid);
+        String birth = savedIdentity(pid);
+        if (!mayRetire(current, birth)) return false;
+        if (trace != null
+            && record.equals(trace.record)
+            && java.util.Objects.equals(birth, trace.birth)) trace.exited(record, birth);
       }
-      if (hasOwnedWeb()) return false;
+      if (trace == null ? hasOwnedWeb() : !ownedWebFacts(trace).isEmpty()) return false;
     } catch (ProcessInspectionException transientState) {
       return false;
     }
@@ -1313,7 +1642,11 @@ public class WebProcessManager {
   }
 
   public StopResult stopResult() {
-    return result(stopAll());
+    return stopResult(null);
+  }
+
+  public StopResult stopResult(StopTrace trace) {
+    return result(stopAll(trace));
   }
 
   private StopResult result(java.util.List<WebStopDiagnostic> facts) {
@@ -1327,38 +1660,86 @@ public class WebProcessManager {
   }
 
   private java.util.List<WebStopDiagnostic> stopAll() {
+    return stopAll(null);
+  }
+
+  private java.util.List<WebStopDiagnostic> stopAll(StopTrace trace) {
     java.util.ArrayList<WebStopDiagnostic> errors = new java.util.ArrayList<>();
-    WebStopDiagnostic first = stopOne();
+    WebStopDiagnostic first = WebRecordedStop.run(recordedStopIo(false, trace));
     if (first != null) errors.add(first);
+    int trialErrorsBefore = errors.size();
+    if (trace != null)
+      trace.mark(StopCompletion.Scope.TRIALS, StopCompletion.Outcome.UNKNOWN, "not-checked");
     if (records == null)
       try {
         var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
         File files = proot.getRootfsDir().getParentFile().getParentFile().getCanonicalFile();
         File home = fs.child(files, "runtime-trials");
-        if (!fs.stat(home).type.equals("MISSING")) {
+        var homeBefore = fs.stat(home);
+        if (trace != null) {
+          trace.inputs.append("trials:").append(homeBefore.key).append(homeBefore.type);
+          trace.rememberInput(home, homeBefore, null);
+        }
+        if (!homeBefore.type.equals("MISSING")) {
           java.util.List<String> entries = fs.list(home);
+          if (trace != null) trace.rememberTrialEntries(home, entries);
           if (entries.size() > com.deepseekharness.app.backup.BackupLimits.TRANSACTION_RECORDS)
             throw new IOException("TRIAL_RETENTION_LIMIT");
           java.util.LinkedHashSet<String> profiles = new java.util.LinkedHashSet<>();
           for (String id : entries) {
             if (!id.matches(com.deepseekharness.app.util.Ids.UUID_PATTERN))
               throw new IOException("TRIAL_RECORD_DIRECTORY");
+            File trial = new File(home, id);
+            var trialBefore = trace == null ? null : trace.node(fs, trial);
+            if (trace != null) {
+              trace.inputs.append(id).append(trialBefore == null ? "unknown" : trialBefore.key);
+              trace.rememberInput(trial, trialBefore, null);
+            }
             File launched = fs.child(home, id + "/launched");
-            String launchedType = fs.stat(launched).type;
+            var launchedNode = fs.stat(launched);
+            String launchedType = launchedNode.type;
+            if (trace != null) trace.inputs.append(launchedType);
             if (launchedType.equals("FILE")) {
               if (!id.equals(new String(fs.small(launched, 128), StandardCharsets.US_ASCII)))
                 throw new IOException("TRIAL_MARKER");
               profiles.add("dsha-recovery-" + id.replace("-", "").substring(0, 16));
             } else if (!launchedType.equals("MISSING")) throw new IOException("TRIAL_MARKER");
+            if (trace != null)
+              trace.rememberInput(
+                  launched,
+                  launchedNode,
+                  launchedType.equals("FILE") ? id.getBytes(StandardCharsets.US_ASCII) : null);
             File payload = fs.child(home, id + "/payload");
-            if (fs.stat(payload).type.equals("MISSING")) continue;
-            if (!fs.stat(payload).type.equals("DIRECTORY"))
-              throw new IOException("TRIAL_RECORD_DIRECTORY");
-            WebStopDiagnostic stopped = new WebProcessManager(proot, payload).stopOne();
-            if (stopped != null) errors.add(stopped);
+            var payloadNode = fs.stat(payload);
+            if (trace != null) trace.rememberInput(payload, payloadNode, null);
+            if (!payloadNode.type.equals("MISSING")) {
+              if (!fs.stat(payload).type.equals("DIRECTORY"))
+                throw new IOException("TRIAL_RECORD_DIRECTORY");
+              WebProcessManager trialManager = new WebProcessManager(proot, payload);
+              StopTrace child = trace == null ? null : new StopTrace(trace.root, trace.boot);
+              WebStopDiagnostic stopped =
+                  WebRecordedStop.run(trialManager.recordedStopIo(false, child));
+              if (trace != null) {
+                trace.inputs.append(payload.getName()).append(child.record).append(child.birth);
+                trace.exitedGuests.addAll(child.exitedGuests);
+                if (!child.facts.containsKey(StopCompletion.Scope.GUEST)) trace.inputsKnown = false;
+              }
+              if (stopped != null) errors.add(stopped);
+            }
+            if (trace != null && (trialBefore == null || !trialBefore.same(trace.node(fs, trial))))
+              trace.inputsKnown = false;
           }
-          WebStopDiagnostic stopped = stopRecordedTrialProfiles(profiles);
+          WebStopDiagnostic stopped = stopRecordedTrialProfiles(profiles, trace);
           if (stopped != null) errors.add(stopped);
+        }
+        if (trace != null) {
+          if (!homeBefore.same(trace.node(fs, home))) trace.inputsKnown = false;
+          trace.mark(
+              StopCompletion.Scope.TRIALS,
+              errors.size() == trialErrorsBefore && trace.inputsKnown
+                  ? StopCompletion.Outcome.EXITED
+                  : StopCompletion.Outcome.UNKNOWN,
+              trace.inputs.toString());
         }
       } catch (IOException failure) {
         errors.add(WebStopDiagnostic.failure(Code.TRIAL_STOP_FAILED, failure));
@@ -1366,7 +1747,7 @@ public class WebProcessManager {
     if (!errors.isEmpty()) return java.util.List.copyOf(errors);
     try {
       // 残留事实带 PID 与命令摘要：启动前置停止失败时界面要能说清“还剩哪个已核验进程”。
-      return ownedWebFacts();
+      return ownedWebFacts(trace);
     } catch (IOException failure) {
       return java.util.List.of(WebStopDiagnostic.failure(Code.OWNED_WEB_SCAN_UNCONFIRMED, failure));
     }
@@ -1410,6 +1791,10 @@ public class WebProcessManager {
 
   /** 生产记录停止的唯一适配器；force 只换信号并加出生身份复核，其它判据共用。 */
   private WebRecordedStop.Io recordedStopIo(boolean force) {
+    return recordedStopIo(force, null);
+  }
+
+  private WebRecordedStop.Io recordedStopIo(boolean force, StopTrace trace) {
     return new WebRecordedStop.Io() {
       public boolean rootExists() {
         return root().isDirectory();
@@ -1441,11 +1826,25 @@ public class WebProcessManager {
       }
 
       public String pidRecord() throws IOException {
-        return WebProcessManager.this.pidRecord();
+        String value = WebProcessManager.this.pidRecord();
+        if (trace != null && trace.record == null && value != null) {
+          trace.record = value;
+          trace.inputs.append("record:").append(value);
+        }
+        return value;
       }
 
       public String savedIdentity(int pid) throws IOException {
-        return WebProcessManager.this.savedIdentity(pid);
+        String value = WebProcessManager.this.savedIdentity(pid);
+        if (trace != null && trace.birth == null && value != null) {
+          trace.birth = value;
+          trace.inputs.append("birth:").append(value);
+        }
+        return value;
+      }
+
+      public void exitConfirmed(String record, String birth) {
+        if (trace != null && record.equals(trace.record)) trace.exited(record, birth);
       }
 
       public ProcessState inspect(int pid) throws IOException {

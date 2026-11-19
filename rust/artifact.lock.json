@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "kind": "dsha-rust-artifact-lock",
+  "scope": "只固定可由 (源码 + Cargo.lock + vendor + rustc + target + linker + linkArgs + profile) 重现的产物大小与 SHA-256；commit/runId/runAttempt/绝对路径/mtime 等跨 runner 不可复现字段不入锁。target 键是编译目标三元组：Android 产物固定 aarch64-linux-android，宿主产物按 rustc -vV 的 host 三元组分别登记（不同架构的宿主产物天然不同，不互相冒充）。",
+  "pinPolicy": "按方案 §2.3：连续 3 次 CI（不同 runner 实例）产出相同 size/sha256 后，把 status 改为 pinned 并写入数值。status=pending-cross-run 时 tools/rust/build.py --expect-lock 只告警不失败；pinned 后不一致即构建失败。字段口径固定为 strip 后的 libdsha_rs.so 整文件字节，不含 receipt/路径/时间。",
+  "artifacts": {
+    "aarch64-linux-android": {
+      "file": "libdsha_rs.so",
+      "status": "pending-cross-run",
+      "size": null,
+      "sha256": null,
+      "evidence": "R3 仍未产出 Android 产物：本机 aarch64 容器没有 x86_64 NDK 26.3 工具链，交叉链接只能在 CI 的 rust-native job（ci-package / 发布 dry-run）进行；保持 pending-cross-run，不伪造 Android 摘要。"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "file": "libdsha_rs.so",
+      "status": "pending-cross-run",
+      "size": null,
+      "sha256": null,
+      "evidence": "R3 修改了 crate 源码（gzip.rs/jni.rs/lib.rs），R2 的 pin（288448 / 9c3b1a21…）对新源码不再成立。按方案 §2.3 必须连续 3 次不同 CI runner 实例产出相同 size/SHA-256 后才能重 pin；本提交先如实退回 pending-cross-run（--expect-lock 只告警）。重 pin 数值由 Lead 推送后累计 3 次 Source checks 的 rust-check 作业给出，并在后续提交写回。"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "libdsha_rs.so",
+      "status": "pending-cross-run",
+      "size": null,
+      "sha256": null,
+      "evidence": "R3 本机 aarch64 容器（最终 Rust 源码）：tools/rust/build.py --host 产物 size=348736 sha256=8e20e119dc6364ed8148c545bc15a526cba429e635be43c8ee59517604f814a5；--check 已证明不同源码目录两次构建逐字节一致。单机不满足“不同 runner 实例”，保持 pending-cross-run，不伪造跨 runner 固定。"
+    }
+  }
+}

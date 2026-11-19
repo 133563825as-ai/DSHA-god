@@ -61,14 +61,20 @@ final class WebReadyTasks {
       String result = ports.finalizeMigration();
       if (!ports.current()) return;
       Map<String, Object> receipt = Rc1MigrationResult.parse(result);
-      if (!Rc1MigrationResult.boundTo(receipt, ports.startupId())
-          || !Rc1MigrationResult.allowsFinalize(receipt)) {
+      if (!Rc1MigrationResult.boundTo(receipt, ports.startupId())) {
+        ports.migrationLog("RC1_MIGRATION_STARTUP_BINDING");
+        if (ports.current()) ports.migrationNeedsAttention();
+        return;
+      }
+      if (!Rc1MigrationResult.allowsFinalize(receipt)) {
         ports.migrationLog(result);
         if (ports.current()) ports.migrationNeedsAttention();
       }
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();
     } catch (Exception error) {
+      // 解析失败、重复回执或进程结果不完整也是未知终态：记录并让用户可见，
+      // 不当作“没有迁移”或“下次启动会再试”。
       if (ports.current()) {
         ports.migrationLog("RC1_MIGRATION_VERIFICATION_UNAVAILABLE");
         ports.migrationNeedsAttention();

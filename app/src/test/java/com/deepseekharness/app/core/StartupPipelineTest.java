@@ -46,6 +46,11 @@ public class StartupPipelineTest {
       step("tools");
     }
 
+    public void tools(java.util.function.Consumer<String> output) throws Exception {
+      step("tools");
+      output.accept("RUNTIME_TOOLS_PREPARATION: outcome=hit-prepared-proof files=5 miss=none");
+    }
+
     public boolean ready() {
       return true;
     }
@@ -248,6 +253,66 @@ public class StartupPipelineTest {
   }
 
   @Test
+  public void migrationGateSeparatesHistoricalStartFromCurrentMigrationWrites() throws Exception {
+    Fixture historical = new Fixture();
+    assertEquals("web", new StartupPipeline(historical, historical).prepare(1, false, historical));
+    assertTrue(
+        "历史完成不进入可见日志",
+        historical.messages.stream().noneMatch(line -> line.contains("DSHA_RC1_MIGRATION")));
+    for (String receipt :
+        List.of(
+            "DSHA_RC1_MIGRATION={\"startupId\":\"fixture\"}",
+            "DSHA_RC1_MIGRATION={\"resultVersion\":2,\"startupId\":\"fixture\",\"status\":\"prepared\",\"protectionComplete\":true}",
+            "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"startupId\":\"fixture\",\"status\":\"prepared\",\"verificationScope\":\"historical\",\"contentCopyStatus\":\"verified\"}",
+            "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"startupId\":\"fixture\",\"status\":\"unknown\",\"reason\":\"STALE_STARTUP_BINDING\",\"verificationScope\":\"none\",\"contentCopyStatus\":\"unknown\"}",
+            "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"startupId\":\"fixture\",\"status\":\"prepared\",\"verificationScope\":\"current\",\"contentCopyStatus\":\"unknown\"}")) {
+      Fixture blocked = new Fixture();
+      blocked.migrationOverride = receipt;
+      assertThrows(
+          IOException.class,
+          () -> new StartupPipeline(blocked, blocked).prepare(9, false, blocked));
+      assertFalse(blocked.calls.contains("activate"));
+      assertFalse(blocked.calls.contains("unlock"));
+      assertTrue(blocked.calls.contains("migration"));
+      assertTrue(
+          "unknown/不完整迁移结果必须可见",
+          blocked.messages.stream().anyMatch(line -> line.contains("RC1_MIGRATION")));
+    }
+  }
+
+  @Test
+  public void receiptFromAnotherStartupCannotAuthorizeThisStartup() throws Exception {
+    Fixture stale = new Fixture();
+    stale.migrationOverride =
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"startupId\":\"previous-startup\","
+            + "\"status\":\"prepared\",\"verificationScope\":\"current\","
+            + "\"contentCopyStatus\":\"verified\",\"protectionComplete\":true}";
+    assertThrows(
+        IOException.class, () -> new StartupPipeline(stale, stale).prepare(12, false, stale));
+    assertTrue(
+        stale.messages.stream().anyMatch(line -> line.contains("RC1_MIGRATION_STARTUP_BINDING")));
+    assertFalse(stale.calls.contains("activate"));
+    assertFalse(stale.calls.contains("unlock"));
+  }
+
+  @Test
+  public void currentVerifiedPreparationPermitsMigrationButStaysQuietOnlyWhenComplete()
+      throws Exception {
+    Fixture prepared = new Fixture();
+    prepared.migrationOverride =
+        prepared
+            .migration("fixture")
+            .replace("historical-complete", "prepared")
+            .replace("\"historical\"", "\"current\"")
+            .replace("not-required", "pending")
+            .replace("NOT_SENT", "COMPLETED")
+            .replace("\"executionState\"", "\"protectionComplete\":true,\"executionState\"");
+    prepared.calls.clear();
+    assertEquals("web", new StartupPipeline(prepared, prepared).prepare(11, false, prepared));
+    assertTrue(prepared.messages.stream().noneMatch(line -> line.contains("DSHA_RC1_MIGRATION")));
+  }
+
+  @Test
   public void safeProfileSkipsUserPluginActivationAndSnapshots() throws Exception {
     Fixture f = new Fixture();
     assertEquals("dsha-recovery-0123456789abcdef", new StartupPipeline(f, f).prepare(2, true, f));
@@ -266,6 +331,57 @@ public class StartupPipelineTest {
     f.current = false;
     assertNull(new StartupPipeline(f, f).prepare(1, false, f));
     assertTrue(f.calls.isEmpty());
+  }
+
+  @Test
+  public void startupObservationLinesAreBoundedCountsAndCannotChangePreparationOrder()
+      throws Exception {
+    Fixture f = new Fixture();
+    f.stopFacts =
+        List.of(
+            com.deepseekharness.app.util.WebStopDiagnostic.of(
+                com.deepseekharness.app.util.WebStopDiagnostic.Code.OWNED_WEB_REMAINS));
+    f.priorFacts =
+        List.of(
+            com.deepseekharness.app.util.WebStopDiagnostic.of(
+                com.deepseekharness.app.util.WebStopDiagnostic.Code.OWNED_LAUNCHER_PENDING));
+    f.awaitPriorExit = true;
+    assertEquals("web", new StartupPipeline(f, f).prepare(9, false, f));
+    assertTrue(f.messages.contains("9:STARTUP_PREP_OBSERVATION: phase=stop-web facts=1"));
+    assertTrue(
+        f.messages.contains("9:STARTUP_PREP_OBSERVATION: phase=retire-prior-launchers facts=1"));
+    for (String helper :
+        List.of(
+            "rc-one-migration", "legacy-cas-links", "register-builtins", "legacy-plugin-reviews"))
+      assertTrue(
+          helper,
+          f.messages.contains("9:STARTUP_PREP_OBSERVATION: phase=guest-helper " + helper + "=1"));
+    assertTrue(
+        f.messages.contains(
+            "9:RUNTIME_TOOLS_PREPARATION: outcome=hit-prepared-proof files=5 miss=none"));
+    assertEquals(
+        List.of(
+            "credentials",
+            "lan-stop",
+            "stop",
+            "release-prior",
+            "wait-prior-exit",
+            "tools",
+            "recover",
+            "cleanup",
+            "migration",
+            "cas-copy",
+            "register",
+            "legacy",
+            "activate",
+            "unlock",
+            "checkpoint"),
+        f.calls);
+    for (String line : f.messages)
+      if (line.contains("STARTUP_PREP_OBSERVATION"))
+        assertTrue(
+            line,
+            line.matches("9:STARTUP_PREP_OBSERVATION: phase=[a-z][a-z-]* [a-z][a-z0-9-]*=\\d+"));
   }
 
   private static String receipt(boolean changed, int count, String operation) {

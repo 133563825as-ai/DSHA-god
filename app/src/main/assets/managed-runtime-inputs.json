@@ -634,6 +634,11 @@
   ],
   "launcherSources": [
     "util/ComposeGate.java",
+    "util/RustArchiveCodec.java",
+    "util/RustBackends.java",
+    "util/RustGzipInputStream.java",
+    "util/RustGzipOutputStream.java",
+    "util/RustNative.java",
     "util/IsolatedCommand.java",
     "util/OverlayPlacement.java",
     "util/OverlayTouchGuard.java",
@@ -641,8 +646,12 @@
     "backup/RuntimeTrialRecords.java",
     "util/TurnScreenGrants.java",
     "util/WebProcSel.java",
+    "util/WebProcTextReader.java",
     "util/WebPidIdentity.java",
     "util/WebStartProtection.java",
+    "util/StopOperationId.kt",
+    "util/StopCompletion.kt",
+    "util/StopHandoff.kt",
     "util/ManagedRuntimeLayout.java",
     "util/ManagedAssetVersion.java",
     "util/ManagedInstallPath.java",
@@ -753,6 +762,7 @@
     "core/InstallRepository.java",
     "util/ApplicationServiceSlot.java",
     "util/Rc1MigrationReuse.java",
+    "util/Rc1MigrationResult.java",
     "util/RootShellCandidates.java",
     "DeviceFileCore.java",
     "bridge/AndroidDeviceFiles.java",
@@ -833,7 +843,15 @@
     "util/ExternalDevicePolicy.java",
     "util/ExternalInstallPlan.java",
     "util/ExternalStepOutput.java",
-    "util/ExternalImportQuota.java"
+    "util/ExternalImportQuota.java",
+    "util/TerminalExitPolicy.java",
+    "ShizukuShell.java",
+    "util/DeviceAuthorization.java",
+    "util/DeviceChannelFacts.java",
+    "util/PhysicalActionRequest.java",
+    "util/RootModulePolicy.java",
+    "util/RootModuleInventory.java",
+    "util/VscreenActionEvidence.java"
   ],
   "generatorSources": [
     "tools/mobile-server/compress.js",
@@ -879,6 +897,8 @@
     "tools/i18n/web-translations/ar.json",
     "tools/i18n/web-translations/ko.json",
     "tools/i18n/web-translations/la.json",
-    "tools/i18n/web-translations/zh-Hant.json"
+    "tools/i18n/web-translations/zh-Hant.json",
+    "ci/source-layout.json",
+    "tools/source_layout.py"
   ]
 }

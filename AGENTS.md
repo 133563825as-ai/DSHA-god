@@ -1,19 +1,21 @@
 # AGENTS.md
 
 
-> **当前状态**：`0.2.1-rc.5-20261111.1200-dsh0.2.2-rc.1` / build359 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
+> **当前候选**：`0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1` / build368 / `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard。
+> build367 已发布（tag `dsha-a-su-build367-20261115-230955`）；build368 尚未完成完整 CI 与设备验收，历史回执不能作为本版通过证据。
 > 主线分支 `main`；Android 11+（API 30）/ arm64；proot 默认、proroot 可选；内置 DSH 0.2.2-rc.1。
 > 上岛能力已并入正式包；旧 low/GeckoView 兼容线与独立上岛包已删除；签名使用 Mod 自有证书（见 BUILD.md）。
+> Rust 发布装配默认 prebuilt、运行时后端启动后默认启用；`.so` 未随包或加载失败按类型化原因留在 JVM。
 
 DSHA 的 AI / 新贡献者入口。本文让你不扫全库就能上手 —— 读它之前先读 [README.md](README.md)。
 
-**仓库事实**：Java 17 / `:app` / arm64；移动 UI 3.3.5；proot 默认 + proroot 可选；固定离线输入由
+**仓库事实**：Java 17 / Kotlin（AGP 9.1.1 built-in，固定 KGP 2.2.10）/ `:app` / arm64；build368 的 517 项受管启动输入中含 439 个 Java + 18 个 Kotlin 文件；移动 UI 3.3.5；proot 默认 + proroot 可选；固定离线输入由
 `tools/ci-assets.py` 还原。构建、签名与门禁见 [BUILD.md](BUILD.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 维护入口：[文档总索引](docs/documentation-index.md)、[固定构建输入](docs/fixed-build-inputs.md)、[文案长度政策](docs/i18n-length-policy.md)、[项目总手册](docs/project-architecture-handbook.md)、
 [权限](docs/device-permissions-architecture.md)、[环境/数据/插件](docs/runtime-data-plugin-architecture.md)、
 [运行引擎](docs/runtime-engines.md)、[端口](docs/ports-and-networking.md)、[虚拟屏](docs/virtual-screen-architecture.md)、
-[ADR0003](docs/adr/0003-virtual-screen-lifecycle-and-input.md)、[来源依据](docs/references-and-provenance.md)。
+[ADR0003](docs/adr/0003-virtual-screen-lifecycle-and-input.md)、[ADR0004](docs/adr/0004-kotlin-rust-direction.md)、[来源依据](docs/references-and-provenance.md)。
 
 **历史记录**：各版本的构建与验收回执保留在 [CHANGELOG.md](CHANGELOG.md) 与 [docs/releases/](docs/releases/)；
 下方目录数量为历史索引，以实际代码为准。
@@ -31,7 +33,7 @@ app/src/main/java/com/deepseekharness/app/
 ├── backup/  （62 个）         数据：v5 加密备份、恢复、迁移、格式化、自动备份（最大的包）
 ├── vscreen/ （10 个）         独立虚拟屏：通道 / 预览 / 输入 / 无障碍桥
 ├── recovery/(4 个)            独立应急 DSH：与正式环境完全分开的生命周期
-├── bridge/  （3 个）          AppBridge 契约、AdbBridge、LAN 访问
+├── bridge/  （12 个）         桥契约与 ADB 通道、LAN 访问
 ├── data/    （3 个）          KeyVault（Keystore）、便携设置、导出
 └── util/    （118 个）        纯逻辑：不 import 任何 Android API，必须配单测
 ```
@@ -69,7 +71,7 @@ Root 维护以 [权限架构](docs/device-permissions-architecture.md) 与 [固�
 | `backup/` | `NativeBackupJobs` / `BackupArchive` / `HostDataTransaction` / `AutomaticBackups` / `FactoryReset` | v5 加密备份 / 恢复 / 数据事务 / 自动计划 / 格式化 |
 | `recovery/` | `RecoveryController` / `RecoveryRuntime` / `RecoveryRepairBroker` | 独立应急 DSH，不经正式环境的迁移与启动锁 |
 | `vscreen/` | `VirtualScreenManager` / `VirtualScreenAccessibility` / `VirtualScreenPreviewView` | App 持有认证连接与心跳；输入必须带最新帧号 |
-| `bridge/` | `AppBridge`（契约）/ `AdbBridge`（无线配对 TLS1.3-PSK + SPAKE2）/ `LocalNetworkAccess` | 桥接缝与设备通道 |
+| `bridge/` | `HttpShellService` + `util/BridgeRoutes`（桥契约本体）/ `AdbBridge`（ADB 通道，当前经 guest Python 执行，原生化见 T42）/ `LocalNetworkAccess` | 桥接缝与设备通道 |
 | `data/` | `KeyVault` | Keystore AES/GCM 加密 API key |
 | `util/` | `Constants` / `ShellQuote` / `Query` / `WebProcSel` / `DeviceShellPolicy` / `HttpProtocol` / `BackupScope` 等 118 个 | 纯逻辑，全包零 Android import，**必须配单测** |
 
@@ -113,7 +115,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 
 ### 版本与构建
 
-- **当前身份以 `app/build.gradle`、`ci/release-identity.json` 与 [CHANGELOG.md](CHANGELOG.md) 为准**：build359 / DSHA 修订 `0.2.1-rc.5`（内置 DSH 0.2.2-rc.1）/ `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard；更早的 code/build 编号、旧包名 `dsh.android.client` 与历史 E7E3 签名均为历史记录，不作为当前构建或签名输入。
+- **当前身份以 `app/build.gradle`、`ci/release-identity.json` 与 [CHANGELOG.md](CHANGELOG.md) 为准**：build368 / DSHA 修订 `0.2.1-rc.5`（内置 DSH 0.2.2-rc.1）/ `io.github.sunsetrne.dsha` / DSH-A-Su / 单一 Standard；更早的 code/build 编号、旧包名 `dsh.android.client` 与历史 E7E3 签名均为历史记录，不作为当前构建或签名输入。
 - `standard`：minSdk 30（Android 11+），系统 WebView，arm64-v8a，是唯一构建线，任务为 `assembleStandardRelease`。`low`/GeckoView 兼容线已整体删除（含 `assembleLowRelease`、legacy proot/loader），**不再声明 Android 10 及以下可用**；测试变体通过 `-Pdsha.sunsetTest=true`（`.test`）、`-Pdsha.debugPackage=true`（`.debug`，debuggable 的 debug 构建）或 `-Pdsha.devPackage=true`（`.dev`，release 构建）生成，三者互斥，且必须用 `-Pdsha.unsignedPackage=true` 由测试证书签名。
 - 离线 rootfs（`assets/offline-rootfs.bin`）**不提交**，由准备脚本生成；APK 用 `offline-rootfs.layout=split-runtime-v1` 标记 Ubuntu 与 `dsh-runtime.bin` 分包，构建核验两份摘要。
 - 新 dsh 依赖由 `tools/dsh-runtime/package-lock.json` 锁定；`tools/prepare-runtime-descriptor.py` 生成独立受管契约描述，APK 版本仅作诊断来源。相同基础版本更新受管树，个人数据保持原位；**不因 UI-only APK 更新替换环境，不因普通 dsh 更新递增 Ubuntu 基础环境版本**。
@@ -145,7 +147,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 - 主Web从当前受管dsh包装和固定包内入口启动，加载共享RuntimeTools环境。默认自动端口`--port 0`，成功鉴权后记录实际端口；显式手动配置按当前选择策略处理。完整环境与入口见[运行机制](docs/runtime-data-plugin-architecture.md)，不复制旧固定3080命令。proot从nativeLibraryDir执行，不能移到filesDir绕过Android W^X。
 - `WebPortPolicy.choose`在启动前选择固定/本机备用/动态端口；备用记忆仅本机，不跨设备迁移。当前生产未接入`retryBindRace`，不得把helper及单测写成已实现的绑定竞态自动重试。鉴权、保活与LAN使用实际端口，不按端口猜PID终止，见[端口专页](docs/ports-and-networking.md)。
 - Web 启动等待鉴权不设强制终止时限（60 秒仅提示）；停止与维护必须共用 `WebProcessManager` 的 PID 身份 / 出生身份核验。
-- 3090 桥协议版本做特性检测（`/app/version`，`BRIDGE_PROTOCOL=2`）；插件判版本用 `>=` 而不是 `==`。命令查询串预算不得缩到低于 8192 字符需求。
+- 3090 桥协议版本做特性检测（`/app/version`，`BRIDGE_PROTOCOL=3`）；插件判版本用 `>=` 而不是 `==`。命令查询串预算不得缩到低于 8192 字符需求。
 - LAN 正文由方法、状态码和明确传输边界决定；只有真正验证过的 101 WebSocket 握手可切隧道；不把 hop-by-hop 头移除后继续发送不匹配的编码体。
 - PTY 出生身份在原生 fork/exec 握手中登记：子进程自读 stat，父进程确认后才 exec；不得退回 Java 启动后单次读取。PTY 与简易终端独立标签和会话，跨切页 / 旋转 / 语言切换保持进程；关闭单个标签必须核验该会话退出后再移除。终端会话 ID 永久递增，显示编号独立复用最小空缺。
 
@@ -157,7 +159,7 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 - **麦克风**：清单同时声明 `RECORD_AUDIO` 与 `MODIFY_AUDIO_SETTINGS`；由 `BrowserMicrophone` 按网页请求申请，不能在普通启动时预授权；只放行当前本机页面的纯音频请求，摄像头 / 屏幕音频拒绝；旧回调不能批准新页。
 - **设备验收经验**：`uiautomator dump` 会抑制其他无障碍服务；截图授权绑定 DSH generation，停止 / 断连 / 撤销后失效；截图存应用私有 Pictures/DSHA，无需所有文件访问；PiP 可能盖住底部控件，自动化必须核对实际可见区域与屏幕方向；截图 / 读屏不可将敏感值写入公开取证文件。
 - Shizuku 必须注册 `rikka.shizuku.ShizukuProvider`；标准版 13.1.5 / 兼容版 12.2.0（不用 overrideLibrary 掩盖 minSdk 24）。回调严格核对管理器 UID、Binder 描述符、单次请求与超时。
-- 内置移动插件 `dsh-web-mobile` 为 3.3.5（适配宿主 0.2.2），固定上游 main `646fe837440f9939228bdba0024d407eaac01128`（2026-11-08；发布标签 v3.3.5 = `14ecfccf5a6acb69e3a84229dee328d31801306f`，标签后还有 README 与插件页交还宿主排版 3 个修复提交）；**完全追随上游**，`tools/apply-mobile-client-patches.mjs` 只保留宿主集成必需的最小集（服务端鉴权 / 安全区 / `DSHA_GEAR_FIT_V1`）与文件传输、多语言；会话输入 V4、手机搜索、快捷键弹层可见带、字体族行、遮罩按压染色等 UI/行为补丁已删除，不要重新套回；build336 起默认启用（真机覆盖升级验收待补）。
+- 内置移动插件 `dsh-web-mobile` 为 3.3.5（适配宿主 0.2.2），固定上游 main `646fe837440f9939228bdba0024d407eaac01128`（2026-11-08；发布标签 v3.3.5 = `14ecfccf5a6acb69e3a84229dee328d31801306f`，标签后还有 README 与插件页交还宿主排版 3 个修复提交）；**完全追随上游**，`tools/apply-mobile-client-patches.mjs` 只保留宿主集成必需的最小集（服务端鉴权 / 安全区 / `DSHA_GEAR_FIT_V1` + `DSHA_GEAR_SINGLETON_V1`）与文件传输、多语言；会话输入 V4、手机搜索、快捷键弹层可见带、字体族行、遮罩按压染色等 UI/行为补丁已删除，不要重新套回；build336 起默认启用（真机覆盖升级验收待补）。**侧栏 footer 设置齿轮只允许一颗**：同一 `triggerRow` 的多实例由 `DSHA_GEAR_SINGLETON_V1` 去重；不要重复登记 `dsh-web-mobile`、不要再加第二颗齿轮补丁、不要用禁用插件掩盖重复。约定与排查见 [移动壳侧栏设置齿轮：单实例不变式](docs/mobile-sidebar-settings-gear.md)。
 
 ---
 
@@ -243,6 +245,11 @@ bash build.sh :app:testStandardDebugUnitTest   # 全量单测
 
 - 注释与 UI 串用中文；提交信息用中文 + `type:` 前缀说明原因。
 - 每个协作者单一职责；纯逻辑抽到 `util/` 并配测试；不改历史 SharedPreferences 键名。
+- Kotlin 工具链（ADR-0004 决定一）：AGP 9.1.1 built-in Kotlin，KGP 版本固定 2.2.10（`settings.gradle`
+  的 `gradle.ext.kotlinVersion`），不应用 `org.jetbrains.kotlin.android`；按模块切换、不按文件混写。
+  新增/迁移规则、依赖校验与格式命令见 [Kotlin 工具链](docs/kotlin-toolchain.md)。Kotlin 文件改动后必须跑
+  `python3 tools/format-kotlin-tree.py --check`，与 Java 格式门禁同批必跑；Kotlin 编译任务为
+  `dsha-gradle :app:compileStandardDebugKotlin`。
 - 匹配现有风格：try/catch 包住有风险操作、优雅降级、失败 toast 给用户。
 - 原生按钮和选项统一居中与字体边距；普通卡片、主按钮及文字状态共用主题资源，不用独立渐变或硬编码颜色制造同类框色差。布局修订跑 `LayoutAuditInstrumentation` 的 style 中英文验收（日夜、短屏、1.3 倍字体）。
 - 应用弹窗统一 `DshaDialogBuilder`，自定义内容必须能在短屏和大字体下滚动；应用状态经 `UiStateText` 按显示边界重新渲染，不缓存语言。

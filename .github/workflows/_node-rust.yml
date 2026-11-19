@@ -1,0 +1,188 @@
+name: "Node: Rust toolchain and native artifact"
+
+# 可复用节点（R1）：单一 job、按 mode 切换职责；调用方的 job id 决定显示名。
+#   check        源码只读：工具链锁/vendor/格式/clippy/单测/边界 + 主机 .so 符号（无 NDK）
+#   repro        有网：cargo vendor --locked 重生成比对 + 不同目录字节复现 + 依赖白名单
+#   native       安装 NDK 26.3：交叉编译 arm64 .so，本 run 内两次构建字节比对 + ELF/16K/体积/receipt
+#   differential 主机 .so + JDK17 JVM 探针（-Xcheck:jni；R1/R2/R3 真实对拍 digest、PlanView、gzip archive）
+# 全部模式只读源码、没有 Secrets、不写仓库；native 默认正式准入，候选证据须独立 opt-in。
+# 不同目录的两次构建仅为本 run 复现，不替代三个不同 runner 的 pin 证据。
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit to check out (defaults to the caller's commit)
+        required: false
+        type: string
+        default: ''
+      mode:
+        description: check / repro / native / differential
+        required: true
+        type: string
+      candidate_evidence:
+        description: Explicit non-formal native evidence only; other modes reject true
+        required: false
+        type: boolean
+        default: false
+      artifact:
+        description: Base artifact name; native candidate adds -candidate-evidence
+        required: false
+        type: string
+        default: rust-artifact
+    outputs:
+      artifact:
+        description: Uploaded artifact name
+        value: ${{ jobs.rust.outputs.artifact }}
+permissions:
+  contents: read
+jobs:
+  rust:
+    name: Rust (${{ inputs.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      artifact: ${{ steps.admission.outputs.artifact }}
+    env:
+      # 本机与 CI 都串行、最多 2 个编译单元：整机内存紧张时避免 cargo 并行抢内存。
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - name: Validate Rust admission scope
+        id: admission
+        env:
+          RUST_MODE: ${{ inputs.mode }}
+          CANDIDATE_EVIDENCE: ${{ inputs.candidate_evidence }}
+          ARTIFACT_NAME: ${{ inputs.artifact }}
+        run: |
+          set -eu
+          case "$RUST_MODE" in
+            check|repro|native|differential) ;;
+            *) echo 'RUST_NODE_MODE_INVALID' >&2; exit 1 ;;
+          esac
+          case "$CANDIDATE_EVIDENCE" in
+            false) ;;
+            true)
+              [ "$RUST_MODE" = native ] || { echo 'RUST_CANDIDATE_NATIVE_ONLY' >&2; exit 1; }
+              ARTIFACT_NAME="${ARTIFACT_NAME}-candidate-evidence"
+              ;;
+            *) echo 'RUST_CANDIDATE_BOOL_INVALID' >&2; exit 1 ;;
+          esac
+          printf 'artifact=%s\n' "$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+      - name: Restore pinned Rust toolchain cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.rustup
+          key: rustup-1.100.0-${{ runner.os }}-${{ hashFiles('ci/rust-toolchain.lock.json') }}
+      - name: Install pinned Rust toolchain and verify against the lock
+        run: |
+          set -eu
+          channel=$(python3 -c "import json;print(json.load(open('ci/rust-toolchain.lock.json'))['channel'])")
+          rustup toolchain install "$channel" --profile minimal \
+            --component rustfmt --component clippy --target aarch64-linux-android
+          python3 tools/check-rust-toolchain.py --verify-installed
+      - name: Static toolchain, vendor, budget and dependency gates
+        run: |
+          set -eu
+          python3 tools/check-rust-toolchain.py
+          python3 tools/check-rust-vendor.py
+          python3 tools/check-rust-boundaries.py
+          python3 tools/check-rust-native-apk.py
+          python3 tools/rust/test_apk_injection.py
+          python3 tools/rust/test_android_candidate.py
+      - name: Rust source checks (format, clippy, unit tests, ABI boundaries)
+        if: inputs.mode == 'check'
+        run: |
+          set -eu
+          cd rust
+          cargo fmt --check
+          cargo clippy --locked --offline --all-targets -- \
+            -D warnings -D clippy::unwrap_used -D clippy::expect_used
+          cargo test --locked --offline
+          cd ..
+          python3 tools/rust/build.py --host --expect-lock --out out/rust-host-check \
+            --receipt out/rust-host-check/receipt.json
+          python3 tools/check-rust-boundaries.py --artifact out/rust-host-check/libdsha_rs.so
+      - name: Vendor regeneration and host byte reproducibility
+        if: inputs.mode == 'repro'
+        run: |
+          set -eu
+          python3 tools/check-rust-vendor.py --regenerate
+          python3 tools/rust/build.py --host --check --expect-lock \
+            --receipt out/rust-repro/rust-receipt.json
+      - uses: ./.github/actions/android-sdk
+        if: inputs.mode == 'native'
+        with:
+          ndk: 'true'
+      - name: Cross-compile arm64 artifact and reproduce it in this run
+        if: inputs.mode == 'native'
+        env:
+          CANDIDATE_EVIDENCE: ${{ inputs.candidate_evidence }}
+        run: |
+          set -eu
+          ndk=$(python3 tools/ci-toolchain.py --field ndk)
+          python3 tools/rust/build.py --android --ndk "$ANDROID_HOME/ndk/$ndk" --check --expect-lock \
+            --out out/rust-native --receipt out/rust-native/rust-receipt.json
+          python3 tools/check-rust-boundaries.py --artifact out/rust-native/libdsha_rs.so
+          # 默认正式准入；只有独立 bool 显式选取才收集非正式候选证据。
+          candidate_args=()
+          if [ "$CANDIDATE_EVIDENCE" = true ]; then candidate_args+=(--candidate-evidence); fi
+          mkdir -p out/rust-native-verified
+          python3 tools/rust/artifact.py stage --mode prebuilt "${candidate_args[@]}" --artifact-dir out/rust-native \
+            --commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY" --out out/rust-native-verified/jni \
+            --assets-out out/rust-native-verified/assets > out/rust-native-verified/stage-report.json
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+          candidate = os.environ['CANDIDATE_EVIDENCE'] == 'true'
+          report = json.loads(Path('out/rust-native-verified/stage-report.json').read_text())
+          if report.get('status') != ('CANDIDATE_EVIDENCE' if candidate else 'PASS') \
+                  or report.get('candidateEvidence') is not candidate \
+                  or report.get('formalPass') is not (not candidate):
+              raise SystemExit('RUST_NATIVE_ADMISSION_REPORT_MISMATCH')
+          print(json.dumps(report, ensure_ascii=False))
+          PYCODE
+      - uses: ./.github/actions/setup-toolchain
+        if: inputs.mode == 'differential'
+        with:
+          gradle-cache: 'false'
+      - name: Host JVM differential (digest, PlanView, gzip; JDK17, -Xcheck:jni)
+        if: inputs.mode == 'differential'
+        run: |
+          set -eu
+          python3 tools/rust/build.py --host --expect-lock --out out/rust-host \
+            --receipt out/rust-host/receipt.json
+          python3 tools/rust/host-jvm-differential.py \
+            --lib out/rust-host/libdsha_rs.so --report out/rust-differential.json
+      - name: Upload native artifact and receipt
+        if: inputs.mode == 'native'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.admission.outputs.artifact }}
+          path: |
+            out/rust-native/libdsha_rs.so
+            out/rust-native/rust-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload native candidate admission evidence (not formal PASS)
+        if: inputs.mode == 'native' && inputs.candidate_evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.admission.outputs.artifact }}-report
+          path: out/rust-native-verified/stage-report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload host differential receipt
+        if: always() && inputs.mode == 'differential'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact }}
+          path: |
+            out/rust-differential.json
+            out/rust-host/receipt.json
+          if-no-files-found: error
+          retention-days: 14

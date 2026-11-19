@@ -18,12 +18,14 @@ ASSET = 'deepseek-web-search-headers-patch.json'
 MODULE = '@deepseek-ai/dsh-web-search-deepseek/lib/index.js'
 OLD_APK_SHA = 'ba5fd1e19c5043fe000f02a3ffb56f125939a11b87bad0988d1677c73334cb26'
 OLD_MODULE_SHA = 'fc13dd4eaba3c9298af41a4d0559a1b8bb61614462fe18ba6e76d8c598c332bd'
-OLD_MODULE = ROOT / 'tools/fixtures/rc2-upgrade-source/dsh-web-search-deepseek.js'
+# Retained 0.2.1-rc.2 canonical module, used as the real historical input.
+DEFAULT_OLD_MODULE = ROOT / 'tools/fixtures/web-search-rc2/index.js'
 JAVA = r'''
 import com.deepseekharness.app.util.ManagedPatchChain;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 public final class WebSearchChainFixture {
   static void require(boolean condition,String reason) {if(!condition)throw new AssertionError(reason);}
   static List<ManagedPatchChain.Recipe> chain(Path root) throws Exception {
@@ -39,7 +41,7 @@ public final class WebSearchChainFixture {
   }
   public static void main(String[] args) throws Exception {
     Path root=Path.of(args[0]);var chain=chain(root.resolve("chain"));String expected=Files.readString(root.resolve("expected.js"));
-    for(String input:List.of("official.js","pre.js","expected.js")) {
+    for(String input:List.of("official.js","current-pre.js","expected.js")) {
       String result=ManagedPatchChain.apply(Files.readString(root.resolve(input)),chain,()->{throw new AssertionError(input+" unexpectedly restored canonical");});
       require(result.equals(expected),input+" differs");
       System.out.println("PASS_WEB_SEARCH_CHAIN "+input);
@@ -119,6 +121,8 @@ def main():
     parser.add_argument('--jdk', type=Path)
     parser.add_argument('--old-apk', type=Path, help='read-only exact retained build191/1640 Standard APK')
     parser.add_argument('--apk', type=Path, help='read-only exact final build192 Standard APK')
+    parser.add_argument('--old-module', type=Path, default=DEFAULT_OLD_MODULE,
+                        help='retained 0.2.1-rc.2 canonical module (historical input)')
     args = parser.parse_args()
     if __debug__ is False:
         raise RuntimeError('TEST_ASSERTIONS_REQUIRE_UNOPTIMIZED_PYTHON')
@@ -137,14 +141,27 @@ def main():
     pre = runtime_stable_patches.apply(canonical, prior)
     assert runtime_stable_patches.apply(pre, chain) == expected, 'CURRENT_PRE_CHAIN_IDENTITY'
     assert runtime_stable_patches.apply(expected, chain) == expected, 'CURRENT_REPEAT_IDENTITY'
-    old = OLD_MODULE.read_bytes()
-    assert sha(old) == OLD_MODULE_SHA, 'RETAINED_RC2_SEARCH_MODULE_IDENTITY'
     if args.old_apk:
         assert sha(args.old_apk.read_bytes()) == OLD_APK_SHA, 'OLD_191_APK_IDENTITY'
         old = module_from_apk(args.old_apk)
-    assert sha(old) == OLD_MODULE_SHA, 'OLD_191_SEARCH_MODULE_IDENTITY'
+        old_source = 'build191/1640 APK'
+    else:
+        if not args.old_module.is_file():
+            print(json.dumps({'status': 'BLOCKED', 'reason': 'HISTORICAL_OLD_MODULE_MISSING', 'path': str(args.old_module)}))
+            raise SystemExit(2)
+        old = args.old_module.read_bytes()
+        old_source = 'rc.2 npm module'
+    assert sha(old) == OLD_MODULE_SHA, 'OLD_MODULE_IDENTITY'
+    # Cross-generation policy: the current chain must reject the historical input
+    # (fail closed), not silently re-apply it or treat current-pre as the old module.
+    try:
+        crossed = runtime_stable_patches.apply(old, chain)
+        raise AssertionError('historical source accepted without canonical recovery: ' + sha(crossed))
+    except ValueError:
+        cross_result = 'REJECTED'
+    assert cross_result == 'REJECTED', 'historical source must fail closed'
     owned = Path(tempfile.mkdtemp(prefix='web-search-java-chain-', dir=ROOT / 'app/build'))
-    for name, data in [('official.js', canonical), ('pre.js', pre), ('old-module.js', old), ('expected.js', expected)]:
+    for name, data in [('official.js', canonical), ('current-pre.js', pre), ('old-module.js', old), ('expected.js', expected)]:
         (owned / name).write_bytes(data)
     if args.apk:
         (owned / 'apk.js').write_bytes(module_from_apk(args.apk))
@@ -169,7 +186,8 @@ def main():
                    oldModuleResultSha256=sha((owned / 'old-module-result.js').read_bytes()) if (owned / 'old-module-result.js').exists() else None,
                    oldModuleCanonicalRestores=int((owned / 'old-module-restores.txt').read_text()) if (owned / 'old-module-restores.txt').exists() else None,
                   oldApkSha256=OLD_APK_SHA if args.old_apk else None,
-                  historicalInput='actual retained build191/1640 APK' if args.old_apk else 'retained official rc2 npm module verified against historical lock; no APK supplied',
+                  historicalInput=old_source,
+                  crossGenerationResult=cross_result,
                   apkSha256=sha(args.apk.read_bytes()) if args.apk else None,
                   recipes=[name for name, _, _ in chain], productionAlgorithmSha256={name:sha((production / name).read_bytes()) for name in ['ManagedPatchChain.java','ExactTextPatch.java']},
                   deviceValidation=False, output=str(owned))
@@ -178,6 +196,8 @@ def main():
     if ran.returncode:
         print((ran.stdout + ran.stderr).decode('utf8', errors='replace'))
         raise SystemExit(ran.returncode)
+    assert result['oldModuleCanonicalRestores'] == 1, 'HISTORICAL_CANONICAL_RECOVERY_ONCE'
+    assert result['oldModuleResultSha256'] == sha(expected), 'COMPLETE_HISTORICAL_OUTPUT_IDENTITY'
 
 
 if __name__ == '__main__':

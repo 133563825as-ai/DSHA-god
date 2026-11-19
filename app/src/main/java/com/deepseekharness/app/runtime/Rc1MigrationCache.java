@@ -235,12 +235,11 @@ final class Rc1MigrationCache {
           || ledger.containsKey("inputDigest")
               && !prepared.get("inputDigest").equals(ledger.get("inputDigest")))
         return Reuse.unavailable("SETTINGS_LEDGER_UNKNOWN");
-      // 历史命中必须同时具备完成回执与完整账本：pending/部分分节都不是“历史完成”。
-      java.util.Set<String> expected = Rc1MigrationReuse.expectedSections(ledger, prepared);
-      String ledgerState = Rc1MigrationReuse.ledgerState(ledger, expected);
-      if (!"verified".equals(ledgerState)) return Reuse.unavailable("SETTINGS_LEDGER_INCOMPLETE");
+      var evidence = Rc1MigrationReuse.ledgerEvidence(generation, settingsSha256, ledger, prepared);
+      if (!"verified".equals(evidence.state)) return Reuse.unavailable(evidence.reason);
       settingsImportStatus = "verified-historical";
-      ledgerDigest = digest(ledgerDigestMaterial(generation, settingsSha256, ledgerState, ledger));
+      ledgerDigest =
+          digest(ledgerDigestMaterial(generation, settingsSha256, evidence.state, ledger));
     }
     return Reuse.history(
             generation,
@@ -348,6 +347,49 @@ final class Rc1MigrationCache {
     byte[] bytes = fs.small(file, 64 * 1024);
     if (!before.same(fs.stat(file))) throw new IOException("MIGRATION_REUSE_RECORD_CHANGED");
     return BackupJson.read(bytes, 64 * 1024);
+  }
+
+  static void bindHistory(
+      BackupFileSystem fs, File files, File home, Reuse expected, String startupId)
+      throws IOException {
+    if (startupId == null || startupId.isEmpty() || startupId.length() > 128)
+      throw new IOException("MIGRATION_STARTUP_ID_INVALID");
+    File state = fs.child(files, "rc1-migration-state");
+    Map<String, Object> current = json(fs, state, "current.json");
+    if (!sameHistory(expected, reuse(fs, files, home))
+        || !expected.generation.equals(current.get("generation"))
+        || !current.equals(json(fs, state, "current.json")))
+      throw new IOException("MIGRATION_HISTORY_CHANGED");
+    Map<String, Object> proof = new LinkedHashMap<>();
+    proof.put("generation", expected.generation);
+    proof.put("inputDigest", expected.inputDigest);
+    proof.put("settingsSha256", expected.settingsSha256);
+    Map<String, Object> context = new LinkedHashMap<>();
+    context.put("version", 3L);
+    context.put("startupId", startupId);
+    context.put("generation", expected.generation);
+    context.put("inputFingerprint", expected.inputDigest);
+    context.put("settingsSha256", expected.settingsSha256);
+    context.put("mode", "history-only");
+    context.put("proofDigest", hash(BackupJson.write(proof, 4096)));
+    Map<String, Object> handoff = new LinkedHashMap<>(current);
+    handoff.put("startupId", startupId);
+    handoff.put("startupContext", context);
+    fs.atomic(state, "current.json", BackupJson.write(handoff, 65536));
+    if (!handoff.equals(json(fs, state, "current.json"))
+        || !sameHistory(expected, reuse(fs, files, home)))
+      throw new IOException("MIGRATION_HISTORY_HANDOFF_UNVERIFIED");
+  }
+
+  private static boolean sameHistory(Reuse expected, Reuse actual) {
+    return expected != null
+        && expected.status == Reuse.Status.REUSABLE_HISTORY
+        && actual.status == Reuse.Status.REUSABLE_HISTORY
+        && java.util.Objects.equals(expected.generation, actual.generation)
+        && java.util.Objects.equals(expected.settingsSha256, actual.settingsSha256)
+        && java.util.Objects.equals(expected.inputDigest, actual.inputDigest)
+        && java.util.Objects.equals(expected.ledgerDigest, actual.ledgerDigest)
+        && Rc1MigrationReuse.sameInputs(expected.inputs, actual.inputs);
   }
 
   private static boolean versionTwo(Map<String, Object> value) {

@@ -160,9 +160,14 @@ public final class UpdateEngineCheckTest {
     assertNull(candidateReady.state().getValue().apk);
     engine.checkOnStartup(true);
     engine.check();
+    engine.setChannel("stable");
+    engine.setChannel("preview");
     engine.download();
     engine.runDownload();
     assertEquals(0, requests[0]);
+    assertEquals("ready", app.getSharedPreferences("dsha-updates", 0).getString("phase", ""));
+    assertEquals(
+        task.toString(), app.getSharedPreferences("dsha-updates", 0).getString("task", ""));
     assertFalse(engine.shouldResume());
     assertFalse(engine.hasTask());
     assertNull(engine.startupNotice());
@@ -176,10 +181,28 @@ public final class UpdateEngineCheckTest {
   }
 
   @Test
+  public void legacyStartupHooksNeverCheckOrPromptButManualCheckStillWorks() throws Exception {
+    Response source = new Response(200, feed("[" + release() + "]"));
+    UpdateEngine engine = new UpdateEngine(app, source, false);
+    engine.checkOnStartup(true);
+    engine.checkOnStartup(false);
+    engine.checkOnStartup(true);
+    assertEquals(0, source.opened);
+    assertFalse(engine.state().getValue().busy);
+    assertNull(engine.startupNotice());
+    engine.markStartupNoticeShown(null);
+    assertNotNull(check(engine).release);
+    assertEquals(1, source.opened);
+    assertNull(engine.startupNotice());
+    engine.markStartupNoticeShown(engine.state().getValue().release);
+    assertNull(engine.startupNotice());
+  }
+
+  @Test
   public void absentFeedAndNoPublishedReleaseHaveNormalEmptyStates() throws Exception {
     for (int status : new int[] {404, 410, 200}) {
       Response source = new Response(status, feed("[]"));
-      UpdateRepository.State state = check(new UpdateEngine(app, source));
+      UpdateRepository.State state = check(new UpdateEngine(app, source, false));
       assertEquals("暂无可用更新", state.message);
       assertNull(state.release);
       assertTrue(source.disconnected);
@@ -195,7 +218,7 @@ public final class UpdateEngineCheckTest {
           feed("[{\"versionCode\":9999,\"artifacts\":[]}]"),
           feed("[" + release().replace("arm64-v8a", "x86_64") + "]")
         }) {
-      UpdateRepository.State state = check(new UpdateEngine(app, new Response(200, body)));
+      UpdateRepository.State state = check(new UpdateEngine(app, new Response(200, body), false));
       assertEquals("暂无可用更新", state.message);
       assertNull(state.release);
     }
@@ -207,7 +230,7 @@ public final class UpdateEngineCheckTest {
     source.failure = new SSLHandshakeException("CertPathValidatorException: Trust anchor");
     source.failure.initCause(
         new CertPathValidatorException("Trust anchor for certification path not found"));
-    UpdateEngine engine = new UpdateEngine(app, source);
+    UpdateEngine engine = new UpdateEngine(app, source, false);
     UpdateRepository.State failed = check(engine);
     assertTrue(failed.message.startsWith("暂时无法确认更新"));
     assertTrue(failed.message.contains("证书"));
@@ -220,7 +243,7 @@ public final class UpdateEngineCheckTest {
   @Test
   public void serverFailureKeepsTheLastVerifiedChannelCandidate() throws Exception {
     Response source = new Response(200, feed("[" + release() + "]"));
-    UpdateEngine engine = new UpdateEngine(app, source);
+    UpdateEngine engine = new UpdateEngine(app, source, false);
     UpdateRepository.State available = check(engine);
     assertNotNull(available.release);
     source.status = 503;
@@ -246,7 +269,7 @@ public final class UpdateEngineCheckTest {
   @Test
   public void switchingChannelWhileCheckingSupersedesTheStaleCheck() throws Exception {
     Gated source = new Gated(feed("[" + release() + "]"));
-    UpdateEngine engine = new UpdateEngine(app, source);
+    UpdateEngine engine = new UpdateEngine(app, source, false);
     engine.check();
     assertTrue(source.entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
     engine.setChannel("stable");
@@ -266,7 +289,7 @@ public final class UpdateEngineCheckTest {
   @Test
   public void cancelAfterSwitchingDoesNotStartAnotherCheck() throws Exception {
     Gated source = new Gated(feed("[" + release() + "]"));
-    UpdateEngine engine = new UpdateEngine(app, source);
+    UpdateEngine engine = new UpdateEngine(app, source, false);
     engine.check();
     assertTrue(source.entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
     engine.setChannel("stable");
@@ -301,6 +324,7 @@ public final class UpdateEngineCheckTest {
 
   private static final class Response implements UpdateEngine.Transport {
     int status;
+    int opened;
     final String body;
     Exception failure;
     boolean disconnected, bodyOpened;
@@ -312,6 +336,7 @@ public final class UpdateEngineCheckTest {
 
     @Override
     public HttpURLConnection open(String target, long offset) throws Exception {
+      opened++;
       assertEquals(UpdateEngine.FEED, target);
       assertEquals(0, offset);
       if (failure != null) throw failure;

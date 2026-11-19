@@ -12,7 +12,8 @@
 - 显式清单编译当前树的 GuestPluginScripts、Rc1MigrationCache、Rc1MigrationResult、Rc1MigrationReuse、RetainedCatalogue 与其必要纯Java协作者；执行上述五个当前JUnit类，不生成修改版测试。
 - HostRc1Chain从新的Java Guest实例真实调度当前树Python prepare/finalize；固定guest命令仅由Runner边界拆成受控argv，根/state均为专属mkdtemp目录，不执行原shell字符串。
 - hook使用test-runtime-fixture验证现有raw runtime身份/内容，精确匹配当前生产patch的before/after。只将固定guest CJS URL映射到本树当前CJS的wrapper，并显式传隔离stateRoot。真实SettingsForms.describe/update、ConfigEditor、Loader、磁盘持久化及独立Node进程重开均执行；不mock编辑器或迁移核心。
-- 首次prepare和finalize精确断wire phase/status/startup/generation/scope/copy/settings/execution；缓存重启必须真实Python降durable current为本startup/history-only，再hook update=0、Java本地finalize，ledger bytes和mtime均不变。没有声称整个启动/整个home零文件写。
+- 首次prepare和finalize精确断wire phase/status/startup/generation/scope/copy/settings/execution；缓存重启经真实Java Rc1MigrationCache.bindHistory持久降权并读回current为本startup/history-only，缓存prepare/finalize均本地完成，总Python派发保持2。随后独立Node hook先模拟用户后改为user-later，再要求迁移update=0、用户后改不被覆盖，ledger bytes和mtime均不变。没有声称整个启动/整个home零文件写。
+- 另一个专属fixture在Java成功history-only交接之后只删除本代settings-result.json，Node真实hook必须返回unknown/DSHA_MIGRATION_LEDGER_MISSING且update=0、user-later保持、ledger不重建；Java finalize/重复finalize不得授历史成功或再派guest。该场景代码存在不等于当前已执行真实SettingsForms/完整host链，实际执行须按新鲜完整日志另记。
 - 旧Java prepare票据在另一新代prepare后finalize，必须携带expected-generation，由真实Python返回明确EXPECTED_GENERATION_MISMATCH/exit1；全部state常规文件bytes和mtime保持不变；同实例重复finalize不再次派发。
 
 ## 不被测adapter
@@ -24,7 +25,7 @@
 - NativeDataLocations：仅抽取当前真实静态SESSION_NAMES/PLUGIN_NAMES/classify/id/hash，不编译其Android定位/ConfigStore图；这些不是本轮RC1迁移算法。
 - EnvironmentRebuildTransaction/ManagedRuntimeTransaction/PluginInstallJournals/PluginJournalQuarantine：只提供既有目录名常量，不声称验证其事务行为。
 - ColdInstallTransaction.Candidate、NativeConfigurationReset和RestoreStaging：编译期非被测边界；未命中的拥有者判据固定false，清理入口立即拒绝。实际HostOperationArchive及Catalogue所用维护/归档方法仍编译执行当前真类。
-- HostRc1Chain.HostFs继承当前JvmBackupFileSystem：保留真实NOFOLLOW读，stat仅将真实unix dev/ino编码为Android FS约定的`device:inode` key；对state小JSON读取仅把本fixture的绝对home字符串投影为Java固定guest `/root/.dsh`，磁盘记录不改，Python/CJS仍读取实际临时路径。stat拒绝专属files目录外目标，不读写实际`/root/.dsh`。
+- HostRc1Chain.HostFs继承当前JvmBackupFileSystem：保留真实NOFOLLOW读，stat仅将真实unix dev/ino编码为Android FS约定的`device:inode` key；对state小JSON读取把本fixture的绝对home字符串投影为Java固定guest `/root/.dsh`；仅对state/current.json的Java atomic写回将guest home反向映射为本fixture实际临时home，Python/CJS继续读取该临时路径。其余文件不作写回映射，不触真实HOME。stat拒绝专属files目录外目标，不读写实际`/root/.dsh`。
 
 ## 消费者 source-slice 边界
 

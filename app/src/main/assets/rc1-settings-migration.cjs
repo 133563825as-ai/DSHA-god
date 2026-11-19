@@ -129,7 +129,8 @@ async function checkpointMatches(folder, prepared, sourceSha, expected) {
     const checkpoint = JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'));
     if (!record(checkpoint)) return false;
     if (!Object.hasOwn(checkpoint, 'settingsSections')) return true;
-    if (checkpoint.version !== 2 || checkpoint.generation !== prepared.generation
+    if (checkpoint.settingsSectionsSource !== 'ledger-expected'
+      || checkpoint.version !== 2 || checkpoint.generation !== prepared.generation
       || checkpoint.settingsSha256 !== sourceSha || checkpoint.inputDigest !== prepared.inputDigest
       || !/^[a-f0-9]{64}$/.test(prepared.inputDigest) || !isDeepStrictEqual(checkpoint.dataRoot, prepared.dataRoot)
       || !record(checkpoint.dataRoot) || !record(checkpoint.inputs) || !record(prepared.inputs)
@@ -244,6 +245,20 @@ async function migrate(settings, parse, aliases, options = {}) {
       unsafe = true;
       plans.set(name, { reason: error.message === 'SECTION_ALIAS_CONFLICT' ? error.message : descriptor ? 'SECTION_SCHEMA_REJECTED' : 'SECTION_UNAVAILABLE' });
     }
+  }
+  // 旧账本若含无法以静态 schema 解释的值，只读冻结；unknown 不授权清理或重写历史正文。
+  for (const [name, section] of Object.entries(result.sections)) {
+    if (!['source', 'before', 'candidate', 'verified'].some(field => Object.hasOwn(section, field))) continue;
+    const plan = plans.get(name);
+    if (!plan?.schema) return unknown('SECTION_LEDGER_REVIEW_REQUIRED');
+    try {
+      for (const field of ['source', 'before', 'candidate', 'verified']) {
+        if (!Object.hasOwn(section, field)) continue;
+        jsonData(section[field]);
+        if (field === 'source') knownPatch(section[field], plan.schema);
+        else candidate(section[field], plan.schema);
+      }
+    } catch { return unknown('SECTION_LEDGER_REVIEW_REQUIRED'); }
   }
   for (const [name, values] of Object.entries(sections)) {
     const ns = targets.find(row => row[0] === name)[1];

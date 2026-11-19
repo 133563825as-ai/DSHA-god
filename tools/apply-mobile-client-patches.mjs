@@ -314,14 +314,18 @@ export function applyMobileScrollLifecycle(source, typed = false, reverse = fals
 export function applyMobileClientPatches(bytes) {
   if (sha(bytes) !== upstreamClientHash) throw new Error('上游 client 字节不匹配固定 commit；请重新审阅补丁');
   let source = bytes.toString('utf8');
+  // 多语言补丁的 dispose 锚点必须看到上游原文；齿轮 owner 会在 dispose 开头插入
+  // retirement 守卫，所以先落多语言，再落齿轮差异。
+  source = applyMobileLocaleBundlePatch(source);
   const replace = (before, after) => {
     if (source.split(before).length !== 2) throw new Error('补丁锚点缺失或不唯一: ' + before.slice(0, 100));
     source = source.replace(before, after);
   };
   // build336（T101 重做，用户选 C）+ build351（2026-11-09 同步上游 3.3.5）：以上游为基座，
   // client 保留四类既有差异及2026-11-15特批临时滚动生命周期修复：
-  //   1) 宿主集成 DSHA_GEAR_FIT_V1：footer 齿轮按实测行宽让位（上游 3.3.5 仍是旧的
-  //      「连接条 :has() 存在性」判据，DSH 0.2.2 首连不渲染指示灯时会判错）；
+  //   1) 宿主集成 DSHA_GEAR_FIT_V1 + DSHA_GEAR_SINGLETON_V1：footer 齿轮按实测行宽让位
+  //      （上游 3.3.5 仍是旧的「连接条 :has() 存在性」判据，DSH 0.2.2 首连不渲染指示灯时会判错），
+  //      并且同一行只保留一颗齿轮（还原 / 热重载 / 重复注册可能让插件同时存在多个实例）；
   //   2) 安全区：applyMobileSafeArea 把 env(safe-area-inset-*) 包成 DSHA 原生发布的变量；
   //   3) 文件传输：applyFileTransferClient（原生 share / save-as / 下载记录与 32 MiB 限制）；
   //   4) 多语言：applyMobileLocaleBundlePatch（zh-Hant/ru/ja/ko/ar/pt/la/fr + live-locale）。
@@ -416,7 +420,151 @@ function createDrawerQuickSettingsTask(ctx) {`);
                 if (wrap.dataset.mobileNavQuickFit !== fit) wrap.dataset.mobileNavQuickFit = fit;
             }
             syncMenuEntry(target, gearVisible);`);
-  return applyMobileScrollLifecycle(applyMobileSafeArea(applyFileTransferClient(applyMobileLocaleBundlePatch(source))));
+  // DSHA_GEAR_SINGLETON_V1：同一 triggerRow 只保留一颗齿轮。
+  // 插件可能因页面在还原后热重载、运行时 profile 暂时重复登记或同一模块被重复应用而
+  // 同时存在多个任务实例；每个实例各自持有一个 wrap，全都 append 到同一行时就会看到
+  // 两颗、三颗设置齿轮。这里在每次 ensure 挂载前清掉同一行里其它实例的 wrap，只保留
+  // 本实例这一颗；晚到的实例会接管，页面上始终最多一颗。只动插件自己的
+  // [data-mobile-nav="quick-settings-wrap"]，不碰宿主节点。
+  replace(`            if (wrap !== null && wrap.parentElement !== target)
+                target.appendChild(wrap);
+            bindRowHook();`,
+    `            if (wrap !== null) {
+                // DSHA_GEAR_SINGLETON_V1：清掉同一行里其它实例遗留的齿轮。
+                for (const stale of target.querySelectorAll('[data-mobile-nav="quick-settings-wrap"]')) {
+                    if (stale !== wrap) stale.remove();
+                }
+                if (wrap.parentElement !== target)
+                    target.appendChild(wrap);
+            }
+            bindRowHook();`);
+  // DSHA_GEAR_OWNER_V1：每次激活持有独立租期；旧 epoch 的 ensure/迟到回调不再争抢。
+  const gearStart = 'function createDrawerQuickSettingsTask(ctx) {';
+  const gearEnd = '\n};\n__modules["core/image-zoom-core.js"]';
+  if (source.split(gearStart).length !== 2 || source.split(gearEnd).length !== 2) throw Error('MOBILE_GEAR_OWNER_ANCHOR');
+  const begin = source.indexOf(gearStart), end = source.indexOf(gearEnd, begin);
+  let gear = source.slice(begin, end);
+  const gearReplace = (before, after) => {
+    if (gear.split(before).length !== 2) throw Error('MOBILE_GEAR_OWNER_ANCHOR: ' + before);
+    gear = gear.replace(before, after);
+  };
+  gearReplace(gearStart, `${gearStart}
+    // DSHA_GEAR_OWNER_V1：window 跨模块热换持有唯一 owner。第一个 ensure 取得 token；
+    // 当前 owner 退休/清空前其它实例的 ensure 直接返回，不再互删 wrap 触发 childList→RAF 循环。
+    const lifecycle = window.__dshaMobileGearOwnerV1 ??= {};
+    const owner = { retired: false, claimed: false };
+    const current = () => !owner.retired && lifecycle.owner === owner;
+    const claim = () => {
+        if (owner.retired || owner.claimed) return;
+        if (lifecycle.owner !== undefined && !lifecycle.owner.retired) return;
+        owner.claimed = true;
+        lifecycle.owner = owner;
+    };
+    const later = (callback, millis) => window.setTimeout(() => { if (current()) callback(); }, millis);
+    const frame = (callback) => requestAnimationFrame(() => { if (current()) callback(); });`);
+  // 只替换真实函数内的异步派发；clearTimeout 保留原行为。
+  gear = gear.replaceAll('window.setTimeout(', 'later(').replaceAll('requestAnimationFrame(', 'frame(')
+    .replace('const later = (callback, millis) => later(', 'const later = (callback, millis) => window.setTimeout(')
+    .replace('const frame = (callback) => frame(', 'const frame = (callback) => requestAnimationFrame(');
+  for (const anchor of ['const onRowPressEnd = () => {', 'const onRowPointerDown = (event) => {',
+    'const selectSettingsItem = (trigger) => {', 'const onClick = () => {',
+    'const onPressStart = () => {', 'const onPressEnd = () => {'])
+    gearReplace(anchor, anchor + '\n        if (!current()) return;');
+  gearReplace('const clearPendingMark = () => {', 'const clearPendingMark = () => {\n        if (lifecycle.owner !== owner) return;');
+  gearReplace('    return {\n        name: \'drawer-quick-settings\',', '    const task = {\n        name: \'drawer-quick-settings\',');
+  gearReplace('        ensure: () => {', '        ensure: () => {\n            claim();\n            if (!current()) return;');
+  // 账户行是宿主节点，dispose 不能仅清 timer，也不能重新查询后误清新行。
+  gearReplace('    let rowPressedAt = 0;', '    let rowPressedAt = 0;\n    let pressedRow = null;');
+  gearReplace(`    const pressRow = (on) => {
+        const target = row();
+        if (target === null)
+            return;
+        if (on)
+            target.setAttribute(ROW_PRESSED_ATTR, '');
+        else
+            target.removeAttribute(ROW_PRESSED_ATTR);
+    };`, `    const pressRow = (on) => {
+        if (lifecycle.owner !== owner) return;
+        if (!on) {
+            pressedRow?.removeAttribute(ROW_PRESSED_ATTR);
+            pressedRow = null;
+            return;
+        }
+        const target = row();
+        if (target === null) return;
+        if (pressedRow !== target) pressedRow?.removeAttribute(ROW_PRESSED_ATTR);
+        pressedRow = target;
+        target.setAttribute(ROW_PRESSED_ATTR, '');
+    };`);
+  gearReplace('        dispose: () => {', `        dispose: () => {
+            if (owner.retired) return;
+            owner.retired = true;
+            pressRow(false);
+            press(false);`);
+  gearReplace("            document.documentElement.removeAttribute('data-mobile-nav-quick');\n            clearMenuEntry();", `            if (lifecycle.owner === owner) {
+                document.documentElement.removeAttribute('data-mobile-nav-quick');
+                clearMenuEntry();
+                delete lifecycle.owner;
+            }`);
+  gearReplace('    };\n}', '    };\n    return task;\n    }\n}');
+  gearReplace(gearStart, `${gearStart}
+    // reconciler 的 deactivate 会 dispose，activate 会复用同一 registered task。
+    // 仅退休本次租期，不退休 task；新租期重建闭包，使旧 timer/RAF/监听永远绑定旧 token。
+    let activation = null;
+    return {
+        name: 'drawer-quick-settings',
+        scopes: ['*'],
+        ensure: () => {
+            activation ??= createGearActivation();
+            activation.ensure();
+        },
+        dispose: () => {
+            const previous = activation;
+            activation = null;
+            previous?.dispose();
+        },
+    };
+    function createGearActivation() {`);
+  source = source.slice(0, begin) + gear + source.slice(end);
+  // tablet adapter 的 observer 在 task 外排 RAF；task 必须支持 core 再激活，
+  // 因此由实际 effect 租期封印旧 run，而不是把 stable task 永久退休。
+  replace(`        let queued = false;
+        const run = () => {
+            queued = false;
+            try {
+                task.ensure();`, `        let alive = true;
+        let queued = false;
+        let pendingFrame = null;
+        const run = () => {
+            if (!alive) return;
+            pendingFrame = null;
+            queued = false;
+            try {
+                task.ensure();`);
+  replace(`        const observer = new MutationObserver(() => {
+            if (queued)
+                return;
+            queued = true;
+            requestAnimationFrame(run);
+        });`, `        const observer = new MutationObserver(() => {
+            if (!alive || queued)
+                return;
+            queued = true;
+            pendingFrame = requestAnimationFrame(run);
+        });`);
+  replace(`        return () => {
+            observer.disconnect();
+            task.dispose();
+        };`, `        return () => {
+            if (!alive) return;
+            alive = false;
+            observer.disconnect();
+            if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+            pendingFrame = null;
+            queued = false;
+            task.dispose();
+        };`);
+  return applyMobileScrollLifecycle(applyMobileSafeArea(applyFileTransferClient(source)));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [input, action = '--check'] = process.argv.slice(2);

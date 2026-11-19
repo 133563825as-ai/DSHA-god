@@ -13,9 +13,12 @@ module_spec.loader.exec_module(descriptor)
 
 class RuntimeInputContractTest(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='runtime-input-test-', dir=ROOT / 'app/build')
+        # 系统临时目录：门禁必须在干净工作树可跑（app/build 是 Gradle 输出，不是前置条件），
+        # 同时不把测试夹具写进仓库。
+        self.temp = tempfile.TemporaryDirectory(prefix='runtime-input-test-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.write('ci/source-layout.json', (ROOT / 'ci/source-layout.json').read_text(encoding='utf8'))
         self.spec = {'schema': 1, 'installs': [{'asset': 'plugin.py', 'target': 'root/.dsh/plugin.py', 'executable': False}], 'assetFiles': ['offline-rootfs.version'], 'assetTrees': ['web'], 'launcherSources': ['util/Policy.java'], 'launcherTrees': [JAVA + '/runtime', 'app/src/main/jniLibs']}
         self.write(MANIFEST, json.dumps(self.spec))
         for path, text in {ASSETS + '/plugin.py': 'pass\n', ASSETS + '/offline-rootfs.version': '10', ASSETS + '/web/compat.js': 'true;', JAVA + '/util/Policy.java': 'policy', JAVA + '/runtime/Runner.java': 'runner', 'app/src/main/jniLibs/arm64-v8a/liba.so': 'elf', 'tools/dsh-runtime/package.json': '{"dependencies":{"@deepseek-ai/dsh":"0.1.7-rc.2"}}'}.items():
@@ -42,6 +45,46 @@ class RuntimeInputContractTest(unittest.TestCase):
         before = self.identity()
         (self.root / ASSETS / 'web/compat.js').unlink()
         self.assertNotEqual(before, self.identity())
+    def test_nested_kotlin_launcher_add_edit_delete_changes_identity(self):
+        kotlin = JAVA + '/runtime/Guard.kt'
+        before = self.identity()
+        self.write(kotlin, 'package com.deepseekharness.app.runtime\nclass Guard\n')
+        after_add = self.identity()
+        self.assertNotEqual(before, after_add)
+        selected = launcher_paths(self.root)
+        self.assertIn('runtime/Guard.kt', selected)
+        self.assertEqual(selected['runtime/Guard.kt'], self.root / kotlin)
+        self.write(kotlin, 'package com.deepseekharness.app.runtime\nclass Guard2\n')
+        after_edit = self.identity()
+        self.assertNotEqual(after_add, after_edit)
+        (self.root / kotlin).unlink()
+        self.assertEqual(before, self.identity())
+    def test_launcher_keys_are_sorted_and_include_both_kotlin_and_java(self):
+        self.write(JAVA + '/runtime/BGuard.kt', 'class BGuard\n')
+        self.write(JAVA + '/runtime/AGuard.kt', 'class AGuard\n')
+        selected = launcher_paths(self.root)
+        self.assertEqual(sorted(selected), list(selected))
+        for key in ('runtime/AGuard.kt', 'runtime/BGuard.kt', 'runtime/Runner.java'):
+            self.assertIn(key, selected)
+    def test_explicit_kotlin_source_is_identified_without_tree_enumeration(self):
+        self.spec['launcherSources'] = ['util/Policy.kt']
+        (self.root / JAVA / 'util/Policy.java').unlink()
+        self.write(JAVA + '/util/Policy.kt', 'package com.deepseekharness.app.util\nclass Policy\n')
+        self.write(MANIFEST, json.dumps(self.spec))
+        self.assertIn('util/Policy.kt', launcher_paths(self.root))
+        before = self.identity()
+        self.write(JAVA + '/util/Policy.kt', 'package com.deepseekharness.app.util\nclass Policy2\n')
+        self.assertNotEqual(before, self.identity())
+    def test_kotlin_outside_managed_launcher_trees_does_not_change_identity(self):
+        before = self.identity()
+        self.write(JAVA + '/ui/Page.kt', 'package com.deepseekharness.app.ui\nclass Page\n')
+        self.assertEqual(before, self.identity())
+    def test_unknown_kotlin_source_root_fails_closed_instead_of_becoming_native(self):
+        self.spec['launcherTrees'].append('unknown/src/main/kotlin/com/deepseekharness/app/runtime')
+        self.write('unknown/src/main/kotlin/com/deepseekharness/app/runtime/Guard.kt', 'class Guard\n')
+        self.write(MANIFEST, json.dumps(self.spec))
+        with self.assertRaisesRegex(ValueError, 'RUNTIME_LAUNCHER_SOURCE_ROOT_UNSUPPORTED'):
+            launcher_paths(self.root)
     def test_missing_installed_asset_fails_closed(self):
         (self.root / ASSETS / 'plugin.py').unlink()
         with self.assertRaises(ValueError):
@@ -70,6 +113,16 @@ class RuntimeInputContractTest(unittest.TestCase):
         for name in ('util/ColdInstallPlan.java', 'util/ColdInstallPackages.java'):
             self.assertIn(name, selected, 'Cold compatibility and package policy must invalidate old runtime proofs')
             self.assertEqual(selected[name], ROOT / JAVA / name)
+    def test_rc1_result_semantics_are_identified(self):
+        selected = launcher_paths(ROOT)
+        for name in ('util/Rc1MigrationResult.java', 'util/Rc1MigrationReuse.java'):
+            self.assertIn(
+                name, selected,
+                'RC1 result/reuse semantics must invalidate old runtime proofs: ' + name)
+            self.assertEqual(selected[name], ROOT / JAVA / name)
+        self.assertIn('runtime/Rc1MigrationCache.java', selected)
+        self.assertIn('runtime/GuestPluginScripts.java', selected)
+
     def test_all_production_active_recipes_and_helpers_are_identified(self):
         from runtime_stable_patches import load_chains
         production = load(ROOT)

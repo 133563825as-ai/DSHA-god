@@ -32,7 +32,7 @@ public final class HostRc1Chain {
     Files.copy(checkout.resolve("app/src/main/assets/runtime-patches.json"), home.resolve("runtime-patches.json"));
   }
 
-  /** 仅将真实Python隔离绝对home在小JSON读取时映射成Java guest契约home；不改磁盘记录。 */
+  /** 隔离home与Java guest契约互映；仅state/current.json写回宿主路径供真实hook读取。 */
   private final class HostFs extends JvmBackupFileSystem {
     @Override public BackupFileSystem.Node stat(File file) throws IOException {
       Path p = file.toPath().toAbsolutePath().normalize();
@@ -51,6 +51,13 @@ public final class HostRc1Chain {
             .getBytes(StandardCharsets.UTF_8);
       return bytes;
     }
+    @Override public void atomic(File directory, String name, byte[] bytes) throws IOException {
+      if (directory.toPath().equals(state) && name.equals("current.json"))
+        bytes = new String(bytes, StandardCharsets.UTF_8)
+            .replace("\"/root/.dsh\"", '"' + home.toString() + '"')
+            .getBytes(StandardCharsets.UTF_8);
+      super.atomic(directory, name, bytes);
+    }
   }
 
   private Map<String,Object> json(Path file) throws Exception {
@@ -68,6 +75,9 @@ public final class HostRc1Chain {
         Rc1MigrationCache.Reuse result = Rc1MigrationCache.reuse(fs, files.toFile(), home.toFile());
         System.out.println("CACHE status=" + result.status + " reason=" + result.reason);
         return result;
+      }
+      public void bindMigrationHistory(Rc1MigrationCache.Reuse reuse, String startupId) throws IOException {
+        Rc1MigrationCache.bindHistory(fs, files.toFile(), home.toFile(), reuse, startupId);
       }
     }, (command, timeout) -> {
       // 不执行Java生成的shell字符串。逐一校验固定命令，只抽取本fixture已知安全ID。
@@ -104,9 +114,13 @@ public final class HostRc1Chain {
   }
 
   private void hook(int updates) throws Exception {
+    hook(updates, "retained");
+  }
+
+  private void hook(int updates, String scenario) throws Exception {
     BoundedProcessRunner.Result result = process(List.of(node,
         checkout.resolve("tools/fixtures/rebirth-rc1-host/hook.mjs").toString(),
-        checkout.toString(), root.toString(), state.toString(), Integer.toString(updates)),
+        checkout.toString(), root.toString(), state.toString(), Integer.toString(updates), scenario),
         "hook-" + files.getFileName() + "-" + dispatched);
     assertEquals(result.output, 0, result.exitCode);
     assertTrue(result.output, result.output.contains("HOOK_PASS updates=" + updates));
@@ -134,6 +148,7 @@ public final class HostRc1Chain {
   }
 
   private void firstThenCached() throws Exception {
+    boolean missingLedger = files.getFileName().toString().equals("missing-ledger");
     GuestPluginScripts first = scripts();
     Map<String,Object> prepared = receipt(first.migration("prepare", "boot-first"), "boot-first", "prepare",
         "prepared", "current", "pending", "COMPLETED", null);
@@ -153,19 +168,41 @@ public final class HostRc1Chain {
     GuestPluginScripts cached = scripts();
     receipt(cached.migration("prepare", "boot-cached"), "boot-cached", "prepare", "historical-complete",
         "historical", "verified-historical", "NOT_SENT", generation);
-    assertEquals("cached prepare still dispatches real Python", 3, dispatched);
+    assertEquals("cached prepare remains local", 2, dispatched);
     Map<?,?> context = (Map<?,?>) json(state.resolve("current.json")).get("startupContext");
     assertEquals("history-only", context.get("mode"));
     assertEquals("boot-cached", context.get("startupId"));
-    hook(0); // 独立Node进程重开真实ConfigEditor/Loader，hook不得重复update。
+    if (missingLedger) {
+      // 只删除本fixture本代专属账本；验证成功Java交接后丢失ledger不能授权重放。
+      Path controlledLedger = ledger.toAbsolutePath().normalize();
+      assertTrue(controlledLedger.startsWith(state.toAbsolutePath().normalize()));
+      assertEquals("settings-result.json", controlledLedger.getFileName().toString());
+      assertFalse(Files.isSymbolicLink(controlledLedger));
+      Files.delete(controlledLedger);
+      Map<String,String> missingState = stateSnapshot();
+      hook(0, "missing-ledger");
+      var rejected = cached.migration("finalize", "boot-cached");
+      Map<String,Object> payload = Rc1MigrationResult.parse(rejected.output);
+      assertEquals("unknown", payload.get("status"));
+      assertFalse(Rc1MigrationResult.isRoutineReceipt(payload));
+      assertEquals("missing ledger must not dispatch guest", 2, dispatched);
+      assertFalse(Files.exists(controlledLedger));
+      assertEquals(missingState, stateSnapshot());
+      cached.migration("finalize", "boot-cached");
+      assertEquals("unknown finalize cannot replay", 2, dispatched);
+      assertFalse(Files.exists(controlledLedger));
+      System.out.println("PASS cached missing-ledger: user-later kept, hook update0/unknown, no ledger recreation or guest replay");
+      return;
+    }
+    hook(0); // 独立Node进程重开真实ConfigEditor/Loader，hook不得重复update/覆盖用户后改。
     receipt(cached.migration("finalize", "boot-cached"), "boot-cached", "finalize", "historical-complete",
         "historical", "verified-historical", "NOT_SENT", generation);
-    assertEquals("cached finalize remains local", 3, dispatched);
+    assertEquals("cached finalize remains local", 2, dispatched);
     assertArrayEquals(before, Files.readAllBytes(ledger));
     assertEquals("history ledger mtime must not move", mtime, Files.getLastModifiedTime(ledger));
     // 同一实例顺序finalize重复只返回原终态。
     cached.migration("finalize", "boot-cached");
-    assertEquals(3, dispatched);
+    assertEquals(2, dispatched);
     System.out.println("PASS first->cached: durable history-only, real hook update0, ledger bytes+mtime unchanged, local finalize");
   }
 
@@ -210,6 +247,7 @@ public final class HostRc1Chain {
     Path checkout = Path.of(args[0]).toRealPath(), run = Path.of(args[1]).toRealPath();
     assertTrue(run.startsWith(checkout.resolve("app/build/rebirth-rc1-closure/host-verification")));
     new HostRc1Chain(checkout, run, args[2], args[3], "normal").firstThenCached();
+    new HostRc1Chain(checkout, run, args[2], args[3], "missing-ledger").firstThenCached();
     new HostRc1Chain(checkout, run, args[2], args[3], "generation").wrongGeneration();
   }
 }

@@ -60,7 +60,13 @@ final class ThemeReveal {
    *
    * @param x 过渡起点（窗口坐标）：圆心，或对角擦除的最近角
    */
-  static void capture(Activity activity, float x, float y, String style, Runnable change) {
+  static void capture(
+      Activity activity,
+      ThemeChangeRequest.Request request,
+      float x,
+      float y,
+      String style,
+      Runnable change) {
     discard();
     String kind = ThemeMotion.normalizeStyle(style);
     View decor = activity.getWindow().getDecorView();
@@ -70,14 +76,14 @@ final class ThemeReveal {
         || width <= 0
         || height <= 0
         || !decor.isAttachedToWindow()) {
-      change.run();
+      if (claim(activity, request)) change.run();
       return;
     }
     final Bitmap shot;
     try {
       shot = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
     } catch (OutOfMemoryError | IllegalArgumentException error) {
-      change.run();
+      if (claim(activity, request)) change.run();
       return;
     }
     Class<? extends Activity> owner = activity.getClass();
@@ -86,7 +92,11 @@ final class ThemeReveal {
           activity.getWindow(),
           shot,
           result -> {
-            if (result != PixelCopy.SUCCESS || activity.isFinishing() || activity.isDestroyed()) {
+            if (!claim(activity, request)) {
+              shot.recycle();
+              return;
+            }
+            if (result != PixelCopy.SUCCESS) {
               shot.recycle();
               change.run();
               return;
@@ -107,9 +117,13 @@ final class ThemeReveal {
           },
           MAIN);
     } catch (RuntimeException error) {
-      shot.recycle();
-      change.run();
+      if (!shot.isRecycled()) shot.recycle();
+      if (claim(activity, request)) change.run();
     }
+  }
+
+  private static boolean claim(Activity activity, ThemeChangeRequest.Request request) {
+    return request.claim(!activity.isFinishing() && !activity.isDestroyed());
   }
 
   /**
@@ -117,11 +131,13 @@ final class ThemeReveal {
    *
    * <p>窗口被沿用时直接接管旧遮罩；窗口是新建的则补一层同样的静态遮罩，保证首帧仍是旧主题。
    */
-  static boolean consume(Activity activity) {
+  static boolean consume(Activity activity, ThemeChangeRequest changes) {
     Pending taken = pending;
     pending = null;
     if (taken == null) return false;
-    if (taken.owner != activity.getClass()
+    if (activity.isFinishing()
+        || activity.isDestroyed()
+        || taken.owner != activity.getClass()
         || !ThemeMotion.captureFresh(taken.capturedAt, SystemClock.uptimeMillis())
         || !UiMotion.animationsEnabled(activity)) {
       taken.holding.remove();
@@ -138,7 +154,7 @@ final class ThemeReveal {
       // 沿用窗口：保持在最上层，盖住新内容。
       cover.bringToFront();
     }
-    cover.startAfterFirstFrame();
+    cover.startAfterFirstFrame(activity, changes);
     return true;
   }
 
@@ -164,7 +180,12 @@ final class ThemeReveal {
     private final Path shape = new Path();
     private final boolean rtl;
     private float progress;
-    private boolean ownsShot = true, started;
+    private boolean ownsShot = true, started, removed;
+    private ThemeChangeRequest.Reveal reveal;
+    private ViewTreeObserver firstFrameObserver;
+    private ViewTreeObserver.OnPreDrawListener firstFrame;
+    private Runnable postedStart;
+    private ValueAnimator animator;
 
     Cover(Context context, Bitmap shot, float x, float y, String style) {
       super(context);
@@ -183,25 +204,44 @@ final class ThemeReveal {
     }
 
     /** 新页面首帧完成后再起动画：首帧最重，过早开始会被吞掉前几帧。 */
-    void startAfterFirstFrame() {
-      ViewTreeObserver observer = getViewTreeObserver();
-      observer.addOnPreDrawListener(
-          new ViewTreeObserver.OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-              if (getViewTreeObserver().isAlive())
-                getViewTreeObserver().removeOnPreDrawListener(this);
-              postOnAnimation(Cover.this::start);
-              return true;
-            }
-          });
+    void startAfterFirstFrame(Activity owner, ThemeChangeRequest changes) {
+      reveal = changes.ownReveal(this::remove);
+      postedStart =
+          () -> {
+            if (removed) return;
+            if (!reveal.start(
+                !owner.isFinishing()
+                    && !owner.isDestroyed()
+                    && isAttachedToWindow()
+                    && !shot.isRecycled())) return;
+            start();
+          };
+      firstFrameObserver = getViewTreeObserver();
+      firstFrame =
+          () -> {
+            clearFirstFrame();
+            if (!removed) postOnAnimation(postedStart);
+            return true;
+          };
+      firstFrameObserver.addOnPreDrawListener(firstFrame);
       invalidate();
     }
 
+    private void clearFirstFrame() {
+      if (firstFrame == null) return;
+      if (firstFrameObserver.isAlive()) firstFrameObserver.removeOnPreDrawListener(firstFrame);
+      // 附着时 observer 可能已合并到窗口树；也从当前活树撤回同一监听器。
+      ViewTreeObserver current = getViewTreeObserver();
+      if (current != firstFrameObserver && current.isAlive())
+        current.removeOnPreDrawListener(firstFrame);
+      firstFrame = null;
+      firstFrameObserver = null;
+    }
+
     private void start() {
-      if (started || !isAttachedToWindow() || shot.isRecycled()) return;
+      if (removed || started) return;
       started = true;
-      ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+      animator = ValueAnimator.ofFloat(0f, 1f);
       animator.setDuration(ThemeMotion.durationMs(style));
       // 缓动在 ThemeMotion 里统一做（ease-out、单调不回缩）。
       animator.setInterpolator(new LinearInterpolator());
@@ -233,6 +273,18 @@ final class ThemeReveal {
     }
 
     void remove() {
+      if (removed) return;
+      removed = true;
+      clearFirstFrame();
+      if (postedStart != null) removeCallbacks(postedStart);
+      postedStart = null;
+      if (animator != null) {
+        animator.removeAllUpdateListeners();
+        animator.removeAllListeners();
+        animator.cancel();
+        animator = null;
+      }
+      if (reveal != null) reveal.close();
       ViewGroup parent = (ViewGroup) getParent();
       if (parent != null) parent.removeView(this);
       if (ownsShot && !shot.isRecycled()) shot.recycle();
@@ -241,8 +293,8 @@ final class ThemeReveal {
     @Override
     protected void onDetachedFromWindow() {
       super.onDetachedFromWindow();
-      // 旧窗口销毁或动画中途离开：回收自己持有的截图（已转交的除外）。
-      if (ownsShot && started && !shot.isRecycled()) shot.recycle();
+      // 仅已领取的遮罩在 detach 时终止；尚待跨窗口交接的 holding 仍由 Pending 管理。
+      if (reveal != null) reveal.close();
     }
 
     @Override

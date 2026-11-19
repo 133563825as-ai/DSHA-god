@@ -84,6 +84,8 @@ Secrets：未配置时使用一次性证书（只能全新安装，不能覆盖�
 
 ## 4. 工作流节点
 
+本节描述来源 Mod 的 `release-production.yml`，不是本线 Rebirth 的运行授权。本线 [rebirth-candidate.yml](../.github/workflows/rebirth-candidate.yml) 只允许精确绑定同步分支/SHA：bind → inputs → validation，另行 identity-matrix；同 run 全部成功后才 build-unsigned，Rust显式off。没有sign/publish/私钥Secrets；后续离线签同一原件需单独授权。当前固定4639…8479 / rebirth-test，不能照抄来源仓库另证书；本次未dispatch或验证新版CI。
+
 工作流拆为节点（结构与耗时依据见 [CI 节点图](ci-nodes.md)）；构建与门禁节点都 checkout `expected_sha`，publish 与 dry-run-summary 只下载同一 run 的 artifact：
 
 1. **bind**：`expected_sha == GITHUB_SHA`、tag 格式与日历时间、固定输入锁（`ci/sunset-inputs.lock.json`）解析、
@@ -91,20 +93,21 @@ Secrets：未配置时使用一次性证书（只能全新安装，不能覆盖�
 2. **并行门禁**（都依赖 bind）：
    - **contracts**：固定输入/描述符/第三方声明/内置插件/凭据路径/测试清单/源码整洁/UI i18n/changelog/文档链接。
    - **java-format**：`tools/format-java-tree.py --check`。
+   - **kotlin-format**：`tools/format-kotlin-tree.py --check`（固定 ktfmt 0.64，ADR-0004 决定一）。
    - **host-regression**：设备桥、shell 策略、虚拟屏 anchor、插件事务、发布与 CI 脚本、宿主测试清单等子集。
    - **inputs**：按锁 URL + SHA-256 还原 12 项、按 npm lock 重建受管 DSH 运行时（复用按
      `tools/dsh-runtime/package-lock.json` 哈希键控的 npm 缓存）并重算描述符，打包为同 run 交接。
 3. **unit** 与 **lint**（依赖 inputs，二者并行）：
    完整单测 `-Pdsha.sunsetTest=true -Pdsha.sourceOnlyTests=false`，要求 0 failure / 0 error / 0 skipped，
    且七个外部夹具用例各执行一次并通过；`:app:lintStandardRelease`。
-4. **build-unsigned**（只依赖 bind + inputs，与 unit / lint 并行）：无签名 Secrets，允许 Gradle 依赖缓存；
-   `:app:assembleStandardRelease -Pdsha.identity=mod -Pdsha.unsignedPackage=true` 产出未签名正式 APK。
+4. **build-unsigned**（来源 Mod，依赖 bind + inputs + rust-native，与 unit / lint 并行）：无签名 Secrets，允许 Gradle 依赖缓存；
+   `:app:assembleStandardRelease -Pdsha.identity=mod -Pdsha.unsignedPackage=true` 配合 `dsha.rust.mode` 产出未签名正式 APK。prebuilt 为来源发布默认，下载同 run Rust artifact/receipt，并以 `-Pdsha.rust.artifactDir` 装配；`check-rust-native-apk.py` 核实际成员/摘要及 commit/run/attempt/repository，off 模式不带 `.so`。历史 R1“不接Rust进APK”不再是该工作流的当前状态。
    未签名阶段先核验清单（[`tools/sign-release-apks.py`](../tools/sign-release-apks.py) `--check-only`：
    包名、versionCode/versionName、minSdk 30、arm64、非 debuggable、非测试身份，且 `apksigner verify` 必须失败）
    与受管资产（[`tools/verify-apk-managed-assets.py`](../tools/verify-apk-managed-assets.py)），再用
    `unsigned-receipt.json` 把 APK、`output-metadata.json` 与受管资产回执绑定到本 run 与 commit，
    以 1 天保留的 artifact 交给签名节点。签名只允许新增 `META-INF/`，因此资产门禁在未签名阶段运行不会降低严格度。
-5. **test-packages-unsigned**（`test_packages != none`，只依赖 bind + inputs）：复用共享节点
+5. **test-packages-unsigned**（`test_packages != none`，依赖 bind + inputs + rust-native，按模式传入同run Rust artifact）：复用共享节点
    [`_node-test-packages.yml`](../.github/workflows/_node-test-packages.yml) 的 `unsigned_only` 模式，按
    `debug+dev` / `debug` matrix 构建 `:app:assembleStandardDebug -Pdsha.debugPackage=true -Pdsha.unsignedPackage=true`（debug）与
    `:app:assembleStandardRelease -Pdsha.devPackage=true -Pdsha.unsignedPackage=true`（dev），核验身份、

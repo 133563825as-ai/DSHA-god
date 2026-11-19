@@ -96,13 +96,22 @@ final class RuntimeExecution {
   }
 
   void prepareTools() throws IOException {
-    RuntimeTools.prepare(context, rootfs);
+    prepareTools(null);
+  }
+
+  /** 启动观测版：准备命中/失效与固定受管文件数进入调用方诊断，不改变准备本身。 */
+  void prepareTools(java.util.function.Consumer<String> output) throws IOException {
+    RuntimeTools.prepare(context, rootfs, output);
   }
 
   void ensurePatches() {
+    ensurePatches(null);
+  }
+
+  void ensurePatches(java.util.function.Consumer<String> output) {
     if (!RootfsReadiness.ready(rootfs)) return;
     try {
-      prepareTools();
+      prepareTools(output);
     } catch (IOException error) {
       String detail = UiText.format("运行工具准备失败：%s", SensitiveData.redact(String.valueOf(error)));
       Log.e("DSHA", detail, error);
@@ -170,12 +179,22 @@ final class RuntimeExecution {
   }
 
   Process exec(String command, Map<String, String> environment) throws IOException {
+    return exec(command, environment, null);
+  }
+
+  Process exec(
+      String command, Map<String, String> environment, ProotBootstrap.LaunchCheck beforeStart)
+      throws IOException {
     try (RuntimeHostPorts.Scope ignored = ports.open()) {
       requireReady();
       ContainerRuntime runtime = runtime();
       boolean links = hardlinks();
       prepareTools();
-      return start(command, launch(runtime).hardlinks(links).environment(environment).build());
+      return launcher.start(
+          command,
+          launch(runtime).hardlinks(links).environment(environment).build(),
+          null,
+          beforeStart);
     }
   }
 

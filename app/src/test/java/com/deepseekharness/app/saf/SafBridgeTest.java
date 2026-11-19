@@ -111,6 +111,10 @@ public final class SafBridgeTest {
     SafTestOs.reset();
     SafLocalFiles.setDirectoryListerForTests(fd -> new String[0]);
     app.getSharedPreferences("saf_grants", Context.MODE_PRIVATE).edit().clear().commit();
+    app.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE)
+        .edit()
+        .clear()
+        .commit();
     tree = Uri.parse(TREE);
     rootfs = Files.createTempDirectory("dsha-saf-bridge-").toFile();
     Files.createDirectories(new File(rootfs, "root").toPath());
@@ -150,15 +154,16 @@ public final class SafBridgeTest {
   private String register(boolean writablePref, int flags) {
     ContentResolver resolver = app.getContentResolver();
     resolver.takePersistableUriPermission(tree, flags);
-    Set<String> saved = new HashSet<>();
-    saved.add(tree.toString());
-    app.getSharedPreferences("saf_grants", Context.MODE_PRIVATE)
-        .edit()
-        .putStringSet("uris", saved)
-        .putBoolean("writable:" + tree, writablePref)
-        .putString("acquired:" + tree, "rw")
-        .putString(SafGrants.KEY_LABEL + tree, "Folder")
-        .commit();
+    SafLedgerStore store =
+        new SafLedgerStore(
+            app.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE));
+    SafGrantLedger ledger = store.load();
+    long now = System.currentTimeMillis();
+    SafGrantLedger begun =
+        ledger.beginTake(tree.toString(), "test", "Folder", flags, flags, now).ledger;
+    SafGrantLedger committed =
+        begun.commitTake(tree.toString(), flags, flags, writablePref, now).ledger;
+    assertTrue(store.save(committed));
     return SafGrants.id(tree);
   }
 
@@ -275,6 +280,52 @@ public final class SafBridgeTest {
   }
 
   @Test
+  public void revokingGrantInvalidatesOldIdAndPreviouslyResolvedTree() throws Exception {
+    String id =
+        register(
+            true, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    assertNotNull("撤销前旧 id 可用", bridge.safTree("/app/saf/ls?tree=" + id + "&path=", false));
+
+    SafGrants.forget(app, tree);
+
+    SafTree.Failure revoked =
+        assertThrows(
+            SafTree.Failure.class,
+            () -> bridge.safTree("/app/saf/ls?tree=" + id + "&path=", false));
+    assertEquals("NO_GRANT", revoked.code);
+    String json = (String) invoke(bridge.trees, bridge.service);
+    assertFalse("撤销后旧 id 不得再出现在 trees 列表里", json.contains(id));
+  }
+
+  @Test
+  public void legacyRegistrationIsMigratedForBridgeLookupsAndLegacyKeysStayReadOnly()
+      throws Exception {
+    app.getContentResolver()
+        .takePersistableUriPermission(
+            tree, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    Set<String> saved = new HashSet<>();
+    saved.add(tree.toString());
+    app.getSharedPreferences("saf_grants", Context.MODE_PRIVATE)
+        .edit()
+        .putStringSet("uris", saved)
+        .putBoolean("writable:" + tree, true)
+        .putString("acquired:" + tree, "rw")
+        .putString(SafGrants.KEY_LABEL + tree, "LegacyFolder")
+        .commit();
+    String id = SafGrants.id(tree);
+
+    assertNotNull(bridge.safTree("/app/saf/ls?tree=" + id + "&path=", false));
+    String json = (String) invoke(bridge.trees, bridge.service);
+    assertTrue(json, json.contains(id));
+    assertTrue(json, json.contains("LegacyFolder"));
+    assertTrue(
+        "旧命名空间保持只读兼容",
+        app.getSharedPreferences("saf_grants", Context.MODE_PRIVATE)
+            .getStringSet("uris", new HashSet<>())
+            .contains(tree.toString()));
+  }
+
+  @Test
   public void pushAndPullRequireAbsoluteContainerPaths() {
     String id =
         register(
@@ -377,6 +428,61 @@ public final class SafBridgeTest {
                 bridge.service,
                 req("/app/saf/push?tree=" + id + "&path=new.txt&src=/root/missing.txt"));
     assertTrue(json, json.startsWith("ERROR:"));
+  }
+
+  @Test
+  public void exportAndReadfileRejectCredentialPathsBeforeOpeningAnyFile() throws Exception {
+    for (String source :
+        new String[] {
+          "/root/.dsh/.bridge_token", "/root/.ssh/id_rsa", "/root/.android/adbkey",
+          "/root/project/.credentials.yaml", "/root/work/.env", "../.dsh/.bridge_token"
+        }) {
+      String encoded = java.net.URLEncoder.encode(source, StandardCharsets.UTF_8);
+      String exported =
+          (String)
+              invoke(
+                  HttpShellBridge.access("appExport", String.class),
+                  bridge.service,
+                  "/app/export?path=" + encoded);
+      String read =
+          (String)
+              invoke(
+                  HttpShellBridge.access("appReadFile", String.class),
+                  bridge.service,
+                  "/app/readfile?path=" + encoded);
+      assertTrue(source + ": " + exported, exported.startsWith("FORBIDDEN"));
+      assertTrue(source + ": " + read, read.startsWith("FORBIDDEN"));
+    }
+    assertEquals(0, provider.queries);
+    assertNull(provider.lastCreatedId);
+  }
+
+  @Test
+  public void pushAndPullRejectCredentialSymlinksWithoutChangingDestination() throws Exception {
+    String id =
+        register(
+            true, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    File directory = new File(rootfs, "root/.dsh");
+    Files.createDirectories(directory.toPath());
+    File secret = new File(directory, ".bridge_token");
+    Files.writeString(secret.toPath(), "fixture-secret");
+    Files.createSymbolicLink(new File(rootfs, "root/report.md").toPath(), secret.toPath());
+    String pushed =
+        (String)
+            invoke(
+                bridge.push,
+                bridge.service,
+                req("/app/saf/push?tree=" + id + "&path=export.txt&src=/root/report.md"));
+    String pulled =
+        (String)
+            invoke(
+                bridge.pull,
+                bridge.service,
+                req("/app/saf/pull?tree=" + id + "&path=file.txt&dest=/root/report.md"));
+    assertTrue(pushed, pushed.contains("FORBIDDEN"));
+    assertTrue(pulled, pulled.contains("FORBIDDEN"));
+    assertEquals("fixture-secret", Files.readString(secret.toPath()));
+    assertNull(provider.lastCreatedId);
   }
 
   private Object req(String path) {

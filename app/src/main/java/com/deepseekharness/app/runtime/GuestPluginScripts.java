@@ -50,10 +50,22 @@ final class GuestPluginScripts {
 
     void assets() throws IOException;
 
+    /** 启动观测版；默认按原入口执行，生产实现把准备命中/失效带进启动诊断。 */
+    default void assets(Consumer<String> output) throws IOException {
+      assets();
+    }
+
     boolean rootPresent();
 
+    /** 缓存探测结果；ABSENT/NEW_INPUT/UNAVAILABLE 都必须交给真实 guest 决定。 */
     default Rc1MigrationCache.Reuse reusableMigration() throws IOException {
       return Rc1MigrationCache.Reuse.absent();
+    }
+
+    /** 缓存命中也必须把本次 history-only 交接落盘并读回；默认实现拒绝放行。 */
+    default void bindMigrationHistory(Rc1MigrationCache.Reuse reuse, String startupId)
+        throws IOException {
+      throw new IOException("MIGRATION_HISTORY_HANDOFF_UNAVAILABLE");
     }
 
     /** Query-only readiness; must not write, install, repair, migrate or register anything. */
@@ -159,6 +171,10 @@ final class GuestPluginScripts {
             RuntimeTools.prepare(context, root);
           }
 
+          public void assets(Consumer<String> output) throws IOException {
+            RuntimeTools.prepare(context, root, output);
+          }
+
           public Rc1MigrationCache.Reuse reusableMigration() throws IOException {
             var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
             var host =
@@ -169,6 +185,18 @@ final class GuestPluginScripts {
             Rc1MigrationCache.Reuse reuse = Rc1MigrationCache.reuse(fs, host.files, current);
             host.verify(fs);
             return reuse;
+          }
+
+          public void bindMigrationHistory(Rc1MigrationCache.Reuse reuse, String startupId)
+              throws IOException {
+            var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
+            var host =
+                com.deepseekharness.app.util.ColdInstallPackages.bindPrivateFiles(
+                    fs, new File(context.getApplicationInfo().dataDir), context.getFilesDir());
+            File current =
+                new com.deepseekharness.app.backup.UserDataLayout(fs, host.files).current();
+            Rc1MigrationCache.bindHistory(fs, host.files, current, reuse, startupId);
+            host.verify(fs);
           }
 
           public boolean queryReady() {
@@ -199,11 +227,16 @@ final class GuestPluginScripts {
 
   /** One preparation for the two ordered startup helpers, without caching mutable root proof. */
   Startup startup() throws IOException, InterruptedException {
+    return startup(null);
+  }
+
+  /** 启动观测版：只把共享准备与 helper 调用诊断透传，不缓存任何退出/写入证明。 */
+  Startup startup(Consumer<String> output) throws IOException, InterruptedException {
     GuestScriptQueue.Lease lease =
         SCRIPT_QUEUE.enter(
             new GuestScriptBudget(35_000, () -> false, "PLUGIN_STARTUP_QUEUE"), true);
     try {
-      preparePlugins(null);
+      preparePlugins(null, output);
       return new Startup(lease);
     } catch (IOException | InterruptedException | RuntimeException | Error failure) {
       lease.close();
@@ -288,12 +321,19 @@ final class GuestPluginScripts {
 
   BoundedProcessRunner.Result migration(String command, String startupId)
       throws IOException, InterruptedException {
-    if (!"prepare".equals(command) && !"finalize".equals(command))
+    if (!"prepare".equals(command)
+        && !"finalize".equals(command)
+        && !"verify-existing".equals(command))
       throw new IllegalArgumentException("RC1_MIGRATION_COMMAND");
     if (startupId == null || startupId.isEmpty())
       throw new IllegalArgumentException("RC1_MIGRATION_STARTUP_ID");
     if (!preparation.rootPresent())
       throw new GuestPreparationFailure(GuestPreparationFailure.Code.ENV_NOT_READY);
+    if ("verify-existing".equals(command)) {
+      // 审计不创建、消费或更新启动票据；脚本只读核验保留副本。
+      preparation.assets();
+      return runner.run(migrationCommand(command, startupId), 600_000);
+    }
     boolean finalize = "finalize".equals(command);
     Ticket ticket = null;
     synchronized (preparedReuse) {
@@ -320,8 +360,25 @@ final class GuestPluginScripts {
     } catch (IOException | RuntimeException unavailable) {
       reuse = Rc1MigrationCache.Reuse.unavailable("MIGRATION_REUSE_UNAVAILABLE");
     }
-    // 历史cache不能跳过prepare：Python须先把持久current降为本startup的history-only，
-    // 否则上次write-allowed残留会让CJS在普通重启重写设置账本。
+    // 缓存命中仍须持久降权并读回，不能沿用上次 write-allowed 的 current。
+    if (!finalize && reuse.status == Rc1MigrationCache.Reuse.Status.REUSABLE_HISTORY) {
+      Rc1MigrationCache.Reuse after;
+      try {
+        preparation.bindMigrationHistory(reuse, startupId);
+        after = preparation.reusableMigration();
+      } catch (IOException | RuntimeException unavailable) {
+        return unknown(
+            command, startupId, "MIGRATION_HISTORY_HANDOFF_UNVERIFIED", reuse.generation);
+      }
+      if (after == null || !new Ticket(reuse).matches(after, startupId))
+        return unknown(command, startupId, "PREPARE_EVIDENCE_UNAVAILABLE", reuse.generation);
+      synchronized (preparedReuse) {
+        preparedReuse.put(startupId, new Ticket(after));
+        trim(preparedReuse);
+      }
+      return BoundedProcessRunner.localCompletion(
+          Rc1MigrationCache.output(after, false, startupId));
+    }
     if (finalize && ticket.cached) {
       var result =
           ticket.matches(reuse, startupId)
@@ -357,26 +414,8 @@ final class GuestPluginScripts {
         if (com.deepseekharness.app.util.Rc1MigrationResult.boundTo(receipt, startupId)
             && com.deepseekharness.app.util.Rc1MigrationResult.allowsStart(receipt)
             && receipt.get("generation") instanceof String) {
-          boolean cached = reuse.status == Rc1MigrationCache.Reuse.Status.REUSABLE_HISTORY;
-          if (cached
-              && (!reuse.generation.equals(receipt.get("generation"))
-                  || !com.deepseekharness.app.util.Rc1MigrationResult.isHistorical(receipt)))
-            return unknown(command, startupId, "PREPARE_RESULT_BINDING", reuse.generation);
-          if (cached) {
-            Rc1MigrationCache.Reuse after;
-            try {
-              after = preparation.reusableMigration();
-            } catch (IOException | RuntimeException unavailable) {
-              return unknown(command, startupId, "PREPARE_EVIDENCE_UNAVAILABLE", reuse.generation);
-            }
-            if (after == null || !new Ticket(reuse).matches(after, startupId))
-              return unknown(command, startupId, "PREPARE_EVIDENCE_UNAVAILABLE", reuse.generation);
-            reuse = after;
-          }
           synchronized (preparedReuse) {
-            preparedReuse.put(
-                startupId,
-                cached ? new Ticket(reuse) : new Ticket((String) receipt.get("generation")));
+            preparedReuse.put(startupId, new Ticket((String) receipt.get("generation")));
             trim(preparedReuse);
           }
         }
@@ -421,7 +460,9 @@ final class GuestPluginScripts {
   }
 
   static String migrationCommand(String command, String startupId, String expectedGeneration) {
-    if (!"prepare".equals(command) && !"finalize".equals(command))
+    if (!"prepare".equals(command)
+        && !"finalize".equals(command)
+        && !"verify-existing".equals(command))
       throw new IllegalArgumentException("RC1_MIGRATION_COMMAND");
     if ("finalize".equals(command) && !com.deepseekharness.app.util.Ids.uuid(expectedGeneration))
       throw new IllegalArgumentException("RC1_MIGRATION_EXPECTED_GENERATION");
@@ -535,6 +576,11 @@ final class GuestPluginScripts {
   }
 
   private void preparePlugins(GuestScriptBudget budget) throws IOException, InterruptedException {
+    preparePlugins(budget, null);
+  }
+
+  private void preparePlugins(GuestScriptBudget budget, Consumer<String> output)
+      throws IOException, InterruptedException {
     if (budget != null) budget.remainingMillis();
     if (!preparation.environmentReady())
       throw new GuestPreparationFailure(GuestPreparationFailure.Code.ENV_NOT_READY);
@@ -547,7 +593,7 @@ final class GuestPluginScripts {
     // pnpm 失败不阻断列表、开关和删除；依赖安装单独报告其失败。
     preparation.pnpm();
     if (budget != null) budget.remainingMillis();
-    preparation.assets();
+    preparation.assets(output);
     if (budget != null) budget.remainingMillis();
   }
 

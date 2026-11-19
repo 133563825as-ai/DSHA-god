@@ -4,9 +4,12 @@ import static org.junit.Assert.*;
 
 import android.app.Application;
 import android.content.ContentProvider;
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.UriPermission;
 import android.content.pm.ProviderInfo;
 import android.database.Cursor;
@@ -18,6 +21,7 @@ import android.os.OperationCanceledException;
 import android.provider.DocumentsContract;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -63,7 +67,7 @@ public final class SafGrantsTest {
   public static final class LabelProvider extends ContentProvider {
     int queries;
     String label = "shared-folder";
-    CountDownLatch hung;
+    volatile CountDownLatch hung;
     boolean blockUntilCanceled;
     boolean ignoreCancel;
 
@@ -141,6 +145,11 @@ public final class SafGrantsTest {
   public void setUp() {
     context = RuntimeEnvironment.getApplication();
     prefs().edit().clear().commit();
+    context
+        .getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE)
+        .edit()
+        .clear()
+        .commit();
     labelProvider = new LabelProvider();
     ProviderInfo info = new ProviderInfo();
     info.authority = LABEL_AUTH;
@@ -254,8 +263,11 @@ public final class SafGrantsTest {
     SafGrants.cleanupPending(context);
 
     assertEquals("清理只还本次新拿到的写位，原有读授权保留", SafGrants.READ, flags(shared));
-    assertTrue(prefs().getStringSet(SafGrants.KEY_PENDING, new HashSet<>()).isEmpty());
-    assertFalse(prefs().contains(SafGrants.KEY_PENDING_BEFORE + shared));
+    assertTrue(SafGrants.list(context).isEmpty());
+    // 旧命名空间只读兼容：迁移后不再改写它（降级版仍能读到自己那份记录）。
+    assertTrue(
+        prefs().getStringSet(SafGrants.KEY_PENDING, new HashSet<>()).contains(shared.toString()));
+    assertTrue(prefs().contains(SafGrants.KEY_PENDING_BEFORE + shared));
   }
 
   @Test
@@ -326,7 +338,12 @@ public final class SafGrantsTest {
   }
 
   private String cachedLabel(Uri tree) {
-    return prefs().getString(SafGrants.KEY_LABEL + tree, "");
+    SafGrantRecord record =
+        new SafLedgerStore(
+                context.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE))
+            .load()
+            .findByUri(tree.toString());
+    return record == null ? "" : record.label();
   }
 
   @Test
@@ -343,7 +360,687 @@ public final class SafGrantsTest {
 
     SafGrants.cleanupPending(context);
 
-    assertTrue(prefs().getStringSet(SafGrants.KEY_PENDING, new HashSet<>()).isEmpty());
+    assertTrue(SafGrants.list(context).isEmpty());
     assertEquals(0, flags(never));
+    // 旧命名空间保持原样（只读兼容）；账本已初始化，不会再次迁移出可用授权。
+    assertTrue(
+        prefs().getStringSet(SafGrants.KEY_PENDING, new HashSet<>()).contains(never.toString()));
+  }
+
+  @Test
+  public void legacyGrantsAreMigratedOnceAndLegacyKeysStayReadOnly() {
+    Uri shared = tree("migrated");
+    take(shared, true, true);
+    Set<String> saved = new HashSet<>();
+    saved.add(shared.toString());
+    prefs()
+        .edit()
+        .putStringSet("uris", saved)
+        .putString(SafGrants.KEY_ACQUIRED + shared, "rw")
+        .putBoolean("writable:" + shared, false)
+        .putString(SafGrants.KEY_LABEL + shared, "旧目录")
+        .commit();
+
+    java.util.List<SafGrants.Grant> grants = SafGrants.list(context);
+    assertEquals(1, grants.size());
+    assertEquals("旧目录", grants.get(0).label);
+    assertFalse("用户写入偏好应随迁移保留", grants.get(0).writable);
+    assertTrue(
+        "旧命名空间不得被迁移改写", prefs().getStringSet("uris", new HashSet<>()).contains(shared.toString()));
+
+    SafGrants.forget(context, shared);
+
+    assertEquals(0, flags(shared));
+    assertTrue(SafGrants.list(context).isEmpty());
+    assertTrue(
+        "初始化标记存在时旧记录不得被再次迁移回来",
+        prefs().getStringSet("uris", new HashSet<>()).contains(shared.toString()));
+  }
+
+  @Test
+  public void ledgerStoreWriteFailureFallsBackToLegacyAndKeepsGrants() {
+    Uri shared = tree("fallback");
+    take(shared, true, true);
+    Set<String> saved = new HashSet<>();
+    saved.add(shared.toString());
+    prefs()
+        .edit()
+        .putStringSet("uris", saved)
+        .putString(SafGrants.KEY_ACQUIRED + shared, "rw")
+        .putBoolean("writable:" + shared, true)
+        .putString(SafGrants.KEY_LABEL + shared, "回退目录")
+        .commit();
+    Context failing = new FailingLedgerContext(context);
+
+    List<SafGrants.Grant> grants = SafGrants.list(failing);
+    assertEquals("账本写失败时必须回退旧路径，授权不丢", 1, grants.size());
+    assertFalse(
+        "写失败时不得留下半份账本初始化",
+        new SafLedgerStore(
+                context.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE))
+            .initialized());
+
+    Uri another = tree("fallback-add");
+    assertTrue("回退旧路径仍能新增授权", SafGrants.add(failing, another, true).added);
+    assertTrue(
+        "回退新增必须写进旧命名空间",
+        prefs().getStringSet("uris", new HashSet<>()).contains(another.toString()));
+  }
+
+  @Test
+  public void systemRevokedForgetRemovesLedgerRecordAndAllowsReAdd() {
+    Uri tree = tree("sysrevoked");
+    seedActive(tree, "应用", "目录", SafGrantRecord.READ | SafGrantRecord.WRITE);
+    ControlledContext revoked = new ControlledContext(context);
+    revoked.resolver.revoked = true;
+
+    SafGrants.forget(revoked, tree);
+
+    assertNull("系统撤权后账本记录必须删除，不能永久 RELEASING", ledgerStore().load().findByUri(tree.toString()));
+    assertTrue(SafGrants.list(revoked).isEmpty());
+
+    revoked.resolver.revoked = false;
+    assertTrue("同一 URI 必须可以重新添加", SafGrants.add(revoked, tree, true).added);
+    assertNotNull(ledgerStore().load().findByUri(tree.toString()));
+  }
+
+  @Test
+  public void staleReleasingRecordWithNoHeldBitsIsFinishedByCleanup() {
+    Uri tree = tree("stale-release");
+    seedActive(tree, "应用", "目录", SafGrantRecord.READ | SafGrantRecord.WRITE);
+    SafLedgerStore store = ledgerStore();
+    assertTrue(store.save(store.load().beginRelease(tree.toString()).ledger));
+    ControlledContext revoked = new ControlledContext(context);
+    revoked.resolver.revoked = true;
+
+    SafGrants.cleanupPending(revoked);
+
+    assertNull("系统里已无位时 RELEASING 必须完成，不得反复 release 卡死", store.load().findByUri(tree.toString()));
+  }
+
+  @Test
+  public void releaseSucceededButSaveFailedDoesNotStick() {
+    Uri tree = tree("release-save-fail");
+    seedActive(tree, "应用", "目录", SafGrantRecord.READ | SafGrantRecord.WRITE);
+    take(tree, true, true);
+    ToggleFailContext failing = new ToggleFailContext(context);
+
+    SafGrants.forget(failing, tree);
+    assertEquals("释放本身成功", 0, flags(tree));
+    assertNotNull("保存失败时磁盘保留可重试状态", ledgerStore().load().findByUri(tree.toString()));
+
+    failing.failCommits = false;
+    SafGrants.forget(failing, tree);
+
+    assertNull("第二次 forget 应按交集为 0 完成撤销", ledgerStore().load().findByUri(tree.toString()));
+  }
+
+  @Test
+  public void failedRetakeKeepsCachedAppAndLabel() {
+    Uri tree = tree("retake-meta");
+    seedActive(tree, "旧应用", "旧目录", SafGrantRecord.READ | SafGrantRecord.WRITE);
+    ControlledContext revoked = new ControlledContext(context);
+    revoked.resolver.revoked = true;
+
+    SafGrants.AddResult result = SafGrants.add(revoked, tree, true);
+
+    assertFalse(result.added);
+    assertEquals("NO_PERMISSION", result.failure);
+    SafGrantRecord record = ledgerStore().load().findByUri(tree.toString());
+    assertNotNull(record);
+    assertEquals(SafGrantRecord.State.ACTIVE, record.state());
+    assertEquals("旧应用", record.app());
+    assertEquals("旧目录", record.label());
+  }
+
+  @Test
+  public void fallbackListDoesNotHoldLockDuringProviderQuery() throws Exception {
+    Uri tree = labelTree("slow-fallback");
+    Set<String> saved = new HashSet<>();
+    saved.add(tree.toString());
+    prefs().edit().putStringSet("uris", saved).commit();
+    FailingLedgerContext failing = new FailingLedgerContext(context);
+    SafGrants.labelDeadlineMs = 1_000;
+    labelProvider.blockUntilCanceled = true;
+    Thread slow = new Thread(() -> SafGrants.list(failing), "slow-list");
+    slow.start();
+    long elapsedMs;
+    try {
+      long waitUntil = System.currentTimeMillis() + 2_000;
+      while (labelProvider.hung == null && System.currentTimeMillis() < waitUntil) Thread.sleep(10);
+      assertNotNull("Provider 查询应已开始", labelProvider.hung);
+      long started = System.nanoTime();
+      SafGrants.listLight(failing);
+      elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+    } finally {
+      labelProvider.blockUntilCanceled = false;
+      slow.join(5_000);
+    }
+    assertTrue("回退路径不得在 LOCK 内查询 Provider（实测 " + elapsedMs + "ms）", elapsedMs < 600);
+  }
+
+  @Test
+  public void addOnReleasingWithUnreadablePersistedStateReturnsTypedFailure() {
+    Uri tree = tree("releasing-unreadable");
+    seedActive(tree, "应用", "目录", SafGrantRecord.READ | SafGrantRecord.WRITE);
+    SafLedgerStore store = ledgerStore();
+    assertTrue(store.save(store.load().beginRelease(tree.toString()).ledger));
+    ControlledContext unreadable = new ControlledContext(context);
+    unreadable.resolver.throwOnPersisted = true;
+
+    SafGrants.AddResult result = SafGrants.add(unreadable, tree, true);
+
+    assertFalse(result.added);
+    assertEquals("系统券不可读必须返回类型化失败，不能 NPE", "PERMISSION_STATE_UNAVAILABLE", result.failure);
+    assertEquals(SafGrantRecord.State.RELEASING, store.load().findByUri(tree.toString()).state());
+  }
+
+  @Test
+  public void forgetOnPendingWithUnreadableStateKeepsPendingForCleanup() {
+    Uri tree = tree("pending-unreadable");
+    seedPendingRetake(
+        tree, SafGrantRecord.READ, SafGrantRecord.READ, SafGrantRecord.READ | SafGrantRecord.WRITE);
+    ControlledContext unreadable = new ControlledContext(context);
+    unreadable.resolver.throwOnPersisted = true;
+
+    SafGrants.forget(unreadable, tree);
+
+    SafGrantRecord pending = ledgerStore().load().findByUri(tree.toString());
+    assertNotNull(pending);
+    assertEquals("状态不可读时不得丢 before/intent", SafGrantRecord.State.PENDING, pending.state());
+
+    unreadable.resolver.throwOnPersisted = false;
+    SafGrants.cleanupPending(unreadable);
+    SafGrantRecord restored = ledgerStore().load().findByUri(tree.toString());
+    assertNotNull(restored);
+    assertEquals(SafGrantRecord.State.ACTIVE, restored.state());
+  }
+
+  @Test
+  public void forgetOnPendingWithReleaseFailureKeepsPendingForCleanup() {
+    Uri tree = tree("pending-release-fail");
+    seedPendingRetake(tree, 0, 0, SafGrantRecord.READ);
+    take(tree, true, false);
+    ControlledContext failing = new ControlledContext(context);
+    failing.resolver.failRelease = true;
+
+    SafGrants.cleanupPending(failing);
+    SafGrants.forget(failing, tree);
+
+    SafGrantRecord pending = ledgerStore().load().findByUri(tree.toString());
+    assertNotNull(pending);
+    assertEquals(SafGrantRecord.State.PENDING, pending.state());
+
+    failing.resolver.failRelease = false;
+    SafGrants.cleanupPending(failing);
+    assertEquals(0, flags(tree));
+    SafGrants.forget(failing, tree);
+    assertNull(ledgerStore().load().findByUri(tree.toString()));
+  }
+
+  @Test
+  public void retakeAfterPendingReleaseFailureIsRejectedAndForgetLeavesNoGrant() {
+    Uri tree = tree("pending-retake-leak");
+    ControlledContext failing = new ControlledContext(context);
+    failing.resolver.failRelease = true;
+    SafLedgerStore store = ledgerStore();
+    // 首次 take 已落 PENDING，但 commit 未落盘；系统里的读写位属于本功能新增。
+    assertTrue(
+        store.save(
+            store
+                .load()
+                .beginTake(
+                    tree.toString(),
+                    "应用",
+                    "目录",
+                    0,
+                    SafGrantRecord.READ | SafGrantRecord.WRITE,
+                    System.currentTimeMillis())
+                .ledger));
+    take(tree, true, true);
+    assertEquals(SafGrantRecord.READ | SafGrantRecord.WRITE, flags(tree));
+
+    SafGrants.cleanupPending(failing);
+    assertEquals(
+        "释放失败必须保留旧 PENDING",
+        SafGrantRecord.State.PENDING,
+        store.load().findByUri(tree.toString()).state());
+
+    SafGrants.AddResult retried = SafGrants.add(failing, tree, false);
+
+    assertFalse("旧 PENDING 清理失败时不得开始新的 take", retried.added);
+    assertEquals(SafGrantLedger.PENDING_TAKE, retried.failure);
+    SafGrantRecord pending = store.load().findByUri(tree.toString());
+    assertEquals("不得把旧新增位纳入 before", 0, pending.pendingBefore());
+    assertEquals(SafGrantRecord.READ | SafGrantRecord.WRITE, pending.pendingIntent());
+
+    failing.resolver.failRelease = false;
+    SafGrants.forget(context, tree);
+
+    assertEquals("清理失败后重试不得把首次新增位遗留在系统", 0, flags(tree));
+    assertNull(store.load().findByUri(tree.toString()));
+    assertTrue(SafGrants.list(context).isEmpty());
+  }
+
+  @Test
+  public void retakeAfterPendingReleaseFailureKeepsPreviousAndOtherFeatureBits() {
+    Uri shared = tree("pending-retake-previous");
+    take(shared, true, false);
+    long now = System.currentTimeMillis();
+    SafLedgerStore store = ledgerStore();
+    assertTrue(
+        store.save(
+            store
+                .load()
+                .beginTake(shared.toString(), "应用", "目录", 0, SafGrantRecord.READ, now)
+                .ledger
+                .commitTake(shared.toString(), SafGrantRecord.READ, 0, true, now)
+                .ledger));
+
+    ControlledContext failing = new ControlledContext(context);
+    failing.resolver.failRelease = true;
+    // 旧 ACTIVE 只持有其它功能原有的读位；本次重授权新增写位，PENDING 未提交且释放失败。
+    assertTrue(
+        store.save(
+            store
+                .load()
+                .beginTake(
+                    shared.toString(),
+                    "应用",
+                    "目录",
+                    SafGrantRecord.READ,
+                    SafGrantRecord.READ | SafGrantRecord.WRITE,
+                    now)
+                .ledger));
+    take(shared, false, true);
+    assertEquals(SafGrantRecord.READ | SafGrantRecord.WRITE, flags(shared));
+
+    SafGrants.cleanupPending(failing);
+    SafGrants.AddResult retried = SafGrants.add(failing, shared, true);
+
+    assertFalse(retried.added);
+    assertEquals(SafGrantLedger.PENDING_TAKE, retried.failure);
+    SafGrantRecord pending = store.load().findByUri(shared.toString());
+    assertEquals(SafGrantRecord.READ, pending.pendingBefore());
+    assertEquals(SafGrantRecord.READ | SafGrantRecord.WRITE, pending.pendingIntent());
+    assertTrue("旧 ACTIVE previous 必须保留", pending.hasPrevious());
+
+    failing.resolver.failRelease = false;
+    SafGrants.cleanupPending(failing);
+
+    SafGrantRecord restored = store.load().findByUri(shared.toString());
+    assertNotNull("清理成功必须恢复旧 ACTIVE", restored);
+    assertEquals(SafGrantRecord.State.ACTIVE, restored.state());
+    assertEquals("其它功能原有的读授权不得被撤销", SafGrantRecord.READ, flags(shared));
+    assertEquals("只释放本功能新增的写位", 0, restored.acquired());
+
+    SafGrants.forget(context, shared);
+    assertEquals("移除时不得撤销其它功能已有的授权", SafGrantRecord.READ, flags(shared));
+    assertNull(store.load().findByUri(shared.toString()));
+  }
+
+  @Test
+  public void forgetAfterCrashPendingReleasesDeltaAndRemovesRestoredGrant() {
+    Uri tree = tree("pending-crash-forget");
+    seedActive(tree, "应用", "目录", SafGrantRecord.READ);
+    take(tree, true, false);
+    SafLedgerStore store = ledgerStore();
+    assertTrue(
+        store.save(
+            store
+                .load()
+                .beginTake(
+                    tree.toString(),
+                    "应用",
+                    "目录",
+                    SafGrantRecord.READ,
+                    SafGrantRecord.READ | SafGrantRecord.WRITE,
+                    System.currentTimeMillis())
+                .ledger));
+    take(tree, false, true);
+
+    SafGrants.forget(context, tree);
+
+    SafGrantRecord record = store.load().findByUri(tree.toString());
+    assertNull("恢复旧 ACTIVE 后仍按用户意图移除", record);
+    assertEquals(0, flags(tree));
+  }
+
+  private void seedPendingRetake(Uri tree, int oldFlags, int before, int intent) {
+    seedActive(tree, "应用", "目录", oldFlags);
+    SafLedgerStore store = ledgerStore();
+    assertTrue(
+        store.save(
+            store
+                .load()
+                .beginTake(tree.toString(), "应用", "目录", before, intent, System.currentTimeMillis())
+                .ledger));
+  }
+
+  private SafLedgerStore ledgerStore() {
+    return new SafLedgerStore(
+        context.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE));
+  }
+
+  private SafGrantRecord seedActive(Uri tree, String app, String label, int flags) {
+    SafLedgerStore store = ledgerStore();
+    long now = System.currentTimeMillis();
+    SafGrantLedger ledger = store.load();
+    SafGrantLedger begun = ledger.beginTake(tree.toString(), app, label, 0, flags, now).ledger;
+    SafGrantLedger committed = begun.commitTake(tree.toString(), flags, flags, true, now).ledger;
+    assertTrue(store.save(committed));
+    return committed.findByUri(tree.toString());
+  }
+
+  /** 可控系统券：revoked=true 时看不到任何持久授权，且 release 抛 SecurityException。 */
+  private static final class ControlledResolver extends ContentResolver {
+    private final ContentResolver real;
+    boolean revoked;
+    boolean throwOnPersisted;
+    boolean failRelease;
+
+    ControlledResolver(Context base) {
+      super(base);
+      real = base.getContentResolver();
+    }
+
+    @Override
+    public List<UriPermission> getPersistedUriPermissions() {
+      if (throwOnPersisted) throw new IllegalStateException("PERMISSION_STATE_UNAVAILABLE");
+      return revoked ? List.of() : real.getPersistedUriPermissions();
+    }
+
+    @Override
+    public void releasePersistableUriPermission(Uri uri, int modeFlags) {
+      if (failRelease) throw new SecurityException("RELEASE_FAILED");
+      if (revoked) throw new SecurityException("REVOKED");
+      real.releasePersistableUriPermission(uri, modeFlags);
+    }
+
+    @Override
+    public void takePersistableUriPermission(Uri uri, int modeFlags) {
+      real.takePersistableUriPermission(uri, modeFlags);
+    }
+  }
+
+  private static final class ControlledContext extends ContextWrapper {
+    final ControlledResolver resolver;
+
+    ControlledContext(Context base) {
+      super(base);
+      resolver = new ControlledResolver(base);
+    }
+
+    @Override
+    public ContentResolver getContentResolver() {
+      return resolver;
+    }
+  }
+
+  /** 首次 commit 失败、之后成功的账本命名空间；用于「release 成功但保存失败」。 */
+  private static final class ToggleFailContext extends ContextWrapper {
+    private final SharedPreferences realLedger;
+    volatile boolean failCommits = true;
+
+    ToggleFailContext(Context base) {
+      super(base);
+      realLedger = base.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE);
+    }
+
+    @Override
+    public SharedPreferences getSharedPreferences(String name, int mode) {
+      if (!SafLedgerStore.NAMESPACE.equals(name)) return super.getSharedPreferences(name, mode);
+      return new ToggleFailPreferences(realLedger, this);
+    }
+  }
+
+  private static final class ToggleFailPreferences implements SharedPreferences {
+    private final SharedPreferences delegate;
+    private final ToggleFailContext owner;
+
+    ToggleFailPreferences(SharedPreferences delegate, ToggleFailContext owner) {
+      this.delegate = delegate;
+      this.owner = owner;
+    }
+
+    @Override
+    public Map<String, ?> getAll() {
+      return delegate.getAll();
+    }
+
+    @Override
+    public String getString(String key, String defValue) {
+      return delegate.getString(key, defValue);
+    }
+
+    @Override
+    public Set<String> getStringSet(String key, Set<String> defValues) {
+      return delegate.getStringSet(key, defValues);
+    }
+
+    @Override
+    public int getInt(String key, int defValue) {
+      return delegate.getInt(key, defValue);
+    }
+
+    @Override
+    public long getLong(String key, long defValue) {
+      return delegate.getLong(key, defValue);
+    }
+
+    @Override
+    public float getFloat(String key, float defValue) {
+      return delegate.getFloat(key, defValue);
+    }
+
+    @Override
+    public boolean getBoolean(String key, boolean defValue) {
+      return delegate.getBoolean(key, defValue);
+    }
+
+    @Override
+    public boolean contains(String key) {
+      return delegate.contains(key);
+    }
+
+    @Override
+    public Editor edit() {
+      SharedPreferences.Editor editor = delegate.edit();
+      return new Editor() {
+        @Override
+        public Editor putString(String key, String value) {
+          editor.putString(key, value);
+          return this;
+        }
+
+        @Override
+        public Editor putStringSet(String key, Set<String> values) {
+          editor.putStringSet(key, values);
+          return this;
+        }
+
+        @Override
+        public Editor putInt(String key, int value) {
+          editor.putInt(key, value);
+          return this;
+        }
+
+        @Override
+        public Editor putLong(String key, long value) {
+          editor.putLong(key, value);
+          return this;
+        }
+
+        @Override
+        public Editor putFloat(String key, float value) {
+          editor.putFloat(key, value);
+          return this;
+        }
+
+        @Override
+        public Editor putBoolean(String key, boolean value) {
+          editor.putBoolean(key, value);
+          return this;
+        }
+
+        @Override
+        public Editor remove(String key) {
+          editor.remove(key);
+          return this;
+        }
+
+        @Override
+        public Editor clear() {
+          editor.clear();
+          return this;
+        }
+
+        @Override
+        public boolean commit() {
+          if (owner.failCommits) return false;
+          return editor.commit();
+        }
+
+        @Override
+        public void apply() {
+          if (!owner.failCommits) editor.apply();
+        }
+      };
+    }
+
+    @Override
+    public void registerOnSharedPreferenceChangeListener(
+        OnSharedPreferenceChangeListener listener) {}
+
+    @Override
+    public void unregisterOnSharedPreferenceChangeListener(
+        OnSharedPreferenceChangeListener listener) {}
+  }
+
+  /** 只让账本命名空间写失败的 Context；其它命名空间（旧 saf_grants）保持真实读写。 */
+  private static final class FailingLedgerContext extends ContextWrapper {
+    private final SharedPreferences realLedger;
+
+    FailingLedgerContext(Context base) {
+      super(base);
+      realLedger = base.getSharedPreferences(SafLedgerStore.NAMESPACE, Context.MODE_PRIVATE);
+    }
+
+    @Override
+    public SharedPreferences getSharedPreferences(String name, int mode) {
+      if (SafLedgerStore.NAMESPACE.equals(name)) return new ReadOnlyPreferences(realLedger);
+      return super.getSharedPreferences(name, mode);
+    }
+  }
+
+  private static final class ReadOnlyPreferences implements SharedPreferences {
+    private final SharedPreferences delegate;
+
+    ReadOnlyPreferences(SharedPreferences delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public Map<String, ?> getAll() {
+      return delegate.getAll();
+    }
+
+    @Override
+    public String getString(String key, String defValue) {
+      return delegate.getString(key, defValue);
+    }
+
+    @Override
+    public Set<String> getStringSet(String key, Set<String> defValues) {
+      return delegate.getStringSet(key, defValues);
+    }
+
+    @Override
+    public int getInt(String key, int defValue) {
+      return delegate.getInt(key, defValue);
+    }
+
+    @Override
+    public long getLong(String key, long defValue) {
+      return delegate.getLong(key, defValue);
+    }
+
+    @Override
+    public float getFloat(String key, float defValue) {
+      return delegate.getFloat(key, defValue);
+    }
+
+    @Override
+    public boolean getBoolean(String key, boolean defValue) {
+      return delegate.getBoolean(key, defValue);
+    }
+
+    @Override
+    public boolean contains(String key) {
+      return delegate.contains(key);
+    }
+
+    @Override
+    public Editor edit() {
+      return new FailingEditor();
+    }
+
+    @Override
+    public void registerOnSharedPreferenceChangeListener(
+        OnSharedPreferenceChangeListener listener) {}
+
+    @Override
+    public void unregisterOnSharedPreferenceChangeListener(
+        OnSharedPreferenceChangeListener listener) {}
+  }
+
+  private static final class FailingEditor implements SharedPreferences.Editor {
+    @Override
+    public SharedPreferences.Editor putString(String key, String value) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor putStringSet(String key, Set<String> values) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor putInt(String key, int value) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor putLong(String key, long value) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor putFloat(String key, float value) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor putBoolean(String key, boolean value) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor remove(String key) {
+      return this;
+    }
+
+    @Override
+    public SharedPreferences.Editor clear() {
+      return this;
+    }
+
+    @Override
+    public boolean commit() {
+      return false;
+    }
+
+    @Override
+    public void apply() {}
   }
 }

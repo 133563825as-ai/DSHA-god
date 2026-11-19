@@ -60,14 +60,19 @@ def identity(name):
     return _module("release_identity", "tools/release-identity.py").load(name, ROOT)
 
 
-def source_version(root=ROOT):
+def source_version(root=ROOT, selected=None):
     """versionCode / versionName 的源码基准；不接受 APK 自带值自证。"""
     build = (Path(root) / "app/build.gradle").read_text(encoding="utf-8")
     code = re.search(r"versionCode\s+(\d+)", build)
     name = re.search(r'versionName\s+"([^"]+)"', build)
     if not code or not name:
         raise SystemExit("SOURCE_VERSION_MISSING")
-    return {"versionCode": int(code.group(1)), "versionName": name.group(1)}
+    base = {"versionCode": int(code.group(1)), "versionName": name.group(1)}
+    if selected is None:
+        return base
+    if any(selected[key] != base[key] for key in base):
+        raise SystemExit("SOURCE_IDENTITY_VERSION_MISMATCH")
+    return _module("release_identity_version", "tools/release-identity.py").effective_version(selected)
 
 
 def parse_badging(text):
@@ -253,7 +258,7 @@ def verify_signed(apk, unsigned, selected, tools):
     certificate = require_certificate(output, selected)
     schemes = require_schemes(output, selected)
     text = badging(tools["aapt2"], apk)
-    values = check_manifest(parse_badging(text), selected, source_version())
+    values = check_manifest(parse_badging(text), selected, source_version(selected=selected))
     members = compare_payload(unsigned, apk)
     return {"signature": output, "badging": text, "values": values,
             "certificate": certificate, "schemes": schemes, "payloadMembers": members}
@@ -279,7 +284,9 @@ def main(argv=None):
                                      or "/usr/local/lib/android/sdk"))
     args = parser.parse_args(argv)
     selected = identity(args.identity)
-    expected = source_version()
+    if selected["identity"] == "rebirth" and not args.check_only:
+        raise SystemExit("REBIRTH_OFFLINE_SIGNING_ONLY: 本工具只接受 Rebirth --check-only，固定证书须在仓外离线签署")
+    expected = source_version(selected=selected)
     if args.metadata is not None:
         if metadata_version(args.metadata) != expected:
             raise SystemExit("METADATA_VERSION_MISMATCH")

@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import tarfile
@@ -20,6 +21,15 @@ ASSETS = Path(__file__).resolve().parents[1] / 'app/src/main/assets'
 
 
 class DiscoveryTest(unittest.TestCase):
+    def entry_bundle(self, text, name='test-plugin'):
+        directory = self.plugin('root/.dsh/profiles/web/node_modules', name)
+        (directory / 'cordis.patch.yml').write_text(text, encoding='utf8')
+        doc = json.loads(self.manifest.read_text())
+        doc['dependencies'][name] = '1.0.0'
+        doc['dsh']['profile']['bundles'].append(name)
+        self.manifest.write_text(json.dumps(doc))
+        return directory
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -31,6 +41,10 @@ class DiscoveryTest(unittest.TestCase):
         self.builtin = self.manager.builtin
         self.manifest = self.put('root/.dsh/profiles/web/package.json',
                                  {'dependencies': {}, 'dsh': {'profile': {'bundles': list(self.builtin.OFFICIAL_BUNDLES)}}})
+        runtime = 'usr/local/lib/node_modules/@deepseek-ai/dsh/'
+        self.put(runtime + 'package.json', {'name':'@deepseek-ai/dsh','version':'0.2.2-rc.1'})
+        self.put(runtime + 'node_modules/@deepseek-ai/dsh-app-boot/package.json', {'name':'@deepseek-ai/dsh-app-boot','version':'0.2.2-rc.1','main':'lib/index.js'})
+        self.put(runtime + 'node_modules/@deepseek-ai/dsh-app-boot/lib/index.js', "throw Error('must never import app-boot');")
 
     def tearDown(self):
         self.env.stop()
@@ -94,6 +108,94 @@ class DiscoveryTest(unittest.TestCase):
         doc['dsh']['profile']['bundles'] += selected
         self.manifest.write_text(json.dumps(doc))
         return packages, selected
+
+    def test_structured_failures_do_not_classify_localized_message_text(self):
+        cases = [
+            (self.manager.PackageCommandUnknown('ordinary wording'), 'unknown', 'PLUGIN_EXECUTION_UNKNOWN', False),
+            (self.manager.PackageCommandTimeout('ordinary wording', confirmed_exit=True), 'error', 'PLUGIN_COMMAND_TIMEOUT_CONFIRMED', True),
+            (self.manager.PackageCommandTimeout('ordinary wording', confirmed_exit=False), 'unknown', 'PLUGIN_EXECUTION_UNKNOWN', False),
+            (self.manager.PluginCancelled('ordinary wording'), 'cancelled', 'PLUGIN_CANCELLED', True),
+            (self.manager.PluginIntentUnconfirmed('ordinary wording'), 'partial', 'PLUGIN_INTENT_UNCONFIRMED', False),
+            (ValueError('UNKNOWN 只是错误正文'), 'error', 'PLUGIN_MANAGER_FAILED', False),
+        ]
+        for error, status, code, cleanup in cases:
+            with self.subTest(error=type(error).__name__):
+                output = io.StringIO()
+                with patch.object(self.manager.sys, 'argv', ['plugin-manager.py', 'enable-state', 'test-plugin']), \
+                        patch.object(self.manager, 'set_plugin_state', side_effect=error), contextlib.redirect_stdout(output):
+                    self.assertEqual(1, self.manager.main())
+                value = json.loads(output.getvalue().split('PLUGIN_RESULT: ')[-1])
+                self.assertEqual(status, value['status'])
+                self.assertIs(status == 'unknown', value['exitUnknown'])
+                if status == 'unknown':
+                    self.assertIs(True, value['executionUnknown'])
+                self.assertEqual(code, value['errorCode'])
+                self.assertEqual(cleanup, value.get('cleanupVerified', False))
+                self.assertFalse(value['automaticRetry'])
+                self.assertEqual('enable-state', value['stage'])
+
+    def test_pending_install_blocks_new_mutation_without_replaying_it(self):
+        identifier = '00000000-0000-4000-8000-000000000001'
+        self.put('root/.dsh/plugin-install-operations/' + identifier + '/plan.json', {'id': identifier})
+        before = self.manifest.read_bytes()
+        output = io.StringIO()
+        with patch.object(self.manager.sys, 'argv', ['plugin-manager.py', 'enable-state', 'test-plugin']), \
+                patch.object(self.manager, 'set_plugin_state') as mutate, contextlib.redirect_stdout(output):
+            self.assertEqual(1, self.manager.main())
+        mutate.assert_not_called()
+        value = json.loads(output.getvalue().split('PLUGIN_RESULT: ')[-1])
+        self.assertEqual('pending', value['status'])
+        self.assertEqual('PLUGIN_INSTALL_PENDING', value['errorCode'])
+        self.assertFalse(value['cleanupVerified'])
+        self.assertEqual(before, self.manifest.read_bytes())
+
+    def test_pending_created_while_switch_waits_for_writer_lock_blocks_all_writes(self):
+        self.entry_bundle('[]\n')
+        activation = self.put('root/.dsh/plugin-activations.json', {'format': 1, 'entries': {
+            'test-plugin': {'status': 'loaded', 'version': '1.0.0', 'fingerprint': 'a' * 64}}})
+        before_manifest, before_activation = self.manifest.read_bytes(), activation.read_bytes()
+        original = self.builtin.operation_lock
+        identifier = '00000000-0000-4000-8000-000000000002'
+        plan = self.root / ('root/.dsh/plugin-install-operations/' + identifier + '/plan.json')
+        @contextlib.contextmanager
+        def acquired(*args, **kwargs):
+            with original(*args, **kwargs):
+                self.put(str(plan.relative_to(self.root)), {'id': identifier})
+                yield
+        output = io.StringIO()
+        with patch.object(self.manager.sys, 'argv', ['plugin-manager.py', 'enable-state', 'test-plugin']), \
+                patch.object(self.builtin, 'operation_lock', side_effect=acquired), \
+                patch.object(self.manager.lifecycle(), 'queue_activation', wraps=self.manager.lifecycle().queue_activation) as activate, \
+                patch.object(self.builtin, 'enable_plugin', wraps=self.builtin.enable_plugin) as enable, \
+                patch.object(self.builtin, 'disable_plugin', wraps=self.builtin.disable_plugin) as disable, \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(1, self.manager.main())
+        activate.assert_not_called(); enable.assert_not_called(); disable.assert_not_called()
+        value = json.loads(output.getvalue().split('PLUGIN_RESULT: ')[-1])
+        self.assertEqual('pending', value['status'])
+        self.assertEqual('PLUGIN_INSTALL_PENDING', value['errorCode'])
+        self.assertFalse(value.get('intentVerified', False))
+        self.assertEqual(before_manifest, self.manifest.read_bytes())
+        self.assertEqual(before_activation, activation.read_bytes())
+        self.assertEqual({'id': identifier}, json.loads(plan.read_text()))
+
+    def test_unknown_marker_cannot_receive_a_verified_enable_receipt(self):
+        self.entry_bundle('[]\n')
+        marker = Path(self.builtin.marker_path('test-plugin'))
+        marker.mkdir(parents=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(self.manager.PluginIntentUnconfirmed):
+                self.manager.set_plugin_state('test-plugin', True)
+        self.assertEqual('unknown-marker', self.manager._native_marker('test-plugin'))
+        self.assertFalse(self.items()['test-plugin']['enabled'])
+
+    def test_snapshot_race_type_survives_changes_to_its_human_message(self):
+        self.entry_bundle('[]\n')
+        with patch.object(self.manager, '_entry_file', side_effect=self.manager.EntrySnapshotChanged('different locale')), \
+                patch.object(self.manager, 'result') as result:
+            with self.assertRaises(self.manager.EntrySnapshotChanged):
+                self.manager.cmd_list()
+        result.assert_not_called()
 
     def test_only_real_bundles_are_hashed_once_per_command_despite_duplicate_runtime_aliases(self):
         packages, selected = self.runtime_alias_fixture()
@@ -188,8 +290,9 @@ class DiscoveryTest(unittest.TestCase):
                 patch('sys.argv', ['plugin-manager.py', 'enable-state', name]), \
                 patch.object(self.manager, 'result') as result:
             self.assertEqual(1, self.manager.main(), 'a no-op backend cannot claim an enable acknowledgement')
-            self.assertEqual('error', result.call_args.args[0])
-            self.assertNotIn('intentVerified', result.call_args.kwargs)
+            self.assertEqual('partial', result.call_args.args[0])
+            self.assertIs(False, result.call_args.kwargs['intentVerified'])
+            self.assertEqual('PLUGIN_INTENT_UNCONFIRMED', result.call_args.kwargs['errorCode'])
 
     def test_read_query_cancellation_reaches_content_scan_and_does_not_mutate_intent(self):
         name = '@fixture/cancellable-bundle'
@@ -537,6 +640,162 @@ class DiscoveryTest(unittest.TestCase):
         self.assertNotIn('dsh-web-mobile', after['dsh']['profile']['bundles'])
         self.assertEqual('link:/root/dsha-web-mobile', after['dependencies']['dsh-web-mobile'])
 
+    def authenticate_signed_builtin(self, name, directory):
+        # 仅为本测试合成文件绑定证明，不借用生产摘要或把名称当作来源。
+        rows = []
+        for file in sorted(directory.rglob('*')):
+            relative = file.relative_to(directory).as_posix()
+            if relative.split('/')[0] == 'node_modules':
+                continue
+            if file.is_file():
+                rows.append({'path': relative, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(),
+                             'mode': file.stat().st_mode & 0o7777, 'size': file.stat().st_size})
+        proof = self.put('root/.dsh/managed-package-proofs.json',
+                         {'version': 1, 'packages': {}, 'signedBuiltinFiles': {name: rows}})
+        os.environ['DSHA_MANAGED_PACKAGE_PROOFS_SHA256'] = hashlib.sha256(proof.read_bytes()).hexdigest()
+        return proof
+
+    def signed_mobile(self):
+        self.put('root/dsha-web-mobile/package.json', {
+            'name': 'dsh-web-mobile', 'version': '3.3.5', 'main': 'index.js',
+            'dsh': {'bundle': {'patch': 'cordis.patch.yml'}}})
+        self.put('root/dsha-web-mobile/cordis.patch.yml', '[]\n')
+        self.put('root/dsha-web-mobile/index.js', 'throw Error("must not execute plugin");\n')
+        directory = self.root / 'root/dsha-web-mobile'
+        self.authenticate_signed_builtin('dsh-web-mobile', directory)
+        return directory
+
+    def assert_mobile_enable_rejected(self):
+        marker = self.put('root/.dsh/profiles/web/node_modules/dsh-web-mobile.disabled', '')
+        before = self.manifest.read_bytes()
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(self.manager.PluginPolicyError) as caught:
+            self.manager.set_plugin_state('dsh-web-mobile', True)
+        self.assertEqual('PLUGIN_SYSTEM_CONTENT_UNVERIFIED', caught.exception.code)
+        self.assertEqual(before, self.manifest.read_bytes())
+        self.assertEqual('', marker.read_text(encoding='utf-8'))
+        self.assertFalse(os.path.lexists(marker.with_name('dsh-web-mobile')))
+
+    def test_signed_builtin_byte_tamper_is_rejected_without_replacing_content(self):
+        directory = self.signed_mobile()
+        entry = directory / 'index.js'
+        entry.write_text('tampered bytes', encoding='utf-8')
+        self.assert_mobile_enable_rejected()
+        self.assertEqual('tampered bytes', entry.read_text(encoding='utf-8'))
+
+    @unittest.skipIf(os.name == 'nt', 'Requires POSIX permission mode changes')
+    def test_signed_builtin_mode_tamper_is_rejected(self):
+        directory = self.signed_mobile()
+        entry = directory / 'index.js'
+        entry.chmod(0o700)
+        self.assert_mobile_enable_rejected()
+        self.assertEqual(0o700, entry.stat().st_mode & 0o7777)
+
+    def test_signed_builtin_missing_or_extra_files_are_rejected(self):
+        directory = self.signed_mobile()
+        original = (directory / 'index.js').read_bytes()
+        (directory / 'index.js').unlink()
+        self.assert_mobile_enable_rejected()
+        (directory / 'index.js').write_bytes(original)
+        extra = directory / 'unproven.js'
+        extra.write_text('extra', encoding='utf-8')
+        self.assert_mobile_enable_rejected()
+        self.assertEqual('extra', extra.read_text(encoding='utf-8'))
+
+    def test_signed_builtin_file_replaced_by_empty_directory_is_rejected(self):
+        directory = self.signed_mobile()
+        (directory / 'index.js').unlink()
+        (directory / 'index.js').mkdir()
+        self.assert_mobile_enable_rejected()
+        self.assertTrue((directory / 'index.js').is_dir())
+
+    def test_signed_builtin_missing_proof_and_rewritten_table_are_rejected(self):
+        directory = self.signed_mobile()
+        proof = self.root / 'root/.dsh/managed-package-proofs.json'
+        original = proof.read_bytes()
+        for fields in ({'version': 1, 'packages': {}},
+                       {'version': 1, 'packages': {}, 'signedBuiltinFiles': {'dsh-web-mobile': []}}):
+            proof.write_text(json.dumps(fields), encoding='utf-8')
+            # 模拟已认证但尚未包含本组件的新字段/条目，仍不能降级为名称/路径判断。
+            os.environ['DSHA_MANAGED_PACKAGE_PROOFS_SHA256'] = hashlib.sha256(proof.read_bytes()).hexdigest()
+            self.assert_mobile_enable_rejected()
+        proof.write_bytes(original)
+        os.environ['DSHA_MANAGED_PACKAGE_PROOFS_SHA256'] = hashlib.sha256(original).hexdigest()
+        proof.write_text('{}', encoding='utf-8')
+        self.assert_mobile_enable_rejected()
+        self.assertEqual('throw Error("must not execute plugin");\n', (directory / 'index.js').read_text(encoding='utf-8'))
+
+    def test_signed_builtin_import_and_foreign_same_name_remain_rejected(self):
+        directory = self.signed_mobile()
+        with self.assertRaisesRegex(ValueError, '系统插件只随签名 APK'):
+            self.manager.plugin_package(str(directory))
+        foreign = self.plugin('incoming', 'dsh-web-mobile', '3.3.5')
+        with self.assertRaisesRegex(ValueError, '系统插件只随签名 APK'):
+            self.manager.plugin_package(str(foreign))
+        with self.assertRaises(self.manager.PluginPolicyError):
+            self.manager.installed_state_package('dsh-web-mobile', str(foreign))
+        self.assertTrue((directory / 'index.js').is_file())
+
+    def test_signed_builtin_dependency_subtree_is_excluded_but_nested_extras_are_not(self):
+        directory = self.signed_mobile()
+        dependency = directory / 'node_modules/runtime-library/generated.js'
+        dependency.parent.mkdir(parents=True)
+        dependency.write_text('runtime dependency, separately managed', encoding='utf-8')
+        self.assertTrue(self.builtin.signed_builtin_package('dsh-web-mobile', str(directory)))
+        extra = directory / 'lib/node_modules/unknown.js'
+        extra.parent.mkdir(parents=True)
+        extra.write_text('not a root runtime dependency', encoding='utf-8')
+        self.assertFalse(self.builtin.signed_builtin_package('dsh-web-mobile', str(directory)))
+
+    def test_signed_builtin_content_changed_during_compatibility_is_rechecked(self):
+        directory = self.signed_mobile()
+        life = self.manager.lifecycle()
+        with patch.object(life, 'require_compatible', side_effect=lambda *a, **k: (directory / 'index.js').write_text('changed', encoding='utf-8')):
+            self.assert_mobile_enable_rejected()
+        self.assertEqual('changed', (directory / 'index.js').read_text(encoding='utf-8'))
+
+    def test_native_enable_state_recovers_legacy_mobile_without_a_profile_alias(self):
+        mobile = 'dsh-web-mobile'
+        directory = self.signed_mobile()
+        marker = self.put('root/.dsh/profiles/web/node_modules/' + mobile + '.disabled', '')
+        alias = marker.with_name(mobile)
+        self.assertFalse(os.path.lexists(alias))
+        process = subprocess.run(
+            [sys.executable, str(ASSETS / 'plugin-manager.py'), 'enable-state', mobile],
+            env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'), capture_output=True,
+            text=True, encoding='utf-8', timeout=15)
+        self.assertEqual(0, process.returncode, process.stdout + process.stderr)
+        receipt = [json.loads(line.removeprefix('PLUGIN_RESULT: '))
+                   for line in process.stdout.splitlines() if line.startswith('PLUGIN_RESULT: ')][-1]
+        self.assertTrue(receipt['intentVerified'])
+        self.assertTrue(receipt['enabled'])
+        self.assertEqual(mobile, receipt['name'])
+        self.assertFalse(marker.exists())
+        self.assertEqual((self.root / 'root/dsha-web-mobile').resolve(), alias.resolve())
+        original = {file.relative_to(directory).as_posix(): file.read_bytes()
+                    for file in directory.rglob('*') if file.is_file()}
+        for action in ('enable-state', 'disable-state', 'disable-state', 'enable-state'):
+            process = subprocess.run(
+                [sys.executable, str(ASSETS / 'plugin-manager.py'), action, mobile],
+                env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'), capture_output=True,
+                text=True, encoding='utf-8', timeout=15)
+            self.assertEqual(0, process.returncode, process.stdout + process.stderr)
+            state = [json.loads(line.removeprefix('PLUGIN_RESULT: '))
+                     for line in process.stdout.splitlines() if line.startswith('PLUGIN_RESULT: ')][-1]
+            self.assertTrue(state['intentVerified'])
+            self.assertEqual(action.startswith('enable'), state['enabled'])
+        self.assertEqual(original, {file.relative_to(directory).as_posix(): file.read_bytes()
+                                    for file in directory.rglob('*') if file.is_file()})
+        # 真实注册表当前默认启用；显式恢复后跨重注册/新APK不会因旧空标记再禁用。
+        with patch.object(self.builtin, 'builtin_names', return_value=[mobile]):
+            for version_code in (336, 366, 999):
+                self.put('usr/local/share/dsha/apk-generation',
+                         'DSHA_APK_GENERATION_V1\n' + str(version_code) + '\n')
+                with self.builtin.operation_lock(), contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(0, self.builtin.register())
+                self.assertIn(mobile, json.loads(self.manifest.read_text())['dsh']['profile']['bundles'])
+                self.assertFalse(marker.exists())
+                self.assertFalse(marker.with_name(mobile + '.default-disabled.json').exists())
+
     def test_core_inventory_remains_available_but_is_marked_internal(self):
         items = self.items()
         for name in self.builtin.OFFICIAL_BUNDLES + ('dsh-app-integration',):
@@ -741,6 +1000,88 @@ class DiscoveryTest(unittest.TestCase):
         result = subprocess.run([node, '--input-type=module', '-e', probe], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
 
+
+
+
+    def test_entry_projection_static_broken_manifest_keeps_registered_removal_card(self):
+        directory = self.entry_bundle('[]\n')
+        self.entry_bundle('[]\n', 'healthy-plugin')
+        package = directory / 'package.json'
+        for damaged in ('{broken json', '[]', 'null', '"not an object"'):
+            with self.subTest(damaged=damaged):
+                package.write_text(damaged, encoding='utf8')
+                rows = self.items()
+                item = rows['test-plugin']
+                self.assertEqual('PLUGIN_METADATA_UNREADABLE', item['metadataError'])
+                self.assertTrue(item['available']); self.assertTrue(item['deletable'])
+                self.assertTrue(item['selected']); self.assertFalse(item['installed'])
+                self.assertEqual('ENTRY_INPUT_UNREADABLE', item['entryReadError'])
+                self.assertEqual([], item['entries'])
+                self.assertRegex(item['patchRevision'], '^[a-f0-9]{64}$')
+                self.assertTrue(rows['healthy-plugin']['installed'])
+                self.assertEqual(damaged, package.read_text(encoding='utf8'))
+
+    def test_entry_projection_broken_manifest_changed_after_read_is_still_a_race(self):
+        directory = self.entry_bundle('[]\n')
+        package = directory / 'package.json'
+        for damaged in ('{broken json', '[]'):
+            with self.subTest(damaged=damaged):
+                package.write_text(damaged, encoding='utf8')
+                def changed(request):
+                    package.write_text(damaged + '\nchanged after entry read', encoding='utf8')
+                    return {'error': 'ENTRY_READER_UNAVAILABLE'}
+                with patch.object(self.manager, '_entry_read_node', side_effect=changed), \
+                        patch.object(self.manager, 'result') as result:
+                    with self.assertRaisesRegex(ValueError, '列表读取期间变化'):
+                        self.manager.cmd_list()
+                    result.assert_not_called()
+
+    def test_entry_projection_unavailable_node_keeps_directory_facts_and_unknown_reason(self):
+        self.entry_bundle('- insert:\n    - id: child\n      name: ./index.js\n')
+        with patch.object(self.manager, '_entry_read_node', side_effect=FileNotFoundError('node unavailable')):
+            item = self.items()['test-plugin']
+        self.assertTrue(item['selected']); self.assertTrue(item['installed'])
+        self.assertEqual('profile', item['availability'])
+        self.assertEqual([], item['entries'])
+        self.assertEqual('ENTRY_READER_UNAVAILABLE', item['entryReadError'])
+        self.assertRegex(item['patchRevision'], '^[a-f0-9]{64}$')
+
+    def test_entry_projection_malformed_reader_reply_does_not_erase_directory(self):
+        self.entry_bundle('[]\n')
+        for reply in (None, {'items': None}, {'items': [{'name': 'test-plugin', 'entries': 'invalid', 'entryReadError': ''}]}):
+            with self.subTest(reply=reply), patch.object(self.manager, '_entry_read_node', return_value=reply):
+                item = self.items()['test-plugin']
+                self.assertTrue(item['selected']); self.assertTrue(item['installed'])
+                self.assertEqual('ENTRY_READER_UNAVAILABLE', item['entryReadError'])
+
+    def test_entry_projection_disabled_conflict_wins_without_losing_selection(self):
+        self.entry_bundle('[]\n')
+        marker = self.root / 'root/.dsh/profiles/web/node_modules/test-plugin.disabled'
+        for text, reason in [('', 'user-disabled'), ('DSHA_SAFE_MODE\n', 'safe-mode'),
+                             ('DSHA_WEB_BUILTIN_DISABLED_V1\n', 'web-disabled'),
+                             ('DSHA_REVIEW_REQUIRED\n', 'review-required'), ('foreign', 'unknown-marker'),
+                             ('x' * 129, 'unknown-marker')]:
+            with self.subTest(reason=reason):
+                marker.write_text(text, encoding='utf8')
+                item = self.items()['test-plugin']
+                self.assertTrue(item['selected']); self.assertTrue(item['installed'])
+                self.assertFalse(item['enabled']); self.assertEqual(reason, item['nativeMarker'])
+        marker.unlink(); marker.mkdir()
+        self.assertEqual('unknown-marker', self.items()['test-plugin']['nativeMarker'])
+        self.assertFalse(self.items()['test-plugin']['enabled'])
+
+    def test_entry_projection_pending_transaction_cannot_claim_installation(self):
+        directory = self.entry_bundle('[]\n')
+        operation = self.root / 'root/.dsh/plugin-install-operations/11111111-2222-3333-4444-555555555555'
+        operation.mkdir(parents=True)
+        plan = operation / 'plan.json'; plan.write_text('{}')
+        before = plan.read_bytes()
+        with patch.object(self.manager, 'result') as result, \
+                patch.object(self.manager.transactions(), 'recover_all', side_effect=AssertionError('read must not recover')):
+            with self.assertRaisesRegex(ValueError, 'PLUGIN_INSTALL_PENDING'):
+                self.manager.cmd_list()
+            result.assert_not_called()
+        self.assertEqual(before, plan.read_bytes()); self.assertTrue(directory.is_dir())
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
