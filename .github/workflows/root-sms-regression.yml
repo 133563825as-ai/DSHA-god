@@ -25,6 +25,18 @@ jobs:
         com.deepseekharness.app.util.RootRequestGateTest
         com.deepseekharness.app.util.RootSettingsAuthorityTest
       artifact: root-sms-regression-results
+  device-candidate:
+    if: contains(github.event.head_commit.message, '[device-build]')
+    needs: [inputs, focused-root]
+    uses: ./.github/workflows/_node-test-packages.yml
+    with:
+      variants: dev
+      release_identity: upstream
+      unsigned_only: true
+      handoff: ${{ needs.inputs.outputs.artifact }}
+      artifact_prefix: root-sms-device
+      unit_tests_run: false
+      patch_chains_run: false
   canonical-candidates:
     needs: inputs
     runs-on: ubuntu-24.04
@@ -48,6 +60,7 @@ jobs:
           cp app/src/main/java/com/deepseekharness/app/core/DeviceGrants.java out/root-sms-canonical/DeviceGrants.java
           cp app/src/test/java/com/deepseekharness/app/RootShellRequestGateTest.java out/root-sms-canonical/RootShellRequestGateTest.java
           cp app/src/test/java/com/deepseekharness/app/core/ConfigStoreRootRequestTest.java out/root-sms-canonical/ConfigStoreRootRequestTest.java
+          cp app/src/test/java/com/deepseekharness/app/core/DeviceGrantsTest.java out/root-sms-canonical/DeviceGrantsTest.java
           cp app/src/main/assets/runtime-descriptor.json out/root-sms-canonical/runtime-descriptor.json
           git diff --stat > out/root-sms-canonical/changes.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

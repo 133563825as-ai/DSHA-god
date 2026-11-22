@@ -32,7 +32,11 @@ import org.robolectric.annotation.Implements;
     manifest = Config.NONE,
     application = Application.class,
     instrumentedPackages = {"com.deepseekharness.app.util"},
-    shadows = {RootShellRequestGateTest.Candidate.class, RootShellRequestGateTest.Started.class, RootShellRequestGateTest.SmsNotification.class})
+    shadows = {
+      RootShellRequestGateTest.Candidate.class,
+      RootShellRequestGateTest.Started.class,
+      RootShellRequestGateTest.SmsNotification.class
+    })
 public final class RootShellRequestGateTest {
   private static CountDownLatch helperStarted, releaseHelper;
   private Context context;

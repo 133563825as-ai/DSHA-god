@@ -417,10 +417,11 @@ public final class DeviceGrants {
   public boolean setSmsReadAllowed(boolean allowed) {
     synchronized (SMS_SAVE_LOCK) {
       boolean saved = false;
-      ConfigStore.invalidateRootRequests(() -> {
-        smsChanging = true;
-        smsUnavailable = true;
-      });
+      ConfigStore.invalidateRootRequests(
+          () -> {
+            smsChanging = true;
+            smsUnavailable = true;
+          });
       try {
         // Notify the broker and persist outside the Root handover gate.
         invalidateSms.run();
@@ -428,10 +429,11 @@ public final class DeviceGrants {
         return saved;
       } finally {
         boolean durable = saved;
-        ConfigStore.invalidateRootRequests(() -> {
-          smsUnavailable = !durable;
-          smsChanging = false;
-        });
+        ConfigStore.invalidateRootRequests(
+            () -> {
+              smsUnavailable = !durable;
+              smsChanging = false;
+            });
       }
     }
   }

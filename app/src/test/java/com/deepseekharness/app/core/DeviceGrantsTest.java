@@ -12,7 +12,8 @@ import static org.junit.Assert.*;
 public final class DeviceGrantsTest {
   @org.junit.Before
   public void isolateProcessStateForIndependentPreferenceFixtures() throws Exception {
-    for (String name : new String[] {"globalChanging", "globalUnavailable", "smsChanging", "smsUnavailable"}) {
+    for (String name :
+        new String[] {"globalChanging", "globalUnavailable", "smsChanging", "smsUnavailable"}) {
       var field = DeviceGrants.class.getDeclaredField(name);
       field.setAccessible(true);
       field.setBoolean(null, false);
@@ -286,7 +287,13 @@ public final class DeviceGrantsTest {
     var values = new HashMap<String, Object>();
     values.put("sms_read", true);
     var prefs = preferences(values);
-    var grants = new DeviceGrants(prefs, () -> {}, () -> { throw new IllegalStateException("synthetic notification failure"); });
+    var grants =
+        new DeviceGrants(
+            prefs,
+            () -> {},
+            () -> {
+              throw new IllegalStateException("synthetic notification failure");
+            });
     try {
       grants.setSmsReadAllowed(false);
       fail("notification must throw");
