@@ -295,4 +295,26 @@ public final class ConfigStoreRootRequestTest {
       workers.shutdownNow();
     }
   }
+
+  @Test
+  public void smsRevocationInvalidatesAlreadyCapturedRootPermit() {
+    var grants = new DeviceGrants(context.getSharedPreferences("dsha_device_grants", Context.MODE_PRIVATE), () -> {}, () -> {});
+    assertTrue(grants.setSmsReadAllowed(true));
+    var permit = config.captureRootRequest();
+    assertNotNull(permit);
+    assertTrue(grants.setSmsReadAllowed(false));
+    assertFalse("SMS revocation must invalidate the old Root request", config.rootRequestCurrent(permit));
+    assertTrue("SMS revocation must not disable ordinary Root", config.isRootShellAllowed());
+  }
+
+  @Test
+  public void smsOffOnCannotReviveRootPermit() {
+    var grants = new DeviceGrants(context.getSharedPreferences("dsha_device_grants", Context.MODE_PRIVATE), () -> {}, () -> {});
+    assertTrue(grants.setSmsReadAllowed(true));
+    var permit = config.captureRootRequest();
+    assertNotNull(permit);
+    assertTrue(grants.setSmsReadAllowed(false));
+    assertTrue(grants.setSmsReadAllowed(true));
+    assertFalse("SMS off/on must not revive an old Root permit", config.rootRequestCurrent(permit));
+  }
 }

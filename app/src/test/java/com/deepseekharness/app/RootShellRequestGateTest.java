@@ -32,7 +32,7 @@ import org.robolectric.annotation.Implements;
     manifest = Config.NONE,
     application = Application.class,
     instrumentedPackages = {"com.deepseekharness.app.util"},
-    shadows = {RootShellRequestGateTest.Candidate.class, RootShellRequestGateTest.Started.class})
+    shadows = {RootShellRequestGateTest.Candidate.class, RootShellRequestGateTest.Started.class, RootShellRequestGateTest.SmsNotification.class})
 public final class RootShellRequestGateTest {
   private static CountDownLatch helperStarted, releaseHelper;
   private Context context;
@@ -187,5 +187,36 @@ public final class RootShellRequestGateTest {
   @Test
   public void externalStepsOffOnCannotReviveOldRequest() throws Exception {
     rejectExternal(2, this::toggleRoot);
+  }
+
+  @Implements(value = HttpShellService.class, isInAndroidSdk = false)
+  public static final class SmsNotification {
+    @Implementation
+    protected static void smsPolicyChanged(Context context) {
+      // Only the broker notification is isolated; DeviceGrants/RootShell remain real.
+    }
+  }
+
+  @Test
+  public void smsRevokedAfterHelperStartPreventsRequestHandover() throws Exception {
+    var grants = new com.deepseekharness.app.core.DeviceGrants(context);
+    assertTrue(grants.setSmsReadAllowed(true));
+    rejectAfterHelperStarted(
+        () -> RootShell.exec(context, "content query --uri content://sms/inbox", 0),
+        () -> assertTrue(grants.setSmsReadAllowed(false)),
+        "ROOT_AUTHORITY_CHANGED_BEFORE_DISPATCH");
+  }
+
+  @Test
+  public void smsOffOnAfterHelperStartDoesNotReviveRequest() throws Exception {
+    var grants = new com.deepseekharness.app.core.DeviceGrants(context);
+    assertTrue(grants.setSmsReadAllowed(true));
+    rejectAfterHelperStarted(
+        () -> RootShell.exec(context, "content query --uri content://sms/inbox", 0),
+        () -> {
+          assertTrue(grants.setSmsReadAllowed(false));
+          assertTrue(grants.setSmsReadAllowed(true));
+        },
+        "ROOT_AUTHORITY_CHANGED_BEFORE_DISPATCH");
   }
 }
