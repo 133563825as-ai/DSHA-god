@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "date": "2026-11-22",
+  "scope": "F02 native SMS authority revocation only",
+  "repository": "133563825as-ai/DSHA-god",
+  "baseRootPrCommit": "ac7e86596a5073e7d603f4c57653fb5d4514bc2d",
+  "validatedCodeCommit": "f8d14fecf2e3d52b811feb6f29502e1c86aebf99",
+  "runtimeId": "2ecad8c58e6e0f29861cd4866538ae71b73c01923836664d157bee961a8a5f23",
+  "red": {
+    "commit": "9b246a7a93919138b5afb04cfe097b73c4b7baf7",
+    "run": 45015086318,
+    "mode": "source-only",
+    "tests": 4542,
+    "failures": 4,
+    "errors": 0,
+    "skipped": 0
+  },
+  "green": {
+    "commit": "f8d14fecf2e3d52b811feb6f29502e1c86aebf99",
+    "sourceRun": 45016567533,
+    "focusedAndBuildRun": 45016567527,
+    "sourceMode": {
+      "tests": 4545,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "focused": {
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "hostFast": {
+      "entries": 99,
+      "pass": 99,
+      "nonPass": 0
+    },
+    "contracts": "success",
+    "javaFormat": "success",
+    "canonicalGenerator": "success",
+    "unsignedDevBuild": "success"
+  },
+  "deliveryConstraint": {
+    "codeTestsAndDescriptorMustEqualValidatedCodeCommit": true,
+    "onlyAllowedDeltaPaths": [
+      ".github/workflows/root-sms-regression.yml",
+      "docs/root-security-sms-revocation-repair.md",
+      "docs/root-security-sms-revocation-evidence.json",
+      "docs/root-security-root01-p0-repair.md"
+    ]
+  },
+  "localProjectExecution": false,
+  "localSdkSigningOnly": true,
+  "deviceAcceptance": "NOT_PASSED",
+  "openBoundaries": [
+    "F01 external target and business authority commit window",
+    "bridge and web lifecycle authority binding",
+    "guest / ADB+su cross-process binding",
+    "real su wait / existing UID0 helper lifecycle / real disk failures",
+    "Full raw Root shell is not a private-data sandbox"
+  ],
+  "ready": false,
+  "merged": false
+}

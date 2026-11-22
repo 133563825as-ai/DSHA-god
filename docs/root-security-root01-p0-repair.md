@@ -2,6 +2,8 @@
 
 日期：2026-11-15（Asia/Shanghai）。源码提交 `ee80dedc3c84c505fbb8ca0da3f5f9676a58aa89`。逐项结果与产物摘要见 [增量证据](root-security-root01-p0-evidence.json)。本页取代历史报告中“两项 P0 尚无实现修复”和“无当前连接设备”的描述；完整安全验收仍未完成。
 
+> 2026-11-22 原生短信授权撤销增量见 [F02 修复与证据](root-security-sms-revocation-repair.md)；本页 195 项及旧 APK 仍为历史证据，不移植到新增修复。
+
 ## 本次行为
 
 - 新 App 进程始终 Root 关闭、有效策略 Strict。磁盘旧 `true` / Full 不能自动恢复权限；用户必须在本进程明确开启。
