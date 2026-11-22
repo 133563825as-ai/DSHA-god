@@ -335,6 +335,11 @@ public class ConfigStore {
     return change.get();
   }
 
+  /** Publish independent capability changes under the final Root commit gate. No disk I/O here. */
+  public static void invalidateRootRequests(Runnable publication) {
+    ROOT_REQUESTS.update(publication);
+  }
+
   /** 许可仅对本进程、本次 Root 设置代次有效；关闭再开启也不能复活旧请求。 */
   public com.deepseekharness.app.util.RootRequestGate.Permit captureRootRequest() {
     return ROOT_REQUESTS.capture(this::isRootShellAllowed);

@@ -8,6 +8,9 @@ import com.deepseekharness.app.util.NativeConsentPolicy.SaveState;
 /** 独立原生授权存储，不从环境、插件文件或备份自动恢复授权。 */
 public final class DeviceGrants {
   private static final Object SCREEN_LOCK = new Object();
+  private static final Object SMS_SAVE_LOCK = new Object();
+  private static volatile boolean smsChanging;
+  private static volatile boolean smsUnavailable;
   private static final String SCREEN_POLICY = "screen_confirmation_v1";
   private static final String SENSITIVE_SCREEN_POLICY = "sensitive_screen_v1";
   private static final String GLOBAL_POLICY = "native_global_consent_v1";
@@ -73,7 +76,12 @@ public final class DeviceGrants {
   }
 
   public boolean smsReadAllowed() {
-    return smsReadConfigured();
+    if (smsChanging || smsUnavailable) return false;
+    try {
+      return smsReadConfigured();
+    } catch (RuntimeException unreadable) {
+      return false;
+    }
   }
 
   public boolean smsReadConfigured() {
@@ -407,8 +415,25 @@ public final class DeviceGrants {
   }
 
   public boolean setSmsReadAllowed(boolean allowed) {
-    invalidateSms.run();
-    return preferences.edit().putBoolean("sms_read", allowed).commit();
+    synchronized (SMS_SAVE_LOCK) {
+      boolean saved = false;
+      ConfigStore.invalidateRootRequests(() -> {
+        smsChanging = true;
+        smsUnavailable = true;
+      });
+      try {
+        // Notify the broker and persist outside the Root handover gate.
+        invalidateSms.run();
+        saved = preferences.edit().putBoolean("sms_read", allowed).commit();
+        return saved;
+      } finally {
+        boolean durable = saved;
+        ConfigStore.invalidateRootRequests(() -> {
+          smsUnavailable = !durable;
+          smsChanging = false;
+        });
+      }
+    }
   }
 
   public com.deepseekharness.app.util.ClipboardReadPolicy.Mode clipboardReadMode() {

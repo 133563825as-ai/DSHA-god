@@ -317,4 +317,58 @@ public final class ConfigStoreRootRequestTest {
     assertTrue(grants.setSmsReadAllowed(true));
     assertFalse("SMS off/on must not revive an old Root permit", config.rootRequestCurrent(permit));
   }
+
+  @Test
+  public void pendingSmsSaveRejectsSmsButDoesNotHoldRootGateAcrossDisk() throws Exception {
+    var raw = context.getSharedPreferences("dsha_device_grants", Context.MODE_PRIVATE);
+    var enteredSave = new CountDownLatch(1);
+    var releaseSave = new CountDownLatch(1);
+    var blocking = new AtomicBoolean();
+    var proxy = (android.content.SharedPreferences) java.lang.reflect.Proxy.newProxyInstance(
+        android.content.SharedPreferences.class.getClassLoader(),
+        new Class<?>[] {android.content.SharedPreferences.class},
+        (owner, method, args) -> {
+          Object value = method.invoke(raw, args);
+          if (!method.getName().equals("edit")) return value;
+          var editor = (android.content.SharedPreferences.Editor) value;
+          return java.lang.reflect.Proxy.newProxyInstance(
+              android.content.SharedPreferences.Editor.class.getClassLoader(),
+              new Class<?>[] {android.content.SharedPreferences.Editor.class},
+              (editorProxy, editMethod, editArgs) -> {
+                if (editMethod.getName().equals("commit") && blocking.get()) {
+                  enteredSave.countDown();
+                  assertTrue("SMS disk barrier", releaseSave.await(5, TimeUnit.SECONDS));
+                }
+                Object result = editMethod.invoke(editor, editArgs);
+                return result == editor ? editorProxy : result;
+              });
+        });
+    var grants = new DeviceGrants(proxy, () -> {}, () -> {});
+    assertTrue(grants.setSmsReadAllowed(true));
+    blocking.set(true);
+    var workers = Executors.newFixedThreadPool(2);
+    try {
+      var saved = workers.submit(() -> grants.setSmsReadAllowed(false));
+      assertTrue(enteredSave.await(5, TimeUnit.SECONDS));
+      var checked = workers.submit(() -> {
+        assertTrue("old cached permission has not been saved yet", grants.smsReadConfigured());
+        var sms = new ByteArrayOutputStream();
+        assertFalse(config.writeRootRequest(sms, new byte[] {1}, config.captureRootRequest(), () -> {}, grants::smsReadAllowed));
+        assertEquals(0, sms.size());
+        var ordinary = new ByteArrayOutputStream();
+        assertTrue(config.writeRootRequest(ordinary, new byte[] {2}, config.captureRootRequest()));
+        assertArrayEquals(new byte[] {2}, com.deepseekharness.app.util.RootRequestWire.readCommitted(new java.io.ByteArrayInputStream(ordinary.toByteArray())));
+        return true;
+      });
+      assertTrue("ordinary Root must not wait for SMS disk", checked.get(2, TimeUnit.SECONDS));
+      releaseSave.countDown();
+      assertTrue(saved.get(5, TimeUnit.SECONDS));
+      assertFalse(grants.smsReadAllowed());
+      assertTrue(config.isRootShellAllowed());
+    } finally {
+      releaseSave.countDown();
+      workers.shutdownNow();
+      assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+    }
+  }
 }

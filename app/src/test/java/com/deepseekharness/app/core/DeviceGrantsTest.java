@@ -12,7 +12,7 @@ import static org.junit.Assert.*;
 public final class DeviceGrantsTest {
   @org.junit.Before
   public void isolateProcessStateForIndependentPreferenceFixtures() throws Exception {
-    for (String name : new String[] {"globalChanging", "globalUnavailable"}) {
+    for (String name : new String[] {"globalChanging", "globalUnavailable", "smsChanging", "smsUnavailable"}) {
       var field = DeviceGrants.class.getDeclaredField(name);
       field.setAccessible(true);
       field.setBoolean(null, false);
@@ -166,7 +166,8 @@ public final class DeviceGrantsTest {
             prefs,
             () -> {},
             () -> {
-              assertEquals(calls.get() > 0, new DeviceGrants(prefs, () -> {}).smsReadAllowed());
+              assertEquals(calls.get() > 0, new DeviceGrants(prefs, () -> {}).smsReadConfigured());
+              assertFalse(new DeviceGrants(prefs, () -> {}).smsReadAllowed());
               calls.incrementAndGet();
             });
     assertFalse(grants.smsReadAllowed());
@@ -264,5 +265,35 @@ public final class DeviceGrantsTest {
     var failing = preferences(values, unreadable, new java.util.concurrent.atomic.AtomicBoolean());
     unreadable.set(true);
     assertFalse(new DeviceGrants(failing, () -> {}).privilegedExecutionAllowed());
+  }
+
+  @Test
+  public void failedSmsCommitCannotPublishCachedPermissionAndExplicitRetryRecovers() {
+    var values = new HashMap<String, Object>();
+    var failure = new java.util.concurrent.atomic.AtomicBoolean(true);
+    var prefs = preferences(values, new java.util.concurrent.atomic.AtomicBoolean(), failure);
+    var grants = new DeviceGrants(prefs, () -> {}, () -> {});
+    assertFalse(grants.setSmsReadAllowed(true));
+    assertTrue("fixture must model Android's updated memory cache", grants.smsReadConfigured());
+    assertFalse("failed persistence cannot grant SMS", grants.smsReadAllowed());
+    failure.set(false);
+    assertTrue(grants.setSmsReadAllowed(true));
+    assertTrue(grants.smsReadAllowed());
+  }
+
+  @Test
+  public void smsNotificationFailureCannotLeaveOldPermissionUsable() {
+    var values = new HashMap<String, Object>();
+    values.put("sms_read", true);
+    var prefs = preferences(values);
+    var grants = new DeviceGrants(prefs, () -> {}, () -> { throw new IllegalStateException("synthetic notification failure"); });
+    try {
+      grants.setSmsReadAllowed(false);
+      fail("notification must throw");
+    } catch (IllegalStateException expected) {
+      assertTrue(grants.smsReadConfigured());
+      assertFalse("incomplete revocation must fail closed", grants.smsReadAllowed());
+    }
+    assertTrue(new DeviceGrants(prefs, () -> {}, () -> {}).setSmsReadAllowed(false));
   }
 }

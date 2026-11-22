@@ -633,7 +633,8 @@ public final class RootShell {
           helper.getOutputStream(),
           request.toString().getBytes(StandardCharsets.UTF_8),
           permit,
-          () -> awaitStaged(helper, handoverNonce, ROOT_WAIT_MS))) return rootAuthorityChanged();
+          () -> awaitStaged(helper, handoverNonce, ROOT_WAIT_MS),
+          () -> authorizedSmsUser < 0 || new com.deepseekharness.app.core.DeviceGrants(ctx).smsReadAllowed())) return rootAuthorityChanged();
       BoundedProcessRunner.Result result =
           BoundedProcessRunner.collect(process, ROOT_WAIT_MS, 400_000, RootShell::destroyQuietly);
       timedOut = result.timedOut;

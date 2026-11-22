@@ -26,6 +26,7 @@ jobs:
         com.deepseekharness.app.util.RootSettingsAuthorityTest
       artifact: root-sms-regression-results
   canonical-candidates:
+    needs: inputs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -33,6 +34,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-toolchain
+      - uses: ./.github/actions/restore-handoff
+        with:
+          artifact: ${{ needs.inputs.outputs.artifact }}
+          fixture: 'true'
       - name: Generate canonical source and descriptor candidates
         run: |
           python3 tools/format-java-tree.py --write
