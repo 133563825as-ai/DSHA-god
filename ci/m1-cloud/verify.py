@@ -41,23 +41,23 @@ def policy():
     event=json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     head=git('rev-parse','HEAD')
     assert re.fullmatch('[a-f0-9]{40}',head)
-    assert event['before']=='4c408269228756ed31e1c89381c5114dd02df1e7'
+    assert event['before']==PARENT
     assert event['after']==os.environ['GITHUB_SHA']==head
     assert event['ref']==os.environ['GITHUB_REF'] and not event.get('deleted')
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','.github/workflows/ci-fast.yml',
- '.github/workflows/docs-check.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py',
- 'ci/m1-cloud/gate.gradle'}
+PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
+PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[BASE]
+    assert parents(PARENT)==[PREVIOUS_PARENT]
+    assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--name-only',PARENT,'HEAD').splitlines())==CHANGED
     for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
     protected()
@@ -102,6 +102,56 @@ def verify_xml(folder,expected,started):
     # Exact methods, no parametrized suffixes silently stripped, duplicates rejected.
     assert sorted(observed)==sorted(expected) and len(set(observed))==len(expected),observed
     return observed
+
+def metadata_diagnostics():
+    # Trusted constant roles only: never echo paths or digest data from log text.
+    roles={
+      'dsh-runtime-metadata':('app/src/main/assets/dsh-runtime.inputs.json',11824,
+        'afd49561b67cb5d23ca844a4d8b9dc1f0f61b2977412562f20684d777a8ddce0'),
+      'ubuntu-tools-metadata':('app/src/main/assets/ubuntu-tools.inputs.json',592,
+        'b5f1a66c66ee8ece40b98d673557071b0dd8bb455cf731ca33c21d9b563c32a2')}
+    result=[]
+    for role,(relative,size,pin) in roles.items():
+        row=dict(role=role,reference='A5-staged-metadata-not-a-replacement-pin',
+            expectedBytes=size,expectedSha256=pin,actualBytes=None,actualSha256=None,status='UNKNOWN')
+        try:
+            path=ROOT/relative
+            if path.is_symlink() or not path.is_file() or path.stat().st_size>64*1024:
+                row['status']='MISSING_OR_NONREGULAR_OR_SIZE_LIMIT'
+            else:
+                row['actualBytes']=path.stat().st_size;row['actualSha256']=sha(path)
+                row['status']='MATCH' if (row['actualBytes']==size and row['actualSha256']==pin) else 'DIFFERENT'
+        except Exception:row['status']='READ_FAILED_REDACTED'
+        result.append(row)
+    return result
+
+def handoff_metadata(restore=False):
+    # GITHUB_SHA is frozen by policy(), never read metadata from the handoff as truth.
+    p=policy()
+    rows=metadata_diagnostics()
+    blobs=[]
+    for row,relative in zip(rows,('app/src/main/assets/dsh-runtime.inputs.json',
+                                'app/src/main/assets/ubuntu-tools.inputs.json')):
+        blob=subprocess.check_output(['git','cat-file','blob',p['candidateSha']+':'+relative])
+        assert len(blob)==row['expectedBytes'] and hashlib.sha256(blob).hexdigest()==row['expectedSha256']
+        path=ROOT/relative
+        assert all(not part.is_symlink() for part in (path,*path.parents))
+        assert path.is_file() and path.stat().st_size<=64*1024
+        blobs.append((path,blob))
+    if restore:
+        # The original handoff action must succeed first; write only the two metadata.
+        for path,blob in blobs:path.write_bytes(blob)
+    rows=metadata_diagnostics()
+    assert all(row['status']=='MATCH' for row in rows), 'M1_CANDIDATE_METADATA_MISMATCH'
+    if restore:
+        # Metadata is not an archive pin. Re-run the existing archive/size/pin checks.
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('m1_ci_assets',ROOT/'tools/ci-assets.py')
+        assets=importlib.util.module_from_spec(spec);spec.loader.exec_module(assets)
+        assets.verify_sources()
+        protected()
+    print('M1_HANDOFF_METADATA='+json.dumps(dict(restored=restore,metadata=rows,
+        originalArchivePinsRechecked=restore)))
 
 def phase(name):
     from runner import run_phase
@@ -176,6 +226,7 @@ def phase(name):
                     if x['status']!='passed':ET.SubElement(case,x['status'])
             ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
         terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
+            failedPhaseMetadata=(metadata_diagnostics() if not accepted else []),
             argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
             runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,
             rawXmlUploaded=False,rawLogUploaded=False,filteredXmlOnly=True,artifactVisibility='public-repository')
@@ -201,6 +252,8 @@ if __name__=='__main__':
     command=sys.argv[1]
     if command=='candidate': candidate()
     elif command=='protected': policy(); protected()
+    elif command=='metadata-checkout': handoff_metadata()
+    elif command=='metadata-restore': handoff_metadata(restore=True)
     elif command=='sdk34': sdk34()
     elif command=='phase': phase(sys.argv[2])
     elif command=='finalize': finalize_evidence()

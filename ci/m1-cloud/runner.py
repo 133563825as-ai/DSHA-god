@@ -2,6 +2,38 @@
 import ctypes, json, os, pathlib, re, select, signal, subprocess, time
 LIMIT=8*1024*1024
 
+# Only exact frozen prepare-standard-assets.py terminal messages are publishable.
+DIAGNOSTICS = {
+ '网页兼容代码与依赖锁不一致，请运行 tools/prepare-web-compat.mjs':('WEB_COMPAT_INPUT_MISMATCH','web-compat'),
+ '缺少锁定的新版 dsh-runtime.bin；请先运行 tools/build-dsh-runtime.py，不能发布旧版 dsh':('RUNTIME_ARCHIVE_MISSING','dsh-runtime'),
+ 'dsh 离线运行时与当前补丁/依赖锁不一致，请重新生成 dsh-runtime.bin':('RUNTIME_RECIPE_OR_ARCHIVE_MISMATCH','dsh-runtime'),
+ 'Ubuntu 离线基础工具与依赖锁不一致，请运行 tools/prepare-ubuntu-tools.py':('UBUNTU_RECIPE_OR_ARCHIVE_MISMATCH','ubuntu-tools'),
+ 'gh 固定输入与 tools/gh-cli/packages.lock.json 不一致，请运行 tools/prepare-gh-cli.py':('GH_ARCHIVE_MISMATCH','gh-cli'),
+ '受管 gh 安装项与 tools/gh-cli/packages.lock.json 不一致':('GH_INSTALL_MISMATCH','gh-cli'),
+ 'Ubuntu 基础包状态已变化，必须重新解析离线工具依赖':('ROOTFS_BASE_STATUS_MISMATCH','rootfs-status')}
+
+class FirstDiagnostic:
+    def __init__(self):
+        self.active=False; self.first=None; self.truncated=False
+    def feed(self,line):
+        if line==b'Traceback (most recent call last):': self.active=True; return
+        if not self.active or self.first is not None:return
+        # Entire line <=1024, exact exception class delimiter; no arbitrary class echo.
+        if len(line)>1024:self.truncated=True;return
+        text=line.decode('utf-8',errors='replace')
+        match=re.fullmatch(r'(ValueError|FileNotFoundError|PermissionError|JSONDecodeError|OSError|RuntimeError|AssertionError|KeyError|TypeError): (.*)',text)
+        if not match:return
+        cls,message=match.groups()
+        code,role=DIAGNOSTICS.get(message,('UNKNOWN_REDACTED','unknown'))
+        if cls!='ValueError':code,role='UNKNOWN_REDACTED','unknown'
+        self.first=dict(exceptionClass=cls,errorCode=code,objectRole=role,
+            diagnosticLine=(cls+': '+message) if code!='UNKNOWN_REDACTED' else '[REDACTED_UNKNOWN_DIAGNOSTIC]',
+            truncated=self.truncated,attribution='untrusted-subprocess-exact-text-not-proof')
+    def result(self):
+        return self.first or dict(exceptionClass='unknown',errorCode='UNKNOWN_REDACTED',
+            objectRole='unknown',diagnosticLine='[REDACTED_OR_ABSENT_DIAGNOSTIC]',
+            truncated=self.truncated,attribution='untrusted-subprocess-exact-text-not-proof')
+
 def children():
     return [int(x) for x in pathlib.Path('/proc/self/task/%s/children'%os.getpid()).read_text().split()]
 
@@ -9,9 +41,10 @@ def run_phase(argv,env,report,target):
     assert ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)==0
     child=None; code=None; stop=None; killed=[]; count=0; pending=b''
     outcomes=[]; graph=False; graph_hash=None; graph_count=None; kotlin=None; kotlin_action=False; unknown=False
-    started=time.monotonic()
+    started=time.monotonic(); diagnostic=FirstDiagnostic()
     def inspect(line):
         nonlocal graph,graph_hash,graph_count,kotlin,kotlin_action
+        diagnostic.feed(line)
         text=line.decode('utf-8',errors='replace')
         if re.fullmatch(r'> Task :app:[A-Za-z0-9]+(?: (?:FAILED|UP-TO-DATE|SKIPPED|NO-SOURCE|FROM-CACHE))?',text):
             if len(outcomes)<60: outcomes.append(text)
@@ -85,7 +118,8 @@ def run_phase(argv,env,report,target):
         unknown=unknown or remaining is None or bool(remaining) or code is None
         result=dict(exit=code,unknown=unknown,stopReason=stop,ownedRemainingCount=None if remaining is None else len(remaining),
             ownedKilledCount=len(set(killed)),seconds=round(time.monotonic()-started,3),
-            logBytes=min(count,LIMIT),graphAccepted=graph,observedGraphSha256=graph_hash,
+            logBytes=min(count,LIMIT),firstDiagnostic=diagnostic.result(),
+            graphAccepted=graph,observedGraphSha256=graph_hash,
             observedGraphNodes=graph_count,outcomes=outcomes,
             firstFailure=next((x for x in outcomes if x.endswith(' FAILED')),None),
             testExecuted=('> Task '+target) in outcomes,
