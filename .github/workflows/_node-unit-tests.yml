@@ -76,12 +76,25 @@ jobs:
       # 以 MavenArtifactFetcher IOException 失败（build273、build277）。改为测试前按锁文件准备、
       # 逐个核对 sha256（缓存命中也重新核对），单测走 robolectric.offline。
       - name: Restore Robolectric android-all cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: robolectric_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/robolectric-deps
           key: robolectric-android-all-${{ hashFiles('tools/robolectric-sdk.lock.json') }}
+          restore-keys: |
+            robolectric-android-all-${{ hashFiles('tools/robolectric-sdk.lock.json') }}-partial-
       - name: Prepare pinned Robolectric android-all jars
+        id: robolectric_prepare
         run: python3 tools/prepare-robolectric-sdks.py --dir "$RUNNER_TEMP/robolectric-deps"
+      # A failed download must not discard earlier, size/SHA256-verified jars.
+      # Partial entries are only a resume source; preparation always rechecks every jar.
+      # Save before tests, so an assertion failure also preserves complete dependencies.
+      - name: Preserve verified Robolectric downloads
+        if: ${{ !cancelled() && steps.robolectric_cache.outcome == 'success' && steps.robolectric_cache.outputs.cache-hit != 'true' && (steps.robolectric_prepare.outcome == 'success' || steps.robolectric_prepare.outcome == 'failure') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/robolectric-deps
+          key: ${{ steps.robolectric_prepare.outcome == 'success' && format('robolectric-android-all-{0}', hashFiles('tools/robolectric-sdk.lock.json')) || format('robolectric-android-all-{0}-partial-{1}-{2}', hashFiles('tools/robolectric-sdk.lock.json'), github.run_id, github.run_attempt) }}
       - name: Run Standard unit tests
         env:
           DSHA_ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-deps

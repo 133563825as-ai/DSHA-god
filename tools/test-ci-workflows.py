@@ -55,7 +55,7 @@ class WorkflowGraph(unittest.TestCase):
                     if selected.startswith("./"):
                         self.assertTrue((ROOT / selected[2:]).exists())
                     else:
-                        self.assertRegex(selected, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
+                        self.assertRegex(selected, r"^[\w.-]+/[\w.-]+(?:/[A-Za-z0-9_-]+)*@[0-9a-f]{40}$")
 
     def test_reusable_nodes_are_call_only_and_read_only(self):
         for path in WORKFLOWS.glob("_node-*.yml"):
