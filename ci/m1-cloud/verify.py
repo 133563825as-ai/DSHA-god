@@ -49,19 +49,22 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
+PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
+SDK_RETRY_PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
 LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py',
+ 'app/src/test/java/com/deepseekharness/app/ui/AboutFragmentTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[LINE_PARSER_PARENT]
+    assert parents(PARENT)==[SDK_RETRY_PARENT]
+    assert parents(SDK_RETRY_PARENT)==[LINE_PARSER_PARENT]
     assert parents(LINE_PARSER_PARENT)==[DIAGNOSTIC_PARENT]
     assert parents(DIAGNOSTIC_PARENT)==[PREVIOUS_RUN_PARENT]
     assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
@@ -147,7 +150,7 @@ def verify_xml(folder,expected,started):
 
 # Source coordinates are frozen, not inferred from arbitrary exception messages.
 ABOUT_SOURCE='app/src/test/java/com/deepseekharness/app/ui/AboutFragmentTest.java'
-ABOUT_SOURCE_SHA256='0d8a5764cd5d4ac9d2f52b41f16608b92985c975fc17a981150050b8ea5b49c7'
+ABOUT_SOURCE_SHA256='a7f4ce17820b85498c7fa60acf1667f4085ce9a6dd93699b059a14d6c18a7578'
 ABOUT_METHOD='stoppedPageRetiresQueuedReadAndDismissesItsDialog'
 ABOUT_STAGES={
  222:'ABOUT_STOP_SETUP',223:'ABOUT_STOP_QUEUE_INITIAL',224:'ABOUT_STOP_SNAPSHOT',

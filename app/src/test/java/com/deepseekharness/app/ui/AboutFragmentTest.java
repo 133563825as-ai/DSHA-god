@@ -225,7 +225,7 @@ public final class AboutFragmentTest {
     host.pause().stop();
     finishLicenseRead();
     assertSame("离页后的读取不能弹出对话框", before, ShadowDialog.getLatestDialog());
-    host.start().resume().visible();
+    host.restart().resume().visible();
     fragment.showLicense(new AboutLicenses.Entry("Missing-LICENSE.txt", "Missing license"));
     finishLicenseRead();
     Dialog shown = ShadowDialog.getLatestDialog();
@@ -233,7 +233,7 @@ public final class AboutFragmentTest {
     assertTrue(shown.isShowing());
     host.pause().stop();
     assertFalse("离页应关闭当前许可正文", shown.isShowing());
-    host.start().resume().visible();
+    host.restart().resume().visible();
   }
 
   @Test
