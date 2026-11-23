@@ -47,17 +47,19 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
+PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
+DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[PREVIOUS_RUN_PARENT]
+    assert parents(PARENT)==[DIAGNOSTIC_PARENT]
+    assert parents(DIAGNOSTIC_PARENT)==[PREVIOUS_RUN_PARENT]
     assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
     assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--name-only',PARENT,'HEAD').splitlines())==CHANGED

@@ -34,12 +34,34 @@ class FirstDiagnostic:
             objectRole='unknown',diagnosticLine='[REDACTED_OR_ABSENT_DIAGNOSTIC]',
             truncated=self.truncated,attribution='untrusted-subprocess-exact-text-not-proof')
 
+class BoundedLines:
+    """Discard an entire oversized physical line, never parse its prefix or suffix."""
+    def __init__(self, inspect, diagnostic):
+        self.inspect=inspect; self.diagnostic=diagnostic
+        self.pending=b''; self.dropping=False; self.dropped=0
+    def feed(self,data):
+        start=0
+        while start<len(data):
+            end=data.find(b'\n',start)
+            stop=len(data) if end<0 else end
+            if not self.dropping:
+                if len(self.pending)+stop-start>65536:
+                    self.pending=b''; self.dropping=True; self.dropped+=1
+                    if self.diagnostic.active:self.diagnostic.truncated=True
+                else:self.pending+=data[start:stop]
+            if end<0:return
+            if not self.dropping:self.inspect(self.pending.rstrip(b'\r'))
+            self.pending=b''; self.dropping=False; start=end+1
+    def finish(self):
+        if self.pending and not self.dropping:self.inspect(self.pending.rstrip(b'\r'))
+        self.pending=b''; self.dropping=False
+
 def children():
     return [int(x) for x in pathlib.Path('/proc/self/task/%s/children'%os.getpid()).read_text().split()]
 
 def run_phase(argv,env,report,target):
     assert ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)==0
-    child=None; code=None; stop=None; killed=[]; count=0; pending=b''
+    child=None; code=None; stop=None; killed=[]; count=0
     outcomes=[]; graph=False; graph_hash=None; graph_count=None; kotlin=None; kotlin_action=False; unknown=False
     started=time.monotonic(); diagnostic=FirstDiagnostic()
     def inspect(line):
@@ -58,6 +80,7 @@ def run_phase(argv,env,report,target):
             'a64f220adcbba0675b3aac62a13442dfaded848bbec9225fac2ca550f7d10056'):graph=True
         if 'Finished executing kotlin compiler using IN_PROCESS strategy' in text or 'Finished executing kotlin compiler using IN-PROCESS strategy' in text:kotlin='in-process'
         if 'Finished executing kotlin compiler using DAEMON strategy' in text:kotlin='daemon-refused'
+    lines=BoundedLines(inspect,diagnostic)
     try:
         with (report/'private-gradle.log').open('xb') as log:
             child=subprocess.Popen(argv,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
@@ -71,15 +94,12 @@ def run_phase(argv,env,report,target):
                     if data:
                         count+=len(data)
                         if count>LIMIT:stop='log-limit';break
-                        log.write(data);pending+=data
-                        while b'\n' in pending:
-                            line,pending=pending.split(b'\n',1);inspect(line.rstrip(b'\r'))
-                        if len(pending)>65536:stop='line-limit';break
+                        log.write(data);lines.feed(data)
                     elif child.poll() is not None:break
                 elif child.poll() is not None:
                     # Pipe EOF must be observed; a surviving descendant holding it is bounded.
                     if time.monotonic()-started>875:stop='pipe-not-closed';break
-            if pending:inspect(pending.rstrip(b'\r'))
+            lines.finish()
             log.flush();os.fsync(log.fileno())
     except BaseException as exc:
         stop='runner-error:'+type(exc).__name__
@@ -118,7 +138,7 @@ def run_phase(argv,env,report,target):
         unknown=unknown or remaining is None or bool(remaining) or code is None
         result=dict(exit=code,unknown=unknown,stopReason=stop,ownedRemainingCount=None if remaining is None else len(remaining),
             ownedKilledCount=len(set(killed)),seconds=round(time.monotonic()-started,3),
-            logBytes=min(count,LIMIT),firstDiagnostic=diagnostic.result(),
+            logBytes=min(count,LIMIT),droppedLongLines=lines.dropped,firstDiagnostic=diagnostic.result(),
             graphAccepted=graph,observedGraphSha256=graph_hash,
             observedGraphNodes=graph_count,outcomes=outcomes,
             firstFailure=next((x for x in outcomes if x.endswith(' FAILED')),None),
