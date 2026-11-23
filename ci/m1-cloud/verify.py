@@ -34,27 +34,33 @@ def sha(path):
 def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
 
 def policy():
-    p=json.loads((HERE/'policy.json').read_text())
-    assert p['admitted'] is True, 'STATIC_DRAFT_NOT_ADMITTED'
-    expected=os.environ['M1_EXPECTED_SHA']
-    assert p['repository'] and p['ref'] and re.fullmatch('[a-f0-9]{40}',expected)
-    assert os.environ['GITHUB_REPOSITORY']==p['repository']
-    assert os.environ['GITHUB_REF']==p['ref']
-    assert os.environ['GITHUB_SHA']==expected==git('rev-parse','HEAD')
-    return dict(p,candidateSha=expected)
+    assert os.environ['GITHUB_REPOSITORY']=='133563825as-ai/DSHA-god'
+    assert os.environ['GITHUB_REF']=='refs/heads/validate/m1-cloud-20261124'
+    assert os.environ['GITHUB_EVENT_NAME']=='push'
+    assert os.environ['GITHUB_RUN_ATTEMPT']=='1', 'one-time event: rerun refused'
+    event=json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+    head=git('rev-parse','HEAD')
+    assert re.fullmatch('[a-f0-9]{40}',head)
+    assert event['before']=='4c408269228756ed31e1c89381c5114dd02df1e7'
+    assert event['after']==os.environ['GITHUB_SHA']==head
+    assert event['ref']==os.environ['GITHUB_REF'] and not event.get('deleted')
+    assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
+    return dict(candidateSha=head)
+
+PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
+CHANGED={'.github/workflows/m1-cloud.yml','.github/workflows/ci-fast.yml',
+ '.github/workflows/docs-check.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py',
+ 'ci/m1-cloud/gate.gradle'}
 
 def candidate():
     p=policy()
-    assert git('rev-list','--parents','-n','1','HEAD').split()==[p['candidateSha'],BASE]
-    changed=set(git('diff','--name-only',BASE,'HEAD').splitlines())
-    helpers=set(p['reviewedHelperPaths'])
-    assert helpers=={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py',
-        'ci/m1-cloud/gate.gradle','ci/m1-cloud/policy.json'}, 'no arbitrary helper prefix'
-    assert changed==set(PATCHES)|helpers
+    def parents(commit):
+        return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
+    assert parents(p['candidateSha'])==[PARENT]
+    assert parents(PARENT)==[BASE]
+    assert set(git('diff','--name-only',PARENT,'HEAD').splitlines())==CHANGED
     for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
     protected()
-    # Helper hashes are bound by reviewed candidate commit and separate author review;
-    # do not demand a self-referential SHA of policy.json inside that same file.
     assert not git('status','--porcelain','--untracked-files=all')
 
 def protected():
@@ -68,7 +74,7 @@ def sdk34():
     assert row==dict(version=version,size=151142227,sha256='3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701')
     assert (lock['repository'],lock['group'],lock['artifact'])==('https://repo1.maven.org/maven2','org.robolectric','android-all-instrumented')
     name='android-all-instrumented-'+version+'.jar'
-    directory=pathlib.Path(os.environ['DSHA_ROBOLECTRIC_DEPENDENCY_DIR']); directory.mkdir()
+    directory=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-sdk34'; directory.mkdir()
     target=directory/name
     url=lock['repository']+'/org/robolectric/android-all-instrumented/'+version+'/'+name
     # No alternate repository/ref. Reject redirects rather than broaden origin.
@@ -85,7 +91,11 @@ def verify_xml(folder,expected,started):
     observed=[]
     for path in sorted(folder.glob('TEST-*.xml')):
         assert path.stat().st_mtime_ns>=started,path
+        assert path.stat().st_size<=2*1024*1024, 'XML byte limit'
         root=ET.parse(path).getroot()
+        assert root.tag=='testsuite'
+        assert all(int(root.get(k,'0'))==0 for k in ('failures','errors','skipped'))
+        assert int(root.get('tests','-1'))==len(list(root.iter('testcase')))
         for case in root.iter('testcase'):
             assert not any(case.find(tag) is not None for tag in ('failure','error','skipped'))
             observed.append(case.attrib['classname']+'.'+case.attrib['name'])
@@ -94,12 +104,14 @@ def verify_xml(folder,expected,started):
     return observed
 
 def phase(name):
-    p=policy(); protected(); assert name in ('compile','jvm','about')
-    evidence=pathlib.Path(os.environ['M1_EVIDENCE']); evidence.mkdir(exist_ok=True)
-    report=evidence/name; report.mkdir()  # Never overwrite previous phase evidence.
+    from runner import run_phase
+    policy(); protected(); assert name in ('compile','jvm','about')
+    evidence=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-evidence'
+    evidence.mkdir(exist_ok=True)
+    report=evidence/name; report.mkdir()
     reports=ROOT/'app/build/test-results/testStandardDebugUnitTest'
     html=ROOT/'app/build/reports/tests/testStandardDebugUnitTest'
-    assert not reports.exists() and not html.exists(), 'previous Test reports must be moved, never cleaned'
+    assert not reports.exists() and not html.exists(), 'old Test reports'
     target=':app:compileStandardDebugUnitTestJavaWithJavac' if name=='compile' else ':app:testStandardDebugUnitTest'
     argv=['/bin/bash','./gradlew','--no-daemon','--no-parallel','--max-workers=1',
         '--no-build-cache','--no-configuration-cache','--dependency-verification=strict',
@@ -110,49 +122,80 @@ def phase(name):
         '-Pdsha.rust.mode=off','-Pkotlin.compiler.execution.strategy=in-process',target]
     if name!='compile':
         for method in METHODS[name]: argv+=['--tests',method]
+    sdk=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-sdk34'
     if name=='about':
-        d=pathlib.Path(os.environ['DSHA_ROBOLECTRIC_DEPENDENCY_DIR'])
-        files=list(d.iterdir()); assert len(files)==1 and sha(files[0])=='3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701'
-    env=dict(os.environ,M1_PHASE=name,M1_METHODS=json.dumps(METHODS.get(name,[])))
+        files=list(sdk.iterdir()); assert len(files)==1 and sha(files[0])=='3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701'
+    env=dict(os.environ,M1_PHASE=name,M1_METHODS=json.dumps(METHODS.get(name,[])),
+        DSHA_ROBOLECTRIC_DEPENDENCY_DIR=str(sdk))
     assert 'DSHA_UNIT_TEST_STATE' not in env
-    # Source-only stays false through the existing project contract; no -x or rerun.
-    (report/'invocation.json').write_text(json.dumps(dict(argv=argv,phase=name,commit=git('rev-parse','HEAD')),indent=2))
+    # Run with a clean execution env; do not send Actions tokens to Gradle.
+    env={k:v for k,v in env.items() if not any(t in k.upper() for t in ('TOKEN','SECRET','PASSWORD','CREDENTIAL'))}
     started=time.time_ns()
-    with (report/'gradle.log').open('xb') as log:
-        child=subprocess.Popen(argv,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-        timed=False
-        try: code=child.wait(timeout=880)
-        except subprocess.TimeoutExpired:
-            import signal
-            timed=True; os.killpg(child.pid,signal.SIGTERM)
-            try: child.wait(timeout=5)
-            except subprocess.TimeoutExpired: os.killpg(child.pid,signal.SIGKILL)
-            code=child.wait(timeout=5)
-    # Numeric exit survives later XML/log validation failures.
-    temp=report/'exit.tmp'; temp.write_text(json.dumps(dict(exit=code,timedOut=timed)))
-    os.replace(temp,report/'exit.json')
-    # Emit bounded machine outcomes, never arbitrary project stdout/secrets.
-    text=(report/'gradle.log').read_text(errors='replace')
-    outcomes=[]
-    for line in text.splitlines():
-        if re.fullmatch(r'> Task :app:[A-Za-z0-9]+(?: (?:FAILED|UP-TO-DATE|SKIPPED|NO-SOURCE|FROM-CACHE))?',line):
-            outcomes.append(line)
-    failure=next((x for x in outcomes if x.endswith(' FAILED')),None)
-    print('M1_PHASE_EXIT='+json.dumps(dict(phase=name,exit=code,timedOut=timed,
-        firstRedactedFailureOutcome=failure,outcomes=outcomes[:54],rawEvidenceRetainedOnlyOnRunner=True)),flush=True)
-    assert code==0 and not timed
-    assert 'M1_CLOUD_GRAPH_ACCEPTED=' in text
-    if name!='compile':
-        exact='> Task '+target
-        assert any(line==exact for line in text.splitlines()), 'Test not freshly executed'
-        try:
+    result=run_phase(argv,env,report,target)
+    safe=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-safe-evidence'; safe.mkdir(exist_ok=True)
+    phase_safe=safe/name; phase_safe.mkdir()
+    accepted=False; xml_error=None
+    try:
+        assert result['exit']==0 and not result['unknown'] and not result['stopReason']
+        assert result['graphAccepted'] and result['kotlinStrategy'] in ('in-process','not-observed-no-kotlin-action')
+        if name!='compile':
+            assert result['testExecuted'], 'Test not freshly executed'
             observed=verify_xml(reports,METHODS[name],started)
-            (report/'xml-verification.json').write_text(json.dumps(dict(methods=observed,count=len(observed))))
-            print('M1_XML_VERIFIED='+json.dumps(dict(phase=name,methods=observed,count=len(observed))),flush=True)
-        finally:
-            if reports.exists(): shutil.move(str(reports),str(report/'xml'))
-            if html.exists(): shutil.move(str(html),str(report/'html'))
+            accepted=True
+        else: accepted=True
+    except Exception as exc:
+        xml_error=type(exc).__name__  # Never arbitrary diagnostic content.
+    finally:
+        # Export only structural XML facts, never system-out/err/properties or bodies.
+        records=[]
+        if name!='compile' and reports.exists():
+            for path in sorted(reports.glob('TEST-*.xml'))[:10]:
+                if path.stat().st_size>2*1024*1024: xml_error='XmlSizeLimit'; accepted=False; continue
+                try:
+                    tree=ET.parse(path).getroot()
+                    for case in tree.iter('testcase'):
+                        cls=case.get('classname',''); method=case.get('name','')
+                        if cls+'.'+method not in METHODS[name]:
+                            records.append(dict(status='UNEXPECTED_IDENTITY_REDACTED')); continue
+                        status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
+                        records.append(dict(classname=cls,name=method,status=status))
+                    if len(records)>20: records=records[:20]; accepted=False;xml_error='XmlCaseLimit'
+                except Exception: xml_error='XmlParseFailure';accepted=False
+            shutil.move(str(reports),str(report/'raw-xml'))
+        if html.exists(): shutil.move(str(html),str(report/'raw-html'))
+        if name!='compile':
+            suites=ET.Element('testsuites')
+            for cls in sorted({x['classname'] for x in records if 'classname' in x}):
+                cases=[x for x in records if x.get('classname')==cls]
+                suite=ET.SubElement(suites,'testsuite',name=cls,tests=str(len(cases)),
+                    failures=str(sum(x['status']=='failure' for x in cases)),
+                    errors=str(sum(x['status']=='error' for x in cases)),
+                    skipped=str(sum(x['status']=='skipped' for x in cases)))
+                for x in cases:
+                    case=ET.SubElement(suite,'testcase',classname=cls,name=x['name'])
+                    if x['status']!='passed':ET.SubElement(case,x['status'])
+            ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
+        terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
+            argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
+            runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,
+            rawXmlUploaded=False,rawLogUploaded=False,filteredXmlOnly=True,artifactVisibility='public-repository')
+        (phase_safe/'result.json').write_text(json.dumps(terminal,indent=2)+'\n')
+        print('M1_PHASE_RESULT='+json.dumps(terminal),flush=True)
+    assert accepted,'M1_PHASE_NOT_ACCEPTED'
     protected()
+
+def finalize_evidence():
+    # Missing result is UNKNOWN/not reached, never invented numeric exit/PASS.
+    root=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-safe-evidence'
+    root.mkdir(exist_ok=True)
+    for name in ('compile','jvm','about'):
+        folder=root/name;folder.mkdir(exist_ok=True)
+        path=folder/'result.json'
+        if not path.exists():
+            path.write_text(json.dumps(dict(exit=None,unknown=True,accepted=False,
+                status='NO_TERMINAL_RECEIPT_OR_PHASE_NOT_REACHED',phase=name,
+                commit=os.environ.get('GITHUB_SHA'),runId=os.environ.get('GITHUB_RUN_ID'),
+                runAttempt=os.environ.get('GITHUB_RUN_ATTEMPT'),argv=None)))
 
 if __name__=='__main__':
     command=sys.argv[1]
@@ -160,4 +203,5 @@ if __name__=='__main__':
     elif command=='protected': policy(); protected()
     elif command=='sdk34': sdk34()
     elif command=='phase': phase(sys.argv[2])
+    elif command=='finalize': finalize_evidence()
     else: raise SystemExit('unknown command')

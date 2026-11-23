@@ -13,7 +13,7 @@ final String phase = System.getenv('M1_PHASE')
 if (!(phase in ['compile','jvm','about'])) throw new GradleException('M1_BAD_PHASE')
 final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
-final String expectedRoot = System.getenv('M1_ROOT')
+final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
 final List knownJvm = [
  'com.deepseekharness.app.contract.BuiltinModulesTest.registersAboutAsAlwaysOnCardWithBilingualTitle',

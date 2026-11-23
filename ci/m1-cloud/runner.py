@@ -1,0 +1,96 @@
+"""Linux phase owner: bounded private log, sanitized output, owned cleanup only."""
+import ctypes, json, os, pathlib, re, select, signal, subprocess, time
+LIMIT=8*1024*1024
+
+def children():
+    return [int(x) for x in pathlib.Path('/proc/self/task/%s/children'%os.getpid()).read_text().split()]
+
+def run_phase(argv,env,report,target):
+    assert ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)==0
+    child=None; code=None; stop=None; killed=[]; count=0; pending=b''
+    outcomes=[]; graph=False; graph_hash=None; graph_count=None; kotlin=None; kotlin_action=False; unknown=False
+    started=time.monotonic()
+    def inspect(line):
+        nonlocal graph,graph_hash,graph_count,kotlin,kotlin_action
+        text=line.decode('utf-8',errors='replace')
+        if re.fullmatch(r'> Task :app:[A-Za-z0-9]+(?: (?:FAILED|UP-TO-DATE|SKIPPED|NO-SOURCE|FROM-CACHE))?',text):
+            if len(outcomes)<60: outcomes.append(text)
+            if 'Kotlin' in text and not any(x in text for x in ('UP-TO-DATE','SKIPPED','NO-SOURCE')):kotlin_action=True
+        if text.startswith('M1_CLOUD_GRAPH='):
+            import hashlib
+            rows=json.loads(text.split('=',1)[1]);graph_count=len(rows)
+            graph_hash=hashlib.sha256(json.dumps(sorted(rows,key=lambda x:x['path']),ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+        if text.startswith('M1_CLOUD_GRAPH_ACCEPTED=') and text.split('=',1)[1] in (
+            '0728ffaa72386f94443366534232fd6deb18ef7dff1c01774d6cbddea72c6ddf',
+            'a64f220adcbba0675b3aac62a13442dfaded848bbec9225fac2ca550f7d10056'):graph=True
+        if 'Finished executing kotlin compiler using IN_PROCESS strategy' in text or 'Finished executing kotlin compiler using IN-PROCESS strategy' in text:kotlin='in-process'
+        if 'Finished executing kotlin compiler using DAEMON strategy' in text:kotlin='daemon-refused'
+    try:
+        with (report/'private-gradle.log').open('xb') as log:
+            child=subprocess.Popen(argv,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,start_new_session=True,bufsize=0)
+            os.set_blocking(child.stdout.fileno(),False)
+            while True:
+                if time.monotonic()-started>880:stop='timeout';break
+                readable=select.select([child.stdout],[],[],.1)[0]
+                if readable:
+                    data=os.read(child.stdout.fileno(),65536)
+                    if data:
+                        count+=len(data)
+                        if count>LIMIT:stop='log-limit';break
+                        log.write(data);pending+=data
+                        while b'\n' in pending:
+                            line,pending=pending.split(b'\n',1);inspect(line.rstrip(b'\r'))
+                        if len(pending)>65536:stop='line-limit';break
+                    elif child.poll() is not None:break
+                elif child.poll() is not None:
+                    # Pipe EOF must be observed; a surviving descendant holding it is bounded.
+                    if time.monotonic()-started>875:stop='pipe-not-closed';break
+            if pending:inspect(pending.rstrip(b'\r'))
+            log.flush();os.fsync(log.fileno())
+    except BaseException as exc:
+        stop='runner-error:'+type(exc).__name__
+    finally:
+        deadline=time.monotonic()+10
+        if child is not None:
+            if child.poll() is None:
+                try:os.killpg(child.pid,signal.SIGTERM)
+                except ProcessLookupError:pass
+                try:child.wait(timeout=2)
+                except subprocess.TimeoutExpired:pass
+            # Never address a reaped leader PGID with no owned descendants.
+            if child.poll() is None or children():
+                try:os.killpg(child.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+        try:
+            while children() and time.monotonic()<deadline:
+                for pid in children():
+                    try:
+                        fd=os.pidfd_open(pid)
+                        try:
+                            if pid in children():signal.pidfd_send_signal(fd,signal.SIGKILL);killed.append(pid)
+                        finally:os.close(fd)
+                    except ProcessLookupError:pass
+                while True:
+                    try:
+                        pid,status=os.waitpid(-1,os.WNOHANG)
+                        if not pid:break
+                        if child is not None and pid==child.pid:code=os.waitstatus_to_exitcode(status)
+                    except ChildProcessError:break
+                time.sleep(.05)
+            if child is not None and code is None:code=child.poll()
+            remaining=children()
+        except BaseException:
+            remaining=None;unknown=True
+        unknown=unknown or remaining is None or bool(remaining) or code is None
+        result=dict(exit=code,unknown=unknown,stopReason=stop,ownedRemainingCount=None if remaining is None else len(remaining),
+            ownedKilledCount=len(set(killed)),seconds=round(time.monotonic()-started,3),
+            logBytes=min(count,LIMIT),graphAccepted=graph,observedGraphSha256=graph_hash,
+            observedGraphNodes=graph_count,outcomes=outcomes,
+            firstFailure=next((x for x in outcomes if x.endswith(' FAILED')),None),
+            testExecuted=('> Task '+target) in outcomes,
+            kotlinStrategy=kotlin or ('unknown' if kotlin_action else 'not-observed-no-kotlin-action'))
+        temp=report/'exit.tmp'
+        with temp.open('x') as f:json.dump(result,f);f.flush();os.fsync(f.fileno())
+        os.replace(temp,report/'exit.json')
+    return result
