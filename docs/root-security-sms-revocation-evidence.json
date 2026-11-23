@@ -51,8 +51,6 @@
     ]
   },
   "localProjectExecution": false,
-  "localSdkSigningOnly": true,
-  "deviceAcceptance": "NOT_PASSED",
   "openBoundaries": [
     "F01 external target and business authority commit window",
     "bridge and web lifecycle authority binding",
