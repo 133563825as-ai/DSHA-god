@@ -48,7 +48,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='59a111106d382b5316b709b3fb2ade9929f00069'
+PARENT='e081cac90549708ce7c6bdb2c5f76115bb42e5af'
+SLICE_PARENT='59a111106d382b5316b709b3fb2ade9929f00069'
 GREEN_PARENT='66d76f1fa70eb7f8cf3cf38f141b766f2b1b80bc'
 FIXTURE_PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
 SDK_RETRY_PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
@@ -56,21 +57,15 @@ LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/gate.gradle',
- 'app/src/main/java/com/deepseekharness/app/storage/model/StorageModel.java',
- 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoController.java',
- 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
- 'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
- 'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
- 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoControllerTest.java',
- 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoViewTest.java'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[GREEN_PARENT]
+    assert parents(PARENT)==[SLICE_PARENT]
+    assert parents(SLICE_PARENT)==[GREEN_PARENT]
     assert parents(GREEN_PARENT)==[FIXTURE_PARENT]
     assert parents(FIXTURE_PARENT)==[SDK_RETRY_PARENT]
     assert parents(SDK_RETRY_PARENT)==[LINE_PARSER_PARENT]
@@ -88,7 +83,9 @@ def protected():
     for name,pin in PROTECTED.items(): assert sha(ROOT/name)==pin,name
 
 def sdk_open(opener,url,deadline):
-    # At most three sequential GETs, same URL/opener, at most 30s total backoff.
+    # Three sequential GETs at <=60s each + <=120s backoff fit the 300s soft budget.
+    # The deadline is checked between I/O calls, not a transfer-wide hard timeout.
+    # Actions enforces the independent 360s hard step window (including stalled I/O).
     waited=0
     for attempt in range(1,4):
         remaining=deadline-time.monotonic()
@@ -111,7 +108,7 @@ def sdk_open(opener,url,deadline):
                 except (ValueError,TypeError,OverflowError):
                     raise ValueError('SDK Retry-After invalid') from None
             # Never shorten a server delay to force another request.
-            if delay>30-waited or delay+60>deadline-time.monotonic():
+            if delay>120-waited or delay+60>deadline-time.monotonic():
                 print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=0,state='RETRY_BUDGET_REFUSED')),flush=True)
                 raise
             print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=delay,state='WAIT')),flush=True)
@@ -131,7 +128,7 @@ def sdk34():
     # No alternate repository/ref. Reject redirects rather than broaden origin.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs): raise ValueError('SDK redirect refused')
-    deadline=time.monotonic()+210
+    deadline=time.monotonic()+300
     with sdk_open(urllib.request.build_opener(NoRedirect),url,deadline) as response, target.open('xb') as f:
         total=0
         for block in iter(lambda:response.read(1024*1024),b''):
