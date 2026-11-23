@@ -42,13 +42,49 @@
     "unsignedDevBuild": "success"
   },
   "deliveryConstraint": {
-    "codeTestsAndDescriptorMustEqualValidatedCodeCommit": true,
+    "productionJvmTestsAndDescriptorMustEqualValidatedCodeCommit": true,
     "onlyAllowedDeltaPaths": [
       ".github/workflows/root-sms-regression.yml",
+      ".github/workflows/_node-unit-tests.yml",
+      "app/src/androidTest/java/com/deepseekharness/app/RootHandoverInstrumentation.java",
+      "app/src/androidTest/java/com/deepseekharness/app/core/RecoveryInstrumentation.java",
+      "tools/check-source-hygiene.py",
+      "tools/test-ci-workflows.py",
+      "tools/java-format-files.json",
       "docs/root-security-sms-revocation-repair.md",
       "docs/root-security-sms-revocation-evidence.json",
       "docs/root-security-root01-p0-repair.md"
     ]
+  },
+  "cacheResumeValidation": {
+    "commit": "3f4c51d6b5f6778fba6b70884409ab62c0da7146",
+    "partialSavedRun": 45136625563,
+    "resumedRun": 45137718766,
+    "resumedUnitJob": 137568620754,
+    "restoredPinnedJars": 4,
+    "downloadedMissingPinnedJars": 1,
+    "tests": 4545,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "hostFast": "success",
+    "wholeSourceRun": "failure: raw androidTest source required canonical formatting",
+    "lockUrlVersionsSizesDigestsUnchanged": true
+  },
+  "instrumentationCodeValidation": {
+    "commit": "988b860416183ed376553538c9186a902455111a",
+    "sourceRun": 45138846260,
+    "sourceChecks": "success",
+    "tests": 4545,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "buildRun": 45138846212,
+    "gradleAndroidTestBuild": "success",
+    "wholeBuildWorkflow": "failure: post-build SHA256 collection used a disabled shell glob",
+    "testArtifact": 14801492397,
+    "artifactSha256": "1e0bfb7b665b1d4023865e249ca8048ccded13075e138a9d5d59b4dcc343626a",
+    "productionSourcesChanged": false
   },
   "localProjectExecution": false,
   "openBoundaries": [
