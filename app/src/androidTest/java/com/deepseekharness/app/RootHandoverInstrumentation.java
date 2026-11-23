@@ -74,7 +74,9 @@ public final class RootHandoverInstrumentation extends Instrumentation {
     receipt.putString("result", passed ? "PASS" : "FAIL");
     receipt.putString("cases", results.toString());
     receipt.putString("scope", "real-helper/config-gate/id-only; not RootShell.exec SMS E2E");
-    receipt.putString("processExitScope", "su launcher exited and output EOF; descendants not independently identified");
+    receipt.putString(
+        "processExitScope",
+        "su launcher exited and output EOF; descendants not independently identified");
     finish(passed ? Activity.RESULT_OK : Activity.RESULT_CANCELED, receipt);
   }
 
@@ -144,7 +146,9 @@ public final class RootHandoverInstrumentation extends Instrumentation {
       require(accepted == expectExecution, "GATE_VERDICT_MISMATCH " + name);
       if (expectExecution) requireId(output);
       else {
-        require(output.contains("ROOT_REQUEST_NOT_COMMITTED"), "EXPLICIT_EOF_REJECTION_REQUIRED " + output);
+        require(
+            output.contains("ROOT_REQUEST_NOT_COMMITTED"),
+            "EXPLICIT_EOF_REJECTION_REQUIRED " + output);
         require(!output.contains("uid=0"), "REVOKED_REQUEST_EXECUTED");
       }
       if (smsCase) require(config.isRootShellAllowed(), "SMS_MUST_NOT_DISABLE_ROOT");
@@ -194,9 +198,11 @@ public final class RootHandoverInstrumentation extends Instrumentation {
     return new ProcessBuilder("/system/bin/su", "-c", entry).redirectErrorStream(true).start();
   }
 
-  private static void awaitStaged(Process helper, String nonce) throws IOException, InterruptedException {
+  private static void awaitStaged(Process helper, String nonce)
+      throws IOException, InterruptedException {
     try {
-      var method = RootShell.class.getDeclaredMethod("awaitStaged", Process.class, String.class, long.class);
+      var method =
+          RootShell.class.getDeclaredMethod("awaitStaged", Process.class, String.class, long.class);
       method.setAccessible(true);
       method.invoke(null, helper, nonce, 15000L);
     } catch (InvocationTargetException wrapper) {
@@ -211,48 +217,76 @@ public final class RootHandoverInstrumentation extends Instrumentation {
   private static String result(Process helper) throws Exception {
     var worker = Executors.newSingleThreadExecutor();
     try {
-      var remaining = worker.submit(() -> {
-        var bytes = new ByteArrayOutputStream();
-        byte[] buffer = new byte[2048];
-        int count;
-        while ((count = helper.getInputStream().read(buffer)) != -1) {
-          if (bytes.size() + count > 16384) throw new IOException("HELPER_OUTPUT_LIMIT");
-          bytes.write(buffer, 0, count);
-        }
-        return bytes.toString(StandardCharsets.UTF_8);
-      });
+      var remaining =
+          worker.submit(
+              () -> {
+                var bytes = new ByteArrayOutputStream();
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = helper.getInputStream().read(buffer)) != -1) {
+                  if (bytes.size() + count > 16384) throw new IOException("HELPER_OUTPUT_LIMIT");
+                  bytes.write(buffer, 0, count);
+                }
+                return bytes.toString(StandardCharsets.UTF_8);
+              });
       require(helper.waitFor(20, TimeUnit.SECONDS), "SU_LAUNCHER_EXIT_REQUIRED");
       require(helper.exitValue() == 0, "HELPER_LAUNCHER_NONZERO_EXIT");
       String raw = remaining.get(5, TimeUnit.SECONDS);
       int marker = raw.indexOf(RootShellMain.RESULT);
-      require(marker >= 0 && marker == raw.lastIndexOf(RootShellMain.RESULT), "ONE_COMPLETE_RESULT_REQUIRED " + raw);
+      require(
+          marker >= 0 && marker == raw.lastIndexOf(RootShellMain.RESULT),
+          "ONE_COMPLETE_RESULT_REQUIRED " + raw);
       String encoded = raw.substring(marker + RootShellMain.RESULT.length()).trim();
       require(!encoded.contains("\n"), "TRAILING_OUTPUT_REJECTED");
       return new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
     } finally {
-      try { helper.getInputStream().close(); } catch (IOException ignored) {}
+      try {
+        helper.getInputStream().close();
+      } catch (IOException ignored) {
+      }
       worker.shutdownNow();
       require(worker.awaitTermination(5, TimeUnit.SECONDS), "READER_TERMINATION_REQUIRED");
     }
   }
 
   private static void closeHelper(Process helper) {
-    try { helper.getOutputStream().close(); } catch (IOException ignored) {}
-    try { helper.getInputStream().close(); } catch (IOException ignored) {}
-    try { helper.getErrorStream().close(); } catch (IOException ignored) {}
-    try { helper.destroy(); } catch (RuntimeException ignored) {}
+    try {
+      helper.getOutputStream().close();
+    } catch (IOException ignored) {
+    }
+    try {
+      helper.getInputStream().close();
+    } catch (IOException ignored) {
+    }
+    try {
+      helper.getErrorStream().close();
+    } catch (IOException ignored) {
+    }
+    try {
+      helper.destroy();
+    } catch (RuntimeException ignored) {
+    }
   }
 
   private void record(String name, String nonce, boolean accepted, String output) throws Exception {
-    results.put(new JSONObject().put("case", name).put("nonce", nonce)
-        .put("matchedStaged", true).put("gateAccepted", accepted)
-        .put("launcherExited", true).put("output", output));
+    results.put(
+        new JSONObject()
+            .put("case", name)
+            .put("nonce", nonce)
+            .put("matchedStaged", true)
+            .put("gateAccepted", accepted)
+            .put("launcherExited", true)
+            .put("output", output));
   }
 
-  private static String nonce() { return UUID.randomUUID().toString().replace("-", ""); }
+  private static String nonce() {
+    return UUID.randomUUID().toString().replace("-", "");
+  }
 
   private static void requireId(String output) {
-    require(output.contains("uid=0(root)") && output.endsWith("[EXIT=0]"), "REAL_ID_CONTROL_REQUIRED " + output);
+    require(
+        output.contains("uid=0(root)") && output.endsWith("[EXIT=0]"),
+        "REAL_ID_CONTROL_REQUIRED " + output);
   }
 
   private static void require(boolean condition, String message) {
