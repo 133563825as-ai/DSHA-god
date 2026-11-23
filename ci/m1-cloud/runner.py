@@ -34,6 +34,34 @@ class FirstDiagnostic:
             objectRole='unknown',diagnosticLine='[REDACTED_OR_ABSENT_DIAGNOSTIC]',
             truncated=self.truncated,attribution='untrusted-subprocess-exact-text-not-proof')
 
+class PregraphDiagnostic:
+    """Finite untrusted Gradle failure hints; never echo matched text or infer cause."""
+    def __init__(self):self.active=False;self.codes=[]
+    def feed(self,line):
+        if len(line)>4096:return
+        text=line.decode('utf-8',errors='replace')
+        if text=='FAILURE: Build failed with an exception.':self.active=True;return
+        if not self.active:return
+        code=None
+        # Only fixed grammar inside a Gradle failure section, not free-form HTTP mentions.
+        status=re.fullmatch(r"[ \t]*> (?:Could not (?:GET|HEAD) '[^'\r\n]+'\. Received status code |Received status code )(401|403|429|5[0-9]{2}) from server: [^\r\n]*",text)
+        if status:
+            value=status.group(1);code='HTTP_5XX' if value.startswith('5') else 'HTTP_'+value
+        elif re.fullmatch(r'[ \t]*> Dependency verification failed for configuration [^\r\n]+',text):code='STRICT_DEPENDENCY_VERIFICATION'
+        elif re.fullmatch(r'[ \t]*> .*PKIX path building failed[^\r\n]*',text):code='TLS_PKIX'
+        elif re.fullmatch(r'[ \t]*> (?:Read timed out|Connect timed out|Connection timed out)',text):code='NETWORK_TIMEOUT'
+        elif re.fullmatch(r'[ \t]*> Namespace not specified\.[^\r\n]*',text):code='AGP_NAMESPACE_REQUIRED'
+        elif re.fullmatch(r'[ \t]*> SDK location not found\.[^\r\n]*',text):code='AGP_SDK_LOCATION'
+        else:
+            gate=re.fullmatch(r'[ \t]*> (M1_BAD_PHASE|M1_BAD_EXACT_METHODS|M1_REFUSED_START_PARAMETERS|M1_ROOT_DRIFT|M1_TEST_TYPE_COUNT|M1_RUST_OFF_DRIFT|M1_RUST_ARGV_DRIFT|M1_JAVA17_DRIFT|M1_PRODUCTION_SYSTEM_DRIFT|M1_UNIT_SYSTEM_DRIFT|M1_OLD_TEST_REPORTS|M1_ROBOLECTRIC_OFFLINE_REQUIRED|M1_NONFRESH_TEST_FILE)',text)
+            if gate:code=gate.group(1)
+            elif re.fullmatch(r'[ \t]*> M1_EXACT_GRAPH_DRIFT:[a-f0-9]{64}',text):code='M1_EXACT_GRAPH_DRIFT'
+            elif re.fullmatch(r'[ \t]*> M1_PREWORKER_FILTER_DRIFT:[^\r\n]+',text):code='M1_PREWORKER_FILTER_DRIFT'
+        if code and code not in self.codes and len(self.codes)<8:self.codes.append(code)
+    def result(self):
+        return dict(codes=self.codes or ['UNKNOWN'],
+            attribution='untrusted-pregraph-log-hints-not-causal-proof')
+
 class BoundedLines:
     """Discard an entire oversized physical line, never parse its prefix or suffix."""
     def __init__(self, inspect, diagnostic):
@@ -63,10 +91,11 @@ def run_phase(argv,env,report,target):
     assert ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)==0
     child=None; code=None; stop=None; killed=[]; count=0
     outcomes=[]; graph=False; graph_hash=None; graph_count=None; kotlin=None; kotlin_action=False; unknown=False
-    started=time.monotonic(); diagnostic=FirstDiagnostic()
+    started=time.monotonic(); diagnostic=FirstDiagnostic(); pregraph=PregraphDiagnostic()
     def inspect(line):
         nonlocal graph,graph_hash,graph_count,kotlin,kotlin_action
         diagnostic.feed(line)
+        if graph_count is None and not outcomes:pregraph.feed(line)
         text=line.decode('utf-8',errors='replace')
         if re.fullmatch(r'> Task :app:[A-Za-z0-9]+(?: (?:FAILED|UP-TO-DATE|SKIPPED|NO-SOURCE|FROM-CACHE))?',text):
             if len(outcomes)<60: outcomes.append(text)
@@ -139,6 +168,7 @@ def run_phase(argv,env,report,target):
         result=dict(exit=code,unknown=unknown,stopReason=stop,ownedRemainingCount=None if remaining is None else len(remaining),
             ownedKilledCount=len(set(killed)),seconds=round(time.monotonic()-started,3),
             logBytes=min(count,LIMIT),droppedLongLines=lines.dropped,firstDiagnostic=diagnostic.result(),
+            pregraphDiagnostic=(pregraph.result() if graph_count is None and not outcomes else None),
             graphAccepted=graph,observedGraphSha256=graph_hash,
             observedGraphNodes=graph_count,outcomes=outcomes,
             firstFailure=next((x for x in outcomes if x.endswith(' FAILED')),None),

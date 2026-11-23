@@ -49,21 +49,22 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
+PARENT='66d76f1fa70eb7f8cf3cf38f141b766f2b1b80bc'
+FIXTURE_PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
 SDK_RETRY_PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
 LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py',
- 'app/src/test/java/com/deepseekharness/app/ui/AboutFragmentTest.java'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[SDK_RETRY_PARENT]
+    assert parents(PARENT)==[FIXTURE_PARENT]
+    assert parents(FIXTURE_PARENT)==[SDK_RETRY_PARENT]
     assert parents(SDK_RETRY_PARENT)==[LINE_PARSER_PARENT]
     assert parents(LINE_PARSER_PARENT)==[DIAGNOSTIC_PARENT]
     assert parents(DIAGNOSTIC_PARENT)==[PREVIOUS_RUN_PARENT]
