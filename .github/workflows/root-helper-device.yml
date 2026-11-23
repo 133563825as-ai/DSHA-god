@@ -29,15 +29,17 @@ jobs:
         run: |
           set -euf
           python3 tools/format-java-tree.py --write
-          chmod +x gradlew
-          ./gradlew :app:assembleStandardDebugAndroidTest -Pdsha.devPackage=true -Pdsha.unsignedPackage=true -Pdsha.identity=upstream -Pdsha.testRunner=com.deepseekharness.app.RootHandoverInstrumentation --no-daemon --max-workers=2
           mkdir -p out/root-helper-device
-          cp app/build/outputs/apk/androidTest/standard/debug/*.apk out/root-helper-device/
           cp app/src/androidTest/java/com/deepseekharness/app/RootHandoverInstrumentation.java out/root-helper-device/
+          cp app/src/androidTest/java/com/deepseekharness/app/core/RecoveryInstrumentation.java out/root-helper-device/
           git diff --stat > out/root-helper-device/formatting-diff.txt
           printf '%s\n' "$GITHUB_SHA" > out/root-helper-device/source-commit.txt
+          chmod +x gradlew
+          ./gradlew :app:assembleStandardDebugAndroidTest -Pdsha.devPackage=true -Pdsha.unsignedPackage=true -Pdsha.identity=upstream -Pdsha.testRunner=com.deepseekharness.app.RootHandoverInstrumentation --no-daemon --max-workers=2
+          cp app/build/outputs/apk/androidTest/standard/debug/*.apk out/root-helper-device/
           sha256sum out/root-helper-device/*.apk > out/root-helper-device/SHA256SUMS.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
         with:
           name: root-helper-device-instrumentation
           path: out/root-helper-device/

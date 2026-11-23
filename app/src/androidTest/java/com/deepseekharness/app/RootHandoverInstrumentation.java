@@ -112,15 +112,25 @@ public final class RootHandoverInstrumentation extends Instrumentation {
                   staged[0] = true;
                   // Runs after the actual matching UID0 helper acknowledgement, outside gate lock.
                   switch (mutation) {
-                    case "root-off" -> config.setRootShellAllowed(false);
+                    case "root-off" -> {
+                      config.setRootShellAllowed(false);
+                      require(!config.isRootShellAllowed(), "ROOT_REVOKE_REQUIRED");
+                    }
                     case "root-aba" -> {
                       config.setRootShellAllowed(false);
+                      require(!config.isRootShellAllowed(), "ROOT_REVOKE_REQUIRED");
                       config.setRootShellAllowed(true);
+                      require(config.isRootShellAllowed(), "ROOT_REENABLE_REQUIRED");
                     }
-                    case "sms-off" -> require(grants.setSmsReadAllowed(false), "SMS_SAVE_FAILED");
+                    case "sms-off" -> {
+                      require(grants.setSmsReadAllowed(false), "SMS_SAVE_FAILED");
+                      require(!grants.smsReadAllowed(), "SMS_REVOKE_REQUIRED");
+                    }
                     case "sms-aba" -> {
                       require(grants.setSmsReadAllowed(false), "SMS_SAVE_FAILED");
+                      require(!grants.smsReadAllowed(), "SMS_REVOKE_REQUIRED");
                       require(grants.setSmsReadAllowed(true), "SMS_SAVE_FAILED");
+                      require(grants.smsReadAllowed(), "SMS_REENABLE_REQUIRED");
                     }
                     case "none" -> {}
                     default -> throw new AssertionError("UNKNOWN_MUTATION");
