@@ -47,20 +47,23 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
+PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
+PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[PREVIOUS_PARENT]
+    assert parents(PARENT)==[PREVIOUS_RUN_PARENT]
+    assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
     assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--name-only',PARENT,'HEAD').splitlines())==CHANGED
     for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
     protected()
+    assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
     assert not git('status','--porcelain','--untracked-files=all')
 
 def protected():
@@ -102,6 +105,38 @@ def verify_xml(folder,expected,started):
     # Exact methods, no parametrized suffixes silently stripped, duplicates rejected.
     assert sorted(observed)==sorted(expected) and len(set(observed))==len(expected),observed
     return observed
+
+# Source coordinates are frozen, not inferred from arbitrary exception messages.
+ABOUT_SOURCE='app/src/test/java/com/deepseekharness/app/ui/AboutFragmentTest.java'
+ABOUT_SOURCE_SHA256='0d8a5764cd5d4ac9d2f52b41f16608b92985c975fc17a981150050b8ea5b49c7'
+ABOUT_METHOD='stoppedPageRetiresQueuedReadAndDismissesItsDialog'
+ABOUT_STAGES={
+ 222:'ABOUT_STOP_SETUP',223:'ABOUT_STOP_QUEUE_INITIAL',224:'ABOUT_STOP_SNAPSHOT',
+ 225:'ABOUT_STOP_INITIAL_STOP',226:'ABOUT_STOP_DRAIN_STALE',
+ 227:'ABOUT_STOP_NO_NEW_DIALOG',228:'ABOUT_STOP_RESTART',229:'ABOUT_STOP_QUEUE_REOPEN',
+ 230:'ABOUT_STOP_DRAIN_REOPEN',231:'ABOUT_STOP_CAPTURE_REOPEN',
+ 232:'ABOUT_STOP_REOPEN_NONNULL',233:'ABOUT_STOP_REOPEN_SHOWING',
+ 234:'ABOUT_STOP_DIALOG_STOP',235:'ABOUT_STOP_DIALOG_DISMISSED',236:'ABOUT_STOP_FINAL_RESTART'}
+
+def about_failure_stage(case):
+    # Untrusted stack text is a location hint only, never proof of root cause.
+    result=dict(code='ABOUT_STOP_LOCATION_UNKNOWN',sourceMatched=False,
+        attribution='untrusted-stack-location-not-causal-proof')
+    if (case.get('classname'),case.get('name'))!=(PREFIX+'ui.AboutFragmentTest',ABOUT_METHOD):
+        return None
+    if not any(case.find(tag) is not None for tag in ('failure','error')):return None
+    if sha(ROOT/ABOUT_SOURCE)!=ABOUT_SOURCE_SHA256:return result
+    result['sourceMatched']=True
+    nodes=[case.find(tag) for tag in ('failure','error') if case.find(tag) is not None]
+    # Do not echo type/message/body/path/line/unknown stage, including malicious inputs.
+    if len(nodes)!=1:return result
+    text=nodes[0].text or ''
+    if len(text)>64*1024:return result
+    frame=r'[ \t]+at com\.deepseekharness\.app\.ui\.AboutFragmentTest\.'+ABOUT_METHOD+r'\(AboutFragmentTest\.java:([0-9]{1,4})\)'
+    coordinates=[int(m.group(1)) for line in text.splitlines()
+        if (m:=re.fullmatch(frame,line))]
+    if len(coordinates)==1:result['code']=ABOUT_STAGES.get(coordinates[0],result['code'])
+    return result
 
 def metadata_diagnostics():
     # Trusted constant roles only: never echo paths or digest data from log text.
@@ -197,7 +232,7 @@ def phase(name):
         xml_error=type(exc).__name__  # Never arbitrary diagnostic content.
     finally:
         # Export only structural XML facts, never system-out/err/properties or bodies.
-        records=[]
+        records=[]; about_stage=None
         if name!='compile' and reports.exists():
             for path in sorted(reports.glob('TEST-*.xml'))[:10]:
                 if path.stat().st_size>2*1024*1024: xml_error='XmlSizeLimit'; accepted=False; continue
@@ -209,6 +244,12 @@ def phase(name):
                             records.append(dict(status='UNEXPECTED_IDENTITY_REDACTED')); continue
                         status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
                         records.append(dict(classname=cls,name=method,status=status))
+                        if name=='about':
+                            stage=about_failure_stage(case)
+                            if stage is not None:
+                                about_stage=stage if about_stage is None else dict(
+                                    code='ABOUT_STOP_DUPLICATE_REDACTED',sourceMatched=False,
+                                    attribution='untrusted-stack-location-not-causal-proof')
                     if len(records)>20: records=records[:20]; accepted=False;xml_error='XmlCaseLimit'
                 except Exception: xml_error='XmlParseFailure';accepted=False
             shutil.move(str(reports),str(report/'raw-xml'))
@@ -226,6 +267,7 @@ def phase(name):
                     if x['status']!='passed':ET.SubElement(case,x['status'])
             ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
         terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
+            aboutFailureStage=about_stage,
             failedPhaseMetadata=(metadata_diagnostics() if not accepted else []),
             argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
             runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,
