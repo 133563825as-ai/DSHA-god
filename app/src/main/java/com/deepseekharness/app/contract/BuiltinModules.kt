@@ -21,6 +21,12 @@ class BuiltinModules private constructor() {
                 java.util.Set.of(),
                 ModuleDescriptor.Enablement.ALWAYS_ON,
             )
+        @JvmField val STORAGE_DEMO_MODULE_ID = ModuleId("builtin.storage-demo")
+        @JvmField val STORAGE_DEMO_CONTRIBUTION = Contribution.card(
+            STORAGE_DEMO_MODULE_ID, "overview", "存储总览 · 合成演示", "Storage overview · Synthetic demo", 10)
+        private val STORAGE_DEMO_DESCRIPTOR = ModuleDescriptor(
+            STORAGE_DEMO_MODULE_ID, 1, "存储合成演示", java.util.Set.of(),
+            ModuleDescriptor.Enablement.ALWAYS_ON)
         private val LOCK = Any()
         private val BUILTIN_DIAGNOSTICS = DiagnosticsSink.discarding()
         private var cachedPreferences: SharedPreferences? = null
@@ -57,6 +63,25 @@ class BuiltinModules private constructor() {
                 cachedRegistry = registry
                 return registry
             }
+        }
+
+        /** Optional synthetic-only module; failure cannot prevent the legal About fallback. */
+        @JvmStatic
+        fun ensureStorageDemo(registry: ModuleRegistry): ContractResult {
+            if (!registry.isRegistered(STORAGE_DEMO_MODULE_ID)) {
+                val result = registry.register(STORAGE_DEMO_DESCRIPTOR, ModuleFactory {
+                    object : ModuleInstance {
+                        override fun contributions(): List<Contribution> =
+                            java.util.List.of(STORAGE_DEMO_CONTRIBUTION)
+                    }
+                })
+                if (result.rejected()) return result
+            }
+            if (!registry.isInstalled(STORAGE_DEMO_MODULE_ID)) {
+                val result = registry.install(STORAGE_DEMO_MODULE_ID)
+                if (result.rejected()) return result
+            }
+            return ContractResult.ok()
         }
 
         /** 幂等登记并安装 about 模块。 */

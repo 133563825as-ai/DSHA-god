@@ -18,14 +18,13 @@ PROTECTED = {
  'tools/robolectric-sdk.lock.json':'9e7380ed24ecccce360943f2b877008a1777b7734cc3361621f4e41645d6ef39'}
 PREFIX='com.deepseekharness.app.'
 METHODS={
- 'jvm':[PREFIX+'contract.BuiltinModulesTest.'+n for n in [
-   'registersAboutAsAlwaysOnCardWithBilingualTitle','ensureRegisteredIsIdempotentAndRestoresHiddenLayout']]+[
-   PREFIX+'contract.ContributionCatalogTest.'+n for n in [
-   'stableOrderMatchesLayoutAndByKindQueries','layoutLoadAndSaveFailuresAreFailClosed']],
- 'about':[PREFIX+'ui.AboutFragmentTest.'+n for n in [
-   'bundledLicensesAreListedAndRenderedWithReadableNames','pageTitleComesFromBuiltinAboutContribution',
-   'hiddenAboutCardKeepsHostLicenseRows','clickingLicenseShowsDialogWithTitleAndBody',
-   'missingLicenseAssetDegradesToTypedMessage','stoppedPageRetiresQueuedReadAndDismissesItsDialog']]}
+ 'jvm':[PREFIX+'ui.StorageDemoControllerTest.'+n for n in [
+   'unvisitedAndOpenReadNothing','cancelHoldsProcessSlotUntilExit',
+   'reopenRejectsLateReply','fourLedgersRemainIndependent']],
+ # Keep the internal phase/artifact key; this is the new storage View slice, not an M1 rerun.
+ 'about':[PREFIX+'ui.StorageDemoViewTest.'+n for n in [
+   'entryHasSyntheticLabel','loadingAndPartialAreReadable','emptyAndUnknownAreDistinct',
+   'cancelAndReopenHaveNoLateViewReply','native360dpHas48dpTargets']]}
 
 def sha(path):
     h=hashlib.sha256()
@@ -49,21 +48,30 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='66d76f1fa70eb7f8cf3cf38f141b766f2b1b80bc'
+PARENT='59a111106d382b5316b709b3fb2ade9929f00069'
+GREEN_PARENT='66d76f1fa70eb7f8cf3cf38f141b766f2b1b80bc'
 FIXTURE_PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
 SDK_RETRY_PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
 LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/gate.gradle',
+ 'app/src/main/java/com/deepseekharness/app/storage/model/StorageModel.java',
+ 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoController.java',
+ 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
+ 'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
+ 'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
+ 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoControllerTest.java',
+ 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoViewTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIXTURE_PARENT]
+    assert parents(PARENT)==[GREEN_PARENT]
+    assert parents(GREEN_PARENT)==[FIXTURE_PARENT]
     assert parents(FIXTURE_PARENT)==[SDK_RETRY_PARENT]
     assert parents(SDK_RETRY_PARENT)==[LINE_PARSER_PARENT]
     assert parents(LINE_PARSER_PARENT)==[DIAGNOSTIC_PARENT]

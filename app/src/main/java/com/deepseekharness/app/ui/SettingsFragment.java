@@ -230,6 +230,23 @@ public class SettingsFragment extends Fragment {
     View about = v.findViewById(R.id.settings_about);
     selectable.put(KEY_ABOUT, about);
     about.setOnClickListener(x -> select(KEY_ABOUT));
+    com.deepseekharness.app.contract.ModuleRegistry demoRegistry =
+        com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
+    boolean demoAvailable = !com.deepseekharness.app.contract.BuiltinModules
+        .ensureStorageDemo(demoRegistry).rejected();
+    android.widget.Button storageDemo = new androidx.appcompat.widget.AppCompatButton(requireContext());
+    storageDemo.setText(com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_CONTRIBUTION.title());
+    storageDemo.setAllCaps(false);
+    storageDemo.setVisibility(demoAvailable ? View.VISIBLE : View.GONE);
+    storageDemo.setMinHeight(dp(48));
+    storageDemo.setMinimumHeight(dp(48));
+    storageDemo.setBackgroundResource(R.drawable.bg_action_plain);
+    storageDemo.setTextColor(requireContext().getColor(R.color.shell_text));
+    android.view.ViewGroup support = (android.view.ViewGroup) about.getParent();
+    support.addView(storageDemo, support.indexOfChild(about) + 1,
+        new android.view.ViewGroup.LayoutParams(-1, -2));
+    selectable.put("storage-demo", storageDemo);
+    storageDemo.setOnClickListener(x -> select("storage-demo"));
     v.findViewById(R.id.settings_update).setOnClickListener(x -> checkUpdate());
     v.findViewById(R.id.settings_selftest).setOnClickListener(x -> runSelftest());
 
@@ -410,6 +427,7 @@ public class SettingsFragment extends Fragment {
   private Fragment create(String key) {
     if (KEY_OVERLAY.equals(key)) return new OverlayFragment();
     if (KEY_ABOUT.equals(key)) return new AboutFragment();
+    if ("storage-demo".equals(key)) return storageDemoPage();
     if (key.startsWith("tab")) {
       try {
         int index = Integer.parseInt(key.substring(3));
@@ -420,6 +438,8 @@ public class SettingsFragment extends Fragment {
     }
     return null;
   }
+
+  static Fragment storageDemoPage() { return new StorageDemoFragment(); }
 
   private void markSelected() {
     // View 的选中态会同步到无障碍节点（TalkBack 读出「已选择」），不另加委托。
