@@ -62,7 +62,7 @@ for path in workflow_files:
             if not (ROOT / selected[2:]).exists():
                 errors.append("MISSING_LOCAL_ACTION: " + selected)
             continue
-        if not re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", selected):
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+(?:/[A-Za-z0-9_-]+)*@[0-9a-f]{40}", selected):
             errors.append("UNPINNED_ACTION: " + str(path.relative_to(ROOT)))
 if "mavenLocal()" in (ROOT / "settings.gradle").read_text(encoding="utf-8"):
     errors.append("UNCONTROLLED_MAVEN_LOCAL")

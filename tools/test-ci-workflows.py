@@ -1,5 +1,6 @@
 """Static contracts for the node-based GitHub Actions graph; text-only, no YAML dependency."""
 from pathlib import Path
+import ast
 import json
 import re
 import subprocess
@@ -40,6 +41,25 @@ def needs(block):
 
 
 class WorkflowGraph(unittest.TestCase):
+    def test_source_hygiene_action_pin_grammar(self):
+        # Exercise the actual source-hygiene grammar, including rejected floating refs.
+        module = ast.parse((ROOT / "tools/check-source-hygiene.py").read_text(encoding="utf-8"))
+        patterns = [node.args[0].value for node in ast.walk(module)
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "fullmatch" and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)
+                    and "[0-9a-f]{40}" in node.args[0].value]
+        self.assertEqual(len(patterns), 1)
+        pin = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+        for path in ("actions/cache", "actions/cache/restore", "actions/cache/save",
+                     "owner/repo/nested/action"):
+            self.assertIsNotNone(re.fullmatch(patterns[0], path + "@" + pin), path)
+        for path in ("actions/cache/restore@v6", "actions/cache/save@main",
+                     "actions/cache@" + pin[:12], "actions/cache/../save@" + pin,
+                     "actions/cache//save@" + pin, "actions/cache/save@" + pin + "extra"):
+            self.assertIsNone(re.fullmatch(patterns[0], path), path)
+
     def test_private_repository_workflows_are_gone(self):
         names = {path.name for path in WORKFLOWS.glob("*.yml")}
         for retired in ("sunset-3090-q.yml", "sunset-release.yml", "terminal-regression.yml"):

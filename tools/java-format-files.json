@@ -4,6 +4,7 @@
   "files": [
     "app/src/androidTest/java/com/deepseekharness/app/BackupInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/Rc13Instrumentation.java",
+    "app/src/androidTest/java/com/deepseekharness/app/RootHandoverInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/core/OptimizationInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/core/PluginUiInstrumentation.java",
     "app/src/androidTest/java/com/deepseekharness/app/core/RecoveryInstrumentation.java",
