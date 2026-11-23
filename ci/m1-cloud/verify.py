@@ -48,7 +48,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='e081cac90549708ce7c6bdb2c5f76115bb42e5af'
+PARENT='9393dcc6bbc21d040490ea5a4dc00f9fb2bfd141'
+SDK_WAIT_PARENT='e081cac90549708ce7c6bdb2c5f76115bb42e5af'
 SLICE_PARENT='59a111106d382b5316b709b3fb2ade9929f00069'
 GREEN_PARENT='66d76f1fa70eb7f8cf3cf38f141b766f2b1b80bc'
 FIXTURE_PARENT='957794f01ec1411cdae0a08e9c3f75325f05e4e8'
@@ -57,14 +58,17 @@ LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py',
+ 'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
+ 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoViewTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[SLICE_PARENT]
+    assert parents(PARENT)==[SDK_WAIT_PARENT]
+    assert parents(SDK_WAIT_PARENT)==[SLICE_PARENT]
     assert parents(SLICE_PARENT)==[GREEN_PARENT]
     assert parents(GREEN_PARENT)==[FIXTURE_PARENT]
     assert parents(FIXTURE_PARENT)==[SDK_RETRY_PARENT]

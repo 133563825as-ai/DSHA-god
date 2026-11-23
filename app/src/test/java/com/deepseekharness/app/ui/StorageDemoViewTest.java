@@ -8,6 +8,7 @@ import android.widget.Button;
 import android.widget.TextView;
 import com.deepseekharness.app.DshaApp;
 import com.deepseekharness.app.R;
+import com.deepseekharness.app.contract.*;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Before;
@@ -40,6 +41,53 @@ public final class StorageDemoViewTest {
     assertTrue(words(root).contains("不读取设备目录"));
     assertTrue(words(root).contains("零业务读取"));
     assertEquals(0, owner.reads());
+
+    MemoryLayout layout = new MemoryLayout();
+    ModuleRegistry registry = new ModuleRegistry(layout, new SafeModeGate(), DiagnosticsSink.discarding());
+    assertTrue(BuiltinModules.ensureRegistered(registry).accepted());
+    assertNull(SettingsFragment.visibleStorageDemo(registry)); // not installed
+    assertTrue(BuiltinModules.ensureStorageDemo(registry).accepted());
+    String key = BuiltinModules.STORAGE_DEMO_CONTRIBUTION.globalKey();
+    ContributionView visible = SettingsFragment.visibleStorageDemo(registry);
+    assertNotNull(visible);
+    assertEquals(key, visible.key());
+    assertEquals(Contribution.Kind.CARD, visible.kind());
+    assertEquals("存储总览 · 合成演示", visible.title());
+    assertAboutVisible(registry);
+    assertTrue(registry.setContributionHidden(key, true).accepted());
+    // Reinstall is still accepted: that alone must NOT be treated as visible.
+    assertTrue(BuiltinModules.ensureStorageDemo(registry).accepted());
+    assertFalse(registry.visibleContributions().stream().anyMatch(view -> key.equals(view.key())));
+    assertNull(SettingsFragment.visibleStorageDemo(registry));
+    assertAboutVisible(registry);
+    ModuleRegistry restored = new ModuleRegistry(layout, new SafeModeGate(), DiagnosticsSink.discarding());
+    assertTrue(BuiltinModules.ensureRegistered(restored).accepted());
+    assertTrue(BuiltinModules.ensureStorageDemo(restored).accepted());
+    assertNull(SettingsFragment.visibleStorageDemo(restored)); // persisted in memory, not disk
+    assertAboutVisible(restored);
+    assertTrue(restored.setContributionHidden(key, false).accepted());
+    assertNotNull(SettingsFragment.visibleStorageDemo(restored));
+    assertAboutVisible(restored);
+    assertTrue(restored.revoke(key).accepted());
+    assertNull(SettingsFragment.visibleStorageDemo(restored));
+    assertAboutVisible(restored);
+    assertNull(SettingsFragment.visibleStorageDemo(null));
+    ModuleRegistry rejected = new ModuleRegistry(new MemoryLayout(), new SafeModeGate(), DiagnosticsSink.discarding());
+    assertTrue(BuiltinModules.ensureRegistered(rejected).accepted());
+    assertTrue(rejected.register(registry.descriptor(BuiltinModules.STORAGE_DEMO_MODULE_ID), () -> null).accepted());
+    assertTrue(BuiltinModules.ensureStorageDemo(rejected).rejected());
+    assertNull(SettingsFragment.visibleStorageDemo(rejected));
+    assertAboutVisible(rejected);
+  }
+  private static final class MemoryLayout implements LayoutStore {
+    private LayoutSnapshot value = LayoutSnapshot.empty();
+    @Override public LayoutSnapshot load() { return value; }
+    @Override public void save(LayoutSnapshot snapshot) { value = snapshot; }
+  }
+  private static void assertAboutVisible(ModuleRegistry registry) {
+    assertTrue(registry.isInstalled(BuiltinModules.ABOUT_MODULE_ID));
+    assertTrue(registry.visibleContributions().stream().anyMatch(view ->
+        BuiltinModules.ABOUT_CONTRIBUTION_KEY.equals(view.key())));
   }
   @Test public void loadingAndPartialAreReadable() {
     click("请求部分合成样例");

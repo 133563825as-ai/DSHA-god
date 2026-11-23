@@ -230,14 +230,19 @@ public class SettingsFragment extends Fragment {
     View about = v.findViewById(R.id.settings_about);
     selectable.put(KEY_ABOUT, about);
     about.setOnClickListener(x -> select(KEY_ABOUT));
-    com.deepseekharness.app.contract.ModuleRegistry demoRegistry =
-        com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
-    boolean demoAvailable = !com.deepseekharness.app.contract.BuiltinModules
-        .ensureStorageDemo(demoRegistry).rejected();
+    com.deepseekharness.app.contract.ContributionView demo = null;
+    try {
+      com.deepseekharness.app.contract.ModuleRegistry demoRegistry =
+          com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
+      if (com.deepseekharness.app.contract.BuiltinModules.ensureStorageDemo(demoRegistry).accepted())
+        demo = visibleStorageDemo(demoRegistry);
+    } catch (RuntimeException unavailable) {
+      // Optional demo only: do not interrupt the existing About row or settings navigation.
+    }
     android.widget.Button storageDemo = new androidx.appcompat.widget.AppCompatButton(requireContext());
-    storageDemo.setText(com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_CONTRIBUTION.title());
+    storageDemo.setText(demo == null ? "" : demo.title());
     storageDemo.setAllCaps(false);
-    storageDemo.setVisibility(demoAvailable ? View.VISIBLE : View.GONE);
+    storageDemo.setVisibility(demo != null ? View.VISIBLE : View.GONE);
     storageDemo.setMinHeight(dp(48));
     storageDemo.setMinimumHeight(dp(48));
     storageDemo.setBackgroundResource(R.drawable.bg_action_plain);
@@ -349,7 +354,9 @@ public class SettingsFragment extends Fragment {
     detail.setId(R.id.settings_detail);
     shell.addView(detail, new LinearLayout.LayoutParams(0, -1, 1f));
     // 首次进入：直接给右侧一个默认详情；旋转/恢复时由 FragmentManager 自行恢复原详情页。
-    if (getChildFragmentManager().findFragmentById(R.id.settings_detail) == null)
+    Fragment restoredDetail = getChildFragmentManager().findFragmentById(R.id.settings_detail);
+    if (restoredDetail == null
+        || (restoredDetail instanceof StorageDemoFragment && !storageDemoVisible()))
       shell.post(
           () -> {
             if (isAdded() && !getChildFragmentManager().isStateSaved()) showDetail(selectedKey);
@@ -427,7 +434,7 @@ public class SettingsFragment extends Fragment {
   private Fragment create(String key) {
     if (KEY_OVERLAY.equals(key)) return new OverlayFragment();
     if (KEY_ABOUT.equals(key)) return new AboutFragment();
-    if ("storage-demo".equals(key)) return storageDemoPage();
+    if ("storage-demo".equals(key)) return storageDemoVisible() ? storageDemoPage() : null;
     if (key.startsWith("tab")) {
       try {
         int index = Integer.parseInt(key.substring(3));
@@ -440,6 +447,33 @@ public class SettingsFragment extends Fragment {
   }
 
   static Fragment storageDemoPage() { return new StorageDemoFragment(); }
+
+  private boolean storageDemoVisible() {
+    try {
+      return visibleStorageDemo(com.deepseekharness.app.contract.BuiltinModules
+          .ensureRegistered(requireContext())) != null;
+    } catch (RuntimeException unavailable) { return false; }
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleStorageDemo(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null) return null;
+    try {
+      if (!registry.isInstalled(com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_MODULE_ID))
+        return null;
+      String key = com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_CONTRIBUTION.globalKey();
+      com.deepseekharness.app.contract.ContributionView found = null;
+      for (com.deepseekharness.app.contract.ContributionView view : registry.visibleContributions()) {
+        if (key.equals(view.key())
+            && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) {
+          if (found != null) return null;
+          found = view;
+        }
+      }
+      return found;
+    } catch (RuntimeException unavailable) { return null; }
+  }
 
   private void markSelected() {
     // View 的选中态会同步到无障碍节点（TalkBack 读出「已选择」），不另加委托。
