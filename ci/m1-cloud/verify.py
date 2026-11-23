@@ -1,6 +1,8 @@
 """Static candidate helper. Candidate admission is disabled in policy.json."""
 import hashlib, json, os, pathlib, re, shutil, subprocess, sys, time
-import urllib.request
+import urllib.request, urllib.error
+from email.utils import parsedate_to_datetime
+import math
 import xml.etree.ElementTree as ET
 ROOT = pathlib.Path.cwd()
 HERE = pathlib.Path(__file__).resolve().parent
@@ -47,18 +49,20 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
+PARENT='09bbc007bd097727f558c11ea2961fdc70021b1b'
+LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py','ci/m1-cloud/runner.py'}
+CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[DIAGNOSTIC_PARENT]
+    assert parents(PARENT)==[LINE_PARSER_PARENT]
+    assert parents(LINE_PARSER_PARENT)==[DIAGNOSTIC_PARENT]
     assert parents(DIAGNOSTIC_PARENT)==[PREVIOUS_RUN_PARENT]
     assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
     assert parents(PREVIOUS_PARENT)==[BASE]
@@ -70,6 +74,36 @@ def candidate():
 
 def protected():
     for name,pin in PROTECTED.items(): assert sha(ROOT/name)==pin,name
+
+def sdk_open(opener,url,deadline):
+    # At most three sequential GETs, same URL/opener, at most 30s total backoff.
+    waited=0
+    for attempt in range(1,4):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise TimeoutError('SDK time budget exhausted')
+        try:return opener.open(url,timeout=min(60,remaining))
+        except urllib.error.HTTPError as exc:
+            if exc.code!=429:raise
+            header=exc.headers.get('Retry-After')
+            exc.close()
+            if attempt==3:
+                print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=0,state='ATTEMPTS_EXHAUSTED')),flush=True)
+                raise
+            if header is None:delay=5
+            elif re.fullmatch(r'[0-9]{1,9}',header):delay=int(header)
+            else:
+                try:
+                    date=parsedate_to_datetime(header)
+                    if date.tzinfo is None:raise ValueError()
+                    delay=max(0,math.ceil(date.timestamp()-time.time()))
+                except (ValueError,TypeError,OverflowError):
+                    raise ValueError('SDK Retry-After invalid') from None
+            # Never shorten a server delay to force another request.
+            if delay>30-waited or delay+60>deadline-time.monotonic():
+                print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=0,state='RETRY_BUDGET_REFUSED')),flush=True)
+                raise
+            print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=delay,state='WAIT')),flush=True)
+            time.sleep(delay);waited+=delay
 
 def sdk34():
     policy(); protected()
@@ -85,10 +119,13 @@ def sdk34():
     # No alternate repository/ref. Reject redirects rather than broaden origin.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs): raise ValueError('SDK redirect refused')
-    with urllib.request.build_opener(NoRedirect).open(url,timeout=60) as response, target.open('xb') as f:
+    deadline=time.monotonic()+210
+    with sdk_open(urllib.request.build_opener(NoRedirect),url,deadline) as response, target.open('xb') as f:
         total=0
         for block in iter(lambda:response.read(1024*1024),b''):
+            assert time.monotonic()<=deadline, 'SDK time budget exhausted'
             total+=len(block); assert total<=row['size']; f.write(block)
+    assert time.monotonic()<=deadline, 'SDK time budget exhausted'
     assert target.stat().st_size==row['size'] and sha(target)==row['sha256']
     print(json.dumps(dict(sdk=34,url=url,bytes=total,sha256=sha(target),offline=True)))
 
