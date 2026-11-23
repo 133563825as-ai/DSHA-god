@@ -10,8 +10,9 @@ import os
 from pathlib import Path
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location(
     'prepare_backup_signed_files', Path(__file__).with_name('prepare-backup-assets.py'))
@@ -60,6 +61,55 @@ class SignedBuiltinFilesTest(unittest.TestCase):
     def build(self):
         self.save()
         return GENERATOR.build_signed_builtin_files(self.root)
+
+    @staticmethod
+    def fake_file_stat(**changes):
+        fields = dict(st_dev=3, st_ino=7, st_mode=0o100644, st_size=3,
+                      st_mtime_ns=10, st_ctime_ns=20)
+        return SimpleNamespace(**(fields | changes))
+
+    def observed_file_record(self, platform, before, opened, after, current):
+        stream = io.BytesIO(b'abc')
+        path = Mock(spec=Path)
+        path.lstat.return_value = current
+        local_os = SimpleNamespace(name=platform, O_RDONLY=os.O_RDONLY,
+                                   open=Mock(return_value=9), fdopen=Mock(return_value=stream),
+                                   fstat=Mock(side_effect=[opened, after]))
+        with patch.object(GENERATOR, 'os', local_os), \
+                patch.object(GENERATOR, '_regular_asset', return_value=(path, before)), \
+                patch.object(stream, 'fileno', return_value=9):
+            try:
+                return GENERATOR._file_record(self.assets, {'asset': 'test.js', 'executable': False},
+                                              'test.js', 3)
+            finally:
+                self.assertTrue(stream.closed)
+                self.assertEqual(2, local_os.fstat.call_count)
+                path.lstat.assert_called_once_with()
+
+    def test_file_record_windows_accepts_stable_path_and_handle_clocks_that_differ(self):
+        path = self.fake_file_stat()
+        handle = self.fake_file_stat(st_ctime_ns=40)
+        record = self.observed_file_record('nt', path, handle, handle, path)
+        self.assertEqual({'path': 'test.js', 'sha256': hashlib.sha256(b'abc').hexdigest(),
+                          'size': 3, 'mode': 0o600}, record)
+
+    def test_file_record_windows_rejects_change_in_path_clock_with_size_and_mtime_unchanged(self):
+        path = self.fake_file_stat()
+        handle = self.fake_file_stat(st_ctime_ns=40)
+        with self.assertRaisesRegex(ValueError, 'SIGNED_BUILTIN_ASSET_CHANGED: test.js'):
+            self.observed_file_record('nt', path, handle, handle, self.fake_file_stat(st_ctime_ns=21))
+
+    def test_file_record_windows_rejects_change_in_handle_clock_with_size_and_mtime_unchanged(self):
+        path = self.fake_file_stat()
+        handle = self.fake_file_stat(st_ctime_ns=40)
+        with self.assertRaisesRegex(ValueError, 'SIGNED_BUILTIN_ASSET_CHANGED: test.js'):
+            self.observed_file_record('nt', path, handle, self.fake_file_stat(st_ctime_ns=41), path)
+
+    def test_file_record_posix_still_compares_path_and_handle_clock(self):
+        path = self.fake_file_stat()
+        handle = self.fake_file_stat(st_ctime_ns=40)
+        with self.assertRaisesRegex(ValueError, 'SIGNED_BUILTIN_ASSET_CHANGED: test.js'):
+            self.observed_file_record('posix', path, handle, handle, path)
 
     def test_hash_size_installed_modes_and_stable_order(self):
         data = '中文🙂\x00payload'.encode()

@@ -98,11 +98,19 @@ def _file_record(assets, row, package_path, remaining):
             sha.update(chunk)
         after = os.fstat(stream.fileno())
     current = file.lstat()
-    # Windows 上 lstat 与 fstat 的 st_ctime 来源不同（路径 vs 句柄），同一文件也会
-    # 相差数十秒，导致这条 POSIX 身份校验永远失败；Windows 本地构建只比对其余字段。
-    identity = lambda node: (node.st_dev, node.st_ino, node.st_mode, node.st_size,
-                             node.st_mtime_ns) + (() if os.name == 'nt' else (node.st_ctime_ns,))
-    if identity(before) != identity(after) or identity(before) != identity(current) or size != before.st_size:
+    def identity(node):
+        return (node.st_dev, node.st_ino, node.st_mode, node.st_size, node.st_mtime_ns)
+
+    # Windows 的路径与句柄 ctime 不一定可比；只豁免跨接口比较，仍保留同接口变化信号。
+    if os.name == 'nt':
+        time_changed = (before.st_ctime_ns != current.st_ctime_ns
+                        or opened.st_ctime_ns != after.st_ctime_ns
+                        or identity(opened) != identity(after))
+    else:
+        time_changed = (before.st_ctime_ns != after.st_ctime_ns
+                        or before.st_ctime_ns != current.st_ctime_ns)
+    if (time_changed or identity(before) != identity(after) or identity(before) != identity(current)
+            or size != before.st_size):
         raise ValueError('SIGNED_BUILTIN_ASSET_CHANGED: ' + row['asset'])
     # RuntimeAssetFiles 经 AndroidBackupFileSystem.atomic 新建时为 0600，只有
     # executable 才明确 chmod 0755；不沿用 Git checkout 的文件位。

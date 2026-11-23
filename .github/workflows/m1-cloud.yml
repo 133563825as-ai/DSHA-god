@@ -1,0 +1,93 @@
+name: M1 narrow validation candidate (NOT ADMITTED)
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Approved full candidate commit SHA (no branch/ref input)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: m1-narrow-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+# These are intentionally UNSET. No existing public repository is selected.
+env:
+  M1_ALLOWED_REPOSITORY: ''
+  M1_ALLOWED_REF: ''
+  M1_ADMITTED: 'false'
+  M1_EXPECTED_SHA: ${{ inputs.expected_sha }}
+jobs:
+  admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Refuse until repository, ref and reviewed candidate are explicitly authorized
+        env:
+          EXPECTED: ${{ inputs.expected_sha }}
+          ACTUAL: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          test "$M1_ADMITTED" = true
+          test -n "$M1_ALLOWED_REPOSITORY" && test "$REPOSITORY" = "$M1_ALLOWED_REPOSITORY"
+          test -n "$M1_ALLOWED_REF" && test "$REF" = "$M1_ALLOWED_REF"
+          [[ "$EXPECTED" =~ ^[0-9a-f]{40}$ ]] && test "$ACTUAL" = "$EXPECTED"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - run: python3 ci/m1-cloud/verify.py candidate
+  inputs:
+    needs: admission
+    # Local reusable workflow resolves to the same commit as this caller.
+    uses: ./.github/workflows/_node-inputs.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+      rebuild_runtime: false
+      artifact: m1-fixed-inputs-${{ github.run_id }}-${{ github.run_attempt }}
+    permissions:
+      contents: read
+  narrow:
+    needs: [admission, inputs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      DSHA_PYTHON: /usr/bin/python3
+      DSHA_ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/m1-sdk34
+      M1_EVIDENCE: ${{ runner.temp }}/m1-evidence
+      M1_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - run: python3 ci/m1-cloud/verify.py candidate
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          gradle-cache: 'false'
+      - uses: ./.github/actions/android-sdk
+        with:
+          ndk: 'false'
+      - uses: ./.github/actions/restore-handoff
+        with:
+          artifact: ${{ needs.inputs.outputs.artifact }}
+          fixture: 'false'
+      - name: Verify handoff preserved frozen descriptor and proof; record actual tools
+        run: |
+          python3 ci/m1-cloud/verify.py protected
+          java -version
+          javac -version
+          python3 --version
+      - name: Compile only (45 exact nodes, no Test)
+        run: python3 ci/m1-cloud/verify.py phase compile
+      - name: Four exact plain JVM methods (54 exact nodes)
+        run: python3 ci/m1-cloud/verify.py phase jvm
+      - name: Fetch only locked SDK34 jar, verify bytes before offline mode
+        run: python3 ci/m1-cloud/verify.py sdk34
+      - name: Six exact SDK34 About methods (54 exact nodes)
+        run: python3 ci/m1-cloud/verify.py phase about
+      # No upload-artifact here: evidence remains bounded in runner temp and logs.
+      # Inputs reusable workflow uses only its existing same-run 1-day handoff.

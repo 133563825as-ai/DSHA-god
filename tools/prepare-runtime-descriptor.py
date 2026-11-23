@@ -77,7 +77,11 @@ def build_descriptor(root):
     assets = root / 'app/src/main/assets'
     spec = load(root)
     validate_installs(root, spec)
-    inputs = {p.relative_to(assets).as_posix(): digest(p) for p in asset_paths(root, spec)}
+    # Preserve the shipped Windows ordering without host-dependent Path comparison.
+    paths = sorted(asset_paths(root, spec),
+                   key=lambda p: (tuple(part.lower() for part in p.relative_to(assets).parts),
+                                  p.relative_to(assets).parts))
+    inputs = {p.relative_to(assets).as_posix(): digest(p) for p in paths}
     launchers = {name: digest(path) for name, path in launcher_paths(root, spec).items()}
     version = json.loads((root / 'tools/dsh-runtime/package.json').read_text(encoding='utf8'))['dependencies']['@deepseek-ai/dsh']
     previous = READ_COMPATIBILITY.get(version, [])
