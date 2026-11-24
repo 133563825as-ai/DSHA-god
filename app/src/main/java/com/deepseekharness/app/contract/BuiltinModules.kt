@@ -34,6 +34,13 @@ class BuiltinModules private constructor() {
         @JvmField val THEME_DESCRIPTOR = ModuleDescriptor(
             THEME_MODULE_ID, 1, "主题与外观", java.util.Set.of(),
             ModuleDescriptor.Enablement.OPTIONAL_USER)
+        @JvmField val STARTUP_HISTORY_MODULE_ID = ModuleId("builtin.startup-history")
+        @JvmField val STARTUP_HISTORY_CONTRIBUTION = Contribution.card(
+            STARTUP_HISTORY_MODULE_ID, "history", "最近启动", "Recent startups", 10)
+        @JvmField val STARTUP_HISTORY_DESCRIPTOR = ModuleDescriptor(
+            STARTUP_HISTORY_MODULE_ID, 1, "最近启动", java.util.Set.of(),
+            ModuleDescriptor.Enablement.OPTIONAL_USER)
+        private val historyRuntimes = java.util.WeakHashMap<ModuleRegistry, HistoryRuntime>()
         private const val THEME_ENABLED_KEY = "module.builtin.theme.enabled"
         private val registryPreferences = java.util.WeakHashMap<ModuleRegistry, SharedPreferences>()
         private val themeRuntimes = java.util.WeakHashMap<ModuleRegistry, ThemeRuntime>()
@@ -87,9 +94,15 @@ class BuiltinModules private constructor() {
         @JvmStatic
         fun ensureProductModules(registry: ModuleRegistry): ContractResult {
             val about = ensureRegistered(registry)
+            val history = ensureStartupHistory(registry)
+            val theme = ensureTheme(registry)
+            return if (about.rejected()) about else if (theme.rejected()) theme else history
+        }
+
+        private fun ensureTheme(registry: ModuleRegistry): ContractResult {
             // 可选模块冲突不影响关于与宿主恢复入口；也不能收编已占用的 ID。
             synchronized(LOCK) {
-                if (themeRuntimes.containsKey(registry)) return about
+                if (themeRuntimes.containsKey(registry)) return ContractResult.ok()
                 val runtime = ThemeRuntime()
                 themeRuntimes[registry] = runtime
                 val registered = registry.register(THEME_DESCRIPTOR, ModuleFactory {
@@ -99,7 +112,60 @@ class BuiltinModules private constructor() {
                 runtime.registered = true
                 val enabled = registryPreferences[registry]?.getBoolean(THEME_ENABLED_KEY, true) ?: true
                 val installed = if (enabled) registry.install(THEME_MODULE_ID) else ContractResult.ok()
-                return if (about.rejected()) about else installed
+                return installed
+            }
+        }
+
+        private fun ensureStartupHistory(registry: ModuleRegistry): ContractResult = synchronized(LOCK) {
+            if (historyRuntimes.containsKey(registry)) return@synchronized ContractResult.ok()
+            val runtime = HistoryRuntime()
+            historyRuntimes[registry] = runtime
+            val registered = registry.register(STARTUP_HISTORY_DESCRIPTOR, ModuleFactory {
+                HistoryInstance().also { runtime.instance = it }
+            }, true)
+            if (registered.rejected()) return@synchronized registered
+            registry.install(STARTUP_HISTORY_MODULE_ID)
+        }
+
+        @JvmStatic
+        fun startupHistoryLease(registry: ModuleRegistry): GenerationLease? {
+            val instance = synchronized(LOCK) { historyRuntimes[registry]?.instance }
+            val lease = if (instance == null || instance.closed) null else registry.lease(STARTUP_HISTORY_MODULE_ID)
+            return if (lease?.active() == true) lease else null
+        }
+
+        @JvmStatic
+        fun observeStartupHistoryRetirement(registry: ModuleRegistry, lease: GenerationLease,
+            cleanup: Runnable): AutoCloseable = synchronized(LOCK) {
+            val instance = historyRuntimes[registry]?.instance
+            if (instance == null || instance.closed || registry.lease(STARTUP_HISTORY_MODULE_ID) !== lease ||
+                !lease.active()) {
+                cleanup.run()
+                AutoCloseable { }
+            } else {
+                instance.cleanups.add(cleanup)
+                AutoCloseable { synchronized(LOCK) { instance.cleanups.remove(cleanup) } }
+            }
+        }
+
+        private class HistoryRuntime {
+            var instance: HistoryInstance? = null
+        }
+
+        private class HistoryInstance : ModuleInstance {
+            var closed = false
+            val cleanups = ArrayList<Runnable>()
+            override fun contributions(): List<Contribution> = java.util.List.of(STARTUP_HISTORY_CONTRIBUTION)
+            override fun close(reason: ModuleInstance.CloseReason?) {
+                val retiring = synchronized(LOCK) {
+                    closed = true
+                    ArrayList(cleanups).also { cleanups.clear() }
+                }
+                for (cleanup in retiring) {
+                    try { cleanup.run() } catch (_: RuntimeException) {
+                        // 页面清理失败不阻断同代其它页面退休。
+                    }
+                }
             }
         }
 

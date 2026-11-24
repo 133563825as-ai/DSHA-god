@@ -25,7 +25,9 @@ METHODS={
   PREFIX+"contract.ContractLifecycleInteropTest.secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing",
   PREFIX+"ui.ThemeChangeRequestTest.successFailureOrExceptionFallbackCanCommitAtMostOnce",
   PREFIX+"util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb",
-  PREFIX+"ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute"
+  PREFIX+"ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute",
+  PREFIX+"ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement",
+  PREFIX+"ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal"
  ],
  "about": [
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences",
@@ -37,7 +39,10 @@ METHODS={
   PREFIX+"ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog",
   PREFIX+"ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
   PREFIX+"ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
-  PREFIX+"ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner"
+  PREFIX+"ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
+  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail",
+  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery",
+  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent"
  ]
 }
 
@@ -63,7 +68,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='f10d44b3f7aab5c4b78a039784bff5f8413d692d'
+PARENT='433d70f6f7cdc39533c004367b0bcc512ac90c71'
+FIRST_MODULAR_UI_FIX='f10d44b3f7aab5c4b78a039784bff5f8413d692d'
 FIRST_MODULAR_DIAGNOSTIC='30672ce7fb0e3544e6de86f1af70dcb9d1fc95aa'
 FIRST_MODULAR_JAVAC_FIX='700bfe52b54e60dd68811d9f1a28a3d7d46b0736'
 FIRST_MODULAR_LAYOUT_FIX='adc10c916d5ae42f1fe4d6ace7a507460a10f1c5'
@@ -86,14 +92,23 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml',
+    'ci/m1-cloud/verify.py',
+    'ci/m1-cloud/gate.gradle',
+    'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
+    'app/src/main/java/com/deepseekharness/app/ui/DiagnosticActivity.java',
+    'app/src/main/java/com/deepseekharness/app/ui/StartupHistoryReadOwner.java',
+    'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt',
+    'app/src/test/java/com/deepseekharness/app/ui/StartupHistoryReadOwnerTest.java',
+    'app/src/test/java/com/deepseekharness/app/ui/DiagnosticStartupHistoryModuleTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIRST_MODULAR_DIAGNOSTIC]
+    assert parents(PARENT)==[FIRST_MODULAR_UI_FIX]
+    assert parents(FIRST_MODULAR_UI_FIX)==[FIRST_MODULAR_DIAGNOSTIC]
     assert parents(FIRST_MODULAR_DIAGNOSTIC)==[FIRST_MODULAR_JAVAC_FIX]
     assert parents(FIRST_MODULAR_JAVAC_FIX)==[FIRST_MODULAR_LAYOUT_FIX]
     assert parents(FIRST_MODULAR_LAYOUT_FIX)==[FIRST_MODULAR_ASSEMBLY]
@@ -115,7 +130,7 @@ def candidate():
     assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
     assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--no-renames','--name-only',PARENT,'HEAD').splitlines())==CHANGED
-    assert git('rev-parse',FIRST_MODULAR_ASSEMBLY+':'+RENAMED_FROM)==git('rev-parse','HEAD:'+RENAMED_TO)
+    assert git('rev-parse',FIRST_MODULAR_ASSEMBLY+':'+RENAMED_FROM)==git('rev-parse',FIRST_MODULAR_LAYOUT_FIX+':'+RENAMED_TO)
     for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256

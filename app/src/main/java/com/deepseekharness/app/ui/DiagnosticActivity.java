@@ -29,6 +29,24 @@ public final class DiagnosticActivity extends AppCompatActivity {
   private DiagnosticResultList resultList;
   private CardTabs toolsTabs;
   private PendingLogExport pendingLogExport;
+  private com.deepseekharness.app.contract.ModuleRegistry historyRegistry;
+  private com.deepseekharness.app.contract.GenerationLease historyLease;
+  private AutoCloseable historyRetirement;
+  private StartupHistoryReadOwner historyOwner;
+  private androidx.appcompat.app.AlertDialog historyDialog;
+  private androidx.appcompat.app.AlertDialog historyDetail;
+  private boolean historyStarted;
+
+  // 测试替换读接口，不触及真实启动目录；生产仍沿原 StartupDiagnostics.history()。
+  static StartupHistoryReadOwner newHistoryOwner(java.util.function.BooleanSupplier active,
+      java.util.concurrent.Executor delivery) {
+    return new StartupHistoryReadOwner(active, delivery);
+  }
+
+  static StartupHistoryReadOwner.Reader historyReader(android.content.Context context) {
+    return () -> com.deepseekharness.app.core.HarnessController.get(context)
+        .startupDiagnostics().history();
+  }
 
   /** 测试包反馈导出只允许一次一个；按钮通过 card.enabled 与 alpha 反馈忙状态。 */
   private boolean feedbackBusy;
@@ -143,6 +161,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     findViewById(R.id.diagnostic_plugins)
         .setOnClickListener(
             v -> startActivity(MainActivity.navigationIntent(this).putExtra("open_plugins", true)));
+    bindHistoryModule();
     findViewById(R.id.diagnostic_history).setOnClickListener(v -> showHistory());
     findViewById(R.id.diagnostic_recovery)
         .setOnClickListener(
@@ -726,49 +745,135 @@ public final class DiagnosticActivity extends AppCompatActivity {
   @Override
   protected void onDestroy() {
     pendingLogExport = null;
+    retireHistory();
+    if (historyRetirement != null) {
+      try { historyRetirement.close(); } catch (Exception ignored) { }
+      historyRetirement = null;
+    }
     super.onDestroy();
   }
 
+  private void bindHistoryModule() {
+    retireHistory();
+    if (historyRetirement != null) {
+      try { historyRetirement.close(); } catch (Exception ignored) { }
+      historyRetirement = null;
+    }
+    historyRegistry = com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(this);
+    historyLease = com.deepseekharness.app.contract.BuiltinModules.startupHistoryLease(historyRegistry);
+    historyOwner = newHistoryOwner(this::historyActive, this::runOnUiThread);
+    if (historyLease != null) {
+      var observedLease = historyLease;
+      var observedOwner = historyOwner;
+      historyRetirement = com.deepseekharness.app.contract.BuiltinModules.observeStartupHistoryRetirement(
+          historyRegistry, historyLease, () -> {
+            observedOwner.retire();
+            runOnUiThread(() -> {
+              if (historyLease != observedLease) return;
+              retireHistory();
+              findViewById(R.id.diagnostic_history).setVisibility(View.GONE);
+            });
+          });
+    }
+    refreshHistoryEntry();
+  }
+
+  private void refreshHistoryEntry() {
+    boolean visible = false;
+    if (historyLease != null && historyLease.active()) {
+      for (var contribution : historyRegistry.visibleContributions())
+        if (com.deepseekharness.app.contract.BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()
+            .equals(contribution.key())) visible = true;
+    }
+    findViewById(R.id.diagnostic_history).setVisibility(visible ? View.VISIBLE : View.GONE);
+  }
+
+  private boolean historyActive() {
+    return historyStarted && historyLease != null && historyLease.active()
+        && !isFinishing() && !isDestroyed();
+  }
+
+  @Override protected void onStart() {
+    super.onStart();
+    historyStarted = true;
+    if (historyRegistry != null) {
+      var current = com.deepseekharness.app.contract.BuiltinModules.startupHistoryLease(historyRegistry);
+      if (current != historyLease) bindHistoryModule();
+      else refreshHistoryEntry();
+    }
+  }
+
+  @Override protected void onStop() {
+    historyStarted = false;
+    retireHistory();
+    super.onStop();
+  }
+
+  private void retireHistory() {
+    if (historyOwner != null) historyOwner.retire();
+    if (historyDetail != null) { historyDetail.dismiss(); historyDetail = null; }
+    if (historyDialog != null) { historyDialog.dismiss(); historyDialog = null; }
+  }
+
   private void showHistory() {
-    new Thread(
-            () -> {
-              var entries =
-                  com.deepseekharness.app.core.HarnessController.get(this)
-                      .startupDiagnostics()
-                      .history();
-              runOnUiThread(
-                  () -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    CardPage page =
-                        new CardPage(this, getString(R.string.ui134_recent_startups), "", true);
-                    var dialog = CardSheet.create(this, page);
-                    for (var entry : entries) {
-                      String date =
-                          java.text.DateFormat.getDateTimeInstance()
-                              .format(new java.util.Date(entry.started));
-                      page.entry(
-                          page.content,
-                          date,
-                          entry.stage + " · " + entry.status,
-                          R.drawable.ic_recovery_document,
-                          () ->
-                              CardSheet.show(
-                                  this,
-                                  date,
-                                  entry.stage + "\n\n" + entry.reason + "\n\n" + entry.log));
-                    }
-                    if (entries.isEmpty())
-                      page.content.addView(
-                          page.text(
-                              UiText.choose("还没有启动记录。", "No startup records yet."),
-                              13,
-                              R.color.text_secondary));
-                    page.button(page.footer, UiText.choose("关闭", "Close"), false, dialog::dismiss);
-                    CardSheet.show(dialog, this);
-                  });
-            },
-            "diagnostic-history")
-        .start();
+    refreshHistoryEntry();
+    if (historyDialog != null && !historyDialog.isShowing()) retireHistory();
+    if (!historyActive() || findViewById(R.id.diagnostic_history).getVisibility() != View.VISIBLE
+        || historyDialog != null) return;
+    CardPage page = new CardPage(this, getString(R.string.ui134_recent_startups), "", true);
+    var dialog = CardSheet.create(this, page);
+    historyDialog = dialog;
+    TextView status = page.text(UiText.choose("正在读取…", "Reading…"), 13, R.color.text_secondary);
+    LinearLayout results = new LinearLayout(this);
+    results.setOrientation(LinearLayout.VERTICAL);
+    page.content.addView(results);
+    results.addView(status);
+    page.button(page.footer, UiText.choose("关闭", "Close"), false, () -> {
+      historyOwner.retire();
+      if (historyDetail != null) { historyDetail.dismiss(); historyDetail = null; }
+      dialog.dismiss();
+    });
+    dialog.setOnDismissListener(ignored -> {
+      if (historyDialog == dialog) {
+        historyOwner.retire();
+        historyDialog = null;
+        if (historyDetail != null) { historyDetail.dismiss(); historyDetail = null; }
+      }
+    });
+    CardSheet.show(dialog, this);
+    var lease = historyLease;
+    boolean accepted = historyOwner.request(historyReader(getApplicationContext()), (entries, failed) ->
+        lease.runIfActive(() -> {
+          if (!historyActive() || historyDialog != dialog || !dialog.isShowing()) return;
+          results.removeAllViews();
+          if (failed || entries.isEmpty()) {
+            results.addView(page.text(failed
+                ? UiText.choose("无法读取启动记录，请稍后重试。", "Unable to read startup records. Try again later.")
+                : UiText.choose("还没有启动记录。", "No startup records yet."), 13, R.color.text_secondary));
+          }
+          if (failed) return;
+          for (var entry : entries) {
+            String date = java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(entry.started));
+            page.entry(results, date, entry.stage + " · " + entry.status,
+                R.drawable.ic_recovery_document, () -> lease.runIfActive(() -> {
+                  if (!historyActive() || historyDialog != dialog || !dialog.isShowing()) return;
+                  CardPage detail = new CardPage(this, date, "", true);
+                  TextView body = detail.text(entry.stage + "\n\n" + entry.reason + "\n\n" + entry.log,
+                      13, R.color.text_secondary);
+                  body.setPadding(0, detail.dp(14), 0, 0);
+                  body.setTextIsSelectable(true);
+                  body.setLineSpacing(detail.dp(5), 1);
+                  detail.content.addView(body);
+                  if (historyDetail != null) historyDetail.dismiss();
+                  historyDetail = CardSheet.create(this, detail);
+                  var detailDialog = historyDetail;
+                  detail.button(detail.footer, UiText.choose("关闭", "Close"), false, detailDialog::dismiss);
+                  CardSheet.show(detailDialog, this);
+                }));
+          }
+        }));
+    if (!accepted) status.setText(UiText.choose("上次读取尚未结束，请关闭后重试。",
+        "The previous read is still finishing. Close and retry."));
   }
 
   private String completeReport() {

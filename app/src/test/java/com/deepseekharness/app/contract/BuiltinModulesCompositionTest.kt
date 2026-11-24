@@ -25,7 +25,10 @@ class BuiltinModulesCompositionTest {
     fun disableReenableChangesLeaseWithoutChangingLayout() {
         val registry = registry()
         assertTrue(BuiltinModules.ensureProductModules(registry).accepted())
-        assertEquals(2, registry.contributions().size)
+        assertEquals(setOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
+            BuiltinModules.THEME_CONTRIBUTION.globalKey(),
+            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
+            registry.contributions().map { it.key() }.toSet())
         assertFalse(registry.isRegistered(BuiltinModules.STORAGE_DEMO_MODULE_ID))
         val lease = BuiltinModules.themeLease(registry)!!
         val key = BuiltinModules.THEME_CONTRIBUTION.globalKey()
@@ -48,7 +51,9 @@ class BuiltinModulesCompositionTest {
         val fresh = BuiltinModules.themeLease(registry)!!
         assertTrue(registry.revoke(key).accepted())
         assertFalse(fresh.active())
-        assertEquals(1, registry.contributions().size)
+        assertEquals(setOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
+            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
+            registry.contributions().map { it.key() }.toSet())
         assertTrue(BuiltinModules.setThemeEnabled(registry, true).accepted())
         assertNotEquals(fresh.generation(), BuiltinModules.themeLease(registry)!!.generation())
 
@@ -150,7 +155,8 @@ class BuiltinModulesCompositionTest {
         assertNull(BuiltinModules.themeLease(registry))
         assertTrue(BuiltinModules.setThemeEnabled(registry, true).rejected())
         assertEquals(1, closed) // 不再次执行冲突 factory
-        assertEquals(listOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY),
+        assertEquals(listOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
+            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
             registry.visibleContributions().map { it.key() })
         assertEquals(ContractCodes.MODULE_ALWAYS_ON,
             registry.setEnabled(BuiltinModules.ABOUT_MODULE_ID, false).code())

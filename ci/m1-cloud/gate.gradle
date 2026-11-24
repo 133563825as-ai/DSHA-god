@@ -22,7 +22,9 @@ final List knownJvm = [
  'com.deepseekharness.app.contract.ContractLifecycleInteropTest.secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing',
  'com.deepseekharness.app.ui.ThemeChangeRequestTest.successFailureOrExceptionFallbackCanCommitAtMostOnce',
  'com.deepseekharness.app.util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb',
- 'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute']
+ 'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute',
+ 'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement',
+ 'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal']
 // Keep the existing SDK34 phase/artifact key for the cumulative first-candidate checks.
 final List knownAbout = [
  'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences',
@@ -34,7 +36,10 @@ final List knownAbout = [
  'com.deepseekharness.app.ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner']
+ 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner',
+ 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail',
+ 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery',
+ 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent']
 if (methods != (compileOnly ? [] : (phase == 'jvm' ? knownJvm : knownAbout)))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]
