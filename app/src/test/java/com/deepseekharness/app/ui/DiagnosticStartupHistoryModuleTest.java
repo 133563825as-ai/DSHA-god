@@ -40,7 +40,7 @@ import org.robolectric.shadows.ShadowLooper;
 @LooperMode(LooperMode.Mode.PAUSED)
 public final class DiagnosticStartupHistoryModuleTest {
   @Implements(value = DiagnosticActivity.class, isInAndroidSdk = false)
-  public static final class Reads {
+  public static final class Reads extends ShadowActivity {
     static ArrayDeque<Runnable> workers;
     static StartupHistoryReadOwner.Reader reader;
     static int reads;

@@ -68,7 +68,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='5fcb0045225cbdd8fd8f4cc9866711b25d6ce9f4'
+PARENT='415f3c43a073ba4e0643597881e39dd6dbb8b903'
+STARTUP_HISTORY_ASSEMBLY='5fcb0045225cbdd8fd8f4cc9866711b25d6ce9f4'
 STARTUP_HISTORY_BASE='433d70f6f7cdc39533c004367b0bcc512ac90c71'
 FIRST_MODULAR_UI_FIX='f10d44b3f7aab5c4b78a039784bff5f8413d692d'
 FIRST_MODULAR_DIAGNOSTIC='30672ce7fb0e3544e6de86f1af70dcb9d1fc95aa'
@@ -93,14 +94,16 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py',
+  'app/src/test/java/com/deepseekharness/app/ui/DiagnosticStartupHistoryModuleTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[STARTUP_HISTORY_BASE]
+    assert parents(PARENT)==[STARTUP_HISTORY_ASSEMBLY]
+    assert parents(STARTUP_HISTORY_ASSEMBLY)==[STARTUP_HISTORY_BASE]
     assert parents(STARTUP_HISTORY_BASE)==[FIRST_MODULAR_UI_FIX]
     assert parents(FIRST_MODULAR_UI_FIX)==[FIRST_MODULAR_DIAGNOSTIC]
     assert parents(FIRST_MODULAR_DIAGNOSTIC)==[FIRST_MODULAR_JAVAC_FIX]
@@ -332,6 +335,43 @@ def theme_failure_stage(case):
     if len(rows)==1: out['code']=THEME_STAGES.get(rows[0],out['code'])
     return out
 
+HISTORY_SOURCE='app/src/test/java/com/deepseekharness/app/ui/DiagnosticStartupHistoryModuleTest.java'
+HISTORY_SOURCE_SHA256='5eb2787c08a2101966aed0f87bfc77044633fa6a5812529b8951bd551a8399df'
+HISTORY_CLASS=PREFIX+'ui.DiagnosticStartupHistoryModuleTest'
+HISTORY_METHODS=('clickRendersSyntheticHistoryAndDetail','emptyFailureAndCloseDropDelivery',
+    'hideRecreateRevokeAndRecoveryStayIndependent')
+HISTORY_LOCATIONS={'setup':(61,72),'open':(74,78),'teardown':(80,87),'click':(89,89),
+    'complete':(90,94),'dialog':(95,97),'text':(98,105),'entry':(106,116),
+    HISTORY_METHODS[0]:(118,135),HISTORY_METHODS[1]:(137,157),HISTORY_METHODS[2]:(159,202)}
+HISTORY_ERROR_TYPES={**NAV_FAILURE_TYPES,'java.lang.ClassCastException':'CLASS_CAST',
+    'java.lang.reflect.InvocationTargetException':'REFLECTION_TARGET',
+    'java.lang.NoSuchMethodError':'METHOD_LINKAGE', 'java.lang.AssertionError':'ASSERTION'}
+
+def history_failure_stage(case):
+    method=case.get('name')
+    if case.get('classname')!=HISTORY_CLASS or method not in HISTORY_METHODS: return None
+    nodes=[case.find(k) for k in ('failure','error') if case.find(k) is not None]
+    if not nodes: return None
+    out=dict(sourceMatched=False, failureType='UNKNOWN', frames=[],
+        attribution='untrusted-stack-location-not-causal-proof')
+    try: out['sourceMatched']=sha(ROOT/HISTORY_SOURCE)==HISTORY_SOURCE_SHA256
+    except OSError: return out
+    if len(nodes)!=1 or not out['sourceMatched']: return out
+    out['failureType']=HISTORY_ERROR_TYPES.get(nodes[0].get('type'),'UNKNOWN')
+    text=nodes[0].text or ''
+    if len(text)>64*1024: return out
+    frame=re.compile(r'[ \t]+at '+re.escape(HISTORY_CLASS)+
+        r'\.([A-Za-z][A-Za-z0-9]*)\(DiagnosticStartupHistoryModuleTest\.java:([0-9]{1,4})\)')
+    for line in text.splitlines():
+        m=frame.fullmatch(line)
+        if not m or m.group(1) not in HISTORY_LOCATIONS: continue
+        member, row=m.group(1), int(m.group(2))
+        lo,hi=HISTORY_LOCATIONS[member]
+        if lo<=row<=hi and (member not in HISTORY_METHODS or member==method):
+            value=dict(member=member, line=row)
+            if value not in out['frames'] and len(out['frames'])<4: out['frames'].append(value)
+    return out
+
 def metadata_diagnostics():
     # Trusted constant roles only: never echo paths or digest data from log text.
     roles={
@@ -426,7 +466,7 @@ def phase(name):
         xml_error=type(exc).__name__  # Never arbitrary diagnostic content.
     finally:
         # Export only structural XML facts, never system-out/err/properties or bodies.
-        records=[]; about_stage=None; navigation_stages={}; theme_stage=None
+        records=[]; about_stage=None; navigation_stages={}; theme_stage=None; history_stages={}
         if name!='compile' and reports.exists():
             for path in sorted(reports.glob('TEST-*.xml'))[:10]:
                 if path.stat().st_size>2*1024*1024: xml_error='XmlSizeLimit'; accepted=False; continue
@@ -439,6 +479,9 @@ def phase(name):
                         status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
                         records.append(dict(classname=cls,name=method,status=status))
                         if name=='about':
+                            found_history=history_failure_stage(case)
+                            if found_history is not None:
+                                history_stages[method]=found_history if method not in history_stages else dict(code='HISTORY_DUPLICATE_REDACTED')
                             found_theme=theme_failure_stage(case)
                             if found_theme is not None:
                                 theme_stage=found_theme if theme_stage is None else dict(code='THEME_DUPLICATE_REDACTED')
@@ -469,7 +512,7 @@ def phase(name):
                     if x['status']!='passed':ET.SubElement(case,x['status'])
             ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
         terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
-            aboutFailureStage=about_stage,navigationFailureStages=navigation_stages,themeFailureStage=theme_stage,
+            aboutFailureStage=about_stage,navigationFailureStages=navigation_stages,themeFailureStage=theme_stage,historyFailureStages=history_stages,
             failedPhaseMetadata=(metadata_diagnostics() if not accepted else []),
             argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
             runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,
