@@ -84,6 +84,56 @@ python3 tools/run-host-tests.py --stage fast
 
 Windows 使用 `gradlew.bat`。测试任务名中的 Debug 只表示测试变体，不要求生成或安装调试 APK。签名私钥、用户数据、设备截图与日志不进入仓库。
 
+## 隐私与敏感数据
+
+> 自查范围：`app/src`（Java / 资源 / AndroidManifest）、`tools/`、CI 工作流，以及随包内置的 DSH 运行时。以下为源码与配置可核对的事实，不替代抓包验证。
+
+### 1. 数据项与存放
+
+| 数据 | 位置 | 是否离开设备 |
+|---|---|---|
+| 会话 / 对话 / 附件 / 工作区文件 | 容器内 `/root/.dsh` 等私有目录 | 仅当调用模型时，把推理所需内容发送给**用户自己配置的**模型服务商 |
+| API Key | 本机（KeyVault / 配置文件） | 否 |
+| 插件与配置 | 容器内私有目录 | 否 |
+| 设备与启动诊断（机型 / 系统 / ABI / 日志） | 本机私有目录 | 否；只有用户手动「导出诊断」才生成文件 |
+| 匿名用户 ID | 本机 | 仅在用户**主动提交反馈**时随反馈上传 |
+| IP 地址 | 系统网络层 | 任何联网都会向对端暴露；App 本身不采集、不记录、不上报 |
+
+### 2. 网络出口（全部）
+
+| 场景 | 触发 | 去向 |
+|---|---|---|
+| 模型推理 | 用户发送消息 | 用户配置的模型服务商（默认 `api.deepseek.com`） |
+| 更新检查 | 启动 / 手动检查 | `dsha.cc`、`github.com` / `raw.githubusercontent.com` |
+| 插件安装 / 更新 | 用户显式操作 | 用户给出的 URL / npm registry（`registry.npmjs.org`）/ GitHub |
+| 反馈上传（可选） | 用户主动提交反馈 | `dsh-otel-collector.deepseeksvc.com`（DSH 遥测，默认 `FEEDBACK_ONLY`，可设 `DISABLED`） |
+| 局域网访问 | 用户开启 | `127.0.0.1` 与局域网地址 |
+| 系统组件 | 下载 / 更新 APK | `play.google.com`（系统更新相关） |
+
+### 3. 明确不做
+
+- 不内置第三方统计、广告、崩溃上报 SDK（Java 侧无 analytics / telemetry 依赖）
+- 不后台上传会话、剪贴板、通讯录、位置、相册
+- 短信只在用户授权后按单条命令查询，不自动采集
+- 不静默下载或执行远端代码：插件安装必须用户确认
+- 不把设备信息、日志或 IP 写入任何远端服务
+
+### 4. 自查方式
+
+```bash
+# 1) 代码里的外联域名
+git grep -nE "https?://" -- app/src/main | sort -u
+
+# 2) 权限清单
+git grep -n "uses-permission" -- app/src/main/AndroidManifest.xml
+
+# 3) 运行时出口：按上表逐项核对；反馈遥测可在 DSH 配置设为 DISABLED
+```
+
+### 5. 关闭反馈遥测
+
+DSH 的会话反馈遥测默认只上传"用户主动提交的反馈"。需要彻底关闭时，把 session telemetry 设为 `DISABLED`；关闭后反馈不再经 OpenTelemetry 上传。
+
 ## 文档
 
 | 文档 | 内容 |
