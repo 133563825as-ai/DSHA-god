@@ -59,7 +59,7 @@ public final class SettingsStorageNavigationTest {
   public static final class ControllerConfig {
     @Implementation protected void __constructor__(Context ignored) {}
     @Implementation protected static HarnessController get(Context context) {
-      return new HarnessController(context);
+      return org.robolectric.shadow.api.Shadow.newInstanceOf(HarnessController.class);
     }
     @Implementation protected ConfigStore config() { return new ConfigStore(null); }
   }

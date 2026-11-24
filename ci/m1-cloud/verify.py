@@ -19,16 +19,13 @@ PROTECTED = {
 PREFIX='com.deepseekharness.app.'
 METHODS={
  "jvm": [
-  "com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute",
-  "com.deepseekharness.app.ui.StorageDemoControllerTest.resultRenderFailureStillExitsBeforeNextOwner"
+  "com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute"
  ],
  "about": [
   "com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
   "com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
   "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout",
-  "com.deepseekharness.app.ui.StorageDemoDisplayTest.darkShortLargeEnglishUsesAppLanguageAndKeepsControlsReachable",
-  "com.deepseekharness.app.ui.StorageDemoDisplayTest.lightChineseRemainsDistinctFromEnglishWithNoBusinessRead"
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout"
  ]
 }
 
@@ -54,7 +51,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='b3e2ebaf304552817e0e9c952ca0d1c50828cf49'
+PARENT='78f1713cf4a96c4eb33dd619942f9905000d4af2'
+COMBINED_PARENT='b3e2ebaf304552817e0e9c952ca0d1c50828cf49'
 NAV_TEST_PARENT='b6b19fd36fb5956133358a953d8331d5d78b573d'
 NAV_PARENT='9393dcc6bbc21d040490ea5a4dc00f9fb2bfd141'
 SDK_WAIT_PARENT='e081cac90549708ce7c6bdb2c5f76115bb42e5af'
@@ -67,10 +65,7 @@ DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 CHANGED={'.github/workflows/m1-cloud.yml',
- 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoController.java',
- 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
- 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoControllerTest.java',
- 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoDisplayTest.java',
+ 'app/src/test/java/com/deepseekharness/app/ui/SettingsStorageNavigationTest.java',
  'ci/m1-cloud/gate.gradle',
  'ci/m1-cloud/verify.py'}
 
@@ -79,7 +74,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[NAV_TEST_PARENT]
+    assert parents(PARENT)==[COMBINED_PARENT]
+    assert parents(COMBINED_PARENT)==[NAV_TEST_PARENT]
     assert parents(NAV_TEST_PARENT)==[NAV_PARENT]
     assert parents(NAV_PARENT)==[SDK_WAIT_PARENT]
     assert parents(SDK_WAIT_PARENT)==[SLICE_PARENT]
@@ -205,7 +201,7 @@ def about_failure_stage(case):
     return result
 
 NAV_SOURCE='app/src/test/java/com/deepseekharness/app/ui/SettingsStorageNavigationTest.java'
-NAV_SOURCE_SHA256='f9e526c2734dfb059938c64b2904854cdb8c617ff15aff42e67a443746c22f54'
+NAV_SOURCE_SHA256='78ba7754b593ecfbe42b13542759abf0a3c9fd97f1be09c1fa1fdf19cc4e10b1'
 NAV_CLASS=PREFIX+'ui.SettingsStorageNavigationTest'
 NAV_METHODS=('settingsClickAndSystemBackKeepAboutReachable','singlePaneRecreateRetiresOldOwner',
     'hiddenDemoCannotReopenFromRestoredRoute','hiddenSettingsEntryStillOpensLegalAbout')
