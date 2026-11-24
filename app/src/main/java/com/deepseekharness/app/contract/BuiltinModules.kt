@@ -27,6 +27,13 @@ class BuiltinModules private constructor() {
         private val STORAGE_DEMO_DESCRIPTOR = ModuleDescriptor(
             STORAGE_DEMO_MODULE_ID, 1, "存储合成演示", java.util.Set.of(),
             ModuleDescriptor.Enablement.ALWAYS_ON)
+        @JvmField val STORAGE_OVERVIEW_MODULE_ID = ModuleId("builtin.storage-overview")
+        @JvmField val STORAGE_OVERVIEW_CONTRIBUTION = Contribution.card(
+            STORAGE_OVERVIEW_MODULE_ID, "overview", "存储概览", "Storage overview", 10)
+        @JvmField val STORAGE_OVERVIEW_DESCRIPTOR = ModuleDescriptor(
+            STORAGE_OVERVIEW_MODULE_ID, 1, "存储概览", java.util.Set.of(),
+            ModuleDescriptor.Enablement.OPTIONAL_USER)
+        private val storageRegistries = java.util.WeakHashMap<ModuleRegistry, Boolean>()
         @JvmField val PROCESS_EPOCH: String = java.util.UUID.randomUUID().toString()
         @JvmField val THEME_MODULE_ID = ModuleId("builtin.theme")
         @JvmField val THEME_CONTRIBUTION = Contribution.card(
@@ -285,6 +292,40 @@ class BuiltinModules private constructor() {
                     }
                 }
             }
+        }
+
+        /** 工作区的独立真实贡献；不加入设置中心四项，也不安装合成演示。 */
+        @JvmStatic
+        fun ensureStorageOverview(context: Context): ModuleRegistry {
+            val registry = ensureRegistered(context)
+            ensureStorageOverview(registry)
+            return registry
+        }
+
+        @JvmStatic
+        fun ensureStorageOverview(registry: ModuleRegistry): ContractResult = synchronized(LOCK) {
+            // 失败、停用或撤回后不在显示刷新中自动重装，也不收编冲突 ID。
+            if (storageRegistries.containsKey(registry)) return@synchronized ContractResult.ok()
+            storageRegistries[registry] = false
+            val registered = registry.register(STORAGE_OVERVIEW_DESCRIPTOR, ModuleFactory {
+                object : ModuleInstance {
+                    override fun contributions(): List<Contribution> =
+                        java.util.List.of(STORAGE_OVERVIEW_CONTRIBUTION)
+                }
+            }, true)
+            if (registered.rejected()) return@synchronized registered
+            storageRegistries[registry] = true
+            registry.install(STORAGE_OVERVIEW_MODULE_ID)
+        }
+
+        @JvmStatic
+        fun storageOverviewVisible(registry: ModuleRegistry): Boolean = synchronized(LOCK) {
+            storageRegistries[registry] == true &&
+                !registry.safeModeGate().forcedSafeMode() &&
+                registry.isInstalled(STORAGE_OVERVIEW_MODULE_ID) &&
+                registry.visibleContributions().any {
+                    it.key() == STORAGE_OVERVIEW_CONTRIBUTION.globalKey()
+                }
         }
 
         /** Optional synthetic-only module; failure cannot prevent the legal About fallback. */

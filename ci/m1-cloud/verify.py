@@ -29,6 +29,7 @@ METHODS={
   PREFIX+"ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement",
   PREFIX+"ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal",
   PREFIX+"ui.LanguageSelectionOwnerTest.capturedOwnerAndDialogAreSingleUse",
+  PREFIX+"contract.BuiltinModulesCompositionTest.storageOverviewIsSeparateFromProductFourAndSyntheticFixture",
   PREFIX+"util.UiLanguagePreferenceTest.systemLanguageStaysPinnedAfterDefaultLocaleChanges",
   PREFIX+"util.AppLocaleDispatchTest.api33WritesResolvedSystemLanguageBeforeFirstActivity",
   PREFIX+"util.AppLocaleDispatchTest.oldApiKeepsAppCompatPathAndEnglishPolicy"
@@ -37,7 +38,7 @@ METHODS={
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences",
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.hideAndDisableAreIndependentAndRecreateKeepsChoice",
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.queuedAndLateRequestsCannotCrossGeneration",
-  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.closingPageRetiresOnlyItsRequests",
+  PREFIX+"ui.WorkspaceStorageOverviewTest.realRouteBackHiddenRestoreAndNoSyntheticOrScan",
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.optionalFailureCannotPolluteLegalFallback",
   PREFIX+"ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows",
   PREFIX+"ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog",
@@ -79,7 +80,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='f10827e5182ea70faccd326055bb977e5da5611f'
+PARENT='c36678394316f7571570929606238e444ed66568'
+MODULE_CENTER_BASE='f10827e5182ea70faccd326055bb977e5da5611f'
 LANGUAGE_BASE='fba50872f1a531258b99069b72b24e77881f1e24'
 STARTUP_HISTORY_RETRY='415f3c43a073ba4e0643597881e39dd6dbb8b903'
 STARTUP_HISTORY_ASSEMBLY='5fcb0045225cbdd8fd8f4cc9866711b25d6ce9f4'
@@ -110,16 +112,19 @@ RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCom
 CHANGED={'.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py',
-    'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
-    'app/src/main/java/com/deepseekharness/app/ui/BuiltinModuleCenter.java',
-    'app/src/test/java/com/deepseekharness/app/ui/SettingsModuleCenterTest.java'}
+    'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
+    'app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java',
+    'app/src/main/java/com/deepseekharness/app/ui/StorageOverviewFragment.java',
+    'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt',
+    'app/src/test/java/com/deepseekharness/app/ui/WorkspaceStorageOverviewTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[LANGUAGE_BASE]
+    assert parents(PARENT)==[MODULE_CENTER_BASE]
+    assert parents(MODULE_CENTER_BASE)==[LANGUAGE_BASE]
     assert parents(LANGUAGE_BASE)==[STARTUP_HISTORY_RETRY]
     assert parents(STARTUP_HISTORY_RETRY)==[STARTUP_HISTORY_ASSEMBLY]
     assert parents(STARTUP_HISTORY_ASSEMBLY)==[STARTUP_HISTORY_BASE]

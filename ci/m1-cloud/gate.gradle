@@ -26,6 +26,7 @@ final List knownJvm = [
  'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement',
  'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal',
  'com.deepseekharness.app.ui.LanguageSelectionOwnerTest.capturedOwnerAndDialogAreSingleUse',
+ 'com.deepseekharness.app.contract.BuiltinModulesCompositionTest.storageOverviewIsSeparateFromProductFourAndSyntheticFixture',
  'com.deepseekharness.app.util.UiLanguagePreferenceTest.systemLanguageStaysPinnedAfterDefaultLocaleChanges',
  'com.deepseekharness.app.util.AppLocaleDispatchTest.api33WritesResolvedSystemLanguageBeforeFirstActivity',
  'com.deepseekharness.app.util.AppLocaleDispatchTest.oldApiKeepsAppCompatPathAndEnglishPolicy']
@@ -34,7 +35,7 @@ final List knownAbout = [
  'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences',
  'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.hideAndDisableAreIndependentAndRecreateKeepsChoice',
  'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.queuedAndLateRequestsCannotCrossGeneration',
- 'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.closingPageRetiresOnlyItsRequests',
+ 'com.deepseekharness.app.ui.WorkspaceStorageOverviewTest.realRouteBackHiddenRestoreAndNoSyntheticOrScan',
  'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.optionalFailureCannotPolluteLegalFallback',
  'com.deepseekharness.app.ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows',
  'com.deepseekharness.app.ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog',

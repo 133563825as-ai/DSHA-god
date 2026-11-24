@@ -132,9 +132,10 @@ public class WorkspaceFragment extends Fragment {
         v,
         R.id.workspace_storage,
         R.drawable.ic_recovery_database,
-        getString(R.string.ui2_storage_files),
-        getString(R.string.ui2_storage_files_sub),
-        () -> open(StorageActivity.class));
+        UiText.choose("存储概览", "Storage overview"),
+        UiText.choose("未统计 · 不自动扫描", "Not measured · No automatic scan"),
+        this::openStorageOverview);
+    refreshStorageEntry(v);
     entry(
         v,
         R.id.workspace_files,
@@ -323,6 +324,23 @@ public class WorkspaceFragment extends Fragment {
             })
         .setNegativeButton(UiText.text("取消"), null)
         .show();
+  }
+
+  private void refreshStorageEntry(View root) {
+    boolean visible = false;
+    try {
+      visible = com.deepseekharness.app.contract.BuiltinModules.storageOverviewVisible(
+          com.deepseekharness.app.contract.BuiltinModules.ensureStorageOverview(requireContext()));
+    } catch (RuntimeException unavailable) {
+      // 单个贡献失败不影响备份、维护与授权原路。
+    }
+    root.findViewById(R.id.workspace_storage).setVisibility(visible ? View.VISIBLE : View.GONE);
+  }
+
+  private void openStorageOverview() {
+    refreshStorageEntry(requireView());
+    if (requireView().findViewById(R.id.workspace_storage).getVisibility() == View.VISIBLE)
+      SettingsPanes.open(this, new StorageOverviewFragment(), "storage-overview");
   }
 
   private void openData(String mode) {
@@ -617,6 +635,7 @@ public class WorkspaceFragment extends Fragment {
   @Override
   public void onResume() {
     super.onResume();
+    refreshStorageEntry(requireView());
     main.removeCallbacks(refreshTask);
     main.post(refreshTask);
     pickBackupDirectory();

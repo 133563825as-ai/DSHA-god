@@ -139,6 +139,41 @@ class BuiltinModulesCompositionTest {
     }
 
     @Test
+    fun storageOverviewIsSeparateFromProductFourAndSyntheticFixture() {
+        val registry = registry()
+        assertTrue(BuiltinModules.ensureProductModules(registry).accepted())
+        assertEquals(4, registry.contributions().size)
+        assertTrue(BuiltinModules.ensureStorageOverview(registry).accepted())
+        assertTrue(BuiltinModules.storageOverviewVisible(registry))
+        assertFalse(registry.isRegistered(BuiltinModules.STORAGE_DEMO_MODULE_ID))
+        val key = BuiltinModules.STORAGE_OVERVIEW_CONTRIBUTION.globalKey()
+        assertTrue(registry.setContributionHidden(key, true).accepted())
+        assertFalse(BuiltinModules.storageOverviewVisible(registry))
+        BuiltinModules.ensureStorageOverview(registry)
+        assertTrue(registry.layout().isHidden(key))
+        registry.setContributionHidden(key, false)
+        assertTrue(BuiltinModules.storageOverviewVisible(registry))
+        registry.setEnabled(BuiltinModules.STORAGE_OVERVIEW_MODULE_ID, false)
+        BuiltinModules.ensureStorageOverview(registry)
+        assertFalse(BuiltinModules.storageOverviewVisible(registry))
+        assertTrue(registry.isInstalled(BuiltinModules.ABOUT_MODULE_ID))
+
+        val safe = ModuleRegistry(MemoryLayout(), SafeModeGate(true), DiagnosticsSink.discarding())
+        assertEquals(ContractCodes.SAFE_MODE_RESTRICTED, BuiltinModules.ensureStorageOverview(safe).code())
+        assertFalse(BuiltinModules.storageOverviewVisible(safe))
+        assertTrue(BuiltinModules.ensureRegistered(safe).accepted())
+
+        val conflict = registry()
+        conflict.register(BuiltinModules.STORAGE_OVERVIEW_DESCRIPTOR, ModuleFactory {
+            throw IllegalStateException("must not execute foreign factory")
+        })
+        assertEquals(ContractCodes.MODULE_DUPLICATE_ID,
+            BuiltinModules.ensureStorageOverview(conflict).code())
+        assertFalse(BuiltinModules.storageOverviewVisible(conflict))
+        assertTrue(BuiltinModules.ensureProductModules(conflict).accepted())
+    }
+
+    @Test
     fun duplicateAndPartialRegistrationAreRejectedLocally() {
         val registry = registry()
         var closed = 0
