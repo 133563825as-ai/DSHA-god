@@ -9,14 +9,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admission:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'bfe715be654f5efd8553a55307f85ffe79e09e2c' && github.event.after == github.sha && github.run_attempt == 1
+    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'adc10c916d5ae42f1fe4d6ace7a507460a10f1c5' && github.event.after == github.sha && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 19
+          fetch-depth: 20
           persist-credentials: false
       - run: python3 ci/m1-cloud/verify.py candidate
   inputs:
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 19
+          fetch-depth: 20
           persist-credentials: false
       - name: Verify one-time candidate identity
         run: python3 ci/m1-cloud/verify.py candidate

@@ -24,7 +24,8 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
-import org.robolectric.Shadows;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowActivity;
 
 /** SDK34 复用原导航 Host/App；只隔离宿主运行时，主题仍读写原 ConfigStore。 */
 @RunWith(RobolectricTestRunner.class)
@@ -74,7 +75,7 @@ public final class SettingsBuiltinModuleCompositionTest {
   }
   private Intent openTheme() {
     assertTrue(settings().findViewById(R.id.settings_theme).performClick());
-    Intent intent = Shadows.shadowOf(host.get()).getNextStartedActivity();
+    Intent intent = Shadow.<ShadowActivity>extract(host.get()).getNextStartedActivity();
     assertNotNull("visible contribution must launch real theme activity", intent);
     return intent;
   }

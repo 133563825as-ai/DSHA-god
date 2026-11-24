@@ -63,7 +63,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='bfe715be654f5efd8553a55307f85ffe79e09e2c'
+PARENT='adc10c916d5ae42f1fe4d6ace7a507460a10f1c5'
+FIRST_MODULAR_ASSEMBLY='bfe715be654f5efd8553a55307f85ffe79e09e2c'
 FIRST_MODULAR_BASE='477d70c8261b2ce78a90bdd9df709054dcf149fe'
 HIDDEN_RECOVERY_PARENT='323a3ffa4763a104bbf880bad962c1c71ee299a8'
 SDK_BUDGET_PARENT='756fc44b67f863ff2d46f479f9b354169e1c72dd'
@@ -82,14 +83,16 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py', RENAMED_FROM, RENAMED_TO}
+CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py',
+  'app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIRST_MODULAR_BASE]
+    assert parents(PARENT)==[FIRST_MODULAR_ASSEMBLY]
+    assert parents(FIRST_MODULAR_ASSEMBLY)==[FIRST_MODULAR_BASE]
     assert parents(FIRST_MODULAR_BASE)==[HIDDEN_RECOVERY_PARENT]
     assert parents(HIDDEN_RECOVERY_PARENT)==[SDK_BUDGET_PARENT]
     assert parents(SDK_BUDGET_PARENT)==[FIXTURE_TEST_PARENT]
@@ -107,7 +110,7 @@ def candidate():
     assert parents(PREVIOUS_RUN_PARENT)==[PREVIOUS_PARENT]
     assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--no-renames','--name-only',PARENT,'HEAD').splitlines())==CHANGED
-    assert git('rev-parse',PARENT+':'+RENAMED_FROM)==git('rev-parse','HEAD:'+RENAMED_TO)
+    assert git('rev-parse',FIRST_MODULAR_ASSEMBLY+':'+RENAMED_FROM)==git('rev-parse','HEAD:'+RENAMED_TO)
     for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
