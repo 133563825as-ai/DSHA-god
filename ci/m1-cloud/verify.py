@@ -63,7 +63,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='700bfe52b54e60dd68811d9f1a28a3d7d46b0736'
+PARENT='30672ce7fb0e3544e6de86f1af70dcb9d1fc95aa'
+FIRST_MODULAR_JAVAC_FIX='700bfe52b54e60dd68811d9f1a28a3d7d46b0736'
 FIRST_MODULAR_LAYOUT_FIX='adc10c916d5ae42f1fe4d6ace7a507460a10f1c5'
 FIRST_MODULAR_ASSEMBLY='bfe715be654f5efd8553a55307f85ffe79e09e2c'
 FIRST_MODULAR_BASE='477d70c8261b2ce78a90bdd9df709054dcf149fe'
@@ -84,14 +85,16 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py',
+  'app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIRST_MODULAR_LAYOUT_FIX]
+    assert parents(PARENT)==[FIRST_MODULAR_JAVAC_FIX]
+    assert parents(FIRST_MODULAR_JAVAC_FIX)==[FIRST_MODULAR_LAYOUT_FIX]
     assert parents(FIRST_MODULAR_LAYOUT_FIX)==[FIRST_MODULAR_ASSEMBLY]
     assert parents(FIRST_MODULAR_ASSEMBLY)==[FIRST_MODULAR_BASE]
     assert parents(FIRST_MODULAR_BASE)==[HIDDEN_RECOVERY_PARENT]
@@ -294,13 +297,14 @@ def navigation_failure_stage(case):
     return result
 
 THEME_SOURCE='app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java'
-THEME_SOURCE_SHA256='87c3f17b98aa6b56ab4f33aac0913171f051725cecd59b8a93699e631deb3d83'
+THEME_SOURCE_SHA256='f8e9d94a90a3b74b4a87de5200ce0a6038c37b426ce796b030e4e6666672155a'
 THEME_CLASS=PREFIX+'ui.SettingsBuiltinModuleCompositionTest'
 THEME_METHOD='productEntryUsesVisibleContributionAndExistingPreferences'
 THEME_STAGES={88:'REGISTRY_IDENTITY',89:'VISIBLE_CONTRIBUTION',90:'ABOUT_DESCRIPTOR',
  91:'DEMO_DEFAULT_ABSENT',92:'SETTINGS_CREATE',93:'ENTRY_VISIBILITY',94:'THEME_PAGE_OPEN_OR_CLOSE',
- 95:'SWATCH_LOOKUP',96:'SWATCH_PRESENT',97:'SWATCH_CLICK',98:'PALETTE_SAVE',
- 100:'SETTINGS_SUMMARY',101:'HOST_RECREATE',102:'PALETTE_AFTER_RECREATE'}
+ 95:'SWATCH_LOOKUP',96:'SWATCH_PRESENT',98:'SWATCH_CLICK',99:'PALETTE_SAVE',
+ 101:'THEME_RECREATE_QUEUE',102:'THEME_ACTIVITY_RECREATED',
+ 104:'SETTINGS_SUMMARY',105:'HOST_RECREATE',106:'PALETTE_AFTER_RECREATE'}
 
 def theme_failure_stage(case):
     if (case.get('classname'),case.get('name'))!=(THEME_CLASS,THEME_METHOD): return None

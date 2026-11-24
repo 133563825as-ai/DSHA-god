@@ -94,8 +94,12 @@ public final class SettingsBuiltinModuleCompositionTest {
     try (var unused = new PageClose(page(openTheme()))) {
       View palette = text(unused.page.get().getWindow().getDecorView(), "极光");
       assertNotNull(palette);
+      ThemeActivity beforeRecreate = unused.page.get();
       ((View) palette.getParent()).performClick();
       assertEquals("aurora", new ConfigStore(host.get()).getUiPalette());
+      // ShadowActivity.recreate 排主队列；必须在 PageClose 销毁 owner 前完成真实重建。
+      org.robolectric.shadows.ShadowLooper.shadowMainLooper().idle();
+      assertNotSame("palette selection must recreate its actual activity", beforeRecreate, unused.page.get());
     }
     assertTrue(((TextView) settings().findViewById(R.id.settings_theme_sub)).getText().toString().contains("极光"));
     host.recreate();
