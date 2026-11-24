@@ -39,15 +39,18 @@ final List knownAbout = [
  'com.deepseekharness.app.ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows',
  'com.deepseekharness.app.ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner',
  'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail',
  'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery',
  'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent',
  'com.deepseekharness.app.ui.SettingsLanguageModuleTest.actualPickerSystemExplicitRecreateSystemKeepsLiteralAndSummary',
  'com.deepseekharness.app.ui.SettingsLanguageModuleTest.withdrawnQueuedConfirmationCannotBorrowRecoveryButNextClickCan',
  'com.deepseekharness.app.ui.SettingsLanguageModuleTest.queuedStopDestroyViewAndReopenedDialogNeverCommitOldChoice',
- 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker']
+ 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker',
+ 'com.deepseekharness.app.ui.SettingsModuleCenterTest.settingsEntryListsExactlyFourAndNavigatesToRealDetails',
+ 'com.deepseekharness.app.ui.SettingsModuleCenterTest.hiddenThemeCanBeManagedAndStopRetiresGeneration',
+ 'com.deepseekharness.app.ui.SettingsModuleCenterTest.onlyThemeHasControlsAndOriginalRoutesRemain',
+ 'com.deepseekharness.app.ui.SettingsModuleCenterTest.safeModeCannotBeBypassedAndAssemblyErrorsAreExplicit',
+ 'com.deepseekharness.app.ui.SettingsModuleCenterTest.simulatedColdStartKeepsThemeAndLayoutChoices']
 if (methods != (compileOnly ? [] : (phase == 'jvm' ? knownJvm : knownAbout)))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]

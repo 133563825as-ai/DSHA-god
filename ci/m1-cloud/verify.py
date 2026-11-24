@@ -42,15 +42,18 @@ METHODS={
   PREFIX+"ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows",
   PREFIX+"ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog",
   PREFIX+"ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
-  PREFIX+"ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
-  PREFIX+"ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
   PREFIX+"ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail",
   PREFIX+"ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery",
   PREFIX+"ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent",
   PREFIX+"ui.SettingsLanguageModuleTest.actualPickerSystemExplicitRecreateSystemKeepsLiteralAndSummary",
   PREFIX+"ui.SettingsLanguageModuleTest.withdrawnQueuedConfirmationCannotBorrowRecoveryButNextClickCan",
   PREFIX+"ui.SettingsLanguageModuleTest.queuedStopDestroyViewAndReopenedDialogNeverCommitOldChoice",
-  PREFIX+"ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker"
+  PREFIX+"ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker",
+  PREFIX+"ui.SettingsModuleCenterTest.settingsEntryListsExactlyFourAndNavigatesToRealDetails",
+  PREFIX+"ui.SettingsModuleCenterTest.hiddenThemeCanBeManagedAndStopRetiresGeneration",
+  PREFIX+"ui.SettingsModuleCenterTest.onlyThemeHasControlsAndOriginalRoutesRemain",
+  PREFIX+"ui.SettingsModuleCenterTest.safeModeCannotBeBypassedAndAssemblyErrorsAreExplicit",
+  PREFIX+"ui.SettingsModuleCenterTest.simulatedColdStartKeepsThemeAndLayoutChoices"
  ]
 }
 
@@ -76,7 +79,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='fba50872f1a531258b99069b72b24e77881f1e24'
+PARENT='f10827e5182ea70faccd326055bb977e5da5611f'
+LANGUAGE_BASE='fba50872f1a531258b99069b72b24e77881f1e24'
 STARTUP_HISTORY_RETRY='415f3c43a073ba4e0643597881e39dd6dbb8b903'
 STARTUP_HISTORY_ASSEMBLY='5fcb0045225cbdd8fd8f4cc9866711b25d6ce9f4'
 STARTUP_HISTORY_BASE='433d70f6f7cdc39533c004367b0bcc512ac90c71'
@@ -106,20 +110,17 @@ RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCom
 CHANGED={'.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py',
-    'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
     'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
-    'app/src/main/java/com/deepseekharness/app/ui/LanguagePicker.java',
-    'app/src/main/java/com/deepseekharness/app/ui/LanguageSelectionOwner.java',
-    'app/src/test/java/com/deepseekharness/app/ui/SettingsLanguageModuleTest.java',
-    'app/src/test/java/com/deepseekharness/app/ui/LanguageSelectionOwnerTest.java',
-    'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'}
+    'app/src/main/java/com/deepseekharness/app/ui/BuiltinModuleCenter.java',
+    'app/src/test/java/com/deepseekharness/app/ui/SettingsModuleCenterTest.java'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[STARTUP_HISTORY_RETRY]
+    assert parents(PARENT)==[LANGUAGE_BASE]
+    assert parents(LANGUAGE_BASE)==[STARTUP_HISTORY_RETRY]
     assert parents(STARTUP_HISTORY_RETRY)==[STARTUP_HISTORY_ASSEMBLY]
     assert parents(STARTUP_HISTORY_ASSEMBLY)==[STARTUP_HISTORY_BASE]
     assert parents(STARTUP_HISTORY_BASE)==[FIRST_MODULAR_UI_FIX]

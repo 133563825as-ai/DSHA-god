@@ -270,6 +270,17 @@ public class SettingsFragment extends Fragment {
         new android.view.ViewGroup.LayoutParams(-1, -2));
     selectable.put("storage-demo", storageDemo);
     storageDemo.setOnClickListener(x -> select("storage-demo"));
+    android.widget.Button moduleCenter = new androidx.appcompat.widget.AppCompatButton(requireContext());
+    moduleCenter.setText(com.deepseekharness.app.util.UiText.choose("内置模块", "Built-in modules"));
+    moduleCenter.setAllCaps(false);
+    moduleCenter.setMinHeight(dp(48));
+    moduleCenter.setMinimumHeight(dp(48));
+    moduleCenter.setBackgroundResource(R.drawable.bg_action_plain);
+    moduleCenter.setTextColor(requireContext().getColor(R.color.shell_text));
+    moduleCenter.setTag("builtin-module-center-entry");
+    moduleCenter.setOnClickListener(x -> select("builtin-module-center"));
+    support.addView(moduleCenter, new android.view.ViewGroup.LayoutParams(-1, -2));
+    selectable.put("builtin-module-center", moduleCenter);
     v.findViewById(R.id.settings_update).setOnClickListener(x -> checkUpdate());
     v.findViewById(R.id.settings_selftest).setOnClickListener(x -> runSelftest());
 
@@ -313,18 +324,28 @@ public class SettingsFragment extends Fragment {
       row.setVisibility(View.VISIBLE);
     };
     View.OnClickListener open = ignored -> {
-      final android.app.Activity capturedActivity = getActivity();
-      if (capturedActivity == null || capturedActivity.isFinishing() || capturedActivity.isDestroyed()) return;
       render.run();
+      openLanguagePicker(this, languageOwner, registry);
+    };
+    row.setOnClickListener(open);
+    summary.setOnClickListener(open);
+    render.run();
+  }
+
+  /** 原设置和模块详情共享同一 Picker 与代次/页面 owner 守卫，不嵌套设置页。 */
+  static void openLanguagePicker(Fragment page, LanguageSelectionOwner owner,
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+      final android.app.Activity capturedActivity = page.getActivity();
+      if (capturedActivity == null || capturedActivity.isFinishing() || capturedActivity.isDestroyed()) return;
       var contribution = visibleLanguage(registry);
       final var lease = contribution == null ? null
           : com.deepseekharness.app.contract.BuiltinModules.languageLease(registry);
       // 模块失效后绝不把已排队确认转成恢复确认；恢复只在下一次显式点击选定。
       final boolean modulePath = contribution != null;
-      final View capturedPage = getView();
-      var ticket = languageOwner.open(write -> {
-        if (capturedPage == null || getView() != capturedPage || !isResumed()
-            || getActivity() != capturedActivity || capturedActivity.isFinishing()
+      final View capturedPage = page.getView();
+      var ticket = owner.open(write -> {
+        if (capturedPage == null || page.getView() != capturedPage || !page.isResumed()
+            || page.getActivity() != capturedActivity || capturedActivity.isFinishing()
             || capturedActivity.isDestroyed()) return false;
         // 只在主线程调用原 select；锁序 owner → lease → registry，无装配 LOCK。
         if (modulePath) return lease != null && contribution.generation() == lease.generation() &&
@@ -332,12 +353,8 @@ public class SettingsFragment extends Fragment {
         write.run();
         return true;
       });
-      LanguagePicker.show(requireContext(),
-          HarnessController.get(requireContext()).config().getUiLanguagePreference(), ticket);
-    };
-    row.setOnClickListener(open);
-    summary.setOnClickListener(open);
-    render.run();
+      LanguagePicker.show(page.requireContext(),
+          HarnessController.get(page.requireContext()).config().getUiLanguagePreference(), ticket);
   }
 
   @Nullable
@@ -588,6 +605,7 @@ public class SettingsFragment extends Fragment {
   private Fragment create(String key) {
     if (KEY_OVERLAY.equals(key)) return new OverlayFragment();
     if (KEY_ABOUT.equals(key)) return new AboutFragment();
+    if ("builtin-module-center".equals(key)) return new BuiltinModuleCenter();
     if ("storage-demo".equals(key)) return storageDemoVisible() ? storageDemoPage() : null;
     if (key.startsWith("tab")) {
       try {
