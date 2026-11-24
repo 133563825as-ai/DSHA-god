@@ -51,7 +51,9 @@ final class ThemeReveal {
       float y,
       String style,
       long capturedAt,
-      Cover holding) {}
+      Cover holding,
+      ThemeChangeRequest.Request request,
+      AutoCloseable retirement) {}
 
   private ThemeReveal() {}
 
@@ -87,11 +89,13 @@ final class ThemeReveal {
       return;
     }
     Class<? extends Activity> owner = activity.getClass();
+    java.util.concurrent.atomic.AtomicBoolean delivered = new java.util.concurrent.atomic.AtomicBoolean();
     try {
       PixelCopy.request(
           activity.getWindow(),
           shot,
           result -> {
+            if (!delivered.compareAndSet(false, true)) return;
             if (!claim(activity, request)) {
               shot.recycle();
               return;
@@ -104,19 +108,30 @@ final class ThemeReveal {
             // 先静态盖住旧窗口：重建若沿用同一窗口，这层就是新页面第一帧上的遮罩。
             Cover holding = new Cover(activity, shot, x, y, kind);
             ((ViewGroup) decor).addView(holding, new ViewGroup.LayoutParams(-1, -1));
+            var registry = com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(activity);
+            var lease = com.deepseekharness.app.contract.BuiltinModules.themeLease(registry);
+            AutoCloseable retirement = lease == null ? () -> {} :
+                com.deepseekharness.app.contract.BuiltinModules.observeThemeRetirement(
+                    registry, lease, () -> {
+                      if (Looper.myLooper() == Looper.getMainLooper()) request.retirePending();
+                      else MAIN.post(request::retirePending);
+                    });
             Pending captured =
-                new Pending(owner, shot, x, y, kind, SystemClock.uptimeMillis(), holding);
+                new Pending(owner, shot, x, y, kind, SystemClock.uptimeMillis(), holding, request, retirement);
             pending = captured;
+            request.ownPending(() -> { if (pending == captured) discard(); });
             // 无人领取（未发生重建）时按时撤掉遮罩并释放约一屏 ARGB 的内存。
             MAIN.postDelayed(
                 () -> {
                   if (pending == captured) discard();
                 },
                 ThemeMotion.CAPTURE_TTL_MS);
-            change.run();
+            if (!request.moduleActive()) request.retirePending();
+            else change.run();
           },
           MAIN);
     } catch (RuntimeException error) {
+      if (!delivered.compareAndSet(false, true)) return;
       if (!shot.isRecycled()) shot.recycle();
       if (claim(activity, request)) change.run();
     }
@@ -133,9 +148,10 @@ final class ThemeReveal {
    */
   static boolean consume(Activity activity, ThemeChangeRequest changes) {
     Pending taken = pending;
+    if (taken == null || !changes.samePage(taken.request)) return false;
     pending = null;
-    if (taken == null) return false;
-    if (activity.isFinishing()
+    releasePending(taken);
+    if (!taken.request.moduleActive() || !changes.active() || activity.isFinishing()
         || activity.isDestroyed()
         || taken.owner != activity.getClass()
         || !ThemeMotion.captureFresh(taken.capturedAt, SystemClock.uptimeMillis())
@@ -162,7 +178,15 @@ final class ThemeReveal {
   static void discard() {
     Pending stale = pending;
     pending = null;
-    if (stale != null) stale.holding.remove();
+    if (stale != null) {
+      releasePending(stale);
+      stale.holding.remove();
+    }
+  }
+
+  private static void releasePending(Pending value) {
+    value.request.ownPending(null);
+    try { value.retirement.close(); } catch (Exception ignored) { }
   }
 
   /**

@@ -21,8 +21,10 @@ class ModuleRegistry(
     private val routes = RouteTable(diagnostics)
     private val modules = LinkedHashMap<ModuleId?, Entry>()
 
+    @JvmOverloads
     @Synchronized
-    fun register(descriptor: ModuleDescriptor?, factory: ModuleFactory?): ContractResult {
+    fun register(descriptor: ModuleDescriptor?, factory: ModuleFactory?,
+        closeOnContributionRevoke: Boolean = false): ContractResult {
         if (descriptor == null || factory == null) {
             diagnostics.report(
                 ContractCodes.MODULE_INVALID,
@@ -37,7 +39,7 @@ class ModuleRegistry(
             )
             return ContractResult.rejected(ContractCodes.MODULE_DUPLICATE_ID)
         }
-        modules[descriptor.id()] = Entry(descriptor, factory)
+        modules[descriptor.id()] = Entry(descriptor, factory, closeOnContributionRevoke && !descriptor.alwaysOn())
         return ContractResult.ok()
     }
 
@@ -48,6 +50,7 @@ class ModuleRegistry(
             diagnostics.report(ContractCodes.MODULE_UNKNOWN, "install unknown module: $id")
             return ContractResult.rejected(ContractCodes.MODULE_UNKNOWN)
         }
+        if (entry.closing) return ContractResult.rejected(ContractCodes.MODULE_DISABLED)
         if (entry.instance != null) return ContractResult.ok()
         if (safeMode.forcedSafeMode() && !entry.descriptor.alwaysOn()) {
             diagnostics.report(
@@ -173,7 +176,11 @@ class ModuleRegistry(
     }
 
     /** 锁内只摘除状态，锁外依次 invalidate、close、撤销贡献和诊断。 */
-    fun close(id: ModuleId?, reason: ModuleInstance.CloseReason?): ContractResult {
+    fun close(id: ModuleId?, reason: ModuleInstance.CloseReason?): ContractResult =
+        closeExpected(id, reason, null)
+
+    private fun closeExpected(id: ModuleId?, reason: ModuleInstance.CloseReason?,
+        expectedLease: GenerationLease?): ContractResult {
         val instance: ModuleInstance
         val lease: GenerationLease?
         val contributions: List<Contribution>
@@ -183,12 +190,18 @@ class ModuleRegistry(
                 diagnostics.report(ContractCodes.MODULE_UNKNOWN, "close unknown module: $id")
                 return ContractResult.rejected(ContractCodes.MODULE_UNKNOWN)
             }
+            if (expectedLease != null && entry.closing)
+                return ContractResult.rejected(ContractCodes.MODULE_DISABLED)
+            if (expectedLease != null && entry.lease !== expectedLease) return ContractResult.ok()
             instance = entry.instance ?: return ContractResult.ok()
+            if (entry.closeOnContributionRevoke) entry.closing = true
             GENERATION.incrementAndGet()
             lease = entry.lease
             entry.lease = null
             entry.instance = null
             contributions = entry.contributions
+            if (entry.closeOnContributionRevoke)
+                entry.closingKeys = contributions.map { it.globalKey() }.toSet()
             entry.contributions = java.util.List.of()
         }
         lease?.invalidateFromHost()
@@ -213,6 +226,9 @@ class ModuleRegistry(
                     "module contribution cleanup failed: $id (${error.javaClass.simpleName})",
                 )
             }
+        }
+        synchronized(this) {
+            modules[id]?.let { it.closing = false; it.closingKeys = emptySet() }
         }
         reportQuietly(ContractCodes.MODULE_DISABLED, "module closed: $id ($actualReason)")
         if (failure is Error) throw failure
@@ -239,11 +255,27 @@ class ModuleRegistry(
         safeMode.exitFromHost()
     }
 
-    @Synchronized
+    /** 仅显式 opt-in 的可选模块整代退休；不在 registry monitor 内等待 lease。 */
     fun revoke(contributionKey: String?): ContractResult {
-        val revoked = catalog.revoke(contributionKey)
-        if (revoked.accepted() && routes.contains(contributionKey)) routes.revoke(contributionKey)
-        return revoked
+        val owner: ModuleId
+        val expectedLease: GenerationLease
+        synchronized(this) {
+            if (modules.values.any { it.closing && it.closingKeys.contains(contributionKey) })
+                return ContractResult.rejected(ContractCodes.MODULE_DISABLED)
+            val entry = modules.values.firstOrNull { candidate ->
+                candidate.closeOnContributionRevoke && candidate.instance != null &&
+                    candidate.contributions.any { it.globalKey() == contributionKey } &&
+                    catalog.contains(contributionKey)
+            }
+            if (entry == null) {
+                val revoked = catalog.revoke(contributionKey)
+                if (revoked.accepted() && routes.contains(contributionKey)) routes.revoke(contributionKey)
+                return revoked
+            }
+            owner = entry.descriptor.id()
+            expectedLease = entry.lease ?: return ContractResult.ok()
+        }
+        return closeExpected(owner, ModuleInstance.CloseReason.HOST_CLOSE, expectedLease)
     }
 
     @Synchronized
@@ -365,7 +397,10 @@ class ModuleRegistry(
         }
     }
 
-    private class Entry(val descriptor: ModuleDescriptor, val factory: ModuleFactory) {
+    private class Entry(val descriptor: ModuleDescriptor, val factory: ModuleFactory,
+        val closeOnContributionRevoke: Boolean) {
+        var closing = false
+        var closingKeys: Set<String?> = emptySet()
         var instance: ModuleInstance? = null
         var lease: GenerationLease? = null
         var contributions: List<Contribution> = java.util.List.of()

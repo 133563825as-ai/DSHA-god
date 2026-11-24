@@ -1,4 +1,4 @@
-"""Static candidate helper. Candidate admission is disabled in policy.json."""
+"""One-time narrow verification for the Rebirth first modular candidate."""
 import hashlib, json, os, pathlib, re, shutil, subprocess, sys, time
 import urllib.request, urllib.error
 from email.utils import parsedate_to_datetime
@@ -19,11 +19,25 @@ PROTECTED = {
 PREFIX='com.deepseekharness.app.'
 METHODS={
  "jvm": [
-  "com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute"
+  PREFIX+"contract.BuiltinModulesCompositionTest.duplicateAndPartialRegistrationAreRejectedLocally",
+  PREFIX+"contract.BuiltinModulesCompositionTest.disableReenableChangesLeaseWithoutChangingLayout",
+  PREFIX+"contract.ModuleRegistryTest.safeModeKeepsOnlyAlwaysOnAndHostRecoveryEntry",
+  PREFIX+"contract.ContractLifecycleInteropTest.secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing",
+  PREFIX+"ui.ThemeChangeRequestTest.successFailureOrExceptionFallbackCanCommitAtMostOnce",
+  PREFIX+"util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb",
+  PREFIX+"ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute"
  ],
  "about": [
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner"
+  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences",
+  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.hideAndDisableAreIndependentAndRecreateKeepsChoice",
+  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.queuedAndLateRequestsCannotCrossGeneration",
+  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.closingPageRetiresOnlyItsRequests",
+  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.optionalFailureCannotPolluteLegalFallback",
+  PREFIX+"ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows",
+  PREFIX+"ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog",
+  PREFIX+"ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
+  PREFIX+"ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
+  PREFIX+"ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner"
  ]
 }
 
@@ -49,7 +63,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='323a3ffa4763a104bbf880bad962c1c71ee299a8'
+PARENT='477d70c8261b2ce78a90bdd9df709054dcf149fe'
+HIDDEN_RECOVERY_PARENT='323a3ffa4763a104bbf880bad962c1c71ee299a8'
 SDK_BUDGET_PARENT='756fc44b67f863ff2d46f479f9b354169e1c72dd'
 FIXTURE_TEST_PARENT='78f1713cf4a96c4eb33dd619942f9905000d4af2'
 COMBINED_PARENT='b3e2ebaf304552817e0e9c952ca0d1c50828cf49'
@@ -65,7 +80,14 @@ DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 CHANGED={'.github/workflows/m1-cloud.yml',
- 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
+ 'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
+  'app/src/main/java/com/deepseekharness/app/contract/ModuleRegistry.kt',
+  'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
+  'app/src/main/java/com/deepseekharness/app/ui/ThemeActivity.java',
+  'app/src/main/java/com/deepseekharness/app/ui/ThemeChangeRequest.java',
+  'app/src/main/java/com/deepseekharness/app/ui/ThemeReveal.java',
+  'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt',
+  'app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java',
  'ci/m1-cloud/gate.gradle',
  'ci/m1-cloud/verify.py'}
 
@@ -74,7 +96,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[SDK_BUDGET_PARENT]
+    assert parents(PARENT)==[HIDDEN_RECOVERY_PARENT]
+    assert parents(HIDDEN_RECOVERY_PARENT)==[SDK_BUDGET_PARENT]
     assert parents(SDK_BUDGET_PARENT)==[FIXTURE_TEST_PARENT]
     assert parents(FIXTURE_TEST_PARENT)==[COMBINED_PARENT]
     assert parents(COMBINED_PARENT)==[NAV_TEST_PARENT]

@@ -233,9 +233,14 @@ public class SettingsFragment extends Fragment {
     com.deepseekharness.app.contract.ContributionView demo = null;
     try {
       com.deepseekharness.app.contract.ModuleRegistry demoRegistry =
-          com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
-      if (com.deepseekharness.app.contract.BuiltinModules.ensureStorageDemo(demoRegistry).accepted())
-        demo = visibleStorageDemo(demoRegistry);
+          com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(requireContext());
+      // 合成存储只由测试或明确演示策略显式安装，普通模式不自动登记。
+      demo = visibleStorageDemo(demoRegistry);
+      for (var contribution : demoRegistry.visibleContributions()) {
+        if (com.deepseekharness.app.contract.BuiltinModules.ABOUT_CONTRIBUTION_KEY.equals(contribution.key()))
+          about.setContentDescription(com.deepseekharness.app.util.UiText.choose(
+              contribution.title(), contribution.titleEn()));
+      }
     } catch (RuntimeException unavailable) {
       // Optional demo only: do not interrupt the existing About row or settings navigation.
     }
@@ -272,8 +277,7 @@ public class SettingsFragment extends Fragment {
     // 主题入口只在设置里：独立页面，主界面顶栏不再直接切换。
     ((TextView) v.findViewById(R.id.settings_theme_title))
         .setText(com.deepseekharness.app.util.UiText.text("主题与外观"));
-    v.findViewById(R.id.settings_theme)
-        .setOnClickListener(x -> ThemeActivity.open(requireContext()));
+    bindThemeModule(v);
     renderThemeSummary(v);
     View overlayRow = v.findViewById(R.id.settings_overlay);
     selectable.put(KEY_OVERLAY, overlayRow);
@@ -282,6 +286,85 @@ public class SettingsFragment extends Fragment {
     installGroups(v);
     if (!twoPane) return v;
     return twoPaneShell(v, savedInstanceState);
+  }
+
+  private boolean syncingThemeControls;
+
+  private void syncThemeControls(View root,
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    ViewGroup controls = root.findViewWithTag("builtin-theme-controls");
+    if (controls == null) return;
+    syncingThemeControls = true;
+    try {
+      var show = (com.google.android.material.materialswitch.MaterialSwitch) controls.getChildAt(0);
+      var enabled = (com.google.android.material.materialswitch.MaterialSwitch) controls.getChildAt(1);
+      boolean active = com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) != null;
+      show.setChecked(!registry.layout().isHidden(
+          com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey()));
+      show.setEnabled(active);
+      enabled.setChecked(active);
+      root.findViewById(R.id.settings_theme).setVisibility(
+          visibleTheme(registry) == null ? View.GONE : View.VISIBLE);
+    } finally { syncingThemeControls = false; }
+  }
+
+  private void bindThemeModule(View root) {
+    var registry = com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
+    try { com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(registry); }
+    catch (RuntimeException unavailable) { /* 可选装配不阻断法定入口。 */ }
+    View row = root.findViewById(R.id.settings_theme);
+    Runnable refresh = () -> {
+      var contribution = visibleTheme(registry);
+      row.setVisibility(contribution == null ? View.GONE : View.VISIBLE);
+      if (contribution != null) ((TextView) root.findViewById(R.id.settings_theme_title))
+          .setText(com.deepseekharness.app.util.UiText.choose(contribution.title(), contribution.titleEn()));
+    };
+    row.setOnClickListener(x -> {
+      if (visibleTheme(registry) != null) ThemeActivity.open(requireContext());
+    });
+    // 控制入口独立于贡献本身，隐藏/停用后仍可恢复；不另建偏好 owner。
+    LinearLayout controls = new LinearLayout(requireContext());
+    controls.setOrientation(LinearLayout.VERTICAL);
+    controls.setTag("builtin-theme-controls");
+    var show = new com.google.android.material.materialswitch.MaterialSwitch(requireContext());
+    show.setText(com.deepseekharness.app.util.UiText.choose("显示主题入口", "Show theme entry"));
+    show.setMinHeight(dp(48));
+    show.setChecked(!registry.layout().hidden().contains(
+        com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey()));
+    show.setOnCheckedChangeListener((button, checked) -> {
+      if (syncingThemeControls) return;
+      registry.setContributionHidden(com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey(), !checked);
+      syncThemeControls(root, registry);
+      refresh.run();
+    });
+    var enabled = new com.google.android.material.materialswitch.MaterialSwitch(requireContext());
+    enabled.setText(com.deepseekharness.app.util.UiText.choose("启用主题模块", "Enable theme module"));
+    enabled.setMinHeight(dp(48));
+    enabled.setChecked(com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) != null);
+    enabled.setOnCheckedChangeListener((button, checked) -> {
+      if (syncingThemeControls) return;
+      var result = com.deepseekharness.app.contract.BuiltinModules.setThemeEnabled(registry, checked);
+      syncThemeControls(root, registry);
+      if (result.rejected()) android.widget.Toast.makeText(requireContext(), result.code(),
+          android.widget.Toast.LENGTH_SHORT).show();
+      refresh.run();
+    });
+    show.setEnabled(enabled.isChecked());
+    controls.addView(show, new LinearLayout.LayoutParams(-1, -2));
+    controls.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
+    ((ViewGroup) row.getParent()).addView(controls);
+    refresh.run();
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleTheme(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null || com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) == null)
+      return null;
+    for (var view : registry.visibleContributions())
+      if (com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey().equals(view.key())
+          && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) return view;
+    return null;
   }
 
   private void installGroups(View root) {
@@ -310,7 +393,11 @@ public class SettingsFragment extends Fragment {
   public void onResume() {
     super.onResume();
     // 从主题页返回且明暗未变时不会重建，这里刷新摘要。
-    if (getView() != null) renderThemeSummary(getView());
+    if (getView() != null) {
+      renderThemeSummary(getView());
+      syncThemeControls(getView(),
+          com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext()));
+    }
   }
 
   /** 摘要显示偏好；跟随系统时补上当前实际明暗。 */
