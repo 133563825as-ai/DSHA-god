@@ -19,9 +19,34 @@ public final class StorageDemoFragment extends Fragment {
   private static final StorageDemoController PROCESS = new StorageDemoController(
       work -> new Handler(Looper.getMainLooper()).postDelayed(work, 500));
   private StorageDemoController.Page page;
+  private boolean unavailable;
 
   @Override public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle saved) {
+    unavailable = !demoVisible();
+    if (unavailable) return new View(requireContext());
     return build(requireContext(), PROCESS, p -> page = p);
+  }
+  private boolean demoVisible() {
+    try {
+      return SettingsFragment.visibleStorageDemo(
+          com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext())) != null;
+    } catch (RuntimeException unavailable) { return false; }
+  }
+  @Override public void onResume() {
+    super.onResume();
+    // Child details belong to SettingsFragment's existing two-pane restoration fallback.
+    if (!unavailable || getParentFragment() != null) return;
+    new Handler(Looper.getMainLooper()).post(() -> {
+      if (!isAdded() || !isResumed() || getParentFragment() != null || !unavailable) return;
+      var manager = getParentFragmentManager();
+      if (manager.isStateSaved()) return;
+      manager.executePendingTransactions();
+      if (!isAdded() || !isResumed() || getParentFragment() != null || !unavailable) return;
+      if (manager.isStateSaved() || manager.findFragmentById(R.id.fragment_container) != this) return;
+      int count = manager.getBackStackEntryCount();
+      if (count > 0 && "settings".equals(manager.getBackStackEntryAt(count - 1).getName()))
+        manager.popBackStackImmediate();
+    });
   }
   @Override public void onStop() {
     if (page != null) page.cancel();

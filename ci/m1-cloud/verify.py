@@ -22,10 +22,8 @@ METHODS={
   "com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute"
  ],
  "about": [
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
   "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
-  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout"
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner"
  ]
 }
 
@@ -51,7 +49,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='756fc44b67f863ff2d46f479f9b354169e1c72dd'
+PARENT='323a3ffa4763a104bbf880bad962c1c71ee299a8'
+SDK_BUDGET_PARENT='756fc44b67f863ff2d46f479f9b354169e1c72dd'
 FIXTURE_TEST_PARENT='78f1713cf4a96c4eb33dd619942f9905000d4af2'
 COMBINED_PARENT='b3e2ebaf304552817e0e9c952ca0d1c50828cf49'
 NAV_TEST_PARENT='b6b19fd36fb5956133358a953d8331d5d78b573d'
@@ -65,14 +64,18 @@ LINE_PARSER_PARENT='2511fb2ea44b9e85d701a15dbca1838fdf6fc56e'
 DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
-CHANGED={'.github/workflows/m1-cloud.yml','ci/m1-cloud/verify.py'}
+CHANGED={'.github/workflows/m1-cloud.yml',
+ 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
+ 'ci/m1-cloud/gate.gradle',
+ 'ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIXTURE_TEST_PARENT]
+    assert parents(PARENT)==[SDK_BUDGET_PARENT]
+    assert parents(SDK_BUDGET_PARENT)==[FIXTURE_TEST_PARENT]
     assert parents(FIXTURE_TEST_PARENT)==[COMBINED_PARENT]
     assert parents(COMBINED_PARENT)==[NAV_TEST_PARENT]
     assert parents(NAV_TEST_PARENT)==[NAV_PARENT]

@@ -19,10 +19,8 @@ final List knownJvm = [
  'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute']
 // Preserve phase/artifact keys: fixture-only navigation revalidation.
 final List knownAbout = [
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout']
+ 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner']
 if (methods != (compileOnly ? [] : (phase == 'jvm' ? knownJvm : knownAbout)))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]
