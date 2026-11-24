@@ -27,7 +27,8 @@ class BuiltinModulesCompositionTest {
         assertTrue(BuiltinModules.ensureProductModules(registry).accepted())
         assertEquals(setOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
             BuiltinModules.THEME_CONTRIBUTION.globalKey(),
-            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
+            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey(),
+            BuiltinModules.LANGUAGE_CONTRIBUTION.globalKey()),
             registry.contributions().map { it.key() }.toSet())
         assertFalse(registry.isRegistered(BuiltinModules.STORAGE_DEMO_MODULE_ID))
         val lease = BuiltinModules.themeLease(registry)!!
@@ -52,7 +53,8 @@ class BuiltinModulesCompositionTest {
         assertTrue(registry.revoke(key).accepted())
         assertFalse(fresh.active())
         assertEquals(setOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
-            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
+            BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey(),
+            BuiltinModules.LANGUAGE_CONTRIBUTION.globalKey()),
             registry.contributions().map { it.key() }.toSet())
         assertTrue(BuiltinModules.setThemeEnabled(registry, true).accepted())
         assertNotEquals(fresh.generation(), BuiltinModules.themeLease(registry)!!.generation())
@@ -156,6 +158,7 @@ class BuiltinModulesCompositionTest {
         assertTrue(BuiltinModules.setThemeEnabled(registry, true).rejected())
         assertEquals(1, closed) // 不再次执行冲突 factory
         assertEquals(listOf(BuiltinModules.ABOUT_CONTRIBUTION_KEY,
+            BuiltinModules.LANGUAGE_CONTRIBUTION.globalKey(),
             BuiltinModules.STARTUP_HISTORY_CONTRIBUTION.globalKey()),
             registry.visibleContributions().map { it.key() })
         assertEquals(ContractCodes.MODULE_ALWAYS_ON,

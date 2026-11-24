@@ -25,6 +25,13 @@ final class LanguagePicker {
   private LanguagePicker() {}
 
   static void show(Context ctx, String preference) {
+    show(ctx, preference, new LanguageSelectionOwner().open(write -> {
+      write.run();
+      return true;
+    }));
+  }
+
+  static void show(Context ctx, String preference, LanguageSelectionOwner.Ticket ticket) {
     float density = ctx.getResources().getDisplayMetrics().density;
     java.util.function.IntUnaryOperator dp = v -> Math.round(v * density);
     boolean followSystem = UiLanguagePreference.followsSystem(preference);
@@ -34,10 +41,12 @@ final class LanguagePicker {
     body.setOrientation(LinearLayout.VERTICAL);
     body.setPadding(dp.applyAsInt(20), dp.applyAsInt(4), dp.applyAsInt(20), dp.applyAsInt(4));
     androidx.appcompat.app.AlertDialog[] holder = new androidx.appcompat.app.AlertDialog[1];
+    boolean[] picked = {false};
     java.util.function.Consumer<String> pick =
         value -> {
           androidx.appcompat.app.AlertDialog dialog = holder[0];
-          if (dialog == null) return;
+          if (dialog == null || !dialog.isShowing() || picked[0]) return;
+          picked[0] = true;
           boolean same =
               UiLanguagePreference.followsSystem(value)
                   ? followSystem
@@ -47,7 +56,7 @@ final class LanguagePicker {
             dialog.setOnDismissListener(
                 ignored ->
                     new Handler(Looper.getMainLooper())
-                        .post(() -> LanguageController.select(ctx, value)));
+                        .post(() -> ticket.commit(() -> LanguageController.select(ctx, value))));
           dialog.dismiss();
         };
 

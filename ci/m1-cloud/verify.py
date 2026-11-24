@@ -27,7 +27,11 @@ METHODS={
   PREFIX+"util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb",
   PREFIX+"ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute",
   PREFIX+"ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement",
-  PREFIX+"ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal"
+  PREFIX+"ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal",
+  PREFIX+"ui.LanguageSelectionOwnerTest.capturedOwnerAndDialogAreSingleUse",
+  PREFIX+"util.UiLanguagePreferenceTest.systemLanguageStaysPinnedAfterDefaultLocaleChanges",
+  PREFIX+"util.AppLocaleDispatchTest.api33WritesResolvedSystemLanguageBeforeFirstActivity",
+  PREFIX+"util.AppLocaleDispatchTest.oldApiKeepsAppCompatPathAndEnglishPolicy"
  ],
  "about": [
   PREFIX+"ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences",
@@ -42,7 +46,11 @@ METHODS={
   PREFIX+"ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
   PREFIX+"ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail",
   PREFIX+"ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery",
-  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent"
+  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent",
+  PREFIX+"ui.SettingsLanguageModuleTest.actualPickerSystemExplicitRecreateSystemKeepsLiteralAndSummary",
+  PREFIX+"ui.SettingsLanguageModuleTest.withdrawnQueuedConfirmationCannotBorrowRecoveryButNextClickCan",
+  PREFIX+"ui.SettingsLanguageModuleTest.queuedStopDestroyViewAndReopenedDialogNeverCommitOldChoice",
+  PREFIX+"ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker"
  ]
 }
 
@@ -68,7 +76,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='415f3c43a073ba4e0643597881e39dd6dbb8b903'
+PARENT='fba50872f1a531258b99069b72b24e77881f1e24'
+STARTUP_HISTORY_RETRY='415f3c43a073ba4e0643597881e39dd6dbb8b903'
 STARTUP_HISTORY_ASSEMBLY='5fcb0045225cbdd8fd8f4cc9866711b25d6ce9f4'
 STARTUP_HISTORY_BASE='433d70f6f7cdc39533c004367b0bcc512ac90c71'
 FIRST_MODULAR_UI_FIX='f10d44b3f7aab5c4b78a039784bff5f8413d692d'
@@ -94,15 +103,24 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py',
-  'app/src/test/java/com/deepseekharness/app/ui/DiagnosticStartupHistoryModuleTest.java'}
+CHANGED={'.github/workflows/m1-cloud.yml',
+    'ci/m1-cloud/gate.gradle',
+    'ci/m1-cloud/verify.py',
+    'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
+    'app/src/main/java/com/deepseekharness/app/ui/SettingsFragment.java',
+    'app/src/main/java/com/deepseekharness/app/ui/LanguagePicker.java',
+    'app/src/main/java/com/deepseekharness/app/ui/LanguageSelectionOwner.java',
+    'app/src/test/java/com/deepseekharness/app/ui/SettingsLanguageModuleTest.java',
+    'app/src/test/java/com/deepseekharness/app/ui/LanguageSelectionOwnerTest.java',
+    'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[STARTUP_HISTORY_ASSEMBLY]
+    assert parents(PARENT)==[STARTUP_HISTORY_RETRY]
+    assert parents(STARTUP_HISTORY_RETRY)==[STARTUP_HISTORY_ASSEMBLY]
     assert parents(STARTUP_HISTORY_ASSEMBLY)==[STARTUP_HISTORY_BASE]
     assert parents(STARTUP_HISTORY_BASE)==[FIRST_MODULAR_UI_FIX]
     assert parents(FIRST_MODULAR_UI_FIX)==[FIRST_MODULAR_DIAGNOSTIC]

@@ -40,6 +40,13 @@ class BuiltinModules private constructor() {
         @JvmField val STARTUP_HISTORY_DESCRIPTOR = ModuleDescriptor(
             STARTUP_HISTORY_MODULE_ID, 1, "最近启动", java.util.Set.of(),
             ModuleDescriptor.Enablement.OPTIONAL_USER)
+        @JvmField val LANGUAGE_MODULE_ID = ModuleId("builtin.language")
+        @JvmField val LANGUAGE_CONTRIBUTION = Contribution.card(
+            LANGUAGE_MODULE_ID, "language", "界面语言 / Language", "Interface language", 6)
+        @JvmField val LANGUAGE_DESCRIPTOR = ModuleDescriptor(
+            LANGUAGE_MODULE_ID, 1, "界面语言", java.util.Set.of(),
+            ModuleDescriptor.Enablement.ALWAYS_ON)
+        private val languageRegistries = java.util.WeakHashMap<ModuleRegistry, Boolean>()
         private val historyRuntimes = java.util.WeakHashMap<ModuleRegistry, HistoryRuntime>()
         private const val THEME_ENABLED_KEY = "module.builtin.theme.enabled"
         private val registryPreferences = java.util.WeakHashMap<ModuleRegistry, SharedPreferences>()
@@ -96,7 +103,57 @@ class BuiltinModules private constructor() {
             val about = ensureRegistered(registry)
             val history = ensureStartupHistory(registry)
             val theme = ensureTheme(registry)
-            return if (about.rejected()) about else if (theme.rejected()) theme else history
+            val language = ensureLanguage(registry)
+            return if (about.rejected()) about else if (theme.rejected()) theme
+                else if (history.rejected()) history else language
+        }
+
+        private fun ensureLanguage(registry: ModuleRegistry): ContractResult = synchronized(LOCK) {
+            // 撤回后不自动补回；同一常驻行在下一次显式点击时走宿主恢复路径。
+            if (languageRegistries.containsKey(registry)) return@synchronized ContractResult.ok()
+            languageRegistries[registry] = false
+            val registered = registry.register(LANGUAGE_DESCRIPTOR, ModuleFactory {
+                object : ModuleInstance {
+                    override fun contributions(): List<Contribution> = java.util.List.of(LANGUAGE_CONTRIBUTION)
+                }
+            })
+            if (registered.rejected()) return@synchronized registered
+            languageRegistries[registry] = true
+            registry.install(LANGUAGE_MODULE_ID)
+        }
+
+        @JvmStatic
+        fun languageLease(registry: ModuleRegistry): GenerationLease? {
+            if (synchronized(LOCK) { languageRegistries[registry] } != true) return null
+            val lease = registry.lease(LANGUAGE_MODULE_ID) ?: return null
+            return if (languageActive(registry, lease)) lease else null
+        }
+
+        /** ALWAYS_ON 的 generic revoke 只删 catalog，必须同时核对贡献存在与捕获代次。 */
+        @JvmStatic
+        fun languageActive(registry: ModuleRegistry, lease: GenerationLease): Boolean =
+            synchronized(registry) {
+                lease.owner() == LANGUAGE_MODULE_ID && lease.active() &&
+                    registry.lease(LANGUAGE_MODULE_ID) === lease && registry.contributions().any {
+                        it.key() == LANGUAGE_CONTRIBUTION.globalKey() &&
+                            it.generation() == lease.generation()
+                    }
+            }
+
+        /** lease → registry 顺序；最终写入与 catalog 撤回互斥，不读取新租约后重放。 */
+        @JvmStatic
+        fun runLanguageIfActive(registry: ModuleRegistry, lease: GenerationLease,
+            write: Runnable): Boolean {
+            var committed = false
+            lease.runIfActive(Runnable {
+                synchronized(registry) {
+                    if (languageActive(registry, lease)) {
+                        write.run()
+                        committed = true
+                    }
+                }
+            })
+            return committed
         }
 
         private fun ensureTheme(registry: ModuleRegistry): ContractResult {

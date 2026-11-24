@@ -52,6 +52,19 @@ public class SettingsFragment extends Fragment {
 
   /** 屏幕常亮/省电模式互斥的编程式开关同步；置位期间不再触发持久化、服务刷新与提示。 */
   private boolean syncingPowerSwitches;
+  private final LanguageSelectionOwner languageOwner = new LanguageSelectionOwner();
+
+  @Override
+  public void onStop() {
+    languageOwner.invalidate();
+    super.onStop();
+  }
+
+  @Override
+  public void onDestroyView() {
+    languageOwner.invalidate();
+    super.onDestroyView();
+  }
 
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
@@ -262,18 +275,13 @@ public class SettingsFragment extends Fragment {
 
     // 语言入口：标题在中文界面下也带英文「Language」（只写「语言 · 简体中文」时，
     // 非中文用户根本认不出这是语言开关）；右侧只显示当前生效语言，不常显「跟随系统」说明。
-    String preference = config.getUiLanguagePreference();
     String effective = config.getUiLanguage();
     String currentLabel = com.deepseekharness.app.util.UiLanguagePreference.nativeName(effective);
     String summary = currentLabel;
     LinearLayout appearance = v.findViewById(R.id.settings_appearance);
     TextView languageSummary = v.findViewById(R.id.settings_language);
     languageSummary.setText(summary);
-    // 方案 A：跟随系统卡片 + 母语名网格，点选即生效。
-    View.OnClickListener openLanguageDialog =
-        x -> LanguagePicker.show(requireContext(), preference);
-    appearance.setOnClickListener(openLanguageDialog);
-    languageSummary.setOnClickListener(openLanguageDialog);
+    bindLanguageModule(appearance, languageSummary);
     // 主题入口只在设置里：独立页面，主界面顶栏不再直接切换。
     ((TextView) v.findViewById(R.id.settings_theme_title))
         .setText(com.deepseekharness.app.util.UiText.text("主题与外观"));
@@ -286,6 +294,65 @@ public class SettingsFragment extends Fragment {
     installGroups(v);
     if (!twoPane) return v;
     return twoPaneShell(v, savedInstanceState);
+  }
+
+  private void bindLanguageModule(LinearLayout row, TextView summary) {
+    com.deepseekharness.app.contract.ModuleRegistry registered = null;
+    try {
+      registered = com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(requireContext());
+    } catch (RuntimeException unavailable) {
+      // 原行与原 Picker 是冷态本地恢复入口，不依赖模块装配成功。
+    }
+    final var registry = registered;
+    TextView title = (TextView) row.getChildAt(1);
+    Runnable render = () -> {
+      var contribution = visibleLanguage(registry);
+      // 标题沿用既有十语资源；模块贡献仍决定点击凭证与恢复路径。
+      title.setText(getString(R.string.ui_language_title));
+      row.setTag(contribution == null ? "host-language-recovery" : contribution.key());
+      row.setVisibility(View.VISIBLE);
+    };
+    View.OnClickListener open = ignored -> {
+      final android.app.Activity capturedActivity = getActivity();
+      if (capturedActivity == null || capturedActivity.isFinishing() || capturedActivity.isDestroyed()) return;
+      render.run();
+      var contribution = visibleLanguage(registry);
+      final var lease = contribution == null ? null
+          : com.deepseekharness.app.contract.BuiltinModules.languageLease(registry);
+      // 模块失效后绝不把已排队确认转成恢复确认；恢复只在下一次显式点击选定。
+      final boolean modulePath = contribution != null;
+      final View capturedPage = getView();
+      var ticket = languageOwner.open(write -> {
+        if (capturedPage == null || getView() != capturedPage || !isResumed()
+            || getActivity() != capturedActivity || capturedActivity.isFinishing()
+            || capturedActivity.isDestroyed()) return false;
+        // 只在主线程调用原 select；锁序 owner → lease → registry，无装配 LOCK。
+        if (modulePath) return lease != null && contribution.generation() == lease.generation() &&
+            com.deepseekharness.app.contract.BuiltinModules.runLanguageIfActive(registry, lease, write);
+        write.run();
+        return true;
+      });
+      LanguagePicker.show(requireContext(),
+          HarnessController.get(requireContext()).config().getUiLanguagePreference(), ticket);
+    };
+    row.setOnClickListener(open);
+    summary.setOnClickListener(open);
+    render.run();
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleLanguage(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null) return null;
+    try {
+      var lease = com.deepseekharness.app.contract.BuiltinModules.languageLease(registry);
+      if (lease == null) return null;
+      for (var view : registry.visibleContributions())
+        if (com.deepseekharness.app.contract.BuiltinModules.LANGUAGE_CONTRIBUTION.globalKey().equals(view.key())
+            && view.generation() == lease.generation()
+            && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) return view;
+    } catch (RuntimeException unavailable) { /* 同行恢复不随模块故障消失。 */ }
+    return null;
   }
 
   private boolean syncingThemeControls;
