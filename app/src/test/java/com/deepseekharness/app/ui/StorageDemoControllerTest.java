@@ -53,4 +53,31 @@ public final class StorageDemoControllerTest {
     assertFalse(report.volumeAvailable().get("synthetic-volume").observed().isPresent());
     assertTrue(report.privateByBucket().get("demo").logical().partial());
   }
+  @Test public void resultRenderFailureStillExitsBeforeNextOwner() {
+    List<Runnable> jobs = new ArrayList<>();
+    StorageDemoController owner = new StorageDemoController(jobs::add);
+    RuntimeException renderFailure = new RuntimeException("synthetic result render failure");
+    var old = owner.open(state -> {
+      if (state.report != null) throw renderFailure;
+    });
+    assertTrue(old.request(StorageDemoController.Sample.PARTIAL));
+    try {
+      jobs.remove(0).run();
+      fail("result renderer failure must remain visible");
+    } catch (RuntimeException actual) {
+      assertSame(renderFailure, actual);
+    }
+    assertEquals(com.deepseekharness.app.storage.model.StorageModel.Phase.IDLE, owner.phase());
+    assertEquals(1, owner.reads());
+    List<StorageDemoController.State> fresh = new ArrayList<>();
+    var next = owner.open(fresh::add);
+    assertTrue(next.request(StorageDemoController.Sample.EMPTY));
+    old.close(); // stale token must not retire the new owner's lease
+    assertEquals(com.deepseekharness.app.storage.model.StorageModel.Phase.RUNNING, owner.phase());
+    jobs.remove(0).run();
+    assertEquals(2, owner.reads());
+    assertEquals("空结果 · 合成样例", fresh.get(fresh.size() - 1).status);
+    assertNotNull(fresh.get(fresh.size() - 1).report);
+    assertEquals(com.deepseekharness.app.storage.model.StorageModel.Phase.IDLE, owner.phase());
+  }
 }

@@ -18,14 +18,19 @@ PROTECTED = {
  'tools/robolectric-sdk.lock.json':'9e7380ed24ecccce360943f2b877008a1777b7734cc3361621f4e41645d6ef39'}
 PREFIX='com.deepseekharness.app.'
 METHODS={
- 'jvm':[PREFIX+'ui.StorageDemoNavigationLeaseTest.'+n for n in [
-   'stoppedPageCannotPublishAcrossRecreatedRoute']],
- # Keep the phase/artifact key for the new settings navigation slice.
- 'about':[PREFIX+'ui.SettingsStorageNavigationTest.'+n for n in [
-   'settingsClickAndSystemBackKeepAboutReachable',
-   'singlePaneRecreateRetiresOldOwner',
-   'hiddenDemoCannotReopenFromRestoredRoute',
-   'hiddenSettingsEntryStillOpensLegalAbout']]}
+ "jvm": [
+  "com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute",
+  "com.deepseekharness.app.ui.StorageDemoControllerTest.resultRenderFailureStillExitsBeforeNextOwner"
+ ],
+ "about": [
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner",
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute",
+  "com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout",
+  "com.deepseekharness.app.ui.StorageDemoDisplayTest.darkShortLargeEnglishUsesAppLanguageAndKeepsControlsReachable",
+  "com.deepseekharness.app.ui.StorageDemoDisplayTest.lightChineseRemainsDistinctFromEnglishWithNoBusinessRead"
+ ]
+}
 
 def sha(path):
     h=hashlib.sha256()
@@ -49,7 +54,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='b6b19fd36fb5956133358a953d8331d5d78b573d'
+PARENT='b3e2ebaf304552817e0e9c952ca0d1c50828cf49'
+NAV_TEST_PARENT='b6b19fd36fb5956133358a953d8331d5d78b573d'
 NAV_PARENT='9393dcc6bbc21d040490ea5a4dc00f9fb2bfd141'
 SDK_WAIT_PARENT='e081cac90549708ce7c6bdb2c5f76115bb42e5af'
 SLICE_PARENT='59a111106d382b5316b709b3fb2ade9929f00069'
@@ -61,8 +67,10 @@ DIAGNOSTIC_PARENT='eca2d17f1902d12c0bc5cdaf6b5da427c9615ea9'
 PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 CHANGED={'.github/workflows/m1-cloud.yml',
- 'app/src/test/java/com/deepseekharness/app/ui/SettingsStorageNavigationTest.java',
- 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoNavigationLeaseTest.java',
+ 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoController.java',
+ 'app/src/main/java/com/deepseekharness/app/ui/StorageDemoFragment.java',
+ 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoControllerTest.java',
+ 'app/src/test/java/com/deepseekharness/app/ui/StorageDemoDisplayTest.java',
  'ci/m1-cloud/gate.gradle',
  'ci/m1-cloud/verify.py'}
 
@@ -71,7 +79,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[NAV_PARENT]
+    assert parents(PARENT)==[NAV_TEST_PARENT]
+    assert parents(NAV_TEST_PARENT)==[NAV_PARENT]
     assert parents(NAV_PARENT)==[SDK_WAIT_PARENT]
     assert parents(SDK_WAIT_PARENT)==[SLICE_PARENT]
     assert parents(SLICE_PARENT)==[GREEN_PARENT]
@@ -195,6 +204,75 @@ def about_failure_stage(case):
     if len(coordinates)==1:result['code']=ABOUT_STAGES.get(coordinates[0],result['code'])
     return result
 
+NAV_SOURCE='app/src/test/java/com/deepseekharness/app/ui/SettingsStorageNavigationTest.java'
+NAV_SOURCE_SHA256='f9e526c2734dfb059938c64b2904854cdb8c617ff15aff42e67a443746c22f54'
+NAV_CLASS=PREFIX+'ui.SettingsStorageNavigationTest'
+NAV_METHODS=('settingsClickAndSystemBackKeepAboutReachable','singlePaneRecreateRetiresOldOwner',
+    'hiddenDemoCannotReopenFromRestoredRoute','hiddenSettingsEntryStillOpensLegalAbout')
+# Exact member and in-file numeric coordinates only; neither arbitrary frame nor message is exported.
+NAV_LOCATIONS={
+ 'setup':(82,100,'NAV_SETUP_LOCATION'),
+ 'teardown':(101,110,'NAV_TEARDOWN_LOCATION'),
+ 'registry':(179,179,'NAV_REGISTRY_LOCATION'),
+ 'current':(180,180,'NAV_CURRENT_FRAGMENT_LOCATION'),
+ 'drain':(181,184,'NAV_LIFECYCLE_DRAIN_LOCATION'),
+ 'clickDemo':(185,188,'NAV_DEMO_BUTTON_LOCATION'),
+ 'systemBack':(189,192,'NAV_SYSTEM_BACK_LOCATION'),
+ 'openAbout':(193,196,'NAV_ABOUT_BUTTON_LOCATION'),
+ 'assertLegalAbout':(197,202,'NAV_LEGAL_ASSERTION_LOCATION'),
+ 'clickText':(203,207,'NAV_BUTTON_LOCATION'),
+ 'visibleText':(208,216,'NAV_VIEW_LOOKUP_LOCATION'),
+ 'words':(217,223,'NAV_VIEW_TEXT_LOCATION'),
+ NAV_METHODS[0]:(112,121,'NAV_CLICK_BACK_TEST_LOCATION'),
+ NAV_METHODS[1]:(123,147,'NAV_RECREATE_TEST_LOCATION'),
+ NAV_METHODS[2]:(149,162,'NAV_HIDDEN_RESTORE_TEST_LOCATION'),
+ NAV_METHODS[3]:(164,177,'NAV_HIDDEN_ABOUT_TEST_LOCATION')}
+NAV_NESTED_LOCATIONS={
+ ('App','harnessController'):(44,46,'NAV_REAL_CONTROLLER_BOUNDARY_LOCATION'),
+ ('Host','onCreate'):(49,55,'NAV_HOST_CREATE_LOCATION'),
+ ('ControllerConfig','get'):(61,63,'NAV_CONTROLLER_SHADOW_LOCATION'),
+ ('ControllerConfig','config'):(64,64,'NAV_CONFIG_SHADOW_LOCATION')}
+NAV_FAILURE_TYPES={
+ 'java.lang.AssertionError':'ASSERTION',
+ 'java.lang.NullPointerException':'NULL_POINTER',
+ 'java.lang.IllegalStateException':'ILLEGAL_STATE',
+ 'java.lang.IllegalArgumentException':'ILLEGAL_ARGUMENT',
+ 'android.view.InflateException':'INFLATE',
+ 'android.content.res.Resources$NotFoundException':'RESOURCE_NOT_FOUND',
+ 'java.lang.NoClassDefFoundError':'CLASS_NOT_FOUND',
+ 'java.lang.RuntimeException':'RUNTIME',
+ 'org.junit.internal.runners.model.MultipleFailureException':'MULTIPLE_FAILURES'}
+
+def navigation_failure_stage(case):
+    identity=(case.get('classname'),case.get('name'))
+    if identity[0]!=NAV_CLASS or identity[1] not in NAV_METHODS:return None
+    nodes=[case.find(tag) for tag in ('failure','error') if case.find(tag) is not None]
+    if not nodes:return None
+    result=dict(code='NAV_LOCATION_UNKNOWN',sourceMatched=False,failureType='UNKNOWN',
+        attribution='untrusted-stack-location-not-causal-proof')
+    try:
+        if sha(ROOT/NAV_SOURCE)!=NAV_SOURCE_SHA256:return result
+    except OSError:return result
+    result['sourceMatched']=True
+    if len(nodes)!=1:return result
+    node=nodes[0]
+    result['failureType']=NAV_FAILURE_TYPES.get(node.get('type'),'UNKNOWN')
+    text=node.text or ''
+    if len(text)>64*1024:return result
+    frame=(r'[ \t]+at com\.deepseekharness\.app\.ui\.SettingsStorageNavigationTest'
+        r'(?:\$(App|Host|ControllerConfig|MemoryConfig))?\.([A-Za-z][A-Za-z0-9]*)'
+        r'\(SettingsStorageNavigationTest\.java:([0-9]{1,4})\)')
+    # Take only the first recognized authored frame. A deeper caller is not a root-cause claim.
+    for line in text.splitlines():
+        match=re.fullmatch(frame,line)
+        if not match:continue
+        nested,member,coordinate=match.groups()
+        location=(NAV_NESTED_LOCATIONS.get((nested,member)) if nested else NAV_LOCATIONS.get(member))
+        if location and location[0]<=int(coordinate)<=location[1]:
+            result['code']=location[2]
+            break
+    return result
+
 def metadata_diagnostics():
     # Trusted constant roles only: never echo paths or digest data from log text.
     roles={
@@ -289,7 +367,7 @@ def phase(name):
         xml_error=type(exc).__name__  # Never arbitrary diagnostic content.
     finally:
         # Export only structural XML facts, never system-out/err/properties or bodies.
-        records=[]; about_stage=None
+        records=[]; about_stage=None; navigation_stages={}
         if name!='compile' and reports.exists():
             for path in sorted(reports.glob('TEST-*.xml'))[:10]:
                 if path.stat().st_size>2*1024*1024: xml_error='XmlSizeLimit'; accepted=False; continue
@@ -302,6 +380,11 @@ def phase(name):
                         status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
                         records.append(dict(classname=cls,name=method,status=status))
                         if name=='about':
+                            nav_stage=navigation_failure_stage(case)
+                            if nav_stage is not None:
+                                navigation_stages[method]=(nav_stage if method not in navigation_stages else dict(
+                                    code='NAV_DUPLICATE_REDACTED',sourceMatched=False,failureType='UNKNOWN',
+                                    attribution='untrusted-stack-location-not-causal-proof'))
                             stage=about_failure_stage(case)
                             if stage is not None:
                                 about_stage=stage if about_stage is None else dict(
@@ -324,7 +407,7 @@ def phase(name):
                     if x['status']!='passed':ET.SubElement(case,x['status'])
             ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
         terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
-            aboutFailureStage=about_stage,
+            aboutFailureStage=about_stage,navigationFailureStages=navigation_stages,
             failedPhaseMetadata=(metadata_diagnostics() if not accepted else []),
             argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
             runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,

@@ -16,13 +16,16 @@ final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJa
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
 final List knownJvm = [
- 'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute']
-// Preserve the phase/artifact key for the new settings navigation slice.
+ 'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute',
+ 'com.deepseekharness.app.ui.StorageDemoControllerTest.resultRenderFailureStillExitsBeforeNextOwner']
+// Preserve phase/artifact keys: two JVM and six SDK34 exact regressions.
 final List knownAbout = [
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.singlePaneRecreateRetiresOldOwner',
  'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenDemoCannotReopenFromRestoredRoute',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout']
+ 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.hiddenSettingsEntryStillOpensLegalAbout',
+ 'com.deepseekharness.app.ui.StorageDemoDisplayTest.darkShortLargeEnglishUsesAppLanguageAndKeepsControlsReachable',
+ 'com.deepseekharness.app.ui.StorageDemoDisplayTest.lightChineseRemainsDistinctFromEnglishWithNoBusinessRead']
 if (methods != (compileOnly ? [] : (phase == 'jvm' ? knownJvm : knownAbout)))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]
