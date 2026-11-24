@@ -63,7 +63,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='adc10c916d5ae42f1fe4d6ace7a507460a10f1c5'
+PARENT='700bfe52b54e60dd68811d9f1a28a3d7d46b0736'
+FIRST_MODULAR_LAYOUT_FIX='adc10c916d5ae42f1fe4d6ace7a507460a10f1c5'
 FIRST_MODULAR_ASSEMBLY='bfe715be654f5efd8553a55307f85ffe79e09e2c'
 FIRST_MODULAR_BASE='477d70c8261b2ce78a90bdd9df709054dcf149fe'
 HIDDEN_RECOVERY_PARENT='323a3ffa4763a104bbf880bad962c1c71ee299a8'
@@ -83,15 +84,15 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py',
-  'app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java'}
+CHANGED={'.github/workflows/m1-cloud.yml', 'ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[FIRST_MODULAR_ASSEMBLY]
+    assert parents(PARENT)==[FIRST_MODULAR_LAYOUT_FIX]
+    assert parents(FIRST_MODULAR_LAYOUT_FIX)==[FIRST_MODULAR_ASSEMBLY]
     assert parents(FIRST_MODULAR_ASSEMBLY)==[FIRST_MODULAR_BASE]
     assert parents(FIRST_MODULAR_BASE)==[HIDDEN_RECOVERY_PARENT]
     assert parents(HIDDEN_RECOVERY_PARENT)==[SDK_BUDGET_PARENT]
@@ -292,6 +293,31 @@ def navigation_failure_stage(case):
             break
     return result
 
+THEME_SOURCE='app/src/test/java/com/deepseekharness/app/ui/SettingsBuiltinModuleCompositionTest.java'
+THEME_SOURCE_SHA256='87c3f17b98aa6b56ab4f33aac0913171f051725cecd59b8a93699e631deb3d83'
+THEME_CLASS=PREFIX+'ui.SettingsBuiltinModuleCompositionTest'
+THEME_METHOD='productEntryUsesVisibleContributionAndExistingPreferences'
+THEME_STAGES={88:'REGISTRY_IDENTITY',89:'VISIBLE_CONTRIBUTION',90:'ABOUT_DESCRIPTOR',
+ 91:'DEMO_DEFAULT_ABSENT',92:'SETTINGS_CREATE',93:'ENTRY_VISIBILITY',94:'THEME_PAGE_OPEN_OR_CLOSE',
+ 95:'SWATCH_LOOKUP',96:'SWATCH_PRESENT',97:'SWATCH_CLICK',98:'PALETTE_SAVE',
+ 100:'SETTINGS_SUMMARY',101:'HOST_RECREATE',102:'PALETTE_AFTER_RECREATE'}
+
+def theme_failure_stage(case):
+    if (case.get('classname'),case.get('name'))!=(THEME_CLASS,THEME_METHOD): return None
+    nodes=[case.find(k) for k in ('failure','error') if case.find(k) is not None]
+    if not nodes: return None
+    out=dict(code='THEME_LOCATION_UNKNOWN', sourceMatched=sha(ROOT/THEME_SOURCE)==THEME_SOURCE_SHA256,
+        failureType='UNKNOWN',attribution='untrusted-stack-location-not-causal-proof')
+    if len(nodes)!=1 or not out['sourceMatched']: return out
+    out['failureType']=NAV_FAILURE_TYPES.get(nodes[0].get('type'),'UNKNOWN')
+    text=nodes[0].text or ''
+    if len(text)>64*1024: return out
+    frame=re.compile(r'[ \t]+at '+re.escape(THEME_CLASS+'.'+THEME_METHOD)+
+        r'\(SettingsBuiltinModuleCompositionTest\.java:([0-9]{1,4})\)')
+    rows=[int(m.group(1)) for line in text.splitlines() if (m:=frame.fullmatch(line))]
+    if len(rows)==1: out['code']=THEME_STAGES.get(rows[0],out['code'])
+    return out
+
 def metadata_diagnostics():
     # Trusted constant roles only: never echo paths or digest data from log text.
     roles={
@@ -386,7 +412,7 @@ def phase(name):
         xml_error=type(exc).__name__  # Never arbitrary diagnostic content.
     finally:
         # Export only structural XML facts, never system-out/err/properties or bodies.
-        records=[]; about_stage=None; navigation_stages={}
+        records=[]; about_stage=None; navigation_stages={}; theme_stage=None
         if name!='compile' and reports.exists():
             for path in sorted(reports.glob('TEST-*.xml'))[:10]:
                 if path.stat().st_size>2*1024*1024: xml_error='XmlSizeLimit'; accepted=False; continue
@@ -399,6 +425,9 @@ def phase(name):
                         status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
                         records.append(dict(classname=cls,name=method,status=status))
                         if name=='about':
+                            found_theme=theme_failure_stage(case)
+                            if found_theme is not None:
+                                theme_stage=found_theme if theme_stage is None else dict(code='THEME_DUPLICATE_REDACTED')
                             nav_stage=navigation_failure_stage(case)
                             if nav_stage is not None:
                                 navigation_stages[method]=(nav_stage if method not in navigation_stages else dict(
@@ -426,7 +455,7 @@ def phase(name):
                     if x['status']!='passed':ET.SubElement(case,x['status'])
             ET.ElementTree(suites).write(phase_safe/'filtered-junit.xml',encoding='utf-8',xml_declaration=True)
         terminal=dict(result,accepted=accepted,xmlCheckError=xml_error,xmlCases=records,
-            aboutFailureStage=about_stage,navigationFailureStages=navigation_stages,
+            aboutFailureStage=about_stage,navigationFailureStages=navigation_stages,themeFailureStage=theme_stage,
             failedPhaseMetadata=(metadata_diagnostics() if not accepted else []),
             argv=argv,commit=os.environ['GITHUB_SHA'],runId=os.environ['GITHUB_RUN_ID'],
             runAttempt=os.environ['GITHUB_RUN_ATTEMPT'],phase=name,
