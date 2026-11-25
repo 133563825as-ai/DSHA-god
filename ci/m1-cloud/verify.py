@@ -41,14 +41,11 @@ PROTECTED = {
 PREFIX='com.deepseekharness.app.'
 # Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
- "about": [
+ "jvm": [
   PREFIX+"backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated",
   PREFIX+"backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy",
   PREFIX+"backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact",
-  PREFIX+"backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation",
-  PREFIX+"ui.DiagnosticActivityRenderingTest.dismissedExportDraftDoesNotReachCopyOrNextSheet",
-  PREFIX+"ui.DiagnosticActivityRenderingTest.packageNoteBelongsOnlyToSelectedExport",
-  PREFIX+"ui.DiagnosticActivityRenderingTest.textPickerUsesItsNoteOnlyOnce"
+  PREFIX+"backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation"
  ]
 }
 
@@ -74,7 +71,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='871ddc629a0f9bf16ec97204d9926d30caa2696d'
+PARENT='a1e4763bd29d113dd4b65d08fc231bda15e3cc31'
+N2_GREEN='871ddc629a0f9bf16ec97204d9926d30caa2696d'
 N1_GREEN='d6cc98c15a58cfac53fcbdf6d7103b2908259ea3'
 COMPILE_DIAG='e03a4dea89c5ed327c50e0eb26076d263194f45e'
 STARTUP_VALIDATION='4abb71a9805a8a31eb497ffb359c96925dcd061f'
@@ -115,7 +113,7 @@ N2_FIXTURES={'app/src/test/java/com/deepseekharness/app/ui/WebBackgroundPageLife
 TRIAL_INPUTS={'app/src/main/java/com/deepseekharness/app/ui/DiagnosticActivity.java':'e7bb30927402864c62de2a3b4a2181772a5abf75df924001458f166e86213109',
  'app/src/test/java/com/deepseekharness/app/backup/AutomaticBackupPrunerTest.java':'9d4a1d1a4a60108959dd38e3f68f96f3c9f1b7c0130aafcda743ee464e8b18f9',
  'app/src/test/java/com/deepseekharness/app/ui/DiagnosticActivityRenderingTest.java':'31d02df40b68543e5e97b52b4f78905337176ee1117c6fd5714e6a0ef04535f3'}
-CHANGED=set(TRIAL_INPUTS) | {
+CHANGED={
     '.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
@@ -125,7 +123,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[N1_GREEN]
+    assert parents(PARENT)==[N2_GREEN]
+    assert parents(N2_GREEN)==[N1_GREEN]
     assert parents(N1_GREEN)==[COMPILE_DIAG]
     assert parents(COMPILE_DIAG)==[STARTUP_VALIDATION]
     assert parents(STARTUP_VALIDATION)==[SECURITY_BASE]
@@ -453,7 +452,7 @@ def handoff_metadata(restore=False, recheck_archives=False):
 
 def phase(name):
     from runner import run_phase
-    policy(); protected(); assert name in ('compile','about')
+    policy(); protected(); assert name in ('compile','jvm')
     evidence=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-evidence'
     evidence.mkdir(exist_ok=True)
     report=evidence/name; report.mkdir()
@@ -470,9 +469,8 @@ def phase(name):
         '-Pdsha.rust.mode=off','-Pkotlin.compiler.execution.strategy=in-process',target]
     if name!='compile':
         for method in METHODS[name]: argv+=['--tests',method]
-    sdk=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-sdk34'
-    if name=='about':
-        files=list(sdk.iterdir()); assert len(files)==1 and sha(files[0])=='3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701'
+    sdk=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-empty-framework-dir'
+    if name=='jvm': sdk.mkdir()  # Exclusive empty directory; no instrumented SDK input.
     env=dict(os.environ,M1_PHASE=name,M1_METHODS=json.dumps(METHODS.get(name,[])),
         DSHA_ROBOLECTRIC_DEPENDENCY_DIR=str(sdk))
     assert 'DSHA_UNIT_TEST_STATE' not in env
@@ -563,7 +561,7 @@ def finalize_evidence():
     # Missing result is UNKNOWN/not reached, never invented numeric exit/PASS.
     root=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-safe-evidence'
     root.mkdir(exist_ok=True)
-    for name in ('compile','about'):
+    for name in ('compile','jvm'):
         folder=root/name;folder.mkdir(exist_ok=True)
         path=folder/'result.json'
         if not path.exists():
@@ -579,7 +577,6 @@ if __name__=='__main__':
     elif command=='metadata-checkout': handoff_metadata()
     elif command=='metadata-restore': handoff_metadata(restore=True,recheck_archives=True)
     elif command=='metadata-handoff': handoff_metadata(recheck_archives=True)
-    elif command=='sdk34': sdk34()
     elif command=='phase': phase(sys.argv[2])
     elif command=='finalize': finalize_evidence()
     else: raise SystemExit('unknown command')

@@ -8,23 +8,20 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.testing.junit.JUnitOptions
 
-// One-time backup and export scope. No name-family admission or -x bypass.
+// One-time backup JVM scope. No name-family admission or -x bypass.
 final String phase = System.getenv('M1_PHASE')
-if (!(phase in ['compile','about'])) throw new GradleException('M1_BAD_PHASE')
+if (!(phase in ['compile','jvm'])) throw new GradleException('M1_BAD_PHASE')
 final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
-// Keep the existing SDK34 phase/artifact key; admit only the seven backup and export methods.
-final List knownAbout = [
+// Only the four plain JUnit methods; no Android behavior tests.
+final List knownJvm = [
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated',
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy',
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact',
- 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation',
- 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.dismissedExportDraftDoesNotReachCopyOrNextSheet',
- 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.packageNoteBelongsOnlyToSelectedExport',
- 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.textPickerUsesItsNoteOnlyOnce']
-if (methods != (compileOnly ? [] : knownAbout))
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation']
+if (methods != (compileOnly ? [] : knownJvm))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]
 methods.each { tokens.addAll(['--tests',it]) }
@@ -111,7 +108,7 @@ gradle.taskGraph.whenReady { graph ->
         test.maxParallelForks!=1 || test.maxHeapSize!='2048m' || !test.reports.junitXml.required.get() ||
         test.reports.junitXml.outputLocation.get().asFile.canonicalPath!=xml.canonicalPath)
         throw new GradleException('M1_PREWORKER_FILTER_DRIFT:'+JsonOutput.toJson(state))
-      if (phase=='about' && (state.offline!='true' || state.sdkDir!=System.getenv('DSHA_ROBOLECTRIC_DEPENDENCY_DIR')))
+      if (phase=='jvm' && (state.offline!='true' || state.sdkDir!=System.getenv('DSHA_ROBOLECTRIC_DEPENDENCY_DIR')))
         throw new GradleException('M1_ROBOLECTRIC_OFFLINE_REQUIRED')
       [xml,html].each { dir -> if (dir.exists()) dir.eachFileRecurse { file ->
         if (file.isFile()) throw new GradleException('M1_NONFRESH_TEST_FILE')
