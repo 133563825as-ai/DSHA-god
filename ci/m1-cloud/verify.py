@@ -14,7 +14,7 @@ PATCHES = {
  'build-logic/android.gradle':'3bbb725998ea4ad62321a21acd68fdbc040564950f93ea29cbb3812445fdd607'}
 DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
 SIDECAR='app/src/main/assets/dsh-runtime.inputs.json'
-# Frozen RB-0032 transfer only. The other three changed paths are the admission itself.
+# Preserve all verified RB-0032 product bytes; this child only changes its CI gate.
 REVIEWED = {
  'app/src/main/assets/destructive-policy/index.js':'fd7dd96d7271252755a7cb8bad79eb759fd7bd6ef75fbfe303ed16fff6dc35fb',
  SIDECAR:'a3fc29b8c28e09db8b55a87d6a2bfde6d1484fdd7bf5de21a040b1141f185794',
@@ -42,12 +42,11 @@ PREFIX='com.deepseekharness.app.'
 # Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
  "about": [
-  PREFIX+"ui.PluginInstallActivityConsentTest.setupResumeAndRecreateNeverSubmitOrLoadManager",
-  PREFIX+"ui.PluginInstallActivityConsentTest.exactSourceAndFreshScriptConsentRequiredForEachSubmission",
-  PREFIX+"ui.PluginInstallActivityConsentTest.obscuredInputRevokesConsentAndCannotSubmit",
-  PREFIX+"ui.PluginInstallActivityConsentTest.opaqueSourceIsNotTruncatedOrEchoedForApproval",
-  PREFIX+"screen.ScreenNodeActionsTest.passwordSnapshotOmitsSetTextButKeepsOtherActions",
-  PREFIX+"screen.ScreenNodeActionsTest.textMutationUsesCurrentPasswordFlagNotTheObservedActionMask"
+  PREFIX+"ui.FirstRunWebStartTest.rotationAndRepeatedCompletionSubmitOnlyOnce",
+  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventWithoutExplicitEntryNeverOpensWeb",
+  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventConsumesExplicitEntryWithoutWaitingForTheOneSecondPoll",
+  PREFIX+"core.StartupRecoveryLifecycleTest.explicitNativeDestinationCannotBeOvertakenByPersistentStartupFailure",
+  PREFIX+"core.StartupRecoveryLifecycleTest.actualMainPollKeepsNativePageAndBannerThenRoutesLaunchOnlyAfterGateCloses"
  ]
 }
 
@@ -73,7 +72,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='27362fa8705d4c9dca7351ca778d49407cdd29a6'
+PARENT='7ae28c586e6418fac0b07c6a2949013ebfb03b5c'
+PRE_SECURITY='27362fa8705d4c9dca7351ca778d49407cdd29a6'
 N1_BASE='f778d23d09492de922b8dabd3d5aa75725c7ffc9'
 STORAGE_OVERVIEW_BASE='c36678394316f7571570929606238e444ed66568'
 MODULE_CENTER_BASE='f10827e5182ea70faccd326055bb977e5da5611f'
@@ -104,7 +104,7 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED=set(REVIEWED) | {'.github/workflows/m1-cloud.yml',
+CHANGED={'.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
 
@@ -113,7 +113,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[N1_BASE]
+    assert parents(PARENT)==[PRE_SECURITY]
+    assert parents(PRE_SECURITY)==[N1_BASE]
     assert parents(N1_BASE)==[STORAGE_OVERVIEW_BASE]
     assert parents(STORAGE_OVERVIEW_BASE)==[MODULE_CENTER_BASE]
     assert parents(MODULE_CENTER_BASE)==[LANGUAGE_BASE]
@@ -147,7 +148,7 @@ def candidate():
     entries=git('ls-tree','HEAD','--',*sorted(CHANGED)).splitlines()
     assert len(entries)==len(CHANGED) and all(line.startswith('100644 blob ') for line in entries)
     for name,pin in PARENT_PINS.items():
-        blob=subprocess.check_output(['git','cat-file','blob',PARENT+':'+name])
+        blob=subprocess.check_output(['git','cat-file','blob',PRE_SECURITY+':'+name])
         assert hashlib.sha256(blob).hexdigest()==pin,name
     for name,pin in (PATCHES | REVIEWED).items(): assert sha(ROOT/name)==pin,name
     protected()

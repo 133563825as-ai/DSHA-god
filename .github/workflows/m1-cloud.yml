@@ -1,4 +1,4 @@
-name: Rebirth RB-0032 one-time SDK34 narrow validation
+name: Rebirth N1 startup one-time SDK34 narrow validation
 on:
   push:
     branches: [validate/m1-cloud-20261124]
@@ -9,14 +9,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admission:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == '27362fa8705d4c9dca7351ca778d49407cdd29a6' && github.event.after == github.sha && github.run_attempt == 1
+    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == '7ae28c586e6418fac0b07c6a2949013ebfb03b5c' && github.event.after == github.sha && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 31
+          fetch-depth: 32
           persist-credentials: false
       - run: python3 ci/m1-cloud/verify.py candidate
   narrow:
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 31
+          fetch-depth: 32
           persist-credentials: false
       - name: Verify one-time candidate identity
         run: python3 ci/m1-cloud/verify.py candidate
@@ -77,7 +77,7 @@ jobs:
       - name: Fetch and verify only SDK34
         timeout-minutes: 9
         run: python3 ci/m1-cloud/verify.py sdk34
-      - name: Exact six authorized RB-0032 SDK34 methods
+      - name: Exact five authorized N1 startup SDK34 methods
         run: python3 ci/m1-cloud/verify.py phase about
       - name: Finalize missing receipts as UNKNOWN (never infer success)
         if: always()
