@@ -1,4 +1,4 @@
-name: Rebirth read-only storage overview narrow validation
+name: Rebirth N1 one-time SDK34 narrow validation
 on:
   push:
     branches: [validate/m1-cloud-20261124]
@@ -9,27 +9,18 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admission:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'c36678394316f7571570929606238e444ed66568' && github.event.after == github.sha && github.run_attempt == 1
+    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'f778d23d09492de922b8dabd3d5aa75725c7ffc9' && github.event.after == github.sha && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 29
+          fetch-depth: 30
           persist-credentials: false
       - run: python3 ci/m1-cloud/verify.py candidate
-  inputs:
-    needs: admission
-    uses: ./.github/workflows/_node-inputs.yml
-    with:
-      ref: ${{ github.sha }}
-      rebuild_runtime: false
-      artifact: m1-fixed-inputs-${{ github.run_id }}-${{ github.run_attempt }}
-    permissions:
-      contents: read
   narrow:
-    needs: [admission, inputs]
+    needs: admission
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
@@ -38,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 29
+          fetch-depth: 30
           persist-credentials: false
       - name: Verify one-time candidate identity
         run: python3 ci/m1-cloud/verify.py candidate
@@ -50,10 +41,28 @@ jobs:
           ndk: 'false'
       - name: Verify candidate Git metadata before handoff
         run: python3 ci/m1-cloud/verify.py metadata-checkout
-      - uses: ./.github/actions/restore-handoff
-        with:
-          artifact: ${{ needs.inputs.outputs.artifact }}
-          fixture: 'false'
+      - name: Resolve the same locked fixed input pair (no override or rebuild)
+        id: resolve
+        env:
+          SUNSET_DISPATCH_URL: ''
+          SUNSET_DISPATCH_SHA: ''
+          SUNSET_DISPATCH_FORMAT: ''
+        run: python3 tools/sunset-ci-inputs.py --github-output
+      - name: Restore exact fixed inputs locally (never upload input assets)
+        env:
+          INPUT_URL: ${{ steps.resolve.outputs.url }}
+          INPUT_SHA: ${{ steps.resolve.outputs.sha256 }}
+          INPUT_FORMAT: ${{ steps.resolve.outputs.format }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          args=(--url "$INPUT_URL" --sha256 "$INPUT_SHA")
+          if [ "$INPUT_FORMAT" = source-archive ]; then args+=(--source-archive); fi
+          python3 tools/ci-assets.py "${args[@]}"
+      - name: Verify local same-SHA handoff without publishing its binary archive
+        run: |
+          python3 tools/ci-handoff.py pack --dir "$RUNNER_TEMP/dsha-handoff" --commit "$GITHUB_SHA"
+          python3 tools/ci-handoff.py unpack --dir "$RUNNER_TEMP/dsha-handoff" --commit "$GITHUB_SHA"
+          python3 tools/verify-runtime-descriptor-source.py
       - name: Restore candidate Git metadata and recheck original archive pins
         run: python3 ci/m1-cloud/verify.py metadata-restore
       - name: Verify protected pins and record bounded actual tool versions
@@ -64,12 +73,10 @@ jobs:
           python3 --version
       - name: Compile only
         run: python3 ci/m1-cloud/verify.py phase compile
-      - name: Exact module, safe mode, and retired-owner JVM methods
-        run: python3 ci/m1-cloud/verify.py phase jvm
       - name: Fetch and verify only SDK34
         timeout-minutes: 9
         run: python3 ci/m1-cloud/verify.py sdk34
-      - name: Exact storage overview and directly affected SDK34 methods
+      - name: Exact five authorized N1 SDK34 methods
         run: python3 ci/m1-cloud/verify.py phase about
       - name: Finalize missing receipts as UNKNOWN (never infer success)
         if: always()
@@ -81,9 +88,7 @@ jobs:
           name: m1-safe-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/m1-safe-evidence/compile/result.json
-            ${{ runner.temp }}/m1-safe-evidence/jvm/result.json
             ${{ runner.temp }}/m1-safe-evidence/about/result.json
-            ${{ runner.temp }}/m1-safe-evidence/jvm/filtered-junit.xml
             ${{ runner.temp }}/m1-safe-evidence/about/filtered-junit.xml
           retention-days: 1
           if-no-files-found: warn

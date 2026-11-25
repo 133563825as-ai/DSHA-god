@@ -8,51 +8,21 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.testing.junit.JUnitOptions
 
-// Static cloud port, NOT admitted. No name-family admission or -x bypass.
+// One-time N1 scope. No name-family admission or -x bypass.
 final String phase = System.getenv('M1_PHASE')
-if (!(phase in ['compile','jvm','about'])) throw new GradleException('M1_BAD_PHASE')
+if (!(phase in ['compile','about'])) throw new GradleException('M1_BAD_PHASE')
 final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
-final List knownJvm = [
- 'com.deepseekharness.app.contract.BuiltinModulesCompositionTest.duplicateAndPartialRegistrationAreRejectedLocally',
- 'com.deepseekharness.app.contract.BuiltinModulesCompositionTest.disableReenableChangesLeaseWithoutChangingLayout',
- 'com.deepseekharness.app.contract.ModuleRegistryTest.safeModeKeepsOnlyAlwaysOnAndHostRecoveryEntry',
- 'com.deepseekharness.app.contract.ContractLifecycleInteropTest.secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing',
- 'com.deepseekharness.app.ui.ThemeChangeRequestTest.successFailureOrExceptionFallbackCanCommitAtMostOnce',
- 'com.deepseekharness.app.util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb',
- 'com.deepseekharness.app.ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute',
- 'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement',
- 'com.deepseekharness.app.ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal',
- 'com.deepseekharness.app.ui.LanguageSelectionOwnerTest.capturedOwnerAndDialogAreSingleUse',
- 'com.deepseekharness.app.contract.BuiltinModulesCompositionTest.storageOverviewIsSeparateFromProductFourAndSyntheticFixture',
- 'com.deepseekharness.app.util.UiLanguagePreferenceTest.systemLanguageStaysPinnedAfterDefaultLocaleChanges',
- 'com.deepseekharness.app.util.AppLocaleDispatchTest.api33WritesResolvedSystemLanguageBeforeFirstActivity',
- 'com.deepseekharness.app.util.AppLocaleDispatchTest.oldApiKeepsAppCompatPathAndEnglishPolicy']
-// Keep the existing SDK34 phase/artifact key for the cumulative first-candidate checks.
+// Keep only the existing SDK34 phase/artifact key; admit exactly these five N1 methods.
 final List knownAbout = [
- 'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences',
- 'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.hideAndDisableAreIndependentAndRecreateKeepsChoice',
- 'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.queuedAndLateRequestsCannotCrossGeneration',
- 'com.deepseekharness.app.ui.WorkspaceStorageOverviewTest.realRouteBackHiddenRestoreAndNoSyntheticOrScan',
- 'com.deepseekharness.app.ui.SettingsBuiltinModuleCompositionTest.optionalFailureCannotPolluteLegalFallback',
- 'com.deepseekharness.app.ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows',
- 'com.deepseekharness.app.ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog',
- 'com.deepseekharness.app.ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable',
- 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail',
- 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery',
- 'com.deepseekharness.app.ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent',
- 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.actualPickerSystemExplicitRecreateSystemKeepsLiteralAndSummary',
- 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.withdrawnQueuedConfirmationCannotBorrowRecoveryButNextClickCan',
- 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.queuedStopDestroyViewAndReopenedDialogNeverCommitOldChoice',
- 'com.deepseekharness.app.ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker',
- 'com.deepseekharness.app.ui.SettingsModuleCenterTest.settingsEntryListsExactlyFourAndNavigatesToRealDetails',
- 'com.deepseekharness.app.ui.SettingsModuleCenterTest.hiddenThemeCanBeManagedAndStopRetiresGeneration',
- 'com.deepseekharness.app.ui.SettingsModuleCenterTest.onlyThemeHasControlsAndOriginalRoutesRemain',
- 'com.deepseekharness.app.ui.SettingsModuleCenterTest.safeModeCannotBeBypassedAndAssemblyErrorsAreExplicit',
- 'com.deepseekharness.app.ui.SettingsModuleCenterTest.simulatedColdStartKeepsThemeAndLayoutChoices']
-if (methods != (compileOnly ? [] : (phase == 'jvm' ? knownJvm : knownAbout)))
+ 'com.deepseekharness.app.ui.FirstRunWebStartTest.rotationAndRepeatedCompletionSubmitOnlyOnce',
+ 'com.deepseekharness.app.ui.LaunchWebEntryPerformanceTest.readyEventWithoutExplicitEntryNeverOpensWeb',
+ 'com.deepseekharness.app.ui.LaunchWebEntryPerformanceTest.readyEventConsumesExplicitEntryWithoutWaitingForTheOneSecondPoll',
+ 'com.deepseekharness.app.core.StartupRecoveryLifecycleTest.explicitNativeDestinationCannotBeOvertakenByPersistentStartupFailure',
+ 'com.deepseekharness.app.core.StartupRecoveryLifecycleTest.actualMainPollKeepsNativePageAndBannerThenRoutesLaunchOnlyAfterGateCloses']
+if (methods != (compileOnly ? [] : knownAbout))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]
 methods.each { tokens.addAll(['--tests',it]) }

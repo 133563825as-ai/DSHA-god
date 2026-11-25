@@ -17,44 +17,14 @@ PROTECTED = {
  'app/src/main/assets/managed-package-proofs.json':'db04ce9b0260a840e0205aefbc6862511dac77297dd9394a8366e9a3578f1d8b',
  'tools/robolectric-sdk.lock.json':'9e7380ed24ecccce360943f2b877008a1777b7734cc3361621f4e41645d6ef39'}
 PREFIX='com.deepseekharness.app.'
+# Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
- "jvm": [
-  PREFIX+"contract.BuiltinModulesCompositionTest.duplicateAndPartialRegistrationAreRejectedLocally",
-  PREFIX+"contract.BuiltinModulesCompositionTest.disableReenableChangesLeaseWithoutChangingLayout",
-  PREFIX+"contract.ModuleRegistryTest.safeModeKeepsOnlyAlwaysOnAndHostRecoveryEntry",
-  PREFIX+"contract.ContractLifecycleInteropTest.secondPassNullStillCleansEarlierContributionAndRouteBeforeThrowing",
-  PREFIX+"ui.ThemeChangeRequestTest.successFailureOrExceptionFallbackCanCommitAtMostOnce",
-  PREFIX+"util.EntryTargetTest.onlyAFreshLauncherEntryWithoutPendingNativeWorkOpensWeb",
-  PREFIX+"ui.StorageDemoNavigationLeaseTest.stoppedPageCannotPublishAcrossRecreatedRoute",
-  PREFIX+"ui.StartupHistoryReadOwnerTest.physicalExitSerializesOwnersAndRetirement",
-  PREFIX+"ui.StartupHistoryReadOwnerTest.queuedDeliveryAndFailureAreGenerationLocal",
-  PREFIX+"ui.LanguageSelectionOwnerTest.capturedOwnerAndDialogAreSingleUse",
-  PREFIX+"contract.BuiltinModulesCompositionTest.storageOverviewIsSeparateFromProductFourAndSyntheticFixture",
-  PREFIX+"util.UiLanguagePreferenceTest.systemLanguageStaysPinnedAfterDefaultLocaleChanges",
-  PREFIX+"util.AppLocaleDispatchTest.api33WritesResolvedSystemLanguageBeforeFirstActivity",
-  PREFIX+"util.AppLocaleDispatchTest.oldApiKeepsAppCompatPathAndEnglishPolicy"
- ],
  "about": [
-  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.productEntryUsesVisibleContributionAndExistingPreferences",
-  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.hideAndDisableAreIndependentAndRecreateKeepsChoice",
-  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.queuedAndLateRequestsCannotCrossGeneration",
-  PREFIX+"ui.WorkspaceStorageOverviewTest.realRouteBackHiddenRestoreAndNoSyntheticOrScan",
-  PREFIX+"ui.SettingsBuiltinModuleCompositionTest.optionalFailureCannotPolluteLegalFallback",
-  PREFIX+"ui.AboutFragmentTest.hiddenAboutCardKeepsHostLicenseRows",
-  PREFIX+"ui.AboutFragmentTest.stoppedPageRetiresQueuedReadAndDismissesItsDialog",
-  PREFIX+"ui.SettingsStorageNavigationTest.settingsClickAndSystemBackKeepAboutReachable",
-  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.clickRendersSyntheticHistoryAndDetail",
-  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.emptyFailureAndCloseDropDelivery",
-  PREFIX+"ui.DiagnosticStartupHistoryModuleTest.hideRecreateRevokeAndRecoveryStayIndependent",
-  PREFIX+"ui.SettingsLanguageModuleTest.actualPickerSystemExplicitRecreateSystemKeepsLiteralAndSummary",
-  PREFIX+"ui.SettingsLanguageModuleTest.withdrawnQueuedConfirmationCannotBorrowRecoveryButNextClickCan",
-  PREFIX+"ui.SettingsLanguageModuleTest.queuedStopDestroyViewAndReopenedDialogNeverCommitOldChoice",
-  PREFIX+"ui.SettingsLanguageModuleTest.hiddenAndClosedModuleKeepSameRecoveryRowAndPicker",
-  PREFIX+"ui.SettingsModuleCenterTest.settingsEntryListsExactlyFourAndNavigatesToRealDetails",
-  PREFIX+"ui.SettingsModuleCenterTest.hiddenThemeCanBeManagedAndStopRetiresGeneration",
-  PREFIX+"ui.SettingsModuleCenterTest.onlyThemeHasControlsAndOriginalRoutesRemain",
-  PREFIX+"ui.SettingsModuleCenterTest.safeModeCannotBeBypassedAndAssemblyErrorsAreExplicit",
-  PREFIX+"ui.SettingsModuleCenterTest.simulatedColdStartKeepsThemeAndLayoutChoices"
+  PREFIX+"ui.FirstRunWebStartTest.rotationAndRepeatedCompletionSubmitOnlyOnce",
+  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventWithoutExplicitEntryNeverOpensWeb",
+  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventConsumesExplicitEntryWithoutWaitingForTheOneSecondPoll",
+  PREFIX+"core.StartupRecoveryLifecycleTest.explicitNativeDestinationCannotBeOvertakenByPersistentStartupFailure",
+  PREFIX+"core.StartupRecoveryLifecycleTest.actualMainPollKeepsNativePageAndBannerThenRoutesLaunchOnlyAfterGateCloses"
  ]
 }
 
@@ -80,7 +50,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='c36678394316f7571570929606238e444ed66568'
+PARENT='f778d23d09492de922b8dabd3d5aa75725c7ffc9'
+STORAGE_OVERVIEW_BASE='c36678394316f7571570929606238e444ed66568'
 MODULE_CENTER_BASE='f10827e5182ea70faccd326055bb977e5da5611f'
 LANGUAGE_BASE='fba50872f1a531258b99069b72b24e77881f1e24'
 STARTUP_HISTORY_RETRY='415f3c43a073ba4e0643597881e39dd6dbb8b903'
@@ -111,19 +82,15 @@ RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesT
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
 CHANGED={'.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
-    'ci/m1-cloud/verify.py',
-    'app/src/main/java/com/deepseekharness/app/contract/BuiltinModules.kt',
-    'app/src/main/java/com/deepseekharness/app/ui/WorkspaceFragment.java',
-    'app/src/main/java/com/deepseekharness/app/ui/StorageOverviewFragment.java',
-    'app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt',
-    'app/src/test/java/com/deepseekharness/app/ui/WorkspaceStorageOverviewTest.java'}
+    'ci/m1-cloud/verify.py'}
 
 def candidate():
     p=policy()
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[MODULE_CENTER_BASE]
+    assert parents(PARENT)==[STORAGE_OVERVIEW_BASE]
+    assert parents(STORAGE_OVERVIEW_BASE)==[MODULE_CENTER_BASE]
     assert parents(MODULE_CENTER_BASE)==[LANGUAGE_BASE]
     assert parents(LANGUAGE_BASE)==[STARTUP_HISTORY_RETRY]
     assert parents(STARTUP_HISTORY_RETRY)==[STARTUP_HISTORY_ASSEMBLY]
@@ -448,7 +415,7 @@ def handoff_metadata(restore=False):
 
 def phase(name):
     from runner import run_phase
-    policy(); protected(); assert name in ('compile','jvm','about')
+    policy(); protected(); assert name in ('compile','about')
     evidence=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-evidence'
     evidence.mkdir(exist_ok=True)
     report=evidence/name; report.mkdir()
@@ -550,7 +517,7 @@ def finalize_evidence():
     # Missing result is UNKNOWN/not reached, never invented numeric exit/PASS.
     root=pathlib.Path(os.environ['RUNNER_TEMP'])/'m1-safe-evidence'
     root.mkdir(exist_ok=True)
-    for name in ('compile','jvm','about'):
+    for name in ('compile','about'):
         folder=root/name;folder.mkdir(exist_ok=True)
         path=folder/'result.json'
         if not path.exists():
