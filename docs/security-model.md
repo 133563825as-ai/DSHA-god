@@ -30,7 +30,7 @@
 
 ## 终端与插件
 
-正式终端允许修复 shell；链接、本地包和更新通过包格式、路径、摘要与事务检查后自动安装启用，不再要求插件审阅。依赖允许未锁定重解析、生命周期脚本和 pnpmfile，并记录实际锁与目录摘要以支持回切。用户主动禁用及安全模式意图仍保持。
+正式终端允许修复 shell。打开外部安装链接只显示请求，不代表同意。用户检查本机状态、核对来源、勾选本次脚本许可并点击「下载、安装并启用」后，才提交该请求。已提交的安装、本地包及更新通过包格式、路径、摘要与事务检查后可自动启用；关闭页面不代表已取消后台操作。依赖允许未锁定重解析、生命周期脚本和 pnpmfile，并记录实际锁与目录摘要以支持回切。用户主动禁用及安全模式意图仍保持。
 
 插件可以在应用 UID 下读写可访问文件并执行代码。自动安装不是独立安全认证。受管系统组件与用户插件分层；系统组件从当前签名 APK 重建，用户修改和个人依赖不得被当作缓存清掉。
 
@@ -38,7 +38,7 @@
 
 ### AI 工具破坏性策略（DSH 0.2.2）
 
-DSH 0.2.2 把工具执行移到 `dsh-tools/lib/pipeline.js` 的 `ToolExecutionPipeline`，原生执行器与 PTC（`run_code` 及其嵌套调用）共用它。签名补丁 `guard-tools-patch.json`（`attachPolicy`）与 `guard-tools-pipeline-patch.json`（`captureExecution` / `prepareOperation` / `verifyGlobalConsent` / `verifyDispatch`）共同生效：bash 删除/不透明命令与 write/edit/str_replace_editor 覆盖已有文件，在两种执行器下都须原生全局允许、会话 danger-full-access 档位或一次性网页审批。任一挂点缺失时 bash 与文件改写一律失败，不放行。
+DSH 0.2.2 把工具执行移到 `dsh-tools/lib/pipeline.js` 的 `ToolExecutionPipeline`，原生执行器与 PTC（`run_code` 及其嵌套调用）共用它。签名补丁 `guard-tools-patch.json`（`attachPolicy`）与 `guard-tools-pipeline-patch.json`（`captureExecution` / `prepareOperation` / `verifyGlobalConsent` / `verifyDispatch`）共同生效：bash 删除/不透明命令与 write/edit/str_replace_editor 覆盖已有文件，在两种执行器下都须经本机核实的原生全局允许，或当前操作的一次性网页审批。会话的完全访问预设（包括显式选择）不是宿主豁免；没有可用审批通道就拒绝。任一挂点缺失时 bash 与文件改写一律失败，不放行。
 
 上游新增的 `apply_patch`（dsh-tool-fs，可新建、改写、删除、移动文件）**不在**此策略内：`prepareOperation` 对它不要求同意，guard-fs 也未包装它的 `fs/write|edit|delete-intent`。上游默认关闭（`Config.applyPatch=false`；dsh-base 与 web 的 standard / ptc / cordis / minimal 预设都不开启，DSHA 不改这些配置），按用户决定不加 DSHA 拒绝补丁。用户若在 profile `cordis.patch.yml` 中覆盖某预设的 `tool-fs` 行为 `config.applyPatch: true`（或由插件自行注册同名工具），该工具即可在无审批、无先读校验（0.2.2 默认停用 `fs-observation-policy`）、danger-full-access 下无路径边界的情况下删除或覆盖文件；DSHA 仅保留执行身份冻结、工具身份与取消核验。
 

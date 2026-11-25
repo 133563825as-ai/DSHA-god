@@ -12,6 +12,43 @@ import org.robolectric.annotation.Config;
 @Config(sdk = 34, manifest = Config.NONE, application = android.app.Application.class)
 public final class ScreenNodeActionsTest {
   @Test
+  public void passwordSnapshotOmitsSetTextButKeepsOtherActions() {
+    AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain();
+    try {
+      node.setPassword(true);
+      node.addAction(AccessibilityNodeInfo.ACTION_SET_TEXT);
+      assertFalse(ScreenNodeActions.snapshot(node).hasAny());
+      node.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
+      node.addAction(AccessibilityNodeInfo.ACTION_FOCUS);
+      var actions = ScreenNodeActions.snapshot(node);
+      assertEquals("[\"scroll_forward\",\"focus\"]", actions.names().toString());
+      assertFalse(actions.supports(AccessibilityNodeInfo.ACTION_SET_TEXT));
+      assertTrue(actions.supports(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD));
+      assertTrue(actions.supports(AccessibilityNodeInfo.ACTION_FOCUS));
+    } finally {
+      node.recycle();
+    }
+  }
+
+  @Test
+  public void textMutationUsesCurrentPasswordFlagNotTheObservedActionMask() {
+    AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain();
+    try {
+      node.addAction(AccessibilityNodeInfo.ACTION_SET_TEXT);
+      var observed = ScreenNodeActions.snapshot(node);
+      assertTrue(observed.supports(AccessibilityNodeInfo.ACTION_SET_TEXT));
+      assertFalse(
+          ScreenNodeActions.passwordTextMutation(node, AccessibilityNodeInfo.ACTION_SET_TEXT));
+      node.setPassword(true);
+      assertTrue(
+          ScreenNodeActions.passwordTextMutation(node, AccessibilityNodeInfo.ACTION_SET_TEXT));
+      assertFalse(ScreenNodeActions.passwordTextMutation(node, AccessibilityNodeInfo.ACTION_CLICK));
+    } finally {
+      node.recycle();
+    }
+  }
+
+  @Test
   public void actionSnapshotPreservesAdvertisedNamesAndSupportsDerivedFlags() {
     AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain();
     node.addAction(AccessibilityNodeInfo.ACTION_CLICK);

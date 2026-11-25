@@ -6,7 +6,7 @@
     "tools/dsh-runtime/package.json": "79a621a17e46cbf06e517a57af7672ec21e899bd25a83bc0340207fa84b0aefa",
     "tools/dsh-runtime/package-lock.json": "f327e64ffe7cdd3d67ef180ad940f86fe754f76367453433af1dac7afa3c9e76",
     "app/src/main/assets/destructive-policy/package.json": "217d0f036224d8faa766d166a1a38df1c03f7da2a8a7ad8a0454ae595372395c",
-    "app/src/main/assets/destructive-policy/index.js": "c94f390cb21491a348909133e51b76b3eabed3942fc82a069f73ad566b56ac93",
+    "app/src/main/assets/destructive-policy/index.js": "fd7dd96d7271252755a7cb8bad79eb759fd7bd6ef75fbfe303ed16fff6dc35fb",
     "app/src/main/assets/destructive-policy/destructive.js": "a57dc469a7e7da32bd0b55ddd18cd68bb65f709b5389f2475093eafb098c8726",
     "app/src/main/assets/destructive-policy/workdir.js": "a401d96b87f2b1cc566ebb1b55b8a827f67f08c2418d1e739e870fa775b55861",
     "app/src/main/assets/managed-runtime-inputs.json": "189c8cd6292a642b46917ef062d0396cc2674e8dacaa2a763a4d7c6c7aba3834",

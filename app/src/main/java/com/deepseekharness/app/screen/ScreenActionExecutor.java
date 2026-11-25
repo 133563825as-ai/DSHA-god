@@ -98,6 +98,8 @@ public final class ScreenActionExecutor {
             : !target.refresh() || target.getWindowId() != root.root.getWindowId())
           return ScreenReply.refused("STALE_NODE");
         context.validateCurrentTarget();
+        if (ScreenNodeActions.passwordTextMutation(target, action))
+          return ScreenReply.refused("PASSWORD_INPUT_DENIED");
         if (operation.equals("node")
             && (leased == null
                 ? !ScreenNodeActions.supported(target, action)
@@ -117,6 +119,8 @@ public final class ScreenActionExecutor {
             try {
               if (focused == null || !focused.equals(target))
                 return ScreenReply.refused("EDITOR_CHANGED");
+              if (ScreenNodeActions.passwordTextMutation(focused, action))
+                return ScreenReply.refused("PASSWORD_INPUT_DENIED");
             } finally {
               if (focused != null) focused.recycle();
             }

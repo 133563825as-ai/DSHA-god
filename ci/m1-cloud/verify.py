@@ -12,19 +12,42 @@ PATCHES = {
  'tools/test-backup-signed-builtin-files.py':'1bced95c20e7a34eb805cef329c717f137caf261e3e00d3d36c8d6d0fb39d672',
  'tools/prepare-runtime-descriptor.py':'8be243303a16fcd6c755d1996fac04f6e53bc09b205f9ee504bc79a24d1d0969',
  'build-logic/android.gradle':'3bbb725998ea4ad62321a21acd68fdbc040564950f93ea29cbb3812445fdd607'}
+DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
+SIDECAR='app/src/main/assets/dsh-runtime.inputs.json'
+# Frozen RB-0032 transfer only. The other three changed paths are the admission itself.
+REVIEWED = {
+ 'app/src/main/assets/destructive-policy/index.js':'fd7dd96d7271252755a7cb8bad79eb759fd7bd6ef75fbfe303ed16fff6dc35fb',
+ SIDECAR:'a3fc29b8c28e09db8b55a87d6a2bfde6d1484fdd7bf5de21a040b1141f185794',
+ DESCRIPTOR:'3be4186ac3784a534e855794e340a348fc34d73ff672ddbcecd688a4d6d84137',
+ 'app/src/main/java/com/deepseekharness/app/screen/ScreenActionExecutor.java':'d55d67dd2485f2390ad8745915abadb2602d90a67cb9746327a6843ad6a8470e',
+ 'app/src/main/java/com/deepseekharness/app/screen/ScreenNodeActions.java':'53cc3f97ba59150b18af6cca3463a9ff47dc15afcac248f23fc2beccbe5b5b36',
+ 'app/src/main/java/com/deepseekharness/app/ui/PluginInstallActivity.java':'ad23a2b0aa031068b68abff11a9d0840701c2dfc8e7addb0cf41b7c2ea08e9c8',
+ 'app/src/test/java/com/deepseekharness/app/screen/ScreenNodeActionsTest.java':'3fb588653e49d58eb0d2313efc4939386d90f2e3eaa100b8119092bc7ba6db15',
+ 'app/src/test/java/com/deepseekharness/app/ui/PluginInstallActivityConsentTest.java':'8e8acdbfc7147b69fbd05a50405d94b1ec161e789890a1a227c50dcd1ee53bdf',
+ 'docs/en/plugins.md':'84879b8b923a95d8da779d9a0f538c8c2d3b3d3e27ff5c732be6fd893ef6bb8d',
+ 'docs/en/security-model.md':'85507349c5fcd1a1918ca6d6e06c95042b67365e64e5bfb189ef6bb6193693a2',
+ 'docs/plugins.md':'b241372f7684ca3da8d79d7f39fb3c33930a49b08081d45172c84b8bc719385d',
+ 'docs/security-model.md':'f1776ee0c821d18e4af43cf352c36359c291302ff8a31bfd9c07c4aec8a8bf00',
+ 'tools/java-format-files.json':'5e776b8536e98957fbda5007afc152ebb43f6e2c4f1fb14f1f9c2911ea55d3a3',
+ 'tools/test-destructive-full-access.mjs':'ba28cd2c26cec694a0ab7b225c0a38b16f34d4f3cfdc520bddf88538ddfe8cb8',
+ 'tools/test-destructive-global-consent.mjs':'2fc46765c7d2be701e119093a59630c9f3a45f6132008788ec93e08d8e1279df'}
+PARENT_PINS = {
+ DESCRIPTOR:'77251bc495ebb176302a0e35174aee03a6b7ebfd0947d1e6c004c41de7830b1d',
+ SIDECAR:'afd49561b67cb5d23ca844a4d8b9dc1f0f61b2977412562f20684d777a8ddce0'}
 PROTECTED = {
- 'app/src/main/assets/runtime-descriptor.json':'77251bc495ebb176302a0e35174aee03a6b7ebfd0947d1e6c004c41de7830b1d',
+ DESCRIPTOR:REVIEWED[DESCRIPTOR], SIDECAR:REVIEWED[SIDECAR],
  'app/src/main/assets/managed-package-proofs.json':'db04ce9b0260a840e0205aefbc6862511dac77297dd9394a8366e9a3578f1d8b',
  'tools/robolectric-sdk.lock.json':'9e7380ed24ecccce360943f2b877008a1777b7734cc3361621f4e41645d6ef39'}
 PREFIX='com.deepseekharness.app.'
 # Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
  "about": [
-  PREFIX+"ui.FirstRunWebStartTest.rotationAndRepeatedCompletionSubmitOnlyOnce",
-  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventWithoutExplicitEntryNeverOpensWeb",
-  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventConsumesExplicitEntryWithoutWaitingForTheOneSecondPoll",
-  PREFIX+"core.StartupRecoveryLifecycleTest.explicitNativeDestinationCannotBeOvertakenByPersistentStartupFailure",
-  PREFIX+"core.StartupRecoveryLifecycleTest.actualMainPollKeepsNativePageAndBannerThenRoutesLaunchOnlyAfterGateCloses"
+  PREFIX+"ui.PluginInstallActivityConsentTest.setupResumeAndRecreateNeverSubmitOrLoadManager",
+  PREFIX+"ui.PluginInstallActivityConsentTest.exactSourceAndFreshScriptConsentRequiredForEachSubmission",
+  PREFIX+"ui.PluginInstallActivityConsentTest.obscuredInputRevokesConsentAndCannotSubmit",
+  PREFIX+"ui.PluginInstallActivityConsentTest.opaqueSourceIsNotTruncatedOrEchoedForApproval",
+  PREFIX+"screen.ScreenNodeActionsTest.passwordSnapshotOmitsSetTextButKeepsOtherActions",
+  PREFIX+"screen.ScreenNodeActionsTest.textMutationUsesCurrentPasswordFlagNotTheObservedActionMask"
  ]
 }
 
@@ -50,7 +73,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='f778d23d09492de922b8dabd3d5aa75725c7ffc9'
+PARENT='27362fa8705d4c9dca7351ca778d49407cdd29a6'
+N1_BASE='f778d23d09492de922b8dabd3d5aa75725c7ffc9'
 STORAGE_OVERVIEW_BASE='c36678394316f7571570929606238e444ed66568'
 MODULE_CENTER_BASE='f10827e5182ea70faccd326055bb977e5da5611f'
 LANGUAGE_BASE='fba50872f1a531258b99069b72b24e77881f1e24'
@@ -80,7 +104,7 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml',
+CHANGED=set(REVIEWED) | {'.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
 
@@ -89,7 +113,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[STORAGE_OVERVIEW_BASE]
+    assert parents(PARENT)==[N1_BASE]
+    assert parents(N1_BASE)==[STORAGE_OVERVIEW_BASE]
     assert parents(STORAGE_OVERVIEW_BASE)==[MODULE_CENTER_BASE]
     assert parents(MODULE_CENTER_BASE)==[LANGUAGE_BASE]
     assert parents(LANGUAGE_BASE)==[STARTUP_HISTORY_RETRY]
@@ -119,7 +144,12 @@ def candidate():
     assert parents(PREVIOUS_PARENT)==[BASE]
     assert set(git('diff','--no-renames','--name-only',PARENT,'HEAD').splitlines())==CHANGED
     assert git('rev-parse',FIRST_MODULAR_ASSEMBLY+':'+RENAMED_FROM)==git('rev-parse',FIRST_MODULAR_LAYOUT_FIX+':'+RENAMED_TO)
-    for name,pin in PATCHES.items(): assert sha(ROOT/name)==pin,name
+    entries=git('ls-tree','HEAD','--',*sorted(CHANGED)).splitlines()
+    assert len(entries)==len(CHANGED) and all(line.startswith('100644 blob ') for line in entries)
+    for name,pin in PARENT_PINS.items():
+        blob=subprocess.check_output(['git','cat-file','blob',PARENT+':'+name])
+        assert hashlib.sha256(blob).hexdigest()==pin,name
+    for name,pin in (PATCHES | REVIEWED).items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
     assert not git('status','--porcelain','--untracked-files=all')
@@ -128,36 +158,26 @@ def protected():
     for name,pin in PROTECTED.items(): assert sha(ROOT/name)==pin,name
 
 def sdk_open(opener,url,deadline):
-    # Three sequential GETs at <=60s each + <=300s backoff fit the 480s soft budget.
-    # The deadline is checked between I/O calls, not a transfer-wide hard timeout.
-    # Actions enforces the independent 540s hard step window (including stalled I/O).
-    waited=0
-    for attempt in range(1,4):
-        remaining=deadline-time.monotonic()
-        if remaining<=0:raise TimeoutError('SDK time budget exhausted')
-        try:return opener.open(url,timeout=min(60,remaining))
-        except urllib.error.HTTPError as exc:
-            if exc.code!=429:raise
-            header=exc.headers.get('Retry-After')
-            exc.close()
-            if attempt==3:
-                print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=0,state='ATTEMPTS_EXHAUSTED')),flush=True)
-                raise
-            if header is None:delay=5
-            elif re.fullmatch(r'[0-9]{1,9}',header):delay=int(header)
+    # One preauthorized request to the original locked URL; no retry or fallback.
+    remaining=deadline-time.monotonic()
+    if remaining<=0:raise TimeoutError('SDK time budget exhausted')
+    try:return opener.open(url,timeout=min(60,remaining))
+    except urllib.error.HTTPError as exc:
+        if exc.code!=429:raise
+        header=exc.headers.get('Retry-After')
+        exc.close()
+        observed=math.ceil(time.time()); retry_at=None
+        if header is not None and len(header)<=64:
+            if re.fullmatch(r'[0-9]{1,9}',header):retry_at=observed+int(header)
             else:
                 try:
                     date=parsedate_to_datetime(header)
-                    if date.tzinfo is None:raise ValueError()
-                    delay=max(0,math.ceil(date.timestamp()-time.time()))
-                except (ValueError,TypeError,OverflowError):
-                    raise ValueError('SDK Retry-After invalid') from None
-            # Never shorten a server delay to force another request.
-            if delay>300-waited or delay+60>deadline-time.monotonic():
-                print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=0,state='RETRY_BUDGET_REFUSED')),flush=True)
-                raise
-            print(json.dumps(dict(sdk=34,status=429,attempt=attempt,delaySeconds=delay,state='WAIT')),flush=True)
-            time.sleep(delay);waited+=delay
+                    if date.tzinfo is not None:retry_at=math.ceil(date.timestamp())
+                except (ValueError,TypeError,OverflowError,OSError):pass
+        # Only numeric timing facts; never echo arbitrary response headers.
+        print(json.dumps(dict(sdk=34,status=429,attempt=1,state='STOP_NO_RETRY',
+            observedUtcEpoch=observed,retryAfterPresent=header is not None,retryNotBeforeUtcEpoch=retry_at)),flush=True)
+        raise
 
 def sdk34():
     policy(); protected()
@@ -366,13 +386,12 @@ def history_failure_stage(case):
 def metadata_diagnostics():
     # Trusted constant roles only: never echo paths or digest data from log text.
     roles={
-      'dsh-runtime-metadata':('app/src/main/assets/dsh-runtime.inputs.json',11824,
-        'afd49561b67cb5d23ca844a4d8b9dc1f0f61b2977412562f20684d777a8ddce0'),
+      'dsh-runtime-metadata':(SIDECAR,11824,REVIEWED[SIDECAR]),
       'ubuntu-tools-metadata':('app/src/main/assets/ubuntu-tools.inputs.json',592,
         'b5f1a66c66ee8ece40b98d673557071b0dd8bb455cf731ca33c21d9b563c32a2')}
     result=[]
     for role,(relative,size,pin) in roles.items():
-        row=dict(role=role,reference='A5-staged-metadata-not-a-replacement-pin',
+        row=dict(role=role,reference='candidate-Git-metadata-not-an-archive-pin',
             expectedBytes=size,expectedSha256=pin,actualBytes=None,actualSha256=None,status='UNKNOWN')
         try:
             path=ROOT/relative
@@ -385,7 +404,7 @@ def metadata_diagnostics():
         result.append(row)
     return result
 
-def handoff_metadata(restore=False):
+def handoff_metadata(restore=False, recheck_archives=False):
     # GITHUB_SHA is frozen by policy(), never read metadata from the handoff as truth.
     p=policy()
     rows=metadata_diagnostics()
@@ -399,19 +418,21 @@ def handoff_metadata(restore=False):
         assert path.is_file() and path.stat().st_size<=64*1024
         blobs.append((path,blob))
     if restore:
-        # The original handoff action must succeed first; write only the two metadata.
+        # The locked input bundle carries historical sidecars. Pack only candidate Git bytes.
         for path,blob in blobs:path.write_bytes(blob)
     rows=metadata_diagnostics()
     assert all(row['status']=='MATCH' for row in rows), 'M1_CANDIDATE_METADATA_MISMATCH'
-    if restore:
+    protected()  # No restoration of descriptor or managed proofs; any change must fail.
+    if recheck_archives:
+        # No other tracked asset may drift, even within the handoff's generated-file list.
+        assert not git('diff','--name-only','HEAD','--','app/src/main/assets')
         # Metadata is not an archive pin. Re-run the existing archive/size/pin checks.
         import importlib.util
         spec=importlib.util.spec_from_file_location('m1_ci_assets',ROOT/'tools/ci-assets.py')
         assets=importlib.util.module_from_spec(spec);spec.loader.exec_module(assets)
         assets.verify_sources()
-        protected()
     print('M1_HANDOFF_METADATA='+json.dumps(dict(restored=restore,metadata=rows,
-        originalArchivePinsRechecked=restore)))
+        originalArchivePinsRechecked=recheck_archives)))
 
 def phase(name):
     from runner import run_phase
@@ -531,7 +552,8 @@ if __name__=='__main__':
     if command=='candidate': candidate()
     elif command=='protected': policy(); protected()
     elif command=='metadata-checkout': handoff_metadata()
-    elif command=='metadata-restore': handoff_metadata(restore=True)
+    elif command=='metadata-restore': handoff_metadata(restore=True,recheck_archives=True)
+    elif command=='metadata-handoff': handoff_metadata(recheck_archives=True)
     elif command=='sdk34': sdk34()
     elif command=='phase': phase(sys.argv[2])
     elif command=='finalize': finalize_evidence()

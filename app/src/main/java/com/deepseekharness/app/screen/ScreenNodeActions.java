@@ -29,6 +29,10 @@ final class ScreenNodeActions {
         || action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD;
   }
 
+  static boolean passwordTextMutation(AccessibilityNodeInfo node, int action) {
+    return action == AccessibilityNodeInfo.ACTION_SET_TEXT && node.isPassword();
+  }
+
   static boolean supported(AccessibilityNodeInfo node, int action) {
     return snapshot(node).supports(action);
   }
@@ -42,7 +46,11 @@ final class ScreenNodeActions {
     if (node == null) return new ActionSnapshot(mask);
     var availableActions = node.getActionList();
     if (availableActions != null)
-      for (var available : availableActions) if (available != null) mask |= bit(available.getId());
+      for (var available : availableActions) {
+        if (available == null) continue;
+        int action = available.getId();
+        if (!passwordTextMutation(node, action)) mask |= bit(action);
+      }
     return new ActionSnapshot(mask);
   }
 

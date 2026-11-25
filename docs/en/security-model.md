@@ -30,7 +30,7 @@ The user grants individual folders through the system document picker under Sett
 
 ## Terminals and plugins
 
-Formal terminals allow repair shell commands. Link, local-package, and update installs automatically commit and enable after package-format, path, digest, and transaction checks. The old plugin-review gate is no longer required. Dependencies may resolve without a frozen lock, run lifecycle scripts, and use pnpmfile. Actual locks and directory digests are recorded to support rollback. Explicit user disablement and safe-mode intent remain effective.
+Formal terminals allow repair shell commands. Opening an external install link only displays the request. Submission requires checking local status, reviewing the source, granting script permission for this attempt, and choosing Download, install and enable. A submitted request, local-package install or update can commit and enable after package-format, path, digest, and transaction checks. Closing the page does not cancel a submitted operation. Dependencies may resolve without a frozen lock, run lifecycle scripts, and use pnpmfile. Actual locks and directory digests are recorded to support rollback. Explicit user disablement and safe-mode intent remain effective.
 
 Plugins run with the app UID, can read and write accessible files, and can execute code. Automatic installation is not independent security certification. Managed system components are separated from user plugins and rebuilt from the current signed APK. User modifications and personal dependencies must not be removed as though they were caches.
 
@@ -38,7 +38,7 @@ For skills with `disable-model-invocation: true`, the model-facing catalog keeps
 
 ### AI tool destructive policy (DSH 0.2.2)
 
-DSH 0.2.2 moves tool execution into `dsh-tools/lib/pipeline.js`; the native and PTC executors share that pipeline. The signed `guard-tools-patch.json` and `guard-tools-pipeline-patch.json` hooks keep destructive bash and existing-file write/edit/replace operations behind the configured consent boundary. The new `apply_patch` tool remains disabled by default (`Config.applyPatch=false`) and is not covered by that policy; a profile or plugin that enables it can create, rewrite, delete, or move files without the same approval or read-before-write checks. The 0.2.2 `fs-observation-policy` is also disabled by default, so documentation must not imply that a pre-read observation boundary is active.
+DSH 0.2.2 moves tool execution into `dsh-tools/lib/pipeline.js`; the native and PTC executors share that pipeline. The signed `guard-tools-patch.json` and `guard-tools-pipeline-patch.json` hooks keep destructive bash and existing-file write/edit/replace operations behind verified native global consent or one-time Web approval for that operation. A full-access Web preset, even if selected explicitly, does not waive the host guard. If no approval channel is available, the host refuses the operation. The new `apply_patch` tool remains disabled by default (`Config.applyPatch=false`) and is not covered by that policy; a profile or plugin that enables it can create, rewrite, delete, or move files without the same approval or read-before-write checks. The 0.2.2 `fs-observation-policy` is also disabled by default, so documentation must not imply that a pre-read observation boundary is active.
 
 ## Device and browser capabilities
 

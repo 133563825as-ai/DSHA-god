@@ -1333,6 +1333,7 @@
     "app/src/test/java/com/deepseekharness/app/ui/PictureInPictureOptInTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/PluginFlowRowTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/PluginFragmentRenderingTest.java",
+    "app/src/test/java/com/deepseekharness/app/ui/PluginInstallActivityConsentTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/PluginListPresenterTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/QuickActionsBubbleTest.java",
     "app/src/test/java/com/deepseekharness/app/ui/RecentsPreferenceContractTest.java",
