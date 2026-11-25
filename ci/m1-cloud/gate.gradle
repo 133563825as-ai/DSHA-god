@@ -15,10 +15,16 @@ final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
-// Only the four plain JUnit methods; no Android behavior tests.
+// Only the ten plain JUnit methods; no Android behavior tests.
 final List knownJvm = [
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated',
- 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.changedDigestRetainsDamagedCopyAndRotatesHealthyOldCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.damagedNewestDoesNotDisplaceThirdHealthyCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.insufficientHealthyCopiesRemainIntact',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.unconfirmedJournalDoesNotCountTowardReserve',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.discoveryIoWithMismatchMessageAbortsBeforeDeletion',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.closeFailureOnMismatchedDigestAbortsBeforeDeletion',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.preDeleteRecheckFailurePreservesCandidateAndRemainingCopies',
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact',
  'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation']
 if (methods != (compileOnly ? [] : knownJvm))

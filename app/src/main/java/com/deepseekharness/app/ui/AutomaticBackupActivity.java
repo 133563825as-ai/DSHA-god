@@ -155,8 +155,8 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
     TextView timingHint =
         page.text(
             t(
-                "到期时仍在运行则延后，不会停止对话或终端。时间由系统调度，可能略有延迟。保留最近 3 份已验证自动副本。关闭后取消后续任务，已有副本保留。",
-                "If DSH or a terminal is running, backup waits. Android scheduling may delay the selected time. Keeps the latest 3 verified automatic copies. Turning off cancels future jobs and preserves existing copies."),
+                "到期时仍在运行则延后，不会停止对话或终端。时间由系统调度，可能略有延迟。轮换时保留最近 3 份已完成且校验通过的自动副本；本次正在收尾的副本另计。关闭后取消后续任务，已有副本保留。",
+                "If DSH or a terminal is running, backup waits. Android scheduling may delay the selected time. Rotation keeps the latest 3 finished, verified automatic copies; the copy being finalized is separate. Turning off cancels future jobs and preserves existing copies."),
             12,
             R.color.text_secondary);
     // 行内只留「到期仍在运行则延后」；调度延迟与保留策略收进 ⓘ。
@@ -287,7 +287,18 @@ public final class AutomaticBackupActivity extends AppCompatActivity {
                             "\n"
                                 + t("上次完成：", "Last completed: ")
                                 + android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", last);
-                      if (!error.isEmpty()) status += "\n" + t("待处理：", "Needs attention: ") + error;
+                      if (!error.isEmpty()) {
+                        String reason = switch (error) {
+                          case "BACKUP_PRUNE_DIGEST_MISMATCH_RETAINED" -> t(
+                              "有自动副本的内容摘要不匹配，已保留；不计入最近三份已验证副本。",
+                              "An automatic copy failed its digest check and was kept, outside the latest three verified copies.");
+                          case "BACKUP_PRUNE_RECORD_UNREADABLE" -> t(
+                              "有备份记录无法核实，本轮未清理旧副本。",
+                              "A backup record could not be verified. No old copies were removed this round.");
+                          default -> error;
+                        };
+                        status += "\n" + t("待处理：", "Needs attention: ") + reason;
+                      }
                       var job = NativeBackupJobs.get(this).state();
                       if (job.busy)
                         status =

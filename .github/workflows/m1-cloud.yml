@@ -1,4 +1,4 @@
-name: Rebirth trial readiness - four plain JVM backup cases
+name: Rebirth trial readiness - isolated backup digest failures (plain JVM)
 on:
   push:
     branches: [validate/m1-cloud-20261124]
@@ -9,14 +9,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admission:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'a1e4763bd29d113dd4b65d08fc231bda15e3cc31' && github.event.after == github.sha && github.run_attempt == 1
+    if: github.repository == '133563825as-ai/DSHA-god' && github.event_name == 'push' && github.ref == 'refs/heads/validate/m1-cloud-20261124' && github.event.before == 'a67d2e672cc2b8e786321823b933c7adcf7e708e' && github.event.after == github.sha && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 37
+          fetch-depth: 38
           persist-credentials: false
       - run: python3 ci/m1-cloud/verify.py candidate
   narrow:
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 37
+          fetch-depth: 38
           persist-credentials: false
       - name: Verify one-time candidate identity
         run: python3 ci/m1-cloud/verify.py candidate
@@ -74,7 +74,7 @@ jobs:
           python3 --version
       - name: Compile only
         run: python3 ci/m1-cloud/verify.py phase compile
-      - name: Exact four backup rotation methods (plain JUnit)
+      - name: Exact ten backup rotation methods (plain JUnit)
         run: python3 ci/m1-cloud/verify.py phase jvm
       - name: Finalize missing receipts as UNKNOWN (never infer success)
         if: always()

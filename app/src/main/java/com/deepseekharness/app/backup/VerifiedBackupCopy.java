@@ -72,6 +72,11 @@ public final class VerifiedBackupCopy {
   }
 
   public void verify(BackupFileSystem fs, BackupControl control) throws IOException {
+    if (!matchesDigest(fs, control)) throw new IOException("VERIFIED_COPY_CHANGED");
+  }
+
+  /** False only for a completed digest comparison. Read, format, cancellation and close errors propagate. */
+  boolean matchesDigest(BackupFileSystem fs, BackupControl control) throws IOException {
     try (InputStream input = fs.read(artifact, fs.stat(artifact))) {
       byte[] header = new byte[8];
       new DataInputStream(input).readFully(header);
@@ -79,8 +84,7 @@ public final class VerifiedBackupCopy {
         throw new IOException("VERIFIED_COPY_FORMAT");
     }
     try (InputStream input = fs.read(artifact, fs.stat(artifact))) {
-      if (!sha256.equals(BackupArchive.digest(input, control)))
-        throw new IOException("VERIFIED_COPY_CHANGED");
+      return sha256.equals(BackupArchive.digest(input, control));
     }
   }
 

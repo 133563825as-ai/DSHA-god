@@ -35,7 +35,7 @@ PARENT_PINS = {
  DESCRIPTOR:'77251bc495ebb176302a0e35174aee03a6b7ebfd0947d1e6c004c41de7830b1d',
  SIDECAR:'afd49561b67cb5d23ca844a4d8b9dc1f0f61b2977412562f20684d777a8ddce0'}
 PROTECTED = {
- DESCRIPTOR:REVIEWED[DESCRIPTOR], SIDECAR:REVIEWED[SIDECAR],
+ DESCRIPTOR:'e09d839a53a486ca8231570fc44707184630601e47c513794498459bd8d5d8c1', SIDECAR:REVIEWED[SIDECAR],
  'app/src/main/assets/managed-package-proofs.json':'db04ce9b0260a840e0205aefbc6862511dac77297dd9394a8366e9a3578f1d8b',
  'tools/robolectric-sdk.lock.json':'9e7380ed24ecccce360943f2b877008a1777b7734cc3361621f4e41645d6ef39'}
 PREFIX='com.deepseekharness.app.'
@@ -43,7 +43,13 @@ PREFIX='com.deepseekharness.app.'
 METHODS={
  "jvm": [
   PREFIX+"backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated",
-  PREFIX+"backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy",
+  PREFIX+"backup.AutomaticBackupPrunerTest.changedDigestRetainsDamagedCopyAndRotatesHealthyOldCopy",
+  PREFIX+"backup.AutomaticBackupPrunerTest.damagedNewestDoesNotDisplaceThirdHealthyCopy",
+  PREFIX+"backup.AutomaticBackupPrunerTest.insufficientHealthyCopiesRemainIntact",
+  PREFIX+"backup.AutomaticBackupPrunerTest.unconfirmedJournalDoesNotCountTowardReserve",
+  PREFIX+"backup.AutomaticBackupPrunerTest.discoveryIoWithMismatchMessageAbortsBeforeDeletion",
+  PREFIX+"backup.AutomaticBackupPrunerTest.closeFailureOnMismatchedDigestAbortsBeforeDeletion",
+  PREFIX+"backup.AutomaticBackupPrunerTest.preDeleteRecheckFailurePreservesCandidateAndRemainingCopies",
   PREFIX+"backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact",
   PREFIX+"backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation"
  ]
@@ -71,7 +77,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='a1e4763bd29d113dd4b65d08fc231bda15e3cc31'
+PARENT='a67d2e672cc2b8e786321823b933c7adcf7e708e'
+TRIAL_PARENT='a1e4763bd29d113dd4b65d08fc231bda15e3cc31'
 N2_GREEN='871ddc629a0f9bf16ec97204d9926d30caa2696d'
 N1_GREEN='d6cc98c15a58cfac53fcbdf6d7103b2908259ea3'
 COMPILE_DIAG='e03a4dea89c5ed327c50e0eb26076d263194f45e'
@@ -113,7 +120,13 @@ N2_FIXTURES={'app/src/test/java/com/deepseekharness/app/ui/WebBackgroundPageLife
 TRIAL_INPUTS={'app/src/main/java/com/deepseekharness/app/ui/DiagnosticActivity.java':'e7bb30927402864c62de2a3b4a2181772a5abf75df924001458f166e86213109',
  'app/src/test/java/com/deepseekharness/app/backup/AutomaticBackupPrunerTest.java':'9d4a1d1a4a60108959dd38e3f68f96f3c9f1b7c0130aafcda743ee464e8b18f9',
  'app/src/test/java/com/deepseekharness/app/ui/DiagnosticActivityRenderingTest.java':'31d02df40b68543e5e97b52b4f78905337176ee1117c6fd5714e6a0ef04535f3'}
-CHANGED={
+ROTATION_INPUTS={'app/src/main/assets/runtime-descriptor.json':'e09d839a53a486ca8231570fc44707184630601e47c513794498459bd8d5d8c1',
+ 'app/src/main/java/com/deepseekharness/app/backup/AutomaticBackupPruner.java':'a91160f4f2830453684ae31a93c46f13e6ac813008c4ce28ff994ffe01907560',
+ 'app/src/main/java/com/deepseekharness/app/backup/AutomaticBackups.java':'3832e0c35a611ec4eeb877c4c982c175ca0a22f8b514ddfc2956e9a7d4236ce4',
+ 'app/src/main/java/com/deepseekharness/app/backup/VerifiedBackupCopy.java':'281be68b83f189b37b4089e83600e18885ef986bd82390a66a80f4d3eaadd3f6',
+ 'app/src/main/java/com/deepseekharness/app/ui/AutomaticBackupActivity.java':'e9f29af6806630b4cb172ecce1439914f7a00c934de1536a20d003c7ec7a4793',
+ 'app/src/test/java/com/deepseekharness/app/backup/AutomaticBackupPrunerTest.java':'4498e6e80a2d3d782d855db3345796fa65fe68d2f5d9e64fed492aede830b2a1'}
+CHANGED=set(ROTATION_INPUTS) | {
     '.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
@@ -123,7 +136,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[N2_GREEN]
+    assert parents(PARENT)==[TRIAL_PARENT]
+    assert parents(TRIAL_PARENT)==[N2_GREEN]
     assert parents(N2_GREEN)==[N1_GREEN]
     assert parents(N1_GREEN)==[COMPILE_DIAG]
     assert parents(COMPILE_DIAG)==[STARTUP_VALIDATION]
@@ -165,7 +179,10 @@ def candidate():
     for name,pin in PARENT_PINS.items():
         blob=subprocess.check_output(['git','cat-file','blob',PRE_SECURITY+':'+name])
         assert hashlib.sha256(blob).hexdigest()==pin,name
-    for name,pin in (PATCHES | REVIEWED | N2_FIXTURES | TRIAL_INPUTS).items(): assert sha(ROOT/name)==pin,name
+    previous = REVIEWED | TRIAL_INPUTS
+    for name in ROTATION_INPUTS.keys() & previous.keys():
+        assert hashlib.sha256(subprocess.check_output(['git','cat-file','blob',PARENT+':'+name])).hexdigest()==previous[name],name
+    for name,pin in (PATCHES | REVIEWED | N2_FIXTURES | TRIAL_INPUTS | ROTATION_INPUTS).items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
     assert not git('status','--porcelain','--untracked-files=all')
