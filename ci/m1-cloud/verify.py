@@ -42,11 +42,13 @@ PREFIX='com.deepseekharness.app.'
 # Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
  "about": [
-  PREFIX+"ui.WebBackgroundPageLifecycleTest.recreatingWebAndTerminalKeepsSessionsAndRejectsRetiredCallbacks",
-  PREFIX+"ui.WebBackgroundPageLifecycleTest.changedWebSessionDestroysTheKeeperPageInsteadOfReusingIt",
-  PREFIX+"ui.WebBackgroundPageLifecycleTest.lateRetainedRendererCallbackCannotDisposeAReplacementPage",
-  PREFIX+"ui.TerminalActivityLifecycleTest.sameProcessRecreateKeepsOwnerAndDoesNotCreateCommands",
-  PREFIX+"ui.TerminalActivityLifecycleTest.staleProcessBundleDoesNotRecoverOldIdentityOrAutocreate"
+  PREFIX+"backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated",
+  PREFIX+"backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy",
+  PREFIX+"backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact",
+  PREFIX+"backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation",
+  PREFIX+"ui.DiagnosticActivityRenderingTest.dismissedExportDraftDoesNotReachCopyOrNextSheet",
+  PREFIX+"ui.DiagnosticActivityRenderingTest.packageNoteBelongsOnlyToSelectedExport",
+  PREFIX+"ui.DiagnosticActivityRenderingTest.textPickerUsesItsNoteOnlyOnce"
  ]
 }
 
@@ -72,7 +74,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='d6cc98c15a58cfac53fcbdf6d7103b2908259ea3'
+PARENT='871ddc629a0f9bf16ec97204d9926d30caa2696d'
+N1_GREEN='d6cc98c15a58cfac53fcbdf6d7103b2908259ea3'
 COMPILE_DIAG='e03a4dea89c5ed327c50e0eb26076d263194f45e'
 STARTUP_VALIDATION='4abb71a9805a8a31eb497ffb359c96925dcd061f'
 SECURITY_BASE='7ae28c586e6418fac0b07c6a2949013ebfb03b5c'
@@ -109,7 +112,10 @@ RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesT
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
 N2_FIXTURES={'app/src/test/java/com/deepseekharness/app/ui/WebBackgroundPageLifecycleTest.java':'29d2b1cdc0d8cf045a9973330692775467d050dd0b3779a92051f77e832c19cd',
     'app/src/test/java/com/deepseekharness/app/ui/TerminalActivityLifecycleTest.java':'13c14ad2445200da1bf295267c91954329d372677c5af1e65f8159ac423ce13e'}
-CHANGED=set(N2_FIXTURES) | {
+TRIAL_INPUTS={'app/src/main/java/com/deepseekharness/app/ui/DiagnosticActivity.java':'e7bb30927402864c62de2a3b4a2181772a5abf75df924001458f166e86213109',
+ 'app/src/test/java/com/deepseekharness/app/backup/AutomaticBackupPrunerTest.java':'9d4a1d1a4a60108959dd38e3f68f96f3c9f1b7c0130aafcda743ee464e8b18f9',
+ 'app/src/test/java/com/deepseekharness/app/ui/DiagnosticActivityRenderingTest.java':'31d02df40b68543e5e97b52b4f78905337176ee1117c6fd5714e6a0ef04535f3'}
+CHANGED=set(TRIAL_INPUTS) | {
     '.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
@@ -119,7 +125,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[COMPILE_DIAG]
+    assert parents(PARENT)==[N1_GREEN]
+    assert parents(N1_GREEN)==[COMPILE_DIAG]
     assert parents(COMPILE_DIAG)==[STARTUP_VALIDATION]
     assert parents(STARTUP_VALIDATION)==[SECURITY_BASE]
     assert parents(SECURITY_BASE)==[PRE_SECURITY]
@@ -159,7 +166,7 @@ def candidate():
     for name,pin in PARENT_PINS.items():
         blob=subprocess.check_output(['git','cat-file','blob',PRE_SECURITY+':'+name])
         assert hashlib.sha256(blob).hexdigest()==pin,name
-    for name,pin in (PATCHES | REVIEWED | N2_FIXTURES).items(): assert sha(ROOT/name)==pin,name
+    for name,pin in (PATCHES | REVIEWED | N2_FIXTURES | TRIAL_INPUTS).items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
     assert not git('status','--porcelain','--untracked-files=all')

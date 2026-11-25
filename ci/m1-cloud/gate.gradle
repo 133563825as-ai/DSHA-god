@@ -8,20 +8,22 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.testing.junit.JUnitOptions
 
-// One-time N2 lifecycle scope. No name-family admission or -x bypass.
+// One-time backup and export scope. No name-family admission or -x bypass.
 final String phase = System.getenv('M1_PHASE')
 if (!(phase in ['compile','about'])) throw new GradleException('M1_BAD_PHASE')
 final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
 final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
-// Keep the existing SDK34 phase/artifact key; admit only the five N2 lifecycle methods.
+// Keep the existing SDK34 phase/artifact key; admit only the seven backup and export methods.
 final List knownAbout = [
- 'com.deepseekharness.app.ui.WebBackgroundPageLifecycleTest.recreatingWebAndTerminalKeepsSessionsAndRejectsRetiredCallbacks',
- 'com.deepseekharness.app.ui.WebBackgroundPageLifecycleTest.changedWebSessionDestroysTheKeeperPageInsteadOfReusingIt',
- 'com.deepseekharness.app.ui.WebBackgroundPageLifecycleTest.lateRetainedRendererCallbackCannotDisposeAReplacementPage',
- 'com.deepseekharness.app.ui.TerminalActivityLifecycleTest.sameProcessRecreateKeepsOwnerAndDoesNotCreateCommands',
- 'com.deepseekharness.app.ui.TerminalActivityLifecycleTest.staleProcessBundleDoesNotRecoverOldIdentityOrAutocreate']
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.changedDigestBlocksRemovalOfAnotherHealthyOldCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation',
+ 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.dismissedExportDraftDoesNotReachCopyOrNextSheet',
+ 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.packageNoteBelongsOnlyToSelectedExport',
+ 'com.deepseekharness.app.ui.DiagnosticActivityRenderingTest.textPickerUsesItsNoteOnlyOnce']
 if (methods != (compileOnly ? [] : knownAbout))
     throw new GradleException('M1_BAD_EXACT_METHODS')
 final List tokens = [target]

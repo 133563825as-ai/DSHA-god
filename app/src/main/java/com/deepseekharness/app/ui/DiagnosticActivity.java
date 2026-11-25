@@ -51,8 +51,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
   /** 测试包反馈导出只允许一次一个；按钮通过 card.enabled 与 alpha 反馈忙状态。 */
   private boolean feedbackBusy;
 
-  /** 本页输入的补充说明：仅内存，不持久化，不随页面重建恢复。 */
-  private String note = "";
+  /** 仅在文本保存位置选择器在途时保留；空串表示本次未填说明，null 表示没有请求。 */
+  private String pendingTextNote;
 
   /** 本页是否发起过导出；用于在页面上显示保存结果（包括失败）。 */
   private boolean exportTouched;
@@ -80,31 +80,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
       registerForActivityResult(
           new ActivityResultContracts.CreateDocument("text/plain"),
           uri -> {
-            if (uri == null) return;
-            final String report = completeReport();
-            new Thread(
-                    () -> {
-                      String message;
-                      try (java.io.OutputStream stream =
-                          getContentResolver().openOutputStream(uri, "wt")) {
-                        if (stream == null)
-                          throw new java.io.IOException(
-                              com.deepseekharness.app.util.UiText.text("无法写入所选位置"));
-                        stream.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                        message = com.deepseekharness.app.util.UiText.text("诊断报告已导出");
-                      } catch (Exception error) {
-                        message =
-                            com.deepseekharness.app.util.UiText.format(
-                                "导出失败：%s", error.getClass().getSimpleName());
-                      }
-                      String done = message;
-                      runOnUiThread(
-                          () ->
-                              Toast.makeText(getApplicationContext(), done, Toast.LENGTH_LONG)
-                                  .show());
-                    },
-                    "diagnostic-export")
-                .start();
+            String selected = pendingTextNote;
+            pendingTextNote = null;
+            if (uri != null && selected != null) writeTextReport(uri, completeReport(selected));
           });
 
   /** 测试包反馈日志：系统文件选择器只选位置；采集、打包与回读校验都在后台线程完成。 */
@@ -513,7 +491,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
       if (clipboard == null) throw new IllegalStateException(UiText.text("剪贴板不可用"));
       clipboard.setPrimaryClip(
           com.deepseekharness.app.bridge.SensitiveClipboard.text(
-              UiText.text("DSHA 诊断"), completeReport()));
+              UiText.text("DSHA 诊断"), completeReport("")));
       Toast.makeText(
               this,
               UiText.choose(
@@ -545,8 +523,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
 
   // ---------- 导出弹层：格式 + 补充复现步骤 + 下载 / 另存为 ----------
 
-  /** 补充说明只属于本次导出或复制，不写入设置、不随页面重建恢复，也不开启自动业务记录。 */
+  /** 说明草稿只属于当前弹层，选择导出时才取值，不随页面重建恢复。 */
   private void showExportSheet() {
+    if (pendingLogExport != null || pendingTextNote != null) return;
     CardPage page = new CardPage(this, UiText.text("导出故障包"), "", true);
     var dialog = CardSheet.create(this, page);
     TextView scope =
@@ -603,8 +582,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
     TextView hint =
         page.text(
             UiText.choose(
-                "可选，仅附加到本次导出或复制，不会保存",
-                "Optional. Attached only to this export or copy and never saved"),
+                "仅本次附加本页主动填写的说明",
+                "Attach the context entered on this page for this export only"),
             12,
             R.color.shell_text_muted);
     hint.setPadding(0, 0, 0, page.dp(8));
@@ -623,20 +602,6 @@ public final class DiagnosticActivity extends AppCompatActivity {
     steps.setSaveEnabled(false);
     steps.setFilters(
         new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(2000)});
-    steps.setText(note);
-    steps.addTextChangedListener(
-        new android.text.TextWatcher() {
-          @Override
-          public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-          @Override
-          public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-          @Override
-          public void afterTextChanged(android.text.Editable s) {
-            note = s.toString();
-          }
-        });
     page.content.addView(steps, new LinearLayout.LayoutParams(-1, -2));
 
     LinearLayout buttons = new LinearLayout(this);
@@ -648,9 +613,10 @@ public final class DiagnosticActivity extends AppCompatActivity {
             getString(R.string.ui_m0080),
             false,
             () -> {
+              String selected = steps.getText().toString();
               dialog.dismiss();
-              if (text[0]) exportText();
-              else exportPackage(true);
+              if (text[0]) exportText(selected);
+              else exportPackage(true, selected);
             });
     download[0] =
         page.button(
@@ -658,8 +624,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
             UiText.choose("保存到下载目录", "Save to Downloads"),
             true,
             () -> {
+              String selected = steps.getText().toString();
               dialog.dismiss();
-              exportPackage(false);
+              exportPackage(false, selected);
             });
     LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
     left.topMargin = page.dp(10);
@@ -711,9 +678,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
     return row;
   }
 
-  private void exportPackage(boolean saveAs) {
+  private void exportPackage(boolean saveAs, String selected) {
     exportTouched = true;
-    String selected = note == null ? "" : note;
     boolean include = !selected.trim().isEmpty();
     if (!saveAs) {
       logs.export(null, include, include ? selected : "");
@@ -729,7 +695,27 @@ public final class DiagnosticActivity extends AppCompatActivity {
     }
   }
 
-  private void exportText() {
+  private void writeTextReport(android.net.Uri uri, String report) {
+    new Thread(
+            () -> {
+              String message;
+              try (java.io.OutputStream stream = getContentResolver().openOutputStream(uri, "wt")) {
+                if (stream == null) throw new java.io.IOException(UiText.text("无法写入所选位置"));
+                stream.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                message = UiText.text("诊断报告已导出");
+              } catch (Exception error) {
+                message = UiText.format("导出失败：%s", error.getClass().getSimpleName());
+              }
+              String done = message;
+              runOnUiThread(
+                  () -> Toast.makeText(getApplicationContext(), done, Toast.LENGTH_LONG).show());
+            },
+            "diagnostic-export")
+        .start();
+  }
+
+  private void exportText(String selected) {
+    pendingTextNote = selected;
     try {
       RecentsPrivacyGuard.launch(
           exporter,
@@ -738,12 +724,14 @@ public final class DiagnosticActivity extends AppCompatActivity {
                   .format(new java.util.Date())
               + ".txt");
     } catch (RuntimeException error) {
+      pendingTextNote = null;
       Toast.makeText(this, UiText.text("无法打开保存位置，请复制报告"), Toast.LENGTH_LONG).show();
     }
   }
 
   @Override
   protected void onDestroy() {
+    pendingTextNote = null;
     pendingLogExport = null;
     retireHistory();
     if (historyRetirement != null) {
@@ -876,9 +864,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
         "The previous read is still finishing. Close and retry."));
   }
 
-  private String completeReport() {
+  private String completeReport(String note) {
     String report = String.valueOf(repository.report.getValue());
-    String extra = note == null ? "" : note.trim();
+    String extra = note.trim();
     // 只有用户在导出弹层主动填写时才附加；空说明不再追加空标题。
     if (!extra.isEmpty()) report += UiText.format("\n用户补充复现步骤：\n%s", extra);
     return SensitiveData.redact(report);
