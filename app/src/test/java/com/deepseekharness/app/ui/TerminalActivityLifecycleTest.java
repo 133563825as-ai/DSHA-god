@@ -748,7 +748,7 @@ public class TerminalActivityLifecycleTest {
     }
   }
 
-  private static com.deepseekharness.app.core.TerminalRuntimeProtection.Ticket prepareUnstartedPty(
+  static com.deepseekharness.app.core.TerminalRuntimeProtection.Ticket prepareUnstartedPty(
       TerminalSessionOwner owner) {
     return owner
         .protection()

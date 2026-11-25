@@ -3,7 +3,17 @@ package com.deepseekharness.app.ui;
 import static org.junit.Assert.*;
 import android.content.*;
 import android.os.Looper;
+import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
+import androidx.fragment.app.FragmentActivity;
+import com.deepseekharness.app.ForegroundActivity;
+import com.deepseekharness.app.PtySession;
+import com.deepseekharness.app.runtime.ProotBootstrap;
+import com.deepseekharness.app.util.ForegroundReference;
+import org.robolectric.android.controller.ActivityController;
+import org.robolectric.shadows.ShadowLooper;
+import org.robolectric.util.ReflectionHelpers;
 import android.webkit.WebView;
 import android.widget.*;
 import com.deepseekharness.app.DshaApp;
@@ -44,6 +54,24 @@ public final class WebBackgroundPageLifecycleTest {
     static PreviewPageSession.Identity ready;
     static boolean exited;
     static Boolean retained;
+    static int starts, stops;
+
+    @Implementation
+    protected boolean startWebSafely(java.util.function.Consumer<String> status) {
+      starts++;
+      return false;
+    }
+
+    @Implementation
+    protected void stopWeb() {
+      stops++;
+    }
+
+    @Implementation
+    protected void stopWeb(java.util.function.Consumer<String> status) {
+      stops++;
+    }
+
     static com.deepseekharness.app.util.WebStartProtection protection;
 
     @Implementation
@@ -174,7 +202,9 @@ public final class WebBackgroundPageLifecycleTest {
           }) views.put(id, new Button(this));
       views.put(R.id.web_error_title, new TextView(this));
       views.put(R.id.web_error_detail, new TextView(this));
-      views.put(R.id.web_progress, new ProgressBar(this));
+      var progress = new MeasuredProgress(this);
+      content.addView(progress);
+      views.put(R.id.web_progress, progress);
       getWindow().setContentView(content);
     }
   }
@@ -196,6 +226,94 @@ public final class WebBackgroundPageLifecycleTest {
     public void loadUrl(String url) {
       navigations++;
       super.loadUrl(url);
+    }
+  }
+
+  /** 只数界面收到的 setProgress，不实现任何 owner 或代次检查。 */
+  private static class MeasuredProgress extends ProgressBar {
+    int updates;
+
+    MeasuredProgress(Context context) {
+      super(context, null, android.R.attr.progressBarStyleHorizontal);
+    }
+
+    @Override
+    public void setProgress(int value) {
+      super.setProgress(value);
+      updates++;
+    }
+  }
+
+  /** 只观察实际侧栏会话行的添加；标题回调经 Fragment、主线程和 Activity 走原渲染。 */
+  private static class SessionRows implements ViewGroup.OnHierarchyChangeListener {
+    int updates;
+
+    SessionRows(TerminalActivity host) {
+      host.openSessions();
+      ShadowLooper.shadowMainLooper().idle();
+      LinearLayout list = ReflectionHelpers.getField(host, "sessionList");
+      assertEquals(1, list.getChildCount());
+      assertEquals(View.VISIBLE, host.findViewById(R.id.terminal_sessions_panel).getVisibility());
+      list.setOnHierarchyChangeListener(this);
+    }
+
+    public void onChildViewAdded(View parent, View child) {
+      updates++;
+    }
+
+    public void onChildViewRemoved(View parent, View child) {}
+  }
+
+  /** 只替换环境探测和显式建终端的副作用；宿主/Fragment 的注册、转发和解绑不替换。 */
+  @Implements(value = TerminalReadiness.class, isInAndroidSdk = false)
+  public static class ReadyTerminal {
+    @Implementation
+    protected void __constructor__(Context ignored, ProotBootstrap unused) {}
+
+    @Implementation
+    protected boolean ready() {
+      return true;
+    }
+  }
+
+  @Implements(value = PtyTerminalFragment.class, isInAndroidSdk = false)
+  public static class CommandPort {
+    static final List<List<String>> commands = new ArrayList<>();
+
+    @Implementation
+    protected void newSessionWithCommand(String[] command, String title) throws Exception {
+      commands.add(command == null ? List.of() : List.copyOf(Arrays.asList(command)));
+      // 用已有不 fork 的后端发布真正的 shared owner 标签，不制造测试 sessionId。
+      var owner = TerminalSessionOwner.shared();
+      var ticket = TerminalActivityLifecycleTest.prepareUnstartedPty(owner);
+      assertTrue(owner.protection().promoted(ticket.id(), new Object(), () -> true));
+      var publish =
+          TerminalSessionOwnerTest.class.getDeclaredMethod(
+              "createUnstartedPty",
+              TerminalSessionOwner.class,
+              TerminalRuntimeProtection.Ticket.class);
+      publish.setAccessible(true);
+      publish.invoke(null, owner, ticket);
+    }
+  }
+
+  @Implements(value = PtySession.class, isInAndroidSdk = false)
+  public static class PtyIo {
+    int writes, closes;
+
+    @Implementation
+    protected void write(String text) {
+      writes++;
+    }
+
+    @Implementation
+    protected void finish() {
+      closes++;
+    }
+
+    @Implementation
+    protected void finishAndWait(long timeoutMs) {
+      closes++;
     }
   }
 
@@ -571,6 +689,144 @@ public final class WebBackgroundPageLifecycleTest {
     assertEquals(1, page.navigations);
     assertEquals(0, page.destroyed);
     assertSame(page, stored.view);
+  }
+
+  @Test
+  @Config(shadows = {ReadyTerminal.class, CommandPort.class, PtyIo.class})
+  public void recreatingWebAndTerminalKeepsSessionsAndRejectsRetiredCallbacks() throws Exception {
+    CommandPort.commands.clear();
+    Controller.starts = Controller.stops = 0;
+    var app = RuntimeEnvironment.getApplication();
+    new ConfigStore(app).setWelcomed(true);
+    var owner = TerminalSessionOwner.shared();
+    assertTrue(owner.ptyTabs().snapshot().isEmpty());
+    // 最小 App 不注册会启动服务的全局生命周期回调。仅设置真实可见宿主引用；
+    // 仍由 Fragment 的 onResume 检查 RESUMED，并从 Intent/arguments 消费一次。
+    ForegroundReference<FragmentActivity> foreground =
+        ReflectionHelpers.getStaticField(ForegroundActivity.class, "CURRENT");
+    var command =
+        new Intent(app, TerminalActivity.class)
+            .putExtra(TerminalActivity.EXTRA_GUEST_COMMAND, new String[] {"n2-marker"});
+    var main = ShadowLooper.shadowMainLooper();
+    var stored = createWithKeeperPage();
+    var firstWeb = browser;
+    PreviewPageSession.Identity identity = ReflectionHelpers.getField(firstWeb, "startupIdentity");
+    assertEquals(ORIGINAL, identity);
+    var oldChrome = page.getWebChromeClient();
+    MeasuredProgress oldProgress = firstWeb.findViewById(R.id.web_progress);
+    ActivityController<TerminalActivity> terminal = null;
+    try {
+      terminal =
+          Robolectric.buildActivity(TerminalActivity.class, new Intent(command)).create().start();
+      var firstTerminal = terminal.get();
+      foreground.resumed(firstTerminal);
+      terminal.resume();
+      main.idle();
+      var tab = owner.currentPty();
+      assertNotNull(tab);
+      assertTrue(tab.id > 0);
+      var pty = tab.value;
+      var firstPane =
+          firstTerminal.getSupportFragmentManager().findFragmentById(R.id.terminal_content);
+      assertSame(pty, ReflectionHelpers.getField(firstPane, "attachedSession"));
+      java.lang.ref.WeakReference<PtySession.Listener> registration =
+          ReflectionHelpers.getField(pty, "listener");
+      var oldListener = registration.get();
+      assertNotNull(oldListener);
+      var oldRows = new SessionRows(firstTerminal);
+      int firstUpdates = oldProgress.updates;
+      oldChrome.onProgressChanged(page, 17);
+      pty.onTitleChanged(null);
+      main.idle();
+      assertEquals(firstUpdates + 1, oldProgress.updates);
+      assertEquals(17, oldProgress.getProgress());
+      assertEquals(1, oldRows.updates);
+
+      // 只延期已经登记的回调；队列不认识代次、不查当前 owner，也不丢事件。
+      var delayed = new ArrayDeque<Runnable>();
+      delayed.add(() -> oldChrome.onProgressChanged(page, 27));
+      delayed.add(() -> oldListener.onTitle("old"));
+      var saved = new Bundle();
+      terminal.pause().saveInstanceState(saved).stop().destroy();
+      terminal = null;
+      foreground.left(firstTerminal);
+      assertEquals(owner.epoch(), saved.getString("terminal_owner"));
+      lifecycle.pause().stop().destroy();
+      created = false;
+      lifecycle = Robolectric.buildActivity(Browser.class, new Intent(firstWeb.getIntent()));
+      lifecycle.create().start().resume().visible();
+      created = true;
+      var nextWeb = lifecycle.get();
+      assertNotSame(firstWeb, nextWeb);
+      assertSame(nextWeb, keeper.page().owner.get());
+      assertSame(page, keeper.page().view);
+      assertEquals(identity, ReflectionHelpers.getField(nextWeb, "startupIdentity"));
+      assertEquals(identity, stored.pageSession.identity());
+      terminal =
+          Robolectric.buildActivity(TerminalActivity.class, new Intent(command))
+              .create(saved)
+              .start();
+      var nextTerminal = terminal.get();
+      foreground.resumed(nextTerminal);
+      terminal.resume();
+      main.idle();
+      assertNotSame(firstTerminal, nextTerminal);
+      var nextPane =
+          nextTerminal.getSupportFragmentManager().findFragmentById(R.id.terminal_content);
+      assertNotSame(firstPane, nextPane);
+      assertSame(pty, ReflectionHelpers.getField(nextPane, "attachedSession"));
+      assertEquals(tab.id, owner.currentPty().id);
+      java.lang.ref.WeakReference<PtySession.Listener> nextRegistration =
+          ReflectionHelpers.getField(pty, "listener");
+      assertNotNull(nextRegistration.get());
+      assertNotSame(oldListener, nextRegistration.get());
+      var nextRows = new SessionRows(nextTerminal);
+      MeasuredProgress nextProgress = nextWeb.findViewById(R.id.web_progress);
+      int a = oldProgress.updates, b = nextProgress.updates, retiredRows = oldRows.updates;
+      assertNotSame(oldChrome, page.getWebChromeClient());
+      delayed.remove().run();
+      delayed.remove().run();
+      main.idle();
+      assertEquals(a, oldProgress.updates);
+      assertEquals(b, nextProgress.updates);
+      assertEquals(retiredRows, oldRows.updates);
+      assertEquals(0, nextRows.updates);
+
+      for (int round = 1; round <= 2; round++) {
+        if (round == 2) {
+          assertFalse(keeper.retireFrom(firstWeb, BrowserPageKeeper.REASON_FINISH));
+          pty.detachListener(oldListener);
+        }
+        page.getWebChromeClient().onProgressChanged(page, 40 + round);
+        pty.onTitleChanged(null);
+        main.idle();
+        assertEquals(a, oldProgress.updates);
+        assertEquals(retiredRows, oldRows.updates);
+        assertEquals(b + round, nextProgress.updates);
+        assertEquals(40 + round, nextProgress.getProgress());
+        assertEquals(round, nextRows.updates);
+      }
+      terminal.pause().stop().destroy();
+      terminal = null;
+      foreground.left(nextTerminal);
+      lifecycle.pause().stop().destroy();
+      created = false;
+      main.idle();
+      assertEquals(List.of(List.of("n2-marker")), CommandPort.commands);
+      assertEquals(List.of(tab), owner.ptyTabs().snapshot());
+      assertEquals(0, tab.closeSnapshot().generation);
+      PtyIo io = Shadow.extract(pty);
+      assertEquals(0, io.closes);
+      assertEquals(0, io.writes);
+      assertEquals(1, page.navigations);
+      assertEquals(0, page.destroyed);
+      assertEquals(0, Controller.starts);
+      assertEquals(0, Controller.stops);
+    } finally {
+      if (terminal != null) terminal.pause().stop().destroy();
+      foreground.left(foreground.current());
+      for (var tab : owner.ptyTabs().snapshot()) owner.closePty(tab.id, 0);
+    }
   }
 
   @Test

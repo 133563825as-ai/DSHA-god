@@ -42,11 +42,11 @@ PREFIX='com.deepseekharness.app.'
 # Keep the existing SDK34 phase key; no legacy JVM or cumulative test admission.
 METHODS={
  "about": [
-  PREFIX+"ui.FirstRunWebStartTest.rotationAndRepeatedCompletionSubmitOnlyOnce",
-  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventWithoutExplicitEntryNeverOpensWeb",
-  PREFIX+"ui.LaunchWebEntryPerformanceTest.readyEventConsumesExplicitEntryWithoutWaitingForTheOneSecondPoll",
-  PREFIX+"core.StartupRecoveryLifecycleTest.explicitNativeDestinationCannotBeOvertakenByPersistentStartupFailure",
-  PREFIX+"core.StartupRecoveryLifecycleTest.actualMainPollKeepsNativePageAndBannerThenRoutesLaunchOnlyAfterGateCloses"
+  PREFIX+"ui.WebBackgroundPageLifecycleTest.recreatingWebAndTerminalKeepsSessionsAndRejectsRetiredCallbacks",
+  PREFIX+"ui.WebBackgroundPageLifecycleTest.changedWebSessionDestroysTheKeeperPageInsteadOfReusingIt",
+  PREFIX+"ui.WebBackgroundPageLifecycleTest.lateRetainedRendererCallbackCannotDisposeAReplacementPage",
+  PREFIX+"ui.TerminalActivityLifecycleTest.sameProcessRecreateKeepsOwnerAndDoesNotCreateCommands",
+  PREFIX+"ui.TerminalActivityLifecycleTest.staleProcessBundleDoesNotRecoverOldIdentityOrAutocreate"
  ]
 }
 
@@ -72,7 +72,8 @@ def policy():
     assert event.get('repository',{}).get('full_name')=='133563825as-ai/DSHA-god'
     return dict(candidateSha=head)
 
-PARENT='e03a4dea89c5ed327c50e0eb26076d263194f45e'
+PARENT='d6cc98c15a58cfac53fcbdf6d7103b2908259ea3'
+COMPILE_DIAG='e03a4dea89c5ed327c50e0eb26076d263194f45e'
 STARTUP_VALIDATION='4abb71a9805a8a31eb497ffb359c96925dcd061f'
 SECURITY_BASE='7ae28c586e6418fac0b07c6a2949013ebfb03b5c'
 PRE_SECURITY='27362fa8705d4c9dca7351ca778d49407cdd29a6'
@@ -106,7 +107,10 @@ PREVIOUS_RUN_PARENT='9d86874daea4bf0589eb1f4611b88d5789a3facb'
 PREVIOUS_PARENT='4c408269228756ed31e1c89381c5114dd02df1e7'
 RENAMED_FROM='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesTest.kt'
 RENAMED_TO='app/src/test/java/com/deepseekharness/app/contract/BuiltinModulesCompositionTest.kt'
-CHANGED={'.github/workflows/m1-cloud.yml',
+N2_FIXTURES={'app/src/test/java/com/deepseekharness/app/ui/WebBackgroundPageLifecycleTest.java':'29d2b1cdc0d8cf045a9973330692775467d050dd0b3779a92051f77e832c19cd',
+    'app/src/test/java/com/deepseekharness/app/ui/TerminalActivityLifecycleTest.java':'13c14ad2445200da1bf295267c91954329d372677c5af1e65f8159ac423ce13e'}
+CHANGED=set(N2_FIXTURES) | {
+    '.github/workflows/m1-cloud.yml',
     'ci/m1-cloud/gate.gradle',
     'ci/m1-cloud/verify.py'}
 
@@ -115,7 +119,8 @@ def candidate():
     def parents(commit):
         return [x[7:] for x in git('cat-file','-p',commit).splitlines() if x.startswith('parent ')]
     assert parents(p['candidateSha'])==[PARENT]
-    assert parents(PARENT)==[STARTUP_VALIDATION]
+    assert parents(PARENT)==[COMPILE_DIAG]
+    assert parents(COMPILE_DIAG)==[STARTUP_VALIDATION]
     assert parents(STARTUP_VALIDATION)==[SECURITY_BASE]
     assert parents(SECURITY_BASE)==[PRE_SECURITY]
     assert parents(PRE_SECURITY)==[N1_BASE]
@@ -154,7 +159,7 @@ def candidate():
     for name,pin in PARENT_PINS.items():
         blob=subprocess.check_output(['git','cat-file','blob',PRE_SECURITY+':'+name])
         assert hashlib.sha256(blob).hexdigest()==pin,name
-    for name,pin in (PATCHES | REVIEWED).items(): assert sha(ROOT/name)==pin,name
+    for name,pin in (PATCHES | REVIEWED | N2_FIXTURES).items(): assert sha(ROOT/name)==pin,name
     protected()
     assert sha(ROOT/ABOUT_SOURCE)==ABOUT_SOURCE_SHA256
     assert not git('status','--porcelain','--untracked-files=all')
@@ -495,6 +500,14 @@ def phase(name):
                             records.append(dict(status='UNEXPECTED_IDENTITY_REDACTED')); continue
                         status=next((x for x in ('failure','error','skipped') if case.find(x) is not None),'passed')
                         records.append(dict(classname=cls,name=method,status=status))
+                        # Only the exact allowlisted method's numeric Java frame, never the stack or message.
+                        if status in ('failure','error'):
+                            body=case.find(status).text or ''
+                            if len(body)<=64*1024:
+                                simple=cls.rsplit('.',1)[-1]
+                                frame=r'[ \t]+at '+re.escape(cls+'.'+method+'('+simple+'.java:')+r'([1-9][0-9]{0,3})\)'
+                                hits=[int(hit.group(1)) for line in body.splitlines() if (hit:=re.fullmatch(frame,line))]
+                                if len(hits)==1:records[-1]['testFrameLineHint']=hits[0]
                         if name=='about':
                             found_history=history_failure_stage(case)
                             if found_history is not None:
