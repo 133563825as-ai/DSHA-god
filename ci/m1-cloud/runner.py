@@ -36,7 +36,39 @@ class FirstDiagnostic:
 
 class PregraphDiagnostic:
     """Finite untrusted Gradle failure hints; never echo matched text or infer cause."""
-    def __init__(self):self.active=False;self.codes=[]
+    REPOS=(('https://repo.maven.apache.org/maven2/','CENTRAL'),('https://repo1.maven.org/maven2/','CENTRAL'),
+           ('https://dl.google.com/dl/android/maven2/','GOOGLE'),('https://plugins.gradle.org/m2/','PLUGIN_PORTAL'),
+           ('https://jitpack.io/','JITPACK'),('https://maven.mozilla.org/maven2/','MOZILLA'))
+    def __init__(self, metadata=None):
+        self.active=False;self.codes=[];self.requests=[];self.catalog=None
+        self.metadata=metadata or pathlib.Path(__file__).resolve().parents[2]/'gradle/verification-metadata.xml'
+    def request(self, status, url):
+        # Attribute the URL on THIS error only. Emit literals or trusted repository metadata, never log text.
+        repo='UNKNOWN'; component=None
+        for prefix,label in self.REPOS:
+            if url and url.startswith(prefix):
+                repo=label; rel=url[len(prefix):];break
+        if repo!='UNKNOWN' and re.fullmatch(r'[A-Za-z0-9_./+\-]+',rel) and all(p not in ('','.','..') for p in rel.split('/')):
+            if self.catalog is None:
+                import xml.etree.ElementTree as ET
+                self.catalog={}
+                try:
+                    # Derive publishable labels only from the reviewed metadata bytes.
+                    import hashlib
+                    data=self.metadata.read_bytes()
+                    if hashlib.sha256(data).hexdigest()!='ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26':raise ValueError('metadata drift')
+                    for row in ET.fromstring(data).findall('.//{*}component'):
+                        group,name,version=(row.attrib[k] for k in ('group','name','version'))
+                        key=group.replace('.','/')+'/'+name+'/'+version+'/'
+                        coordinate=':'.join((group,name,version))
+                        # A canonical POM request identifies the component, not a verified/downloaded file.
+                        self.catalog[key+name+'-'+version+'.pom']=coordinate
+                        for artifact in row.findall('{*}artifact'):
+                            self.catalog[key+artifact.attrib['name']]=coordinate
+                except (OSError,ET.ParseError,KeyError,ValueError):self.catalog={}
+            component=self.catalog.get(rel)
+        entry=dict(code=status,repo=repo,component=component)
+        if entry not in self.requests and len(self.requests)<8:self.requests.append(entry)
     def feed(self,line):
         if len(line)>4096:return
         text=line.decode('utf-8',errors='replace')
@@ -44,9 +76,10 @@ class PregraphDiagnostic:
         if not self.active:return
         code=None
         # Only fixed grammar inside a Gradle failure section, not free-form HTTP mentions.
-        status=re.fullmatch(r"[ \t]*> (?:Could not (?:GET|HEAD) '[^'\r\n]+'\. Received status code |Received status code )(401|403|429|5[0-9]{2}) from server: [^\r\n]*",text)
+        status=re.fullmatch(r"[ \t]*> (?:Could not (?:GET|HEAD) '([^'\r\n]+)'\. Received status code |Received status code )(401|403|429|5[0-9]{2}) from server: [^\r\n]*",text)
         if status:
-            value=status.group(1);code='HTTP_5XX' if value.startswith('5') else 'HTTP_'+value
+            value=status.group(2);code='HTTP_5XX' if value.startswith('5') else 'HTTP_'+value
+            self.request(code,status.group(1))
         elif re.fullmatch(r'[ \t]*> Dependency verification failed for configuration [^\r\n]+',text):code='STRICT_DEPENDENCY_VERIFICATION'
         elif re.fullmatch(r'[ \t]*> .*PKIX path building failed[^\r\n]*',text):code='TLS_PKIX'
         elif re.fullmatch(r'[ \t]*> (?:Read timed out|Connect timed out|Connection timed out)',text):code='NETWORK_TIMEOUT'
@@ -59,7 +92,7 @@ class PregraphDiagnostic:
             elif re.fullmatch(r'[ \t]*> M1_PREWORKER_FILTER_DRIFT:[^\r\n]+',text):code='M1_PREWORKER_FILTER_DRIFT'
         if code and code not in self.codes and len(self.codes)<8:self.codes.append(code)
     def result(self):
-        return dict(codes=self.codes or ['UNKNOWN'],
+        return dict(codes=self.codes or ['UNKNOWN'],httpRequests=self.requests,
             attribution='untrusted-pregraph-log-hints-not-causal-proof')
 
 class BoundedLines:

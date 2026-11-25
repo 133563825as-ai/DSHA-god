@@ -10,7 +10,7 @@ import org.gradle.api.tasks.testing.junit.JUnitOptions
 
 // One-time N1 startup scope. No name-family admission or -x bypass.
 final String phase = System.getenv('M1_PHASE')
-if (!(phase in ['compile','about'])) throw new GradleException('M1_BAD_PHASE')
+if (phase != 'compile') throw new GradleException('M1_BAD_PHASE')
 final boolean compileOnly = phase == 'compile'
 final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
 final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
