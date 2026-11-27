@@ -254,10 +254,18 @@ jobs:
           printf 'B368_COMPILE_EXIT=%s\n' "$rc"
           (( rc == 0 )) || exit "$rc"
           stage=CLASS_READBACK
-          grep -Fxq B368_PRIVATE_EXACT_GRAPH=31 "$p/compile.log"
-          for task in checkStandardReleaseDuplicateClasses compileStandardReleaseKotlin compileStandardReleaseJavaWithJavac; do grep -Fxq "> Task :app:$task" "$p/compile.log"; done
+          if ! grep -Fxq B368_PRIVATE_EXACT_GRAPH=31 "$p/compile.log"; then echo B368_CLASS_REFUSED=EXACT_GRAPH_MARKER; exit 1; fi
+          grep -Eq '^BUILD SUCCESSFUL( in .+)?$' "$p/compile.log" || { echo B368_CLASS_REFUSED=SUCCESS_MARKER; exit 1; }
+          for task in checkStandardReleaseDuplicateClasses compileStandardReleaseKotlin compileStandardReleaseJavaWithJavac; do
+            if ! grep -Fxq "> Task :app:$task" "$p/compile.log"; then printf 'B368_CLASS_TASK_MARKER_REFUSED=%s\n' "$task"; exit 1; fi
+          done
+          readback_rc=0
           env -i PATH=/usr/bin:/bin HOME="$p/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 /usr/bin/python3 -IB "$p/read_compiled_release.py" \
-            "$p/receiver" "$c" "$t" >"$p/classes.json" 2>>"$out"
+            "$p/receiver" "$c" "$t" >"$p/classes.json" 2>"$p/classes.log" || readback_rc=$?
+          if (( readback_rc != 0 )); then
+            grep -Ex 'B368_CLASS_REFUSED=(SOURCE_PATH|SOURCE_IDENTITY|SOURCE_DIRTY|BUILD_ROOT|UNEXPECTED_DEX_OR_APK|CLASS_ROOT_(KOTLIN|JAVAC)|CLASS_SYMLINK|CLASS_DUPLICATE|CLASS_MAGIC_OR_VERSION|CLASS_PACKAGE_(KOTLIN|JAVAC)|GENERATED_BUILD_CONFIG_(PATH|IDENTITY)|ASSERTION|READ_FAILED)' "$p/classes.log" || echo B368_CLASS_REFUSED=UNCLASSIFIED
+            exit "$readback_rc"
+          fi
           python3 -IB - "$p/classes.json" <<'PY'
           import json,sys
           from pathlib import Path
