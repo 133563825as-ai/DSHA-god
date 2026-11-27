@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { knownIdle, confirmedIdle } from '../app/src/main/assets/app-integration/activity.js';
-import { runtimePlugins } from '../app/src/main/assets/app-integration/runtime-plugins.js';
+import { runtimePlugins, pluginSessionIdentity, pluginActivityProjection } from '../app/src/main/assets/app-integration/runtime-plugins.js';
 
 function context({status='idle', queued=[], jobs=[], active=[], missing=false}={}) {
   const agent={status,inbox:{nextTurn:queued,nextStep:[]},whenIdle:async()=>{}};
@@ -38,7 +38,9 @@ test('动态插件摘要只含公开身份，不保存源码或授权细节',()=
   assert.deepEqual(runtimePlugins([{id:'session'}],{listPlugins:()=>[]}),[]);
 });
 test('心跳绑定启动 instance，并同时输出动态与持久插件摘要', async () => {
-  const writes = [], moves = [], cleanups = [];
+  const writes = [], evidenceWrites = [], moves = [], cleanups = [];
+  const activityFile = '/root/.dsha-web-activity.json';
+  const evidenceFile = '/root/.dsha-plugin-startup-evidence.json';
   let tick;
   const persistent = [{ name: 'installed', version: '1.0.0', profile: 'web', state: 'pending' }];
   const samplingContext = {
@@ -63,13 +65,20 @@ test('心跳绑定启动 instance，并同时输出动态与持久插件摘要',
   vm.runInNewContext(source + '\napply(ctx);', {
     ctx, process: { env: environment, pid: 123 }, confirmedIdle: async context => {
       assert.equal(context,samplingContext); return true;
-    }, runtimePlugins,
+    }, runtimePlugins, pluginSessionIdentity, pluginActivityProjection,
     installedPluginSampler(context, identity) {
       assert.equal(context, samplingContext);
       assert.deepEqual(JSON.parse(JSON.stringify(identity)), { generation: 'web-generation', instance: 'launch-instance', profile: 'web' });
-      return () => persistent;
+      return at => persistent.map(row => ({ ...row, identity: pluginSessionIdentity(identity, at) }));
     },
-    writeFileSync(file, json, options) { writes.push(JSON.parse(json)); assert.equal(options.mode, 0o600); },
+    writeFileSync(file, json, options) {
+      assert.equal(options.mode, 0o600);
+      if (file === activityFile + '.123.tmp') writes.push(JSON.parse(json));
+      else {
+        assert.equal(file, evidenceFile + '.123.tmp');
+        evidenceWrites.push(JSON.parse(json));
+      }
+    },
     renameSync(from, to) { moves.push([from, to]); }, unlinkSync() {},
     setInterval(callback, ms) { tick = callback; assert.equal(ms, 2000); return { unref() {} }; }, clearInterval() {},
   });
@@ -77,20 +86,30 @@ test('心跳绑定启动 instance，并同时输出动态与持久插件摘要',
   environment.DSH_TASK_INSTANCE = 'later-mutated-instance';
   await tick();
   assert.equal(writes.length, 2);
-  for (const item of writes) {
+  assert.equal(evidenceWrites.length, 2);
+  for (const [i, item] of writes.entries()) {
     assert.equal(item.generation, 'web-generation');
     assert.equal(item.instance, 'launch-instance');
     assert.equal(item.idle, true);
-    assert.deepEqual(item.installedPlugins, persistent);
+    assert.deepEqual(item.installedPlugins.map(({ name, version, profile, state }) => ({ name, version, profile, state })), persistent);
+    const evidence = evidenceWrites[i];
+    assert.equal(evidence.observedAt, item.at);
+    assert.equal(evidence.generation, item.generation);
+    assert.equal(evidence.instance, item.instance);
+    assert.equal(evidence.identitySource, 'OBSERVER_SESSION');
+    assert.equal(evidence.startupId, 'unknown');
+    assert.deepEqual(evidence.installedPlugins, item.installedPlugins);
     assert.equal(item.plugins[0].id, 'dynamic');
     assert.equal(item.plugins[0].sessionId, 'session');
     assert.equal(item.installedPluginsComplete, undefined);
   }
-  assert.equal(moves.length, 2);
-  assert(moves.every(([from, to]) => from.endsWith('.123.tmp') && to.endsWith('.dsha-web-activity.json')));
+  const expectedMoves = [[activityFile + '.123.tmp', activityFile], [evidenceFile + '.123.tmp', evidenceFile]];
+  assert.deepEqual(moves, [...expectedMoves, ...expectedMoves]);
   for (const cleanup of cleanups.reverse()) cleanup?.();
   await tick();
   assert.equal(writes.length, 2, 'effect 已释放后不再写旧代心跳');
+  assert.equal(evidenceWrites.length, 2, 'effect 已释放后不再写旧代旁证');
+  assert.deepEqual(moves, [...expectedMoves, ...expectedMoves]);
 });
 
 test('任务结束恢复空闲，接口失效保持保活',()=>{
