@@ -49,10 +49,6 @@ public class HarnessController {
     return proot;
   }
 
-  public ProotBootstrap getProot() {
-    return proot;
-  }
-
   public RuntimeHostPorts runtimeHostPorts() {
     return proot.hostPorts();
   }
@@ -122,6 +118,11 @@ public class HarnessController {
 
   public WebStopCoordinator.Result lastStopResult() {
     return web.lastStopResult();
+  }
+
+  /** 停止阶段与已用预算的展示文本；空串表示不在停止中。 */
+  public String stopProgressText() {
+    return web.stopProgressText();
   }
 
   public int getWebPort() {
@@ -215,6 +216,29 @@ public class HarnessController {
   public record ForceStopRequest(
       long generation,
       com.deepseekharness.app.runtime.WebProcessManager.ForceCandidate candidate) {}
+
+  /** 非 LIVE 不携带请求；已退仅是 guest 事实，不是完整停止证明。 */
+  public record ForceStopPreparation(
+      com.deepseekharness.app.runtime.WebProcessManager.ForcePreparationStatus status,
+      ForceStopRequest request,
+      java.util.List<com.deepseekharness.app.util.WebStopDiagnostic> diagnostics) {
+    public ForceStopPreparation {
+      java.util.Objects.requireNonNull(status);
+      diagnostics = java.util.List.copyOf(diagnostics);
+      if ((status
+              == com.deepseekharness.app.runtime.WebProcessManager.ForcePreparationStatus
+                  .LIVE_CANDIDATE)
+          != (request != null)) throw new IllegalArgumentException("WEB_FORCE_PREPARATION_REQUEST");
+      if (request != null && request.candidate() == null)
+        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_CANDIDATE");
+      if (request == null && diagnostics.isEmpty())
+        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_DIAGNOSTIC");
+    }
+  }
+
+  public ForceStopPreparation prepareForceStopResult() throws IOException {
+    return web.prepareForceStopResult();
+  }
 
   public ForceStopRequest prepareForceStop() throws IOException {
     return web.prepareForceStop();

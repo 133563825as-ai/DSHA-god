@@ -38,6 +38,12 @@ public interface BackupFileSystem {
 
   List<String> list(File directory) throws IOException;
 
+  /** 只读预检不能先枚举整个目录再截断；后端无有界遍历能力时不推定成功。 */
+  default List<String> listBounded(File directory, int limit, BackupControl control)
+      throws IOException {
+    throw new IOException("BOUNDED_LIST_UNAVAILABLE");
+  }
+
   InputStream read(File file, Node expected) throws IOException;
 
   OutputStream create(File file) throws IOException;

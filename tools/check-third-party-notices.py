@@ -12,7 +12,12 @@ spec = importlib.util.spec_from_file_location('third_party_notices_generator',
                                              Path(__file__).with_name('generate-third-party-notices.py'))
 generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
-REQUIRED_LICENSES = ['proot-COPYING.txt', 'GPL-3.0.txt', 'LGPL-3.0.txt', 'MPL-2.0.txt',
+# Byte-for-byte upstream notices; these hashes do not authorize redistribution of modified binaries.
+NATIVE_LICENSE_SHA256 = {
+    'libandroid-shmem-0.7-LICENSE.txt': '0dd43abe17196b0224cb0b159819af798cd508a82a21e5870126fff4e899a7eb',
+    'proroot-1.2.8-LICENSE.txt': '0576d93d18783c1dd677c1d412757a20a3098a2585590b760e444201a3ff565e',
+}
+REQUIRED_LICENSES = [*NATIVE_LICENSE_SHA256, 'proot-COPYING.txt', 'GPL-3.0.txt', 'LGPL-3.0.txt', 'MPL-2.0.txt',
                      'gson-LICENSE.txt', 'bouncycastle-LICENSE.txt', 'certifi-LICENSE.txt',
                      'Shizuku-MIT.txt', 'Termux-terminal-Apache-2.0.txt', 'snakeyaml-LICENSE.txt']
 
@@ -22,6 +27,8 @@ def verify_licenses(root=ROOT):
         path = root / 'app/src/main/assets/licenses' / name
         if not path.is_file() or path.stat().st_size < 100:
             raise ValueError('THIRD_PARTY_LICENSE_MISSING: ' + name)
+        if name in NATIVE_LICENSE_SHA256 and hashlib.sha256(path.read_bytes()).hexdigest() != NATIVE_LICENSE_SHA256[name]:
+            raise ValueError('THIRD_PARTY_LICENSE_CHANGED: ' + name)
     evidence = json.loads((root / 'docs/audits/build156/third-party-license-sources.json').read_text(encoding='utf-8'))
     for row in evidence['licenses']:
         if row['target'] not in {'app/src/main/assets/licenses/LGPL-3.0.txt',
@@ -89,6 +96,7 @@ def main():
     if notices != generator.render():
         raise ValueError('THIRD_PARTY_NOTICES_STALE')
     verify_licenses()
+    generator.verify_rust_licenses()
     native = verify_native_members()
     for coordinate in generator.gradle_coordinates():
         if '`' + coordinate + '`' not in notices:
@@ -96,7 +104,12 @@ def main():
     packages = inventory(args.archive,
                          json.loads((ROOT / 'tools/dsh-runtime/package-lock.json').read_text(encoding='utf-8')),
                          notices) if args.archive else []
+    rust = generator.rust_lock()
     report = {'schema': 1, 'nativeMembers': native, 'verifiedLicenseFiles': REQUIRED_LICENSES,
+              'rustVendor': {'crates': len(rust['dependencies']),
+                             'licenseFiles': sum(len(row['licenseFiles'])
+                                                 for row in rust['dependencies']),
+                             'vendorBytes': rust['vendor']['bytes']},
               'actualPackageDeclarations': packages,
               'legalOrigin': 'unknown_for_unproven_originals',
               'scope': 'Declarations, source-notice consistency and actual license text bytes; not complete redistribution/source-offer or transitive Gradle license compliance.'}
@@ -105,7 +118,8 @@ def main():
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n',
                                encoding='utf-8', newline='\n')
     print('PASS current notices,', len(native), 'JNI identities,', len(packages),
-          'actual npm declarations; original binary provenance and redistribution review remain separate')
+          'actual npm declarations and', len(rust['dependencies']),
+          'Rust vendor licenses; original binary provenance and redistribution review remain separate')
 
 
 if __name__ == '__main__':

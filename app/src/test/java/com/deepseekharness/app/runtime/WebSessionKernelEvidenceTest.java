@@ -180,6 +180,12 @@ public final class WebSessionKernelEvidenceTest {
       }
 
       @Override
+      ProcessState inspect(int pid) throws IOException {
+        // boot 拒读会进入窄退出回核；测试不能意外读取真实 /proc。
+        throw new IOException("SYNTHETIC_KERNEL_UNAVAILABLE");
+      }
+
+      @Override
       public boolean verifySession(com.deepseekharness.app.util.WebSessionProof.Saved proof) {
         return verified;
       }

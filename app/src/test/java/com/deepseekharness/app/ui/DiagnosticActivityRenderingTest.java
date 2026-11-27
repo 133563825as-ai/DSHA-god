@@ -2,15 +2,21 @@ package com.deepseekharness.app.ui;
 
 import static org.junit.Assert.*;
 
+import android.app.Activity;
+import android.content.ClipboardManager;
+import android.content.Intent;
+import android.net.Uri;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.lifecycle.ViewModelProvider;
 import com.deepseekharness.app.DshaApp;
 import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.DiagnosticRepository;
+import com.deepseekharness.app.core.ErrorLogRepository;
 import com.deepseekharness.app.util.DiagnosticReport;
 import com.deepseekharness.app.util.DiagnosticReport.Health;
 import com.deepseekharness.app.util.UiText;
@@ -24,9 +30,13 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.shadow.api.Shadow;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadows.ShadowActivity;
 import org.robolectric.shadows.ShadowDialog;
 import org.robolectric.shadows.ShadowLooper;
 
@@ -174,7 +184,154 @@ public final class DiagnosticActivityRenderingTest {
     assertEquals(View.GONE, findByText(sheet, "Save to Downloads").getVisibility());
   }
 
+  @Test
+  @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi")
+  public void feedbackExportEntryFollowsTestPackageBuildFlag() {
+    DiagnosticActivity page = open();
+    // 入口只由构建标志决定：CI 全量单测用 -Pdsha.sunsetTest=true（TEST_PACKAGE=true），
+    // 本机普通构建为 false；不能按包名或运行时状态猜测。
+    int expected = com.deepseekharness.app.BuildConfig.TEST_PACKAGE ? View.VISIBLE : View.GONE;
+    assertEquals(expected, page.findViewById(R.id.diagnostic_feedback_export).getVisibility());
+    assertEquals(
+        expected, page.findViewById(R.id.diagnostic_feedback_export_divider).getVisibility());
+    assertEquals(View.GONE, page.findViewById(R.id.diagnostic_feedback_status).getVisibility());
+    if (expected == View.VISIBLE) {
+      android.widget.TextView title = page.findViewById(R.id.diagnostic_feedback_title);
+      assertNotNull(title);
+      assertTrue(title.getText().length() > 0);
+    }
+  }
+
+  /** 只捕获导出交接参数，不采集日志、不打开 URI、不创建文件。 */
+  @Implements(value = ErrorLogRepository.class, isInAndroidSdk = false)
+  public static class PackageSink {
+    record Export(Uri uri, boolean include, String note) {}
+
+    static final List<Export> exports = new ArrayList<>();
+
+    @Implementation
+    protected void export(Uri uri, boolean include, String note) {
+      exports.add(new Export(uri, include, note));
+    }
+  }
+
+  @Implements(value = DiagnosticActivity.class, isInAndroidSdk = false)
+  public static class TextSink extends ShadowActivity {
+    static final List<String> reports = new ArrayList<>();
+
+    @Implementation
+    protected void writeTextReport(Uri uri, String report) {
+      reports.add(report);
+    }
+  }
+
+  @Test
+  @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi")
+  public void dismissedExportDraftDoesNotReachCopyOrNextSheet() throws Exception {
+    DiagnosticActivity page = open();
+    publish(page, check("a", Health.PASS, "Device", "Sampled"));
+    View sheet = exportSheet(page);
+    noteField(sheet).setText("synthetic-cancel");
+    findByText(sheet, "Cancel").performClick();
+    assertReportOnlyCopy(page);
+
+    sheet = exportSheet(page);
+    assertEquals("", noteField(sheet).getText().toString());
+    noteField(sheet).setText("synthetic-dismiss");
+    ShadowDialog.getLatestDialog().dismiss();
+    assertReportOnlyCopy(page);
+    sheet = exportSheet(page);
+    assertEquals("", noteField(sheet).getText().toString());
+    ShadowDialog.getLatestDialog().dismiss();
+  }
+
+  @Test
+  @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi", shadows = PackageSink.class)
+  public void packageNoteBelongsOnlyToSelectedExport() throws Exception {
+    DiagnosticActivity page = open();
+    publish(page, check("a", Health.PASS, "Device", "Sampled"));
+    PackageSink.exports.clear();
+    Uri target = Uri.parse("content://synthetic/package");
+    int request = launchPicker(page, false, "synthetic-abandoned");
+    finishPicker(page, request, null);
+    assertTrue(PackageSink.exports.isEmpty());
+    request = launchPicker(page, false, "synthetic-selected");
+    finishPicker(page, request, target);
+    assertReportOnlyCopy(page);
+    View sheet = exportSheet(page);
+    findByText(sheet, "Save to Downloads").performClick();
+    sheet = exportSheet(page);
+    noteField(sheet).setText("synthetic-download");
+    findByText(sheet, "Save to Downloads").performClick();
+    assertEquals(
+        List.of(
+            new PackageSink.Export(target, true, "synthetic-selected"),
+            new PackageSink.Export(null, false, ""),
+            new PackageSink.Export(null, true, "synthetic-download")),
+        PackageSink.exports);
+  }
+
+  @Test
+  @Config(qualifiers = "en-rUS-w360dp-h740dp-mdpi", shadows = TextSink.class)
+  public void textPickerUsesItsNoteOnlyOnce() throws Exception {
+    DiagnosticActivity page = open();
+    publish(page, check("a", Health.PASS, "Device", "Sampled"));
+    TextSink.reports.clear();
+    Uri target = Uri.parse("content://synthetic/text");
+    int request = launchPicker(page, true, "synthetic-cancel");
+    finishPicker(page, request, null);
+    request = launchPicker(page, true, "synthetic-selected");
+    finishPicker(page, request, target);
+    assertReportOnlyCopy(page);
+    request = launchPicker(page, true, "");
+    finishPicker(page, request, target);
+    request = launchPicker(page, true, "synthetic-rotate");
+    controller.recreate();
+    finishPicker(controller.get(), request, target);
+    assertEquals(
+        List.of("report" + UiText.format("\n用户补充复现步骤：\n%s", "synthetic-selected"), "report"),
+        TextSink.reports);
+  }
+
   // ---------- helpers ----------
+
+  private View exportSheet(DiagnosticActivity page) {
+    assertTrue(page.findViewById(R.id.diagnostic_export).performClick());
+    settle();
+    return ShadowDialog.getLatestDialog().getWindow().getDecorView();
+  }
+
+  private static EditText noteField(View sheet) {
+    return (EditText) find(sheet, view -> view instanceof EditText);
+  }
+
+  private static void assertReportOnlyCopy(DiagnosticActivity page) {
+    assertTrue(page.findViewById(R.id.diagnostic_copy).performClick());
+    ClipboardManager clipboard = page.getSystemService(ClipboardManager.class);
+    assertEquals("report", clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+  }
+
+  private int launchPicker(DiagnosticActivity page, boolean text, String note) {
+    View sheet = exportSheet(page);
+    assertEquals("", noteField(sheet).getText().toString());
+    noteField(sheet).setText(note);
+    if (text) ((View) findByText(sheet, "Text report .txt").getParent()).performClick();
+    findByText(sheet, page.getString(R.string.ui_m0080)).performClick();
+    var picker = Shadow.<ShadowActivity>extract(page).getNextStartedActivityForResult();
+    assertNotNull(picker);
+    assertEquals(Intent.ACTION_CREATE_DOCUMENT, picker.intent.getAction());
+    assertEquals(text ? "text/plain" : "application/gzip", picker.intent.getType());
+    return picker.requestCode;
+  }
+
+  private static void finishPicker(DiagnosticActivity page, int request, Uri target) {
+    assertTrue(
+        page.getActivityResultRegistry()
+            .dispatchResult(
+                request,
+                target == null ? Activity.RESULT_CANCELED : Activity.RESULT_OK,
+                target == null ? null : new Intent().setData(target)));
+  }
 
   private DiagnosticActivity open() {
     controller = Robolectric.buildActivity(DiagnosticActivity.class).setup().visible();

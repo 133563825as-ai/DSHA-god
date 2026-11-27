@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Developer checks for the real protocol/journal classes. No Android/device acceptance."""
+import argparse
 import hashlib
 import json
 import os
@@ -21,7 +22,25 @@ ANNOTATION_SIZE = 60577
 ANNOTATION_SHA256 = '1e343917ebf27ba96fe4dc52b1cad7fd32b738fbc6355bb6cd5b3b305d7212d0'
 
 
+def material_bytes(path, size, digest, label):
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(label + '_MISSING_OR_NOT_REGULAR')
+    with path.open('rb') as source:
+        data = source.read(size + 1)
+    if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+        raise RuntimeError(label + '_DIGEST_MISMATCH')
+    return data
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--offline-material', type=Path,
+                        help='directory with the two exact locked test JARs; never falls back to network')
+    options = parser.parse_args()
+    offline = options.offline_material
+    if offline is not None and (not offline.is_absolute() or offline.is_symlink() or
+                                not offline.is_dir() or offline.resolve() != offline):
+        parser.error('OFFLINE_MATERIAL_DIRECTORY')
     cache = Path(os.environ.get('GRADLE_USER_HOME', str(Path.home() / '.gradle')))
     jdk = Path(os.environ['JAVA_HOME']) / 'bin'
     extension = '.exe' if os.name == 'nt' else ''
@@ -42,7 +61,7 @@ def main():
              'util/AppIdentity', 'util/AppInstallIdentity', 'core/NioInstallationIdentity',
              'vscreen/VirtualScreenJournal', 'vscreen/VirtualScreenSessionJournal',
              'util/VirtualScreenErrors', 'util/VirtualScreenWindowPolicy', 'util/VirtualScreenRequestFence',
-             'util/VirtualScreenRoutes', 'util/VscreenBridgeRequest', 'util/HttpProtocol',
+             'util/VirtualScreenRoutes', 'util/VscreenBridgeRequest', 'util/VscreenActionEvidence', 'util/HttpProtocol',
              'backup/BackupJson', 'backup/BackupLimits', 'backup/BackupFileSystem', 'util/FileKind', 'util/GrepReadPaths', 'util/DeviceShellPolicy', 'util/SelfPackageIdentity',
              'util/WebProcSel', 'util/SmsQuery', 'util/DshEntrypoint']
     tests = ['util/VirtualScreenHandshakeTest', 'util/VirtualScreenBootstrapTest', 'util/VirtualScreenPolicyTest',
@@ -55,16 +74,24 @@ def main():
     with tempfile.TemporaryDirectory(prefix='dsha-vscreen-protocol-') as directory:
         work = Path(directory)
         host_json = work / lock['artifact']
-        with urllib.request.urlopen(lock['url'], timeout=30) as response:
-            data = response.read(lock['size'] + 1)
+        if offline is None:
+            with urllib.request.urlopen(lock['url'], timeout=30) as response:
+                data = response.read(lock['size'] + 1)
+        else:
+            data = material_bytes(offline / lock['artifact'], lock['size'], lock['sha256'], 'OFFLINE_HOST_JSON')
         if len(data) != lock['size'] or hashlib.sha256(data).hexdigest() != lock['sha256']:
             raise RuntimeError('HOST_JSON_DIGEST_MISMATCH')
         host_json.write_bytes(data)
         # 宿主注解 jar 优先取 Gradle 缓存；托管 runner 未必解析到该配置，
         # 就按固定摘要从 Google Maven 取同一份字节（与 android-json 同一策略）。
-        annotations = next((cache / 'caches/modules-2/files-2.1' / 'androidx.annotation' /
-                            'annotation-jvm' / '1.9.1').glob('**/annotation-jvm-1.9.1.jar'), None)
-        if annotations is None:
+        if offline is not None:
+            annotations = work / 'annotation-jvm-1.9.1.jar'
+            annotations.write_bytes(material_bytes(offline / annotations.name, ANNOTATION_SIZE,
+                                                    ANNOTATION_SHA256, 'OFFLINE_ANNOTATION'))
+        else:
+            annotations = next((cache / 'caches/modules-2/files-2.1' / 'androidx.annotation' /
+                                'annotation-jvm' / '1.9.1').glob('**/annotation-jvm-1.9.1.jar'), None)
+        if offline is None and annotations is None:
             with urllib.request.urlopen(ANNOTATION_URL, timeout=30) as response:
                 annotation_bytes = response.read(ANNOTATION_SIZE + 1)
             if len(annotation_bytes) != ANNOTATION_SIZE or \

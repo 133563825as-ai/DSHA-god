@@ -13,8 +13,10 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.DiagnosticRepository;
+import com.deepseekharness.app.core.TestPackageFeedbackExporter;
 import com.deepseekharness.app.util.DiagnosticSummary;
 import com.deepseekharness.app.util.SensitiveData;
 import com.deepseekharness.app.util.UiText;
@@ -27,9 +29,30 @@ public final class DiagnosticActivity extends AppCompatActivity {
   private DiagnosticResultList resultList;
   private CardTabs toolsTabs;
   private PendingLogExport pendingLogExport;
+  private com.deepseekharness.app.contract.ModuleRegistry historyRegistry;
+  private com.deepseekharness.app.contract.GenerationLease historyLease;
+  private AutoCloseable historyRetirement;
+  private StartupHistoryReadOwner historyOwner;
+  private androidx.appcompat.app.AlertDialog historyDialog;
+  private androidx.appcompat.app.AlertDialog historyDetail;
+  private boolean historyStarted;
 
-  /** 本页输入的补充说明：仅内存，不持久化，不随页面重建恢复。 */
-  private String note = "";
+  // 测试替换读接口，不触及真实启动目录；生产仍沿原 StartupDiagnostics.history()。
+  static StartupHistoryReadOwner newHistoryOwner(
+      java.util.function.BooleanSupplier active, java.util.concurrent.Executor delivery) {
+    return new StartupHistoryReadOwner(active, delivery);
+  }
+
+  static StartupHistoryReadOwner.Reader historyReader(android.content.Context context) {
+    return () ->
+        com.deepseekharness.app.core.HarnessController.get(context).startupDiagnostics().history();
+  }
+
+  /** 测试包反馈导出只允许一次一个；按钮通过 card.enabled 与 alpha 反馈忙状态。 */
+  private boolean feedbackBusy;
+
+  /** 仅在文本保存位置选择器在途时保留；空串表示本次未填说明，null 表示没有请求。 */
+  private String pendingTextNote;
 
   /** 本页是否发起过导出；用于在页面上显示保存结果（包括失败）。 */
   private boolean exportTouched;
@@ -57,31 +80,17 @@ public final class DiagnosticActivity extends AppCompatActivity {
       registerForActivityResult(
           new ActivityResultContracts.CreateDocument("text/plain"),
           uri -> {
-            if (uri == null) return;
-            final String report = completeReport();
-            new Thread(
-                    () -> {
-                      String message;
-                      try (java.io.OutputStream stream =
-                          getContentResolver().openOutputStream(uri, "wt")) {
-                        if (stream == null)
-                          throw new java.io.IOException(
-                              com.deepseekharness.app.util.UiText.text("无法写入所选位置"));
-                        stream.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                        message = com.deepseekharness.app.util.UiText.text("诊断报告已导出");
-                      } catch (Exception error) {
-                        message =
-                            com.deepseekharness.app.util.UiText.format(
-                                "导出失败：%s", error.getClass().getSimpleName());
-                      }
-                      String done = message;
-                      runOnUiThread(
-                          () ->
-                              Toast.makeText(getApplicationContext(), done, Toast.LENGTH_LONG)
-                                  .show());
-                    },
-                    "diagnostic-export")
-                .start();
+            String selected = pendingTextNote;
+            pendingTextNote = null;
+            if (uri != null && selected != null) writeTextReport(uri, completeReport(selected));
+          });
+
+  /** 测试包反馈日志：系统文件选择器只选位置；采集、打包与回读校验都在后台线程完成。 */
+  private final ActivityResultLauncher<String> feedbackExporter =
+      registerForActivityResult(
+          new ActivityResultContracts.CreateDocument("application/gzip"),
+          uri -> {
+            if (uri != null) exportFeedback(uri);
           });
 
   @Override
@@ -90,6 +99,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     setContentView(R.layout.activity_diagnostics);
     PressFeedback.attachButtons(findViewById(android.R.id.content));
     bindToolTabs(saved);
+    bindFeedbackExport();
     repository = new ViewModelProvider(this).get(DiagnosticRepository.class);
     logs = new ViewModelProvider(this).get(com.deepseekharness.app.core.ErrorLogRepository.class);
     resultList =
@@ -129,6 +139,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     findViewById(R.id.diagnostic_plugins)
         .setOnClickListener(
             v -> startActivity(MainActivity.navigationIntent(this).putExtra("open_plugins", true)));
+    bindHistoryModule();
     findViewById(R.id.diagnostic_history).setOnClickListener(v -> showHistory());
     findViewById(R.id.diagnostic_recovery)
         .setOnClickListener(
@@ -174,6 +185,168 @@ public final class DiagnosticActivity extends AppCompatActivity {
                     com.deepseekharness.app.util.UiText.choose("网络与插件", "Network and plugins"),
                     network)),
             saved == null ? null : saved.getString(STATE_TOOLS_TAB));
+  }
+
+  // ---------- 测试包反馈导出：入口只在 TEST_PACKAGE 构建出现，正式包行为不变 ----------
+
+  /**
+   * 反馈日志卡由 build.gradle 的 TEST_PACKAGE 唯一决定：正式包与普通 debug 构建整行隐藏，
+   * 不改变既有复制 / 故障包导出。测试包内标题与说明走应用语言，不新增 XML 文案资源。
+   */
+  private void bindFeedbackExport() {
+    View card = findViewById(R.id.diagnostic_feedback_export);
+    View divider = findViewById(R.id.diagnostic_feedback_export_divider);
+    if (card == null || divider == null) return;
+    if (!BuildConfig.TEST_PACKAGE) {
+      card.setVisibility(View.GONE);
+      divider.setVisibility(View.GONE);
+      return;
+    }
+    card.setVisibility(View.VISIBLE);
+    divider.setVisibility(View.VISIBLE);
+    TextView title = findViewById(R.id.diagnostic_feedback_title);
+    TextView subtitle = findViewById(R.id.diagnostic_feedback_sub);
+    if (title != null)
+      title.setText(UiText.choose("导出反馈日志（测试包）", "Export feedback logs (test build)"));
+    if (subtitle != null)
+      subtitle.setText(
+          UiText.choose(
+              "本应用与 DSH 日志、启动与维护记录、设备信息；有界、脱敏",
+              "This app and DSH logs, startup and maintenance records, device info; bounded and redacted"));
+    card.setOnClickListener(v -> showFeedbackSheet());
+  }
+
+  private void showFeedbackSheet() {
+    if (feedbackBusy) return;
+    CardPage page =
+        new CardPage(
+            this, UiText.choose("导出反馈日志（测试包）", "Export feedback logs (test build)"), "", true);
+    var dialog = CardSheet.create(this, page);
+    TextView scope =
+        page.text(
+            UiText.choose(
+                "一次性采集本进程 logcat（仅自己的 pid）、本应用与 DSH 日志尾部、最近启动 / 维护 / 运行时健康 / 插件安装记录与设备环境信息。单文件 ≤256 KB、总量 ≤8 MB，所有文本按现有规则脱敏；不采集账号、设备标识或 API Key，不自动上传。日志仍可能包含个人信息，分享前请检查。",
+                "Collects this process's logcat (own pid only), this app's and DSH log tails, recent startup, maintenance, runtime-health and plugin-install records, and device environment. Each file ≤256 KB and ≤8 MB in total; all text is redacted with existing rules. No account, device identifiers or API keys are collected and nothing is uploaded. Logs may still contain personal information; review before sharing."),
+            12,
+            R.color.shell_text_secondary);
+    scope.setLineSpacing(page.dp(3), 1);
+    scope.setPadding(0, 0, 0, page.dp(14));
+    page.content.addView(scope);
+
+    LinearLayout buttons = new LinearLayout(this);
+    buttons.setOrientation(LinearLayout.HORIZONTAL);
+    page.footer.addView(buttons, new LinearLayout.LayoutParams(-1, -2));
+    Button saveAs =
+        page.button(
+            buttons,
+            UiText.choose("另存为…", "Save as…"),
+            true,
+            () -> {
+              dialog.dismiss();
+              try {
+                RecentsPrivacyGuard.launch(
+                    feedbackExporter, TestPackageFeedbackExporter.filename());
+              } catch (RuntimeException error) {
+                Toast.makeText(this, UiText.text("无法打开文件管理器，请稍后重试"), Toast.LENGTH_LONG).show();
+              }
+            });
+    Button share =
+        page.button(
+            buttons,
+            UiText.choose("分享…", "Share…"),
+            false,
+            () -> {
+              dialog.dismiss();
+              shareFeedback();
+            });
+    LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
+    left.topMargin = page.dp(10);
+    saveAs.setLayoutParams(left);
+    LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -2, 1);
+    right.topMargin = page.dp(10);
+    right.setMarginStart(page.dp(8));
+    share.setLayoutParams(right);
+    page.button(page.footer, UiText.choose("取消", "Cancel"), false, dialog::dismiss)
+        .setBackgroundResource(android.R.color.transparent);
+    CardSheet.show(dialog, this);
+  }
+
+  /** SAF 目标已选：后台采集、打包并回读校验；失败只更新卡片状态，不中断页面。 */
+  private void exportFeedback(android.net.Uri uri) {
+    if (feedbackBusy) return;
+    setFeedbackState(UiText.text("正在收集并保存反馈日志…"), true);
+    new Thread(
+            () -> {
+              String message;
+              java.io.File staged = null;
+              try {
+                staged = TestPackageFeedbackExporter.stage(this);
+                TestPackageFeedbackExporter.writeTo(this, uri, staged);
+                message = UiText.text("反馈日志已保存到所选位置");
+              } catch (Exception error) {
+                message =
+                    UiText.format(
+                        "导出失败：%s", SensitiveData.redact(String.valueOf(error.getMessage())));
+              } finally {
+                if (staged != null) staged.delete();
+              }
+              String done = message;
+              runOnUiThread(
+                  () -> {
+                    if (!isFinishing() && !isDestroyed()) setFeedbackState(done, false);
+                  });
+            },
+            "feedback-export")
+        .start();
+  }
+
+  /** 本地分享：生成缓存归档后交给系统分享目标；不经过网络、不自动上传。 */
+  private void shareFeedback() {
+    if (feedbackBusy) return;
+    setFeedbackState(UiText.text("正在收集反馈日志…"), true);
+    new Thread(
+            () -> {
+              String failure = "";
+              android.content.Intent chooser = null;
+              try {
+                java.io.File staged = TestPackageFeedbackExporter.stage(this);
+                chooser = TestPackageFeedbackExporter.shareIntent(this, staged);
+              } catch (Exception error) {
+                failure =
+                    UiText.format(
+                        "收集失败：%s", SensitiveData.redact(String.valueOf(error.getMessage())));
+              }
+              String message = failure;
+              android.content.Intent share = chooser;
+              runOnUiThread(
+                  () -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    setFeedbackState(message.isEmpty() ? UiText.text("请选择分享目标") : message, false);
+                    if (share != null) {
+                      try {
+                        startActivity(share);
+                      } catch (RuntimeException unavailable) {
+                        setFeedbackState(UiText.text("没有可用的分享目标"), false);
+                      }
+                    }
+                  });
+            },
+            "feedback-share")
+        .start();
+  }
+
+  private void setFeedbackState(String message, boolean busy) {
+    feedbackBusy = busy;
+    View card = findViewById(R.id.diagnostic_feedback_export);
+    if (card != null) {
+      card.setEnabled(!busy);
+      card.setAlpha(busy ? 0.55f : 1f);
+    }
+    TextView status = findViewById(R.id.diagnostic_feedback_status);
+    if (status == null) return;
+    boolean show = message != null && !message.isEmpty();
+    status.setVisibility(show ? View.VISIBLE : View.GONE);
+    if (show) status.setText(message);
   }
 
   // ---------- 状态卡：图标 + 一句结论 + 唯一主按钮 ----------
@@ -318,7 +491,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
       if (clipboard == null) throw new IllegalStateException(UiText.text("剪贴板不可用"));
       clipboard.setPrimaryClip(
           com.deepseekharness.app.bridge.SensitiveClipboard.text(
-              UiText.text("DSHA 诊断"), completeReport()));
+              UiText.text("DSHA 诊断"), completeReport("")));
       Toast.makeText(
               this,
               UiText.choose(
@@ -350,8 +523,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
 
   // ---------- 导出弹层：格式 + 补充复现步骤 + 下载 / 另存为 ----------
 
-  /** 补充说明只属于本次导出或复制，不写入设置、不随页面重建恢复，也不开启自动业务记录。 */
+  /** 说明草稿只属于当前弹层，选择导出时才取值，不随页面重建恢复。 */
   private void showExportSheet() {
+    if (pendingLogExport != null || pendingTextNote != null) return;
     CardPage page = new CardPage(this, UiText.text("导出故障包"), "", true);
     var dialog = CardSheet.create(this, page);
     TextView scope =
@@ -408,8 +582,7 @@ public final class DiagnosticActivity extends AppCompatActivity {
     TextView hint =
         page.text(
             UiText.choose(
-                "可选，仅附加到本次导出或复制，不会保存",
-                "Optional. Attached only to this export or copy and never saved"),
+                "仅本次附加本页主动填写的说明", "Attach the context entered on this page for this export only"),
             12,
             R.color.shell_text_muted);
     hint.setPadding(0, 0, 0, page.dp(8));
@@ -428,20 +601,6 @@ public final class DiagnosticActivity extends AppCompatActivity {
     steps.setSaveEnabled(false);
     steps.setFilters(
         new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(2000)});
-    steps.setText(note);
-    steps.addTextChangedListener(
-        new android.text.TextWatcher() {
-          @Override
-          public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-          @Override
-          public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-          @Override
-          public void afterTextChanged(android.text.Editable s) {
-            note = s.toString();
-          }
-        });
     page.content.addView(steps, new LinearLayout.LayoutParams(-1, -2));
 
     LinearLayout buttons = new LinearLayout(this);
@@ -453,9 +612,10 @@ public final class DiagnosticActivity extends AppCompatActivity {
             getString(R.string.ui_m0080),
             false,
             () -> {
+              String selected = steps.getText().toString();
               dialog.dismiss();
-              if (text[0]) exportText();
-              else exportPackage(true);
+              if (text[0]) exportText(selected);
+              else exportPackage(true, selected);
             });
     download[0] =
         page.button(
@@ -463,8 +623,9 @@ public final class DiagnosticActivity extends AppCompatActivity {
             UiText.choose("保存到下载目录", "Save to Downloads"),
             true,
             () -> {
+              String selected = steps.getText().toString();
               dialog.dismiss();
-              exportPackage(false);
+              exportPackage(false, selected);
             });
     LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
     left.topMargin = page.dp(10);
@@ -516,9 +677,8 @@ public final class DiagnosticActivity extends AppCompatActivity {
     return row;
   }
 
-  private void exportPackage(boolean saveAs) {
+  private void exportPackage(boolean saveAs, String selected) {
     exportTouched = true;
-    String selected = note == null ? "" : note;
     boolean include = !selected.trim().isEmpty();
     if (!saveAs) {
       logs.export(null, include, include ? selected : "");
@@ -534,7 +694,27 @@ public final class DiagnosticActivity extends AppCompatActivity {
     }
   }
 
-  private void exportText() {
+  private void writeTextReport(android.net.Uri uri, String report) {
+    new Thread(
+            () -> {
+              String message;
+              try (java.io.OutputStream stream = getContentResolver().openOutputStream(uri, "wt")) {
+                if (stream == null) throw new java.io.IOException(UiText.text("无法写入所选位置"));
+                stream.write(report.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                message = UiText.text("诊断报告已导出");
+              } catch (Exception error) {
+                message = UiText.format("导出失败：%s", error.getClass().getSimpleName());
+              }
+              String done = message;
+              runOnUiThread(
+                  () -> Toast.makeText(getApplicationContext(), done, Toast.LENGTH_LONG).show());
+            },
+            "diagnostic-export")
+        .start();
+  }
+
+  private void exportText(String selected) {
+    pendingTextNote = selected;
     try {
       RecentsPrivacyGuard.launch(
           exporter,
@@ -543,61 +723,219 @@ public final class DiagnosticActivity extends AppCompatActivity {
                   .format(new java.util.Date())
               + ".txt");
     } catch (RuntimeException error) {
+      pendingTextNote = null;
       Toast.makeText(this, UiText.text("无法打开保存位置，请复制报告"), Toast.LENGTH_LONG).show();
     }
   }
 
   @Override
   protected void onDestroy() {
+    pendingTextNote = null;
     pendingLogExport = null;
+    retireHistory();
+    if (historyRetirement != null) {
+      try {
+        historyRetirement.close();
+      } catch (Exception ignored) {
+      }
+      historyRetirement = null;
+    }
     super.onDestroy();
   }
 
-  private void showHistory() {
-    new Thread(
-            () -> {
-              var entries =
-                  com.deepseekharness.app.core.HarnessController.get(this)
-                      .startupDiagnostics()
-                      .history();
-              runOnUiThread(
-                  () -> {
-                    if (isFinishing() || isDestroyed()) return;
-                    CardPage page =
-                        new CardPage(this, getString(R.string.ui134_recent_startups), "", true);
-                    var dialog = CardSheet.create(this, page);
-                    for (var entry : entries) {
-                      String date =
-                          java.text.DateFormat.getDateTimeInstance()
-                              .format(new java.util.Date(entry.started));
-                      page.entry(
-                          page.content,
-                          date,
-                          entry.stage + " · " + entry.status,
-                          R.drawable.ic_recovery_document,
-                          () ->
-                              CardSheet.show(
-                                  this,
-                                  date,
-                                  entry.stage + "\n\n" + entry.reason + "\n\n" + entry.log));
-                    }
-                    if (entries.isEmpty())
-                      page.content.addView(
-                          page.text(
-                              UiText.choose("还没有启动记录。", "No startup records yet."),
-                              13,
-                              R.color.text_secondary));
-                    page.button(page.footer, UiText.choose("关闭", "Close"), false, dialog::dismiss);
-                    CardSheet.show(dialog, this);
-                  });
-            },
-            "diagnostic-history")
-        .start();
+  private void bindHistoryModule() {
+    retireHistory();
+    if (historyRetirement != null) {
+      try {
+        historyRetirement.close();
+      } catch (Exception ignored) {
+      }
+      historyRetirement = null;
+    }
+    historyRegistry = com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(this);
+    historyLease =
+        com.deepseekharness.app.contract.BuiltinModules.startupHistoryLease(historyRegistry);
+    historyOwner = newHistoryOwner(this::historyActive, this::runOnUiThread);
+    if (historyLease != null) {
+      var observedLease = historyLease;
+      var observedOwner = historyOwner;
+      historyRetirement =
+          com.deepseekharness.app.contract.BuiltinModules.observeStartupHistoryRetirement(
+              historyRegistry,
+              historyLease,
+              () -> {
+                observedOwner.retire();
+                runOnUiThread(
+                    () -> {
+                      if (historyLease != observedLease) return;
+                      retireHistory();
+                      findViewById(R.id.diagnostic_history).setVisibility(View.GONE);
+                    });
+              });
+    }
+    refreshHistoryEntry();
   }
 
-  private String completeReport() {
+  private void refreshHistoryEntry() {
+    boolean visible = false;
+    if (historyLease != null && historyLease.active()) {
+      for (var contribution : historyRegistry.visibleContributions())
+        if (com.deepseekharness.app.contract.BuiltinModules.STARTUP_HISTORY_CONTRIBUTION
+            .globalKey()
+            .equals(contribution.key())) visible = true;
+    }
+    findViewById(R.id.diagnostic_history).setVisibility(visible ? View.VISIBLE : View.GONE);
+  }
+
+  private boolean historyActive() {
+    return historyStarted
+        && historyLease != null
+        && historyLease.active()
+        && !isFinishing()
+        && !isDestroyed();
+  }
+
+  @Override
+  protected void onStart() {
+    super.onStart();
+    historyStarted = true;
+    if (historyRegistry != null) {
+      var current =
+          com.deepseekharness.app.contract.BuiltinModules.startupHistoryLease(historyRegistry);
+      if (current != historyLease) bindHistoryModule();
+      else refreshHistoryEntry();
+    }
+  }
+
+  @Override
+  protected void onStop() {
+    historyStarted = false;
+    retireHistory();
+    super.onStop();
+  }
+
+  private void retireHistory() {
+    if (historyOwner != null) historyOwner.retire();
+    if (historyDetail != null) {
+      historyDetail.dismiss();
+      historyDetail = null;
+    }
+    if (historyDialog != null) {
+      historyDialog.dismiss();
+      historyDialog = null;
+    }
+  }
+
+  private void showHistory() {
+    refreshHistoryEntry();
+    if (historyDialog != null && !historyDialog.isShowing()) retireHistory();
+    if (!historyActive()
+        || findViewById(R.id.diagnostic_history).getVisibility() != View.VISIBLE
+        || historyDialog != null) return;
+    CardPage page = new CardPage(this, getString(R.string.ui134_recent_startups), "", true);
+    var dialog = CardSheet.create(this, page);
+    historyDialog = dialog;
+    TextView status = page.text(UiText.choose("正在读取…", "Reading…"), 13, R.color.text_secondary);
+    LinearLayout results = new LinearLayout(this);
+    results.setOrientation(LinearLayout.VERTICAL);
+    page.content.addView(results);
+    results.addView(status);
+    page.button(
+        page.footer,
+        UiText.choose("关闭", "Close"),
+        false,
+        () -> {
+          historyOwner.retire();
+          if (historyDetail != null) {
+            historyDetail.dismiss();
+            historyDetail = null;
+          }
+          dialog.dismiss();
+        });
+    dialog.setOnDismissListener(
+        ignored -> {
+          if (historyDialog == dialog) {
+            historyOwner.retire();
+            historyDialog = null;
+            if (historyDetail != null) {
+              historyDetail.dismiss();
+              historyDetail = null;
+            }
+          }
+        });
+    CardSheet.show(dialog, this);
+    var lease = historyLease;
+    boolean accepted =
+        historyOwner.request(
+            historyReader(getApplicationContext()),
+            (entries, failed) ->
+                lease.runIfActive(
+                    () -> {
+                      if (!historyActive() || historyDialog != dialog || !dialog.isShowing())
+                        return;
+                      results.removeAllViews();
+                      if (failed || entries.isEmpty()) {
+                        results.addView(
+                            page.text(
+                                failed
+                                    ? UiText.choose(
+                                        "无法读取启动记录，请稍后重试。",
+                                        "Unable to read startup records. Try again later.")
+                                    : UiText.choose("还没有启动记录。", "No startup records yet."),
+                                13,
+                                R.color.text_secondary));
+                      }
+                      if (failed) return;
+                      for (var entry : entries) {
+                        String date =
+                            java.text.DateFormat.getDateTimeInstance()
+                                .format(new java.util.Date(entry.started));
+                        page.entry(
+                            results,
+                            date,
+                            entry.stage + " · " + entry.status,
+                            R.drawable.ic_recovery_document,
+                            () ->
+                                lease.runIfActive(
+                                    () -> {
+                                      if (!historyActive()
+                                          || historyDialog != dialog
+                                          || !dialog.isShowing()) return;
+                                      CardPage detail = new CardPage(this, date, "", true);
+                                      TextView body =
+                                          detail.text(
+                                              entry.stage
+                                                  + "\n\n"
+                                                  + entry.reason
+                                                  + "\n\n"
+                                                  + entry.log,
+                                              13,
+                                              R.color.text_secondary);
+                                      body.setPadding(0, detail.dp(14), 0, 0);
+                                      body.setTextIsSelectable(true);
+                                      body.setLineSpacing(detail.dp(5), 1);
+                                      detail.content.addView(body);
+                                      if (historyDetail != null) historyDetail.dismiss();
+                                      historyDetail = CardSheet.create(this, detail);
+                                      var detailDialog = historyDetail;
+                                      detail.button(
+                                          detail.footer,
+                                          UiText.choose("关闭", "Close"),
+                                          false,
+                                          detailDialog::dismiss);
+                                      CardSheet.show(detailDialog, this);
+                                    }));
+                      }
+                    }));
+    if (!accepted)
+      status.setText(
+          UiText.choose(
+              "上次读取尚未结束，请关闭后重试。", "The previous read is still finishing. Close and retry."));
+  }
+
+  private String completeReport(String note) {
     String report = String.valueOf(repository.report.getValue());
-    String extra = note == null ? "" : note.trim();
+    String extra = note.trim();
     // 只有用户在导出弹层主动填写时才附加；空说明不再追加空标题。
     if (!extra.isEmpty()) report += UiText.format("\n用户补充复现步骤：\n%s", extra);
     return SensitiveData.redact(report);

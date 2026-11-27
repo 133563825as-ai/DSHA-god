@@ -91,7 +91,12 @@ const SCREEN_CONSTRAINTS = [
   ['android-no-multitouch', 'android', '单指滑动，不提供多指'],
   ['android-node-no-fallback', 'android', '节点动作被拒或 UNKNOWN 时不自动改用坐标手势、不重放'],
   ['android-explicit-switch', 'android', '须重新截图并明确选择'],
-  ['android-webview-verify', 'android', 'effectVerified:false 时要重新观察'],
+  ['android-webview-verify', 'android', 'effectVerified:false 时要核对实际界面'],
+  ['android-inline-observation', 'android', '同一请求生成的新观察（observation：新 treeId/nodeId 与 settle 状态，坐标动作不含截图）'],
+  ['android-observation-unavailable', 'android', '观察不可用（observationUnavailable / TARGET_CHANGED）或状态 UNKNOWN 时才重新读屏'],
+  ['android-observe-opt-out', 'android', 'observe:false 可关闭自动观察'],
+  ['android-inline-node-identity', 'android:android_node', '最近android_get_state或上一次动作回执里 observation 的treeId/nodeId'],
+  ['android-node-observation-unavailable', 'android:android_node', '观察不可用时按 observationUnavailable 重新读屏'],
   ['android-control-scope', 'android:android_control', '仅实体主屏'],
   ['android-control-vscreen', 'android:android_control', '虚拟屏工具不需要也不调用它'],
   ['android-control-identity', 'android:android_control', '不由模型传入、不回退到全局活动任务、不新建聊天'],
@@ -137,9 +142,19 @@ const SCREEN_CONSTRAINTS = [
   ['vscreen-type-ascii', 'vscreen:android_vscreen_type', '只含可打印 ASCII 时走输入通道，不需要无障碍'],
   ['vscreen-node-once', 'vscreen:android_vscreen_node', '不需要 frameSeq、不受像素帧率影响，nodeId 用一次即失效'],
   ['vscreen-close-identity', 'vscreen:android_vscreen_close', '仍有存活或待清理的 Core 时须传其 coreInstance'],
+  ['vscreen-sensitive-categories', 'vscreen', 'sensitivity（PASSWORD/OTP/PAYMENT/SYSTEM_SECURITY/SECURE_UNKNOWN）'],
+  ['vscreen-sensitive-default-ask', 'vscreen', '默认 ASK，即本次动作仍需用户确认'],
+  ['vscreen-sensitive-handoff', 'vscreen', 'error=SENSITIVE_SCREEN_HANDOFF 表示该类别配置为交接：助手已被暂停，动作未发送（state=NOT_SENT）'],
+  ['vscreen-sensitive-no-bypass', 'vscreen', '不要重试、不要换屏或换工具，告诉用户由其本人在手机上操作'],
+  ['vscreen-sensitive-resume', 'vscreen', '用户恢复后先重新 see，绝不重放上一动作'],
+  ['vscreen-password-hard-block', 'vscreen', 'PASSWORD_INPUT_UNAVAILABLE 是密码文本读写硬阻断，确认也不会解除'],
+  ['vscreen-sensitive-disabled', 'vscreen', '回复不带该类别 sensitivity，按普通屏幕确认策略处理（密码文本硬阻断仍独立生效）'],
+  ['vscreen-see-handoff', 'vscreen:android_vscreen_see', '敏感界面已交接并暂停助手，不要重试'],
+  ['vscreen-type-password', 'vscreen:android_vscreen_type', 'PASSWORD_INPUT_UNAVAILABLE（硬阻断，确认也不解除）'],
 ];
-// vscreen 含 T35 的 nextAction / 待清理 / 旋转规则（约 1135 字符），上限留少量余量。
-const SCREEN_LIMITS = { guide: 3000, android: 800, vscreen: 1200 };
+// 当前实体/虚拟说明为844/1464字符：新增同请求观察及敏感界面交接，不删安全规则压长度。
+// 预算850/1500只留有限余量；下方逐规则删除与超长负控仍强制失败。
+const SCREEN_LIMITS = { guide: 3000, android: 850, vscreen: 1500 };
 
 function mcpSurface(relative) {
   const file = path.join(root, 'app/src/main/assets/builtin-plugins', relative);
@@ -150,9 +165,7 @@ function mcpSurface(relative) {
   return { instructions: JSON.parse(reply.stdout.trim().split('\n')[0]).result.instructions, descriptions };
 }
 
-function lockScreenConstraints(guideText) {
-  const android = mcpSurface('dsh-computer-use-android/lib/server.cjs');
-  const vscreen = mcpSurface('dsh-tool-vscreen/lib/server.cjs');
+function assertScreenConstraints(guideText, android, vscreen) {
   const where = { guide: guideText, android: android.instructions, vscreen: vscreen.instructions };
   const ids = new Set();
   for (const [id, place, phrase] of SCREEN_CONSTRAINTS) {
@@ -166,6 +179,36 @@ function lockScreenConstraints(guideText) {
   for (const surface of ['android', 'vscreen']) assert(!/\bnever\b|\bmust\b|\bdo not\b/i.test(where[surface]), surface + ' instructions must not keep an English rule copy');
   for (const [surface, limit] of Object.entries(SCREEN_LIMITS))
     assert(where[surface].length <= limit, `${surface} prompt grew to ${where[surface].length} chars (limit ${limit})`);
+}
+
+function lockScreenConstraints(guideText) {
+  const android = mcpSurface('dsh-computer-use-android/lib/server.cjs');
+  const vscreen = mcpSurface('dsh-tool-vscreen/lib/server.cjs');
+  assertScreenConstraints(guideText, android, vscreen);
+  // 每条真实规则逐一移除后必须失败，不以总长度或其他规则代替缺失安全契约。
+  for (const [id, place, phrase] of SCREEN_CONSTRAINTS) {
+    const [surface, tool] = place.split(':');
+    let changedGuide = guideText;
+    const changedAndroid = { ...android, descriptions: { ...android.descriptions } };
+    const changedVscreen = { ...vscreen, descriptions: { ...vscreen.descriptions } };
+    if (surface === 'guide') changedGuide = guideText.replace(phrase, '[removed]');
+    else {
+      const target = surface === 'android' ? changedAndroid : changedVscreen;
+      if (tool) target.descriptions[tool] = target.descriptions[tool].replace(phrase, '[removed]');
+      else target.instructions = target.instructions.replace(phrase, '[removed]');
+    }
+    assert.throws(() => assertScreenConstraints(changedGuide, changedAndroid, changedVscreen),
+      /constraint missing/, 'deleting ' + id + ' must fail');
+  }
+  for (const [surface, limit] of Object.entries(SCREEN_LIMITS)) {
+    const changedAndroid = { ...android }, changedVscreen = { ...vscreen };
+    let changedGuide = guideText;
+    const excess = 'x'.repeat(limit + 1);
+    if (surface === 'guide') changedGuide += excess;
+    else (surface === 'android' ? changedAndroid : changedVscreen).instructions += excess;
+    assert.throws(() => assertScreenConstraints(changedGuide, changedAndroid, changedVscreen),
+      /prompt grew/, 'excess ' + surface + ' instructions must fail');
+  }
 }
 
 const original = Object.fromEntries(['openSync', 'fstatSync', 'readSync', 'closeSync', 'lstatSync'].map(key => [key, fs[key]]));

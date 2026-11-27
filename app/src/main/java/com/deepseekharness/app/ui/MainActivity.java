@@ -16,7 +16,7 @@ import com.deepseekharness.app.util.PowerModePolicy;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 /**
- * 主界面外壳：启动门禁 + 底部导航（启动 / 插件 / 设置 / 终端）+ 顶栏标题 + 关于入口。
+ * 主界面外壳：启动门禁 + 底部导航（启动 / 插件 / 设置 / 终端）+ 顶栏标题 + 「+」更多气泡入口。
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -27,8 +27,6 @@ public class MainActivity extends AppCompatActivity {
     return activity instanceof MainActivity ? (MainActivity) activity : null;
   }
 
-  private com.deepseekharness.app.core.UpdateEngine startupUpdates;
-  private com.google.android.material.snackbar.Snackbar updateNotice;
   private boolean requestingLocalNetwork;
   private boolean restoreProbeStarted;
   private boolean discardedLauncherEntry;
@@ -350,9 +348,6 @@ public class MainActivity extends AppCompatActivity {
     directWebMainState = null;
   }
 
-  /** 主页右上角的运行环境切换；主界面就绪前为 null。 */
-  private TextView engineSwitch;
-
   private record PendingMain(Bundle saved, ConfigStore config, HarnessController controller) {}
 
   /**
@@ -478,29 +473,11 @@ public class MainActivity extends AppCompatActivity {
         && getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
       markNativeForeground();
     android.view.ViewGroup appBar = findViewById(R.id.app_bar);
-    var downloads = new androidx.appcompat.widget.AppCompatImageButton(this);
-    downloads.setImageResource(R.drawable.ic_ui_downloads);
-    downloads.setImageTintList(getColorStateList(R.color.text_secondary));
-    downloads.setContentDescription(
-        com.deepseekharness.app.util.UiText.choose("下载记录", "Downloads"));
-    android.util.TypedValue downloadsBackground = new android.util.TypedValue();
-    getTheme()
-        .resolveAttribute(
-            android.R.attr.selectableItemBackgroundBorderless, downloadsBackground, true);
-    downloads.setBackgroundResource(downloadsBackground.resourceId);
-    int downloadButtonSize = Math.round(44 * getResources().getDisplayMetrics().density);
-    int downloadButtonPadding = Math.round(11 * getResources().getDisplayMetrics().density);
-    downloads.setPadding(
-        downloadButtonPadding, downloadButtonPadding, downloadButtonPadding, downloadButtonPadding);
-    downloads.setOnClickListener(v -> FileTransfersActivity.open(this));
-    appBar.addView(
-        downloads,
-        // 主题切换已移到设置 › 主题与外观；下载入口占用原主题按钮的位置。
-        appBar.indexOfChild(findViewById(R.id.btn_about)),
-        new android.widget.LinearLayout.LayoutParams(downloadButtonSize, downloadButtonSize));
-    installDeployCapsule(appBar, appBar.indexOfChild(downloads));
-    // 主页右上角：运行环境切换（暂定位置）。
-    engineSwitch = EngineSwitchButton.install(this, appBar, appBar.indexOfChild(downloads));
+    // 顶栏只保留一个「+」气泡入口：下载记录、关于与启动页的检查/地址都收进气泡。
+    android.view.View quickActionsAnchor = findViewById(R.id.btn_more);
+    quickActionsAnchor.setVisibility(android.view.View.VISIBLE);
+    quickActionsAnchor.setOnClickListener(this::toggleQuickActions);
+    installDeployCapsule(appBar, appBar.indexOfChild(quickActionsAnchor));
     android.view.View recovery = findViewById(R.id.environment_recovery_banner);
     recovery.setOnClickListener(
         v -> {
@@ -541,11 +518,6 @@ public class MainActivity extends AppCompatActivity {
               }
             },
             false);
-    android.view.ViewGroup quickEntries = findViewById(R.id.btn_about);
-    quickEntries.setVisibility(android.view.View.VISIBLE);
-    quickEntries.setContentDescription(com.deepseekharness.app.util.UiText.text("关于 DSHA"));
-    ((android.widget.ImageView) quickEntries.getChildAt(0)).setImageResource(R.drawable.ic_about);
-    quickEntries.setOnClickListener(v -> AboutDialog.show(this));
 
     BottomNavigationView nav = findViewById(R.id.bottom_nav);
     shellRail = findViewById(R.id.shell_rail);
@@ -650,10 +622,6 @@ public class MainActivity extends AppCompatActivity {
     syncShellRail(nav.getSelectedItemId());
     releaseGatedPages(!unresolved);
     consumeTaskTarget(getIntent());
-    // 只订阅后台检查；提示不切换导航，也不自动打开更新页或 Web。
-    startupUpdates = com.deepseekharness.app.core.UpdateEngine.get(this);
-    startupUpdates.state().observe(this, state -> showStartupUpdate());
-    startupUpdates.checkOnStartup(config.isCheckUpdate());
     scheduleFirstRunWeb();
     recoveryHandler.removeCallbacks(refreshRecovery);
     recoveryHandler.post(refreshRecovery);
@@ -662,10 +630,53 @@ public class MainActivity extends AppCompatActivity {
 
   // ---------------------------------------------------------------- 顶栏部署胶囊
 
+  /** 顶栏「+」气泡：下载记录、关于，以及启动页专属的运行环境与访问地址。 */
+  private void toggleQuickActions(android.view.View anchor) {
+    if (quickActions != null) {
+      quickActions.dismiss();
+      quickActions = null;
+      return;
+    }
+    Fragment shown = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
+    final LaunchFragment launch = shown instanceof LaunchFragment ? (LaunchFragment) shown : null;
+    quickActions =
+        QuickActionsBubble.show(
+            this,
+            anchor,
+            launch != null,
+            new QuickActionsBubble.Listener() {
+              @Override
+              public void onAction(com.deepseekharness.app.util.QuickActions.Action action) {
+                switch (action) {
+                  case DOWNLOADS:
+                    FileTransfersActivity.open(MainActivity.this);
+                    break;
+                  case ABOUT:
+                    AboutDialog.show(MainActivity.this);
+                    break;
+                  case ENVIRONMENT:
+                    if (launch != null) launch.openEnvironment();
+                    break;
+                  case ADDRESS:
+                    if (launch != null) launch.showAccessAddresses();
+                    break;
+                }
+              }
+
+              @Override
+              public void onDismissed() {
+                quickActions = null;
+              }
+            });
+  }
+
   /** 覆盖更新 / 首次部署的进度胶囊；只显示环境维护任务，点按打开阶段与维护记录面板。 */
   private DeployMonitor deployMonitor;
 
   private DeployCapsule deployCapsule;
+
+  /** 顶栏「+」气泡弹窗；显示期间保留引用，关闭后由 onDismissed 置空。 */
+  private QuickActionsBubble quickActions;
 
   private final Runnable deployCollapseCheck =
       () -> {
@@ -740,73 +751,22 @@ public class MainActivity extends AppCompatActivity {
             });
   }
 
-  private void showStartupUpdate() {
-    if (startupUpdates == null
-        || updateNotice != null
-        || isFinishing()
-        || !hasWindowFocus()
-        || !getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
-        || !new ConfigStore(this).isCheckUpdate()) return;
-    com.deepseekharness.app.util.UpdatePolicy.Release release = startupUpdates.startupNotice();
-    if (release == null) return;
-    updateNotice =
-        com.google.android.material.snackbar.Snackbar.make(
-                findViewById(android.R.id.content),
-                com.deepseekharness.app.util.UiText.format(
-                    "发现新版本 %s · %s",
-                    release.version,
-                    com.deepseekharness.app.core.UpdateEngine.channelName(
-                        startupUpdates.channel())),
-                com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
-            .setAction(
-                com.deepseekharness.app.util.UiText.text("查看更新"),
-                view -> startActivity(new Intent(this, UpdateActivity.class)));
-    // 平板形态的底栏是隐藏的：锚到隐藏视图会把提示顶出可视区，隐藏时交给内容区默认定位。
-    android.view.View navAnchor = findViewById(R.id.bottom_nav);
-    if (navAnchor != null && navAnchor.getVisibility() == android.view.View.VISIBLE)
-      updateNotice.setAnchorView(R.id.bottom_nav);
-    updateNotice.addCallback(
-        new com.google.android.material.snackbar.Snackbar.Callback() {
-          @Override
-          public void onShown(com.google.android.material.snackbar.Snackbar bar) {
-            if (hasWindowFocus()
-                && getLifecycle()
-                    .getCurrentState()
-                    .isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
-              startupUpdates.markStartupNoticeShown(release);
-          }
-
-          @Override
-          public void onDismissed(com.google.android.material.snackbar.Snackbar bar, int event) {
-            if (updateNotice == bar) updateNotice = null;
-          }
-        });
-    updateNotice.show();
-  }
-
   @Override
   protected void onPostResume() {
     super.onPostResume();
     if (mainReady && getIntent().getBooleanExtra(FirstRunWebStart.EXTRA, false))
       scheduleFirstRunWeb();
-    showStartupUpdate();
-  }
-
-  @Override
-  public void onWindowFocusChanged(boolean hasFocus) {
-    super.onWindowFocusChanged(hasFocus);
-    if (hasFocus) showStartupUpdate();
   }
 
   @Override
   protected void onPause() {
     if (!mainReady) entryGate.cancel();
+    if (quickActions != null) {
+      quickActions.dismiss();
+      quickActions = null;
+    }
     recoveryHandler.removeCallbacks(releaseWebCover);
     recoveryHandler.removeCallbacks(refreshRecovery);
-    if (updateNotice != null) {
-      updateNotice.dismiss();
-      updateNotice = null;
-    }
     super.onPause();
   }
 
@@ -992,8 +952,6 @@ public class MainActivity extends AppCompatActivity {
         .setVisibility(nested ? android.view.View.VISIBLE : android.view.View.GONE);
     findViewById(R.id.app_logo)
         .setVisibility(nested ? android.view.View.GONE : android.view.View.VISIBLE);
-    EngineSwitchButton.updateVisibility(
-        engineSwitch, !nested && shown instanceof LaunchFragment, this);
     if (shown instanceof AboutFragment)
       title.setText(com.deepseekharness.app.util.UiText.choose("关于 DSHA", "About DSHA"));
     else if (shown instanceof OverlayFragment)
@@ -1001,6 +959,10 @@ public class MainActivity extends AppCompatActivity {
     else if (shown instanceof ConfigFragment) title.setText(R.string.ui2_runtime_config);
     else if (shown instanceof DeviceGrantsFragment)
       title.setText(com.deepseekharness.app.util.UiText.text("设备能力授权"));
+    else if (shown instanceof DeviceChannelsFragment)
+      title.setText(com.deepseekharness.app.util.UiText.text("设备执行通道"));
+    else if (shown instanceof ScreenOperationFragment)
+      title.setText(com.deepseekharness.app.util.UiText.text("屏幕操作"));
     else if (shown instanceof SafAccessFragment)
       title.setText(com.deepseekharness.app.util.UiText.choose("跨应用文件访问", "Cross-app files"));
     else if (shown instanceof SafBrowseFragment)
@@ -1155,6 +1117,7 @@ public class MainActivity extends AppCompatActivity {
    * 当成「没有备份」，而是提供 SAF 手动选择（issue #22）。
    */
   private void maybePromptExternalRestore() {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     if (restoreProbeStarted || isFinishing() || isDestroyed()) return;
     HarnessController controller = HarnessController.get(this);
     restoreProbeStarted = true;
@@ -1260,6 +1223,12 @@ public class MainActivity extends AppCompatActivity {
   }
 
   public void pickBackupForRestore() {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      android.widget.Toast.makeText(
+              this, NativeDataActivity.trialRestoreNotice(), android.widget.Toast.LENGTH_LONG)
+          .show();
+      return;
+    }
     RecentsPrivacyGuard.launch(
         legacyBackupPicker,
         new String[] {

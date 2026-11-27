@@ -1,6 +1,7 @@
 package com.deepseekharness.app.core;
 
 import com.deepseekharness.app.util.Compat;
+import com.deepseekharness.app.util.WebProcSel;
 import java.io.File;
 import java.io.IOException;
 import java.util.function.Consumer;
@@ -13,6 +14,7 @@ final class StartupEnvironmentActions implements StartupPipeline.Actions {
   private final long generation;
   private final Consumer<String> stage;
   private final Consumer<String> status;
+  private final WebLifecycleController.WebRun run;
 
   StartupEnvironmentActions(
       HarnessController owner,
@@ -27,10 +29,33 @@ final class StartupEnvironmentActions implements StartupPipeline.Actions {
     this.generation = generation;
     this.stage = stage;
     this.status = status;
+    this.run = state.runs.get(generation);
   }
 
   public boolean current() {
-    return state.lifecycle.isCurrent(generation);
+    synchronized (state.lifecycle) {
+      if (!state.lifecycle.isCurrent(generation)) return false;
+      if (run == null || run.handoff == null) return true;
+      boolean valid =
+          state.currentRun == run
+              && run.handoff
+                  .admission()
+                  .current(
+                      state,
+                      state.stopOperation,
+                      generation,
+                      state.startProtection.cancellationRevision(),
+                      state.startProtection);
+      if (!valid) state.diagnostics.message(generation, "WEB_STOP_HANDOFF_REVOKED");
+      return valid;
+    }
+  }
+
+  public boolean reusePriorStop() throws IOException {
+    if (run == null || run.handoff == null) return false;
+    if (!current() || !run.handoff.recheck().unchanged(run) || !current())
+      throw new IOException("WEB_STOP_HANDOFF_CHANGED_OR_UNKNOWN");
+    return true;
   }
 
   public void yieldPluginQuery() {
@@ -45,14 +70,65 @@ final class StartupEnvironmentActions implements StartupPipeline.Actions {
     status.accept(value);
   }
 
-  public void releasePrior() throws IOException {
-    if (!current()) return;
+  public java.util.List<com.deepseekharness.app.util.WebStopDiagnostic> releasePrior()
+      throws IOException {
+    if (!current()) return java.util.List.of();
     if (Thread.currentThread().isInterrupted())
       throw new java.io.InterruptedIOException("STARTUP_STOP_INTERRUPTED");
-    String pending = processes.stopOwnedLaunchers();
-    if (!pending.isEmpty()) throw new IOException(pending);
-    if (!processes.confirmStopped()) throw new IOException("STARTUP_PRIOR_EXIT_UNCONFIRMED");
+    if (run != null && run.handoff != null) {
+      reusePriorStop();
+      // 完整证明只省去信号与等待；旧桥租约与对象释放仍由原 owner 完成。
+      processes.releasePrior(generation);
+      return java.util.List.of();
+    }
+    java.util.List<com.deepseekharness.app.util.WebStopDiagnostic> facts =
+        new java.util.ArrayList<>(processes.stopOwnedLauncherFacts());
+    if (!facts.isEmpty()) return java.util.List.copyOf(facts);
+    if (!processes.confirmStopped())
+      return java.util.List.of(
+          com.deepseekharness.app.util.WebStopDiagnostic.of(
+              com.deepseekharness.app.util.WebStopDiagnostic.Code.EXIT_UNCONFIRMED,
+              "旧 Web 或容器启动器尚未确认退出"));
     processes.releasePrior(generation);
+    return java.util.List.of();
+  }
+
+  /**
+   * 启动前置停止的同一窗口只读复核：先确认退出，再补一次启动器收尾并释放旧代次；不重发信号。
+   */
+  public boolean awaitPriorExit(long deadlineMs) throws InterruptedException {
+    java.util.List<com.deepseekharness.app.util.WebStopDiagnostic> remaining;
+    try {
+      remaining =
+          StartupStopWait.await(
+              new StartupStopWait.Io() {
+                public boolean confirmed() throws IOException {
+                  return current() && processes.confirmStopped();
+                }
+
+                public long now() {
+                  return android.os.SystemClock.elapsedRealtime();
+                }
+
+                public void pause(long millis) throws InterruptedException {
+                  Thread.sleep(millis);
+                }
+              },
+              deadlineMs,
+              java.util.List.of());
+      if (!remaining.isEmpty() || !current()) return false;
+      // 屏障确认后仍要按原代次释放已知启动器与桥；任何一项未确认都不得继续启动。
+      if (!processes.stopOwnedLauncherFacts().isEmpty()) return false;
+      if (!processes.confirmStopped()) return false;
+      processes.releasePrior(generation);
+      return true;
+    } catch (IOException unavailable) {
+      return false;
+    }
+  }
+
+  public long now() {
+    return android.os.SystemClock.elapsedRealtime();
   }
 
   public void recoverData() throws Exception {
@@ -80,16 +156,8 @@ final class StartupEnvironmentActions implements StartupPipeline.Actions {
     synchronized (state.lifecycle) {
       if (!current()) return false;
       File root = owner.proot().getRootfsDir();
-      File sentinel =
-          com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
-              com.deepseekharness.app.util.EngineStateFiles.containerStateDirectory(root));
+      File sentinel = new File(root, WebProcSel.pidFileRel(WebProcSel.STOP_SENTINEL));
       if (sentinel.exists() && !sentinel.delete())
-        throw new IOException(com.deepseekharness.app.util.UiText.text("无法清除停止标记"));
-      // 停止时两个运行环境的标记都会写；启动时一起清掉，否则切换运行环境后另一个仍被拦住。
-      File nativeSentinel =
-          com.deepseekharness.app.util.EngineStateFiles.stopSentinel(
-              com.deepseekharness.app.runtime.NativeRuntime.stateDirectory(owner.context()));
-      if (nativeSentinel.exists() && !nativeSentinel.delete())
         throw new IOException(com.deepseekharness.app.util.UiText.text("无法清除停止标记"));
       try {
         Compat.write(new File(root, "root/dsh-web.log"), new byte[0]);

@@ -437,8 +437,7 @@ public class HarnessService extends Service {
     if (c.getWebAuthUrl().isEmpty()) return false;
     try {
       java.io.File file =
-          com.deepseekharness.app.runtime.NativeRuntime.activityFile(
-              getApplicationContext(), c.proot().getRootfsDir());
+          new java.io.File(c.proot().getRootfsDir(), "root/.dsha-web-activity.json");
       if (file.length() > 2048) return false;
       org.json.JSONObject status =
           new org.json.JSONObject(

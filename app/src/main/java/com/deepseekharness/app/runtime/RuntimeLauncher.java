@@ -112,8 +112,18 @@ final class RuntimeLauncher {
   }
 
   Process start(String command, LaunchSpec spec, RuntimeCommandTiming timing) throws IOException {
+    return start(command, spec, timing, null);
+  }
+
+  Process start(
+      String command,
+      LaunchSpec spec,
+      RuntimeCommandTiming timing,
+      ProotBootstrap.LaunchCheck beforeStart)
+      throws IOException {
     ProcessBuilder builder = builder(command, spec);
     if (timing != null) timing.mark("launcher-prepare");
+    if (beforeStart != null) beforeStart.verify();
     Process process =
         spec.isolated
             ? IsolatedInstallProcess.start(builder, tmp, context, spec.record)

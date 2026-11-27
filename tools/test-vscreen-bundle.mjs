@@ -20,6 +20,7 @@ verifyRuntimeContent(runtime,proof);
 const load=async name=>import(pathToFileURL(path.join(runtime,'node_modules',name,'lib/index.js')));
 const {Context}=await load('@deepseek-ai/cordis');
 const {default:ToolRuntime}=await load('@deepseek-ai/dsh-tools');
+const NativeExecutor=await load('@deepseek-ai/dsh-tool-executor-native');
 const {default:SystemPrompt}=await load('@deepseek-ai/dsh-system-prompt');
 const {loadProfileDirectory,composeEntries}=await load('@deepseek-ai/dsh-app-boot');
 const directory=fs.mkdtempSync(path.join(root,'app/build/vscreen-bundle-'));
@@ -58,7 +59,8 @@ elif mode=='enable': assert r.enable_plugin('dsh-tool-vscreen')==0
   const plugin=await import(pathToFileURL(path.join(pluginDir,'lib/index.js')));
   const wanted=(await import(pathToFileURL(path.join(pluginDir,'lib/server.cjs')))).tools.map(row=>'mcp__dsha-vscreen__'+row.name).sort();
   for(let turn=0;turn<2;turn++){
-    ctx=new Context();await ctx.plugin(SystemPrompt,{});await ctx.plugin(ToolRuntime,{mode:'native'});
+    ctx=new Context();await ctx.plugin(SystemPrompt,{});await ctx.plugin(ToolRuntime,{});
+    await ctx.plugin(NativeExecutor);
     const mounted=ctx.plugin(plugin);await mounted;
     const schemas=ctx.tools.schemas();
     assert.deepEqual(schemas.map(row=>row.name).sort(),wanted);
@@ -77,9 +79,9 @@ elif mode=='enable': assert r.enable_plugin('dsh-tool-vscreen')==0
     const sections=(await ctx.systemPrompt.assemble()).sections.filter(section=>section.name==='mcp:dsha-vscreen');
     assert.equal(sections.length,1,'the actual MCP initialization instructions must reach the model');
     const instructions=sections[0].text;
-    assert.match(instructions,/Cancellation, timeout or interruption/);assert.match(instructions,/SDK AbortError/);
-    assert.match(instructions,/can discard the server receipt and does not prove launch was not executed/);
-    assert.match(instructions,/inspect actual state before deciding and never replay automatically/);
+    assert.match(instructions,/取消、超时或中断/);assert.match(instructions,/SDK 抛出 AbortError/);
+    assert.match(instructions,/可能丢失回执，不证明动作或 launch 未执行/);
+    assert.match(instructions,/一律不自动重放，先观察实际状态/);
     await mounted.dispose();assert.equal(ctx.tools.schemas().length,0);
     await ctx.fiber.dispose();ctx=null;
   }

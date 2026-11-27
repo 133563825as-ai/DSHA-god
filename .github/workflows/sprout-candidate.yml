@@ -1,0 +1,15 @@
+name: Retired initial Sprout candidate entry
+
+# 首轮历史门禁与固定359准入已经结束；最新同步必须走当前源码同run门禁。
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject retired candidate entry
+        run: |
+          echo 'REBIRTH_OLD_ENTRY_RETIRED: use rebirth-candidate.yml on sync/rebirth-latest-20261116'
+          exit 1

@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
 }
+apply from: rootProject.file('build-logic/android.gradle')
 
 // DSH-A-Su（Sunset Mod）单一 Standard 变体：Android 11（API 30）及以上；发布身份见下方 dsha.identity。
 // 旧 low/GeckoView 兼容线与独立上岛包都已移除：上岛能力并入正式包。
@@ -48,37 +49,82 @@ def devPackage = project.findProperty('dsha.devPackage') == 'true' || System.get
 if ((sunsetTest ? 1 : 0) + (debugPackage ? 1 : 0) + (devPackage ? 1 : 0) > 1)
     throw new GradleException('TEST_PACKAGE_VARIANT_CONFLICT: .test / .debug / .dev 只能选一个')
 def testVariantLabel = debugPackage ? 'Debug' : devPackage ? 'Dev' : sunsetTest ? 'Test' : ''
-// 发布身份：-Pdsha.identity=mod|upstream，默认 mod（io.github.sunsetrne.dsha / Mod 证书）。
+// Rebirth 候选开关：只用于隔离实验发行线 dsh.android.client.rebirth 的 unsigned 候选。
+// 不读取 Mod/upstream 正式证书；与 .test/.debug/.dev 测试变体、显式正式身份选择互斥。
+// 测试证书已固定，但候选仍只产 unsigned：同一 APK 由仓外既有证书离线签署，CI 不持有私钥。
+def rebirthCandidateValue = providers.gradleProperty('dsha.rebirthCandidate').orElse('false').get()
+if (!(rebirthCandidateValue in ['true', 'false']))
+    throw new GradleException('REBIRTH_CANDIDATE_INVALID: 只接受 true 或 false')
+def rebirthCandidate = rebirthCandidateValue == 'true'
+if (rebirthCandidate && !unsignedPackage)
+    throw new GradleException('REBIRTH_CANDIDATE_REQUIRES_UNSIGNED: 候选只产 unsigned，固定测试证书在仓外离线签署')
+if (rebirthCandidate && (sunsetTest || debugPackage || devPackage))
+    throw new GradleException('REBIRTH_CANDIDATE_VARIANT_CONFLICT: Rebirth 候选不能与 .test / .debug / .dev 测试变体混用')
+// 发布身份：-Pdsha.identity=mod|upstream|rebirth，默认 mod（io.github.sunsetrne.dsha / Mod 证书）。
 // upstream 是 ym2025szz/DSHA-prerelase 的 dsh.android.client / 历史 E7E3 证书，只在他的私有仓库发布。
-// 两套身份的包名、显示名、测试后缀、默认 key alias 与核对证书都从 ci/release-identity.<name>.json 读取；
-// versionCode / versionName 共用。未知值直接失败，不回退到任一身份，签名身份绝不混用。
-// 解析规则与 tools/release-identity.py 一致，由 tools/test-release-identity.py 交叉核对。
-def releaseIdentityNames = ['mod', 'upstream']
-def releaseIdentityName = (project.findProperty('dsha.identity') ?: 'mod').toString()
+// rebirth 是隔离实验发行线 dsh.android.client.rebirth，只能经 -Pdsha.rebirthCandidate=true 进入，
+// 使用独立候选测试证书（指纹已固定；若回到 64 个 0 占位，签名门禁必须失败）。
+// 三套身份的包名、显示名、测试后缀、默认 key alias、versionCode / versionName 与核对证书都从
+// ci/release-identity.<name>.json 读取；三条发行线当前同为 build368 的基础版本，后续各自递增。
+// 未知值直接失败，不回退到任一身份。解析规则与 tools/release-identity.py 一致，由 test-release-identity.py 交叉核对。
+def releaseIdentityNames = ['mod', 'upstream', 'rebirth']
+def requestedIdentity = project.findProperty('dsha.identity')
+if (rebirthCandidate && requestedIdentity && requestedIdentity.toString() != 'rebirth')
+    throw new GradleException("REBIRTH_CANDIDATE_IDENTITY_CONFLICT: 候选开关不能与 dsha.identity=${requestedIdentity} 混用")
+def releaseIdentityName = (requestedIdentity ?: (rebirthCandidate ? 'rebirth' : 'mod')).toString()
 if (!(releaseIdentityName in releaseIdentityNames))
-    throw new GradleException("UNKNOWN_RELEASE_IDENTITY: dsha.identity 只接受 mod 或 upstream，收到 '${releaseIdentityName}'")
+    throw new GradleException("UNKNOWN_RELEASE_IDENTITY: dsha.identity 只接受 mod / upstream / rebirth，收到 '${releaseIdentityName}'")
+if (releaseIdentityName == 'rebirth' && !rebirthCandidate)
+    throw new GradleException('REBIRTH_IDENTITY_REQUIRES_CANDIDATE_SWITCH: Rebirth 身份只能经 -Pdsha.rebirthCandidate=true 进入')
+def certificatePlaceholder = "0".repeat(64)
 def releaseIdentityFile = rootProject.file("ci/release-identity.${releaseIdentityName}.json")
 def releaseIdentity = new groovy.json.JsonSlurper().parse(releaseIdentityFile)
 if (releaseIdentity.schema != 1 || releaseIdentity.identity != releaseIdentityName
         || !(releaseIdentity.packageName ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)
         || !(releaseIdentity.certificateSha256 ==~ /[a-f0-9]{64}/)
+        || (releaseIdentity.certificateSha256 == certificatePlaceholder && releaseIdentityName != 'rebirth')
+        || !(releaseIdentity.versionCode instanceof Integer) || releaseIdentity.versionCode <= 0
+        || !(releaseIdentity.versionName instanceof String)
+        || !(releaseIdentity.versionName ==~ /[0-9A-Za-z][0-9A-Za-z._+-]*/)
         || !(releaseIdentity.testSuffix ==~ /\.[A-Za-z][A-Za-z0-9_]*/)
         || !(releaseIdentity.devSuffix ==~ /\.[A-Za-z][A-Za-z0-9_]*/)
         || !(releaseIdentity.keyAlias ==~ /[A-Za-z0-9._-]+/)
         || !(releaseIdentity.appName instanceof String) || releaseIdentity.appName.trim().isEmpty())
     throw new GradleException("RELEASE_IDENTITY_INVALID: ${releaseIdentityFile}")
+if (rebirthCandidate && !unsignedPackage && releaseIdentity.certificateSha256 == certificatePlaceholder)
+    throw new GradleException('REBIRTH_CERTIFICATE_UNSET: Rebirth 测试证书尚未固定；只允许 -Pdsha.unsignedPackage=true 的未签名候选')
 ext.dshaReleaseIdentity = releaseIdentity
-// 稳定版（日常使用）：-Pdsha.stableBuild=N。独立包名 .stable，与正式包、测试包共存、数据隔离；
-// 只在用户决定升级时才换新版本，测试版怎么覆盖都不影响它。与测试变体互斥。
-def stableBuild = (project.findProperty('dsha.stableBuild') ?: '').toString()
-if (!stableBuild.isEmpty() && !(stableBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.stableBuild 只能是数字')
-def stableChannel = !stableBuild.isEmpty()
-if (stableChannel && sunsetTest) throw new GradleException('dsha.stableBuild 与 dsha.sunsetTest 不能同时使用')
-// 只有源码 CI 可显式允许缺少真实测试夹具；完整测试默认要求固定输入齐备。
-def sourceOnlyTests = providers.gradleProperty('dsha.sourceOnlyTests').orElse('false').get()
-if (!(sourceOnlyTests in ['true', 'false']))
-    throw new GradleException('dsha.sourceOnlyTests 只接受 true 或 false')
-
+// 保留本线候选无正式凭据边界；签名在仓外复用固定测试证书。
+def candidateKeyEnvironment = ['DSHA_KEYSTORE', 'DSHA_KEYSTORE_PASSWORD', 'DSHA_KEY_PASSWORD', 'DSHA_KEY_ALIAS',
+        'DSHA_REBIRTH_KEYSTORE', 'DSHA_REBIRTH_KEYSTORE_PASSWORD', 'DSHA_REBIRTH_KEY_PASSWORD', 'DSHA_REBIRTH_KEY_ALIAS',
+        'REBIRTH_KEYSTORE_B64', 'REBIRTH_KEYSTORE_PASSWORD', 'REBIRTH_KEY_PASSWORD',
+        'SUNSET_TEST_KEYSTORE_B64', 'SUNSET_TEST_STORE_PASSWORD']
+def candidateKeyProperties = ['dsha.keystore', 'dsha.keystore.password', 'dsha.key.password', 'dsha.key.alias',
+        'dsha.rebirth.keystore', 'dsha.rebirth.keystore.password', 'dsha.rebirth.key.password', 'dsha.rebirth.key.alias']
+if (rebirthCandidate && (candidateKeyEnvironment.any { System.getenv().containsKey(it) }
+        || candidateKeyProperties.any { project.hasProperty(it) }
+        || System.getenv().keySet().any { it ==~ /(?i)(DSHA_|REBIRTH_|SUNSET_TEST_).*(KEYSTORE|KEY_PASSWORD|KEY_ALIAS|STORE_PASSWORD).*/ }
+        || project.properties.keySet().any { it.toString() ==~ /(?i)dsha\..*(keystore|\.key\.).*/ }
+        || System.getenv().keySet().any { it.startsWith('ORG_GRADLE_PROJECT_dsha.')
+                && (it.contains('keystore') || it.contains('.key.')) }))
+    throw new GradleException('REBIRTH_CANDIDATE_FORBIDS_PUBLISH_CREDENTIALS: unsigned 候选禁止所有签名输入')
+// Rebirth 身份独立解析并做基本校验：即使本次构建 Mod/upstream，也不允许损坏的候选身份潜伏到首包。
+def rebirthIdentityFile = rootProject.file('ci/release-identity.rebirth.json')
+def rebirthIdentity = new groovy.json.JsonSlurper().parse(rebirthIdentityFile)
+if (rebirthIdentity.schema != 1 || rebirthIdentity.identity != 'rebirth'
+        || !(rebirthIdentity.packageName ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+/)
+        || !(rebirthIdentity.certificateSha256 ==~ /[a-f0-9]{64}/)
+        || !(rebirthIdentity.keyAlias ==~ /[A-Za-z0-9._-]+/)
+        || !(rebirthIdentity.appName instanceof String) || rebirthIdentity.appName.trim().isEmpty())
+    throw new GradleException("REBIRTH_IDENTITY_INVALID: ${rebirthIdentityFile}")
+// Mod 兼容入口 ci/release-identity.json 必须与 mod 身份同版本号，防止两条记录漂移后发错版本。
+def rebirthVersionSuffix = '-Rebirth-Sprout.2'
+if (releaseIdentityName == 'mod') {
+    def legacyIdentity = new groovy.json.JsonSlurper().parse(rootProject.file('ci/release-identity.json'))
+    if (legacyIdentity.versionCode != releaseIdentity.versionCode
+            || legacyIdentity.versionName != releaseIdentity.versionName)
+        throw new GradleException('LEGACY_IDENTITY_VERSION_MISMATCH: ci/release-identity.json 与 mod 身份版本号不一致')
+}
 android {
     namespace 'com.deepseekharness.app'
     compileSdk {
@@ -93,19 +139,19 @@ android {
         minSdk 30
         targetSdk 37
         buildConfigField 'String', 'BUNDLED_PNPM_VERSION', '"' + bundledTools.pnpm.version + '"'
-        // 测试版留痕：只在测试包里写署名与测试版号（-Pdsha.testBuild=N）；正式包两者为空，界面不显示。
-        def testBuild = (project.findProperty('dsha.testBuild') ?: '').toString()
-        if (!testBuild.isEmpty() && !(testBuild ==~ /[0-9]{1,4}/)) throw new GradleException('dsha.testBuild 只能是数字')
-        buildConfigField 'String', 'TEST_SIGNATURE', (sunsetTest || stableChannel) ? '"南街小一"' : '""'
-        buildConfigField 'String', 'TEST_BUILD',
-                stableChannel ? '"s' + stableBuild + '"'
-                        : (sunsetTest && !testBuild.isEmpty()) ? '"t' + testBuild + '"' : '""'
+        // 测试包标记：只有显式测试变体（.test/.debug/.dev）为 true。正式包恒为 false，
+        // 用于只在测试包显示「反馈与诊断」导出入口；不得改为运行时猜测包名。
+        buildConfigField 'boolean', 'TEST_PACKAGE', (rebirthCandidate || sunsetTest || debugPackage || devPackage) ? 'true' : 'false'
+        buildConfigField 'boolean', 'REBIRTH_CANDIDATE', rebirthCandidate ? 'true' : 'false'
         // 上岛能力已并入正式包；不再有独立上岛包名或独立显示名。
-        // 显示名随发布身份（DSH-A-Su / DSHA）；测试/开发/稳定变体加后缀。
-        resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : stableChannel ? releaseIdentity.appName + ' Stable' : releaseIdentity.appName
-        versionCode 350
-        // DSHA 修订号 + 固定的北京时间戳 + 内置 DSH 版本；同一交付重建不变。
-        versionName "0.2.1-rc.5-20261109.2300-dsh0.2.2-rc.1"
+        // 显示名随发布身份（DSH-A-Su / DSHA / DSHA 新生），测试变体加后缀，便于桌面上区分两个包。
+        resValue 'string', 'app_name', testVariantLabel ? releaseIdentity.appName + ' ' + testVariantLabel : releaseIdentity.appName
+        // versionCode / versionName 的构建基准仍写在 build.gradle；三条身份文件必须记录同一值，
+        // 由 android 块之后的一致性检查兜底。Rebirth 将来同线递增时须同时改本文件、身份文件与
+        // tools/generate-changelog.py / release_names.py / sign-release-apks.py 的解析（G1 另立）。
+        versionCode 368
+        // DSHA 修订号 + 固定的 UTC 时间戳 + 内置 DSH 版本；同一交付重建不变。
+        versionName "0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1"
         testInstrumentationRunner project.findProperty('dsha.testRunner') ?: "com.deepseekharness.app.Rc13Instrumentation"
         ndk {
             abiFilters 'arm64-v8a'
@@ -127,9 +173,6 @@ android {
                 // 开发环境测试包：mod = .dev，upstream = .SunsetDev（见身份文件 devSuffix）。
                 applicationIdSuffix releaseIdentity.devSuffix
                 versionNameSuffix '-SunsetDev'
-            } else if (stableChannel) {
-                applicationIdSuffix '.stable'
-                versionNameSuffix '-Stable' + stableBuild
             }
         }
     }
@@ -161,6 +204,15 @@ android {
             enableV2Signing true
             enableV3Signing true
         }
+        // Rebirth 隔离实验发行线：独立、固定的候选测试证书，绝不读取 DSHA_* 正式私钥。
+        // 证书尚未创建时只打印“未配置”；签名门禁由 verifyPublishCertificate 的占位检查阻止。
+        rebirth {
+            // 只登记公开方案；本线 Gradle/CI 不接收或读取任何 Rebirth 私钥输入。
+            keyAlias rebirthIdentity.keyAlias
+            enableV1Signing false
+            enableV2Signing true
+            enableV3Signing true
+        }
     }
 
     buildTypes {
@@ -176,7 +228,9 @@ android {
         }
         release {
             minifyEnabled false
-            if (!unsignedPackage) signingConfig signingConfigs.publish
+            if (rebirthCandidate) versionNameSuffix rebirthVersionSuffix
+            // 本线候选固定先产 unsigned，离线复用既有测试证书签署；正式身份仍走各自配置。
+            if (!unsignedPackage) signingConfig (releaseIdentityName == 'rebirth' ? signingConfigs.rebirth : signingConfigs.publish)
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -186,8 +240,23 @@ android {
             useLegacyPackaging = true
             // 应急启动器按签名 APK 中的完整字节校验，禁止打包阶段再改写这两份 ELF。
             keepDebugSymbols += ['**/libproot.so', '**/libprootloader.so']
-            // 原生运行环境的 node 与 ripgrep 取自 Termux 锁定包，按原字节运行，不让打包阶段改写。
-            keepDebugSymbols += ['**/libnode.so', '**/librg.so']
+            if (rebirthCandidate) {
+                // 仅保留本线 descriptor 锁定的其余 arm64 文件原件；仍须逐项校验最终 APK 字节。
+                keepDebugSymbols += [
+                    '**/arm64-v8a/libandroidshmem.so',
+                    '**/arm64-v8a/libdsha-proroot-compat.so',
+                    '**/arm64-v8a/libdsha-proroot-linker.so',
+                    '**/arm64-v8a/libdsha-session.so',
+                    '**/arm64-v8a/libprootloader32.so',
+                    '**/arm64-v8a/libproroot-bridge.so',
+                    '**/arm64-v8a/libproroot-linker.so',
+                    '**/arm64-v8a/libproroot-runtime.so',
+                    '**/arm64-v8a/libproroot-stub-loader.so',
+                    '**/arm64-v8a/libproroot.so',
+                    '**/arm64-v8a/libtalloc.so',
+                    '**/arm64-v8a/libtermux.so',
+                ]
+            }
             // 使用 app 自带的同版本 16 KB JNI，覆盖 terminal-emulator AAR 中的旧库。
             pickFirsts += ['**/libtermux.so']
             excludes += ['**/x86/**', '**/x86_64/**', '**/armeabi/**', '**/armeabi-v7a/**']
@@ -203,13 +272,7 @@ android {
     androidResources {
         // 'bin' 是离线 rootfs：aapt 会把 .tar.gz 静默解成 .tar，所以打包前改名 .bin，
         // 保持 STORED（不 deflate），避免对已经压缩的离线运行时再压缩一次。
-        noCompress += ['gz', 'xz', 'bin', 'ja', 'tar', 'whl', 'zip']
-    }
-
-    compileOptions {
-        coreLibraryDesugaringEnabled true
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        noCompress += ['gz', 'xz', 'bin', 'ja', 'tar', 'whl']
     }
 
     buildFeatures {
@@ -218,61 +281,159 @@ android {
         buildConfig = true
     }
 
-    testOptions {
-        unitTests.includeAndroidResources = true
-        // 完整 Standard 套件在同一测试 JVM 内运行 2500+ 项，并包含 25MB 位图边界和
-        // 多组 Robolectric 界面沙箱；默认堆上限会在与断言无关的位图分配处 OOM。
-        // 这里只提高测试进程内存上限，不放宽或跳过任何用例。
-        unitTests.all { it.maxHeapSize = '2048m' }
-    }
-
     sourceSets {
         main.assets.setSrcDirs([layout.buildDirectory.dir("generated/standardAssets").get().asFile,
-                layout.buildDirectory.dir("generated/recoveryAssets").get().asFile,
-                layout.buildDirectory.dir("generated/nativeRuntime/assets").get().asFile])
-        // 原生运行环境的 node / ripgrep 是生成物，不进 src/main/jniLibs：
-        // 那棵树整体计入容器运行时描述符，放进去会无谓地改变容器的 runtimeId。
-        main.jniLibs.srcDir(layout.buildDirectory.dir("generated/nativeRuntime/jniLibs").get().asFile)
+                layout.buildDirectory.dir("generated/recoveryAssets").get().asFile])
         main.java.srcDir(layout.buildDirectory.dir("generated/uiLanguage").get().asFile)
+        // Rust 旁路产物只从注入目录打包（CI 的 rust-native 或本地 prebuilt），.so 不入库；
+        // 目录结构固定为 app/build/rust-jniLibs/arm64-v8a/libdsha_rs.so；
+        // prepareRustNative 在 off 时拒绝残留，在 prebuilt 时核验来源后才写入。
+        main.jniLibs.srcDir(layout.buildDirectory.dir("rust-jniLibs").get().asFile)
         // Both browser test entry points load one test-only HTML fixture.
         debug.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
         androidTest.assets.srcDir(rootProject.file("tools/fixtures/web-state"))
-        // 测试包的无障碍服务名加 Test（flavor 资源覆盖 main）；正式包不受影响。
-        if (sunsetTest) standard.res.srcDir(file("src/sunsetTestLabels/res"))
-        if (stableChannel) standard.res.srcDir(file("src/stableLabels/res"))
     }
 }
 
+// Remove privileged Android entry points from the isolated trial's merged manifest only.
+if (rebirthCandidate) android.sourceSets.standard.manifest.srcFile('src/rebirthTrial/AndroidManifest.xml')
+if (rebirthCandidate) android.sourceSets.standard.res.srcDir('src/rebirthTrial/res')
+
+// Rust APK 装配与业务后端开关独立：默认 off 不带库，RustBackends 仍默认 false。
+// prebuilt 只消费先经源码/receipt/ELF 核验的 Android 产物，不在 Gradle 内运行 cargo。
+def rustNativeMode = providers.gradleProperty('dsha.rust.mode').orElse('off').get()
+def rustArtifactDirectory = providers.gradleProperty('dsha.rust.artifactDir').orNull
+// 候选证据必须显式选取；不从 CI、环境标记或 receipt 状态推断。
+def rustCandidateEvidenceValue = providers.gradleProperty('dsha.rust.candidateEvidence').orElse('false').get()
+if (!(rustCandidateEvidenceValue in ['true', 'false']))
+    throw new GradleException('RUST_CANDIDATE_EVIDENCE_INVALID: 只接受 true 或 false')
+def rustCandidateEvidence = rustCandidateEvidenceValue == 'true'
+if (rustCandidateEvidence && rustNativeMode != 'prebuilt')
+    throw new GradleException('RUST_CANDIDATE_EVIDENCE_MODE: 候选证据只允许 prebuilt')
+// 仅显式 Mod.debug unsigned 可收集候选证据；env-only 标记不是授权。
+def rustCandidateIdentityAllowed = unsignedPackage && releaseIdentityName == 'mod' &&
+        project.findProperty('dsha.debugPackage') == 'true'
+if (rustCandidateEvidence && !rustCandidateIdentityAllowed)
+    throw new GradleException('RUST_CANDIDATE_EVIDENCE_IDENTITY: 仅允许 unsigned Mod 的显式 .debug；Rebirth/upstream/.test/.dev/普通发布禁止候选证据')
+// .debug 后缀只属于 debug buildType，不能用该属性把普通 release 偷渡成候选。
+gradle.taskGraph.whenReady { graph ->
+    if (rustCandidateEvidence && graph.allTasks.any {
+        it.project == project && (it.name.contains('StandardRelease') || it.name == 'signPublishRelease')
+    }) throw new GradleException('RUST_CANDIDATE_EVIDENCE_DEBUG_RELEASE: .debug 候选不能运行 release 任务')
+}
+if (!(rustNativeMode in ['off', 'prebuilt']))
+    throw new GradleException('RUST_NATIVE_MODE: dsha.rust.mode 只接受 off 或 prebuilt')
+if (rustNativeMode == 'prebuilt' && !rustArtifactDirectory)
+    throw new GradleException('RUST_ARTIFACT_DIRECTORY: prebuilt 需要 dsha.rust.artifactDir')
+if (rustNativeMode == 'off' && rustArtifactDirectory)
+    throw new GradleException('RUST_DISABLED_INPUT: off 不能传入 dsha.rust.artifactDir')
+def rustJniDirectory = layout.buildDirectory.dir('rust-jniLibs')
+def rustAssetsDirectory = layout.buildDirectory.dir('generated/rustAssets')
+def prepareRustNative = tasks.register('prepareRustNative', Exec) {
+    inputs.property 'dsha.rust.mode', rustNativeMode
+    inputs.property 'dsha.rust.candidateEvidence', rustCandidateEvidence
+    inputs.files(rootProject.files('tools/rust/artifact.py', 'tools/rust/build.py',
+            'tools/rust/elf.py', 'tools/check-rust-native-apk.py',
+            'ci/rust-toolchain.lock.json', 'rust/native-budget.json', 'rust/artifact.lock.json'))
+    if (rustArtifactDirectory) inputs.dir(rootProject.file(rustArtifactDirectory))
+    // 每次重新核验时效与实际字节；不复用缓存中的过期 PASS。
+    outputs.upToDateWhen { false }
+    doFirst {
+        def arguments = [System.getenv('DSHA_PYTHON') ?: 'python3', '-B',
+                rootProject.file('tools/rust/artifact.py').absolutePath, 'stage',
+                '--mode', rustNativeMode, '--out', rustJniDirectory.get().asFile.absolutePath,
+                '--assets-out', rustAssetsDirectory.get().asFile.absolutePath]
+        if (rustNativeMode == 'prebuilt') {
+            if (rustCandidateEvidence) arguments += ['--candidate-evidence']
+            arguments += ['--artifact-dir', rootProject.file(rustArtifactDirectory).absolutePath,
+                    '--commit', providers.exec {
+                        workingDir rootProject.projectDir
+                        commandLine 'git', 'rev-parse', 'HEAD'
+                    }.standardOutput.asText.get().trim()]
+            ['GITHUB_RUN_ID': '--run-id', 'GITHUB_RUN_ATTEMPT': '--run-attempt',
+                    'GITHUB_REPOSITORY': '--repository'].each { variable, option ->
+                if (System.getenv(variable)) arguments += [option, System.getenv(variable)]
+            }
+        }
+        commandLine arguments
+    }
+}
+// 加性登记独立资产目录，保留既有 sourceSets/受管资产准备结构。
+// SourceSet API 不接受 Provider；目录在配置期解析，任务依赖仍由下方显式登记。
+if (rustNativeMode == 'prebuilt') android.sourceSets.main.assets.srcDir(rustAssetsDirectory.get().asFile)
+// 库 receipt 绑定完整字节，AGP 不得再 strip 此成员。
+android.packaging.jniLibs.keepDebugSymbols.add('**/libdsha_rs.so')
+tasks.named('preBuild').configure { dependsOn(prepareRustNative) }
+tasks.configureEach {
+    if (name.matches('mergeStandard.*(JniLibFolders|NativeLibs|Assets)')) dependsOn(prepareRustNative)
+}
+
+// 版本号仍以 build.gradle 为构建基准；所选身份文件必须记录同一值，防止身份文件与源码漂移。
+if (android.defaultConfig.versionCode != releaseIdentity.versionCode
+        || android.defaultConfig.versionName != releaseIdentity.versionName)
+    throw new GradleException("RELEASE_IDENTITY_VERSION_MISMATCH: build.gradle 与 ci/release-identity.${releaseIdentityName}.json 记录的版本不一致")
+
 def verifyPublishCertificate = tasks.register("verifyPublishCertificate") {
     doLast {
-        if (sunsetTest || debugPackage || devPackage)
+        if (rebirthCandidate || sunsetTest || debugPackage || devPackage)
             throw new GradleException('TEST_PACKAGE_REQUIRES_UNSIGNED: 测试包不能使用正式发布证书；请用 -Pdsha.unsignedPackage=true 由测试证书签名')
-        def signing = android.signingConfigs.publish
+        def identityFile = "ci/release-identity.${releaseIdentityName}.json"
+        def identity = new groovy.json.JsonSlurper().parse(rootProject.file(identityFile))
+        if (identity.certificateSha256 == certificatePlaceholder)
+            throw new GradleException("REBIRTH_CERTIFICATE_UNSET: ${identityFile} 的证书指纹仍为占位；Rebirth 候选证书固定前不得签名")
+        def signing = releaseIdentityName == 'rebirth' ? android.signingConfigs.rebirth : android.signingConfigs.publish
         if (signing.storeFile == null || !signing.storeFile.isFile())
             throw new GradleException("正式 APK 缺少 ${releaseIdentityName} 身份发布密钥，停止打包")
         def store = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
         signing.storeFile.withInputStream { store.load(it, signing.storePassword.toCharArray()) }
         def certificate = store.getCertificate(signing.keyAlias)
-        def identityFile = "ci/release-identity.${releaseIdentityName}.json"
-        def identity = new groovy.json.JsonSlurper().parse(rootProject.file(identityFile))
-        def expected = identity.certificateSha256
-        if (certificate == null || java.security.MessageDigest.getInstance("SHA-256")
-                .digest(certificate.encoded).encodeHex().toString() != expected)
+        if (certificate == null)
+            throw new GradleException("${identityFile} 指定的 key alias 在 keystore 中不存在，停止打包")
+        def digest = java.security.MessageDigest.getInstance("SHA-256").digest(certificate.encoded).encodeHex().toString()
+        if (digest != identity.certificateSha256)
             throw new GradleException("发布证书与 ${identityFile} 记录不符，停止打包")
+        if (releaseIdentityName == 'rebirth') {
+            // 负控：候选测试证书不得复用 Mod / upstream 的正式证书。
+            ['mod', 'upstream'].each { other ->
+                def otherIdentity = new groovy.json.JsonSlurper().parse(rootProject.file("ci/release-identity.${other}.json"))
+                if (digest == otherIdentity.certificateSha256)
+                    throw new GradleException("REBIRTH_CERT_REUSES_${other.toUpperCase()}: Rebirth 候选测试证书不得复用 ${other} 身份证书，停止打包")
+            }
+        }
         if (android.defaultConfig.applicationId != identity.packageName)
             throw new GradleException("applicationId 与 ${identityFile} 记录不符，停止打包")
     }
+}
+// 候选交付只允许非调试 release 链；无安装任务时也明确拒绝直接安装请求。
+if (rebirthCandidate && gradle.startParameter.taskNames.any {
+    it.tokenize(':').last() ==~ /(?i)(install|uninstall|connected|signPublish).*/
+}) throw new GradleException('REBIRTH_CANDIDATE_RELEASE_ONLY')
+gradle.taskGraph.whenReady { graph ->
+    if (rebirthCandidate && graph.allTasks.any {
+        it.project == project && (it.name ==~ /(?i)(assemble|bundle|package|sign)StandardDebug(?:Bundle)?/
+            || it.name ==~ /(?i)extractApksForStandardDebug/
+            || it.name ==~ /(?i)(assemble|bundle|package).*AndroidTest.*/
+            || it.name ==~ /(?i)(install|connected|signPublish).*/)
+    }) throw new GradleException('REBIRTH_CANDIDATE_RELEASE_ONLY')
 }
 tasks.configureEach {
     if (!unsignedPackage && name.matches("(package|validateSigning|assemble)StandardRelease")) dependsOn(verifyPublishCertificate)
 }
 // 只读配置检查：打印解析出的发布身份，不读取密钥、不打包。
 tasks.register('printReleaseIdentity') {
+    def selectedSigning = releaseIdentityName == 'rebirth' ? 'rebirth' : 'publish'
+    def selectedAlias = (releaseIdentityName == 'rebirth' ? rebirthIdentity.keyAlias : releaseIdentity.keyAlias)
+    if (android.signingConfigs[selectedSigning].keyAlias)
+        selectedAlias = android.signingConfigs[selectedSigning].keyAlias
+    def certificateStatus = releaseIdentity.certificateSha256 == certificatePlaceholder ? 'unset' : 'fixed'
     def summary = "releaseIdentity=${releaseIdentityName} applicationId=${android.defaultConfig.applicationId}" +
-            " appName=${releaseIdentity.appName} testSuffix=${releaseIdentity.testSuffix} devSuffix=${releaseIdentity.devSuffix}" +
+            " appName=${releaseIdentity.appName} rebirthCandidate=${rebirthCandidate} testSuffix=${releaseIdentity.testSuffix} devSuffix=${releaseIdentity.devSuffix}" +
+            " versionCode=${android.defaultConfig.versionCode} versionName=${android.defaultConfig.versionName}" +
+            " effectiveVersionName=${android.defaultConfig.versionName}${rebirthCandidate ? rebirthVersionSuffix : ''}" +
             " testVariant=${testVariantLabel.isEmpty() ? 'release' : testVariantLabel.toLowerCase()}" +
-            " keyAlias=${android.signingConfigs.publish.keyAlias ?: releaseIdentity.keyAlias}" +
-            " certificateSha256=${releaseIdentity.certificateSha256}"
+            " candidate=${rebirthCandidate} unsigned=${unsignedPackage} signingConfig=${selectedSigning}" +
+            " keyAlias=${selectedAlias}" +
+            " certificateSha256=${releaseIdentity.certificateSha256} certificateStatus=${certificateStatus}"
     doLast { println summary }
 }
 tasks.register('signPublishRelease') {
@@ -337,12 +498,6 @@ def verifyWebLanguages = tasks.register('verifyWebLanguages', Exec) {
 
 tasks.named('preBuild').configure { dependsOn(verifyWebLanguages) }
 
-tasks.withType(Test).configureEach {
-    systemProperty 'dsha.assetsDir', file('src/main/assets').absolutePath
-    systemProperty 'dsha.sourceOnlyTests', sourceOnlyTests
-    // 切换到完整测试时不得复用 source-only 的跳过结果。
-    inputs.property 'dsha.sourceOnlyTests', sourceOnlyTests
-}
 tasks.configureEach {
     if (name in ['verifyBundledIdentities', 'verifyBuiltinRegistry', 'prepareStandardAssets',
                  'prepareBackupAssets', 'prepareRuntimeDescriptor', 'prepareRecoveryAssets', 'prepareUiLanguages'])
@@ -357,7 +512,8 @@ def prepareStandardAssets = tasks.register("prepareStandardAssets", Exec) {
     inputs.file(rootProject.file("tools/prepare-web-compat.mjs"))
     inputs.files(rootProject.files("tools/web-compat/entry.cjs", "tools/web-compat/package.json", "tools/web-compat/package-lock.json"))
     inputs.file(rootProject.file("tools/build-dsh-runtime.py"))
-    inputs.files(rootProject.files("tools/runtime_stable_patches.py", "tools/runtime_input_contract.py"))
+    inputs.files(rootProject.files("tools/runtime_stable_patches.py", "tools/runtime_input_contract.py",
+            "tools/source_layout.py", "ci/source-layout.json"))
     inputs.dir(rootProject.file("tools/dsh-runtime"))
     inputs.file(rootProject.file("tools/prepare-ubuntu-tools.py"))
     inputs.dir(rootProject.file("tools/ubuntu-tools"))
@@ -369,26 +525,6 @@ def prepareStandardAssets = tasks.register("prepareStandardAssets", Exec) {
             rootProject.file("tools/prepare-standard-assets.py").absolutePath,
             "--source", file("src/main/assets").absolutePath,
             "--output", layout.buildDirectory.dir("generated/standardAssets").get().asFile.absolutePath)
-}
-// 原生运行环境（不经 proot 的 Android Node）：只读本地缓存的 Termux 锁定包与本 APK 的 dsh-runtime.bin，
-// 生成 libnode.so / librg.so 与 native-runtime.zip。缓存缺包时失败，提示用 --fetch 显式下载。
-def prepareNativeRuntime = tasks.register("prepareNativeRuntime", Exec) {
-    inputs.file(rootProject.file("tools/prepare-native-runtime.py"))
-    inputs.dir(rootProject.file("tools/native-runtime"))
-    inputs.file(file("src/main/assets/dsh-runtime.bin"))
-    inputs.dir(file("src/main/assets/destructive-policy"))
-    inputs.file(file("src/main/assets/ca-certificates.crt"))
-    inputs.files(file("src/main/assets/native-consent.cjs"), file("src/main/assets/bridge-port.cjs"))
-    inputs.file(file("src/main/assets/managed-runtime-inputs.json"))
-    inputs.dir(file("src/main/assets/builtin-plugins"))
-    outputs.dir(layout.buildDirectory.dir("generated/nativeRuntime"))
-    commandLine(System.getenv("DSHA_PYTHON") ?: "python3", "-B",
-            rootProject.file("tools/prepare-native-runtime.py").absolutePath,
-            "--output", layout.buildDirectory.dir("generated/nativeRuntime").get().asFile.absolutePath)
-}
-tasks.configureEach {
-    if (name.matches("merge.*Assets") || name.matches("merge.*JniLibFolders") || name.matches("merge.*NativeLibs"))
-        dependsOn(prepareNativeRuntime)
 }
 def prepareBackupAssets = tasks.register("prepareBackupAssets", Exec) {
     inputs.file(rootProject.file("tools/prepare-backup-assets.py"))
@@ -408,6 +544,13 @@ prepareStandardAssets.configure { dependsOn(verifyExternalToolProof) }
 def runtimeInputContractFile = file("src/main/assets/managed-runtime-inputs.json")
 def runtimeInputContract = new groovy.json.JsonSlurper().parse(runtimeInputContractFile)
 if (runtimeInputContract.schema != 1) throw new GradleException("未知受管运行时输入契约")
+// 配置期和 Python 身份生成共用一份映射；禁止在 Gradle 里另写只扫 app 的源根规则。
+def runtimeLauncherFiles = new groovy.json.JsonSlurper().parseText(providers.exec {
+    workingDir rootProject.projectDir
+    commandLine(System.getenv('DSHA_PYTHON') ?: 'python3', '-B',
+            rootProject.file('tools/source_layout.py').absolutePath,
+            '--root', rootProject.projectDir.absolutePath, '--launcher-inputs')
+}.standardOutput.asText.get())
 def prepareRuntimeDescriptor = tasks.register("prepareRuntimeDescriptor", Exec) {
     inputs.file(rootProject.file("tools/prepare-runtime-descriptor.py"))
     inputs.file(rootProject.file("tools/runtime_input_contract.py"))
@@ -417,11 +560,9 @@ def prepareRuntimeDescriptor = tasks.register("prepareRuntimeDescriptor", Exec) 
         inputs.file(file("src/main/assets/${it}"))
     }
     runtimeInputContract.assetTrees.each { inputs.files(fileTree("src/main/assets/${it}")) }
-    runtimeInputContract.launcherTrees.each { path ->
-        inputs.files(fileTree(rootProject.file(path)) { include path.contains('/java/') ? '**/*.java' : '**/*.so' })
-    }
-    runtimeInputContract.launcherSources.each { inputs.file(file("src/main/java/com/deepseekharness/app/${it}")) }
-    (runtimeInputContract.generatorSources ?: []).each { inputs.file(rootProject.file(it)) }
+    inputs.files(rootProject.files('tools/source_layout.py', 'ci/source-layout.json'))
+    inputs.property('runtimeLauncherIdentityPaths', runtimeLauncherFiles)
+    inputs.files(runtimeLauncherFiles.values().collect { rootProject.file(it) })
     outputs.file(file("src/main/assets/runtime-descriptor.json"))
     commandLine(System.getenv("DSHA_PYTHON") ?: "python3", "-B", rootProject.file("tools/prepare-runtime-descriptor.py").absolutePath, "--check")
 }
@@ -549,7 +690,6 @@ def verifyUiLanguageResources = tasks.register("verifyUiLanguageResources", Exec
 tasks.named("preBuild").configure { dependsOn(verifyUiLanguageResources) }
 
 dependencies {
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.webkit:webkit:1.15.0'
     implementation 'com.google.android.material:material:1.11.0'
@@ -567,15 +707,8 @@ dependencies {
     implementation 'org.bouncycastle:bcprov-jdk15to18:1.85.2'
     // 宿主凭据 YAML 仅使用 data-only SafeConstructor；来源、JAR 和许可由备份锁核验。
     implementation 'org.yaml:snakeyaml:2.4'
-    testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.robolectric:robolectric:4.15.1'
 }
 
-tasks.withType(Test).configureEach {
-    jvmArgs '--add-opens=java.base/java.io=ALL-UNNAMED'
-    def frameworkDirectory = System.getenv('DSHA_ROBOLECTRIC_DEPENDENCY_DIR')
-    if (frameworkDirectory) {
-        systemProperty 'robolectric.offline', 'true'
-        systemProperty 'robolectric.dependency.dir', frameworkDirectory
-    }
+if (gradle.ext.has('verifiedFileTrial')) {
+    apply from: rootProject.file('build-logic/verified-file-runtime-task.gradle')
 }

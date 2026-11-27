@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 稳定版专用：无障碍服务名加 Stable，与正式包、测试包区分。 -->
-<resources>
-    <string name="accessibility_service_label" formatted="false">"Controle de tela DSH-A-Su Stable"</string>
-</resources>

@@ -27,15 +27,71 @@ import com.deepseekharness.app.util.UiThemePreference;
  */
 public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivity {
   private final java.util.Map<String, Tile> tiles = new java.util.LinkedHashMap<>();
+  private static final String MODULE_GENERATION = "builtin.theme.generation";
+  private com.deepseekharness.app.contract.GenerationLease moduleLease;
+  private AutoCloseable retirement;
+  private ThemeChangeRequest changes = new ThemeChangeRequest(() -> false);
+
+  private boolean moduleActive() {
+    return moduleLease != null
+        && com.deepseekharness.app.contract.BuiltinModules.themeActive(moduleLease)
+        && !isFinishing()
+        && !isDestroyed();
+  }
+
   private float touchX = -1f, touchY = -1f;
 
+  private void commit(Runnable change) {
+    if (!moduleActive()) return;
+    moduleLease.runIfActive(
+        () -> {
+          if (moduleActive()) change.run();
+        });
+  }
+
   static void open(Context context) {
-    context.startActivity(new Intent(context, ThemeActivity.class));
+    var registry = com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(context);
+    var lease = com.deepseekharness.app.contract.BuiltinModules.themeLease(registry);
+    if (lease == null || SettingsFragment.visibleTheme(registry) == null) return;
+    context.startActivity(
+        new Intent(context, ThemeActivity.class)
+            .putExtra(MODULE_GENERATION, lease.generation())
+            .putExtra(
+                "builtin.theme.epoch",
+                com.deepseekharness.app.contract.BuiltinModules.PROCESS_EPOCH)
+            .putExtra("builtin.theme.page", java.util.UUID.randomUUID().toString()));
   }
 
   @Override
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
+    var registry = com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(this);
+    moduleLease = com.deepseekharness.app.contract.BuiltinModules.themeLease(registry);
+    if (moduleLease == null
+        || getIntent().getLongExtra(MODULE_GENERATION, 0) != moduleLease.generation()
+        || !com.deepseekharness.app.contract.BuiltinModules.PROCESS_EPOCH.equals(
+            getIntent().getStringExtra("builtin.theme.epoch"))
+        || getIntent().getStringExtra("builtin.theme.page") == null) {
+      finish();
+      return;
+    }
+    var lease = moduleLease;
+    changes =
+        new ThemeChangeRequest(
+            () -> com.deepseekharness.app.contract.BuiltinModules.themeActive(lease),
+            getIntent().getStringExtra("builtin.theme.page"));
+    var requests = changes;
+    // 页面订阅在 onDestroy 解绑；Pending 另订阅本代退休并在领取/TTL 时解绑。
+    retirement =
+        com.deepseekharness.app.contract.BuiltinModules.observeThemeRetirement(
+            registry,
+            moduleLease,
+            () ->
+                runOnUiThread(
+                    () -> {
+                      requests.retireModule();
+                      finish();
+                    }));
     CardPage page = new CardPage(this, UiText.text("主题与外观"), UiText.text("选择应用的明暗外观，切换会立即生效。"));
     setContentView(page.root);
 
@@ -79,7 +135,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     sync.addView(webSyncRow(page));
 
     // 发起切换的就是本页：重建后领取切换前的截图并扩散。
-    ThemeReveal.consume(this);
+    ThemeReveal.consume(this, changes);
   }
 
   /** 记下最近一次按下位置，作为扩散圆心（窗口坐标）。键盘 / 无障碍点按退回卡片中心。 */
@@ -92,7 +148,24 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     return super.dispatchTouchEvent(event);
   }
 
+  @Override
+  protected void onDestroy() {
+    if (isChangingConfigurations()) changes.retire();
+    else changes.retireModule();
+    if (retirement != null) {
+      try {
+        retirement.close();
+      } catch (Exception ignored) {
+      }
+      retirement = null;
+    }
+    // 本页已领取的遮罩也须退休；尚待重建页领取的 Pending 不属于本页。
+    super.onDestroy();
+  }
+
   private void choose(String mode, View source) {
+    if (!moduleActive()) return;
+    changes.retire();
     String current = ThemeController.preference(this);
     if (mode.equals(current)) return;
     String message =
@@ -103,7 +176,7 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
                 : UiText.text("已切换黑夜模式");
     if (!ThemeController.changesAppearance(this, mode)) {
       // 明暗不变：不会重建，只更新选中态。
-      ThemeController.select(this, mode);
+      commit(() -> ThemeController.select(this, mode));
       renderSelection();
       source.announceForAccessibility(message);
       return;
@@ -111,23 +184,33 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     float[] center = revealCenter(source);
     String style = new ConfigStore(this).getThemeTransition();
     ThemeReveal.capture(
-        this, center[0], center[1], style, () -> ThemeController.select(this, mode));
+        this,
+        changes.begin(),
+        center[0],
+        center[1],
+        style,
+        () -> commit(() -> ThemeController.select(this, mode)));
   }
 
   /** 换调色板：与换明暗走同一套过渡；发起页立即重建，其余页回到前台时重建。 */
   private void choosePalette(String id, View source) {
+    if (!moduleActive()) return;
+    changes.retire();
     if (id.equals(ThemeController.palette(this))) return;
     float[] center = revealCenter(source);
     String style = new ConfigStore(this).getThemeTransition();
     ThemeReveal.capture(
         this,
+        changes.begin(),
         center[0],
         center[1],
         style,
-        () -> {
-          ThemeController.selectPalette(this, id);
-          recreate();
-        });
+        () ->
+            commit(
+                () -> {
+                  ThemeController.selectPalette(this, id);
+                  recreate();
+                }));
   }
 
   /** 一个配色色块：主色圆点 + 名称；选中时外圈描边。作为单选项暴露给无障碍。 */
@@ -247,7 +330,9 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
         });
     row.setOnClickListener(
         v -> {
-          new ConfigStore(this).setThemeTransition(style);
+          if (!moduleActive()) return;
+          changes.retire();
+          commit(() -> new ConfigStore(this).setThemeTransition(style));
           renderStyle(group);
           v.announceForAccessibility(UiText.format("已选择 %s", styleName(style)));
         });
@@ -305,7 +390,12 @@ public final class ThemeActivity extends androidx.appcompat.app.AppCompatActivit
     toggle.setChecked(config.isWebThemeSync());
     toggle.setShowText(false);
     toggle.setContentDescription(UiText.text("Web 界面跟随"));
-    toggle.setOnCheckedChangeListener((button, checked) -> config.setWebThemeSync(checked));
+    toggle.setOnCheckedChangeListener(
+        (button, checked) -> {
+          if (!moduleActive()) return;
+          changes.retire();
+          commit(() -> config.setWebThemeSync(checked));
+        });
     row.addView(toggle, new LinearLayout.LayoutParams(-2, -2));
     row.setOnClickListener(v -> toggle.toggle());
     row.setBackgroundResource(R.drawable.bg_action_plain);

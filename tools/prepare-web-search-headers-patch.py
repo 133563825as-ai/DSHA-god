@@ -163,6 +163,7 @@ def generate(modules):
 \t\t\treturn ambient !== void 0 && ambient.value.length > 0 ? ambient.value : void 0;''')
     recipe = dict(version=1, dshVersion=VERSION, module=MODULE, sourceSha256=SOURCE_SHA,
                   packageIntegrity=locked['integrity'], patchedSha256=hashlib.sha256(source.encode('utf8')).hexdigest(),
+                   expectedOutputSha256=hashlib.sha256(source.encode('utf8')).hexdigest(),
                   purpose='Validate each search header without changing credentials or precedence; report only fixed source/category and offending index/code point; distinguish local construction from fetch invocation.',
                   patches=patches)
     return json.dumps(recipe, ensure_ascii=False, indent=2) + '\n'

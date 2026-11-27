@@ -1,3 +1,8 @@
+// Kotlin 工具链（ADR-0004 决定一）：AGP 9.0+ 自带 built-in Kotlin，不再声明/应用
+// org.jetbrains.kotlin.android（该插件与 AGP 9 新 DSL 不兼容，AGP 10 起连 opt-out 都会移除）。
+// AGP 9.1.1 的运行时依赖固定 KGP 2.2.10；这里保存唯一版本事实，由根 build.gradle 的
+// buildscript classpath 显式 pin，禁止改成动态版本或 -SNAPSHOT。Kotlin 编译任务、stdlib
+// 依赖与 jvmTarget 默认值都由 AGP 提供，应用模块只做显式 jvmTarget=17 配置。
 pluginManagement {
     repositories {
         google()
@@ -16,5 +21,15 @@ dependencyResolutionManagement {
         }
     }
 }
+// 必须在 pluginManagement / dependencyResolutionManagement 之后；settings 先于工程脚本求值，
+// 根 build.gradle 的 buildscript 读取同一个值。
+gradle.ext.kotlinVersion = '2.2.10'
 rootProject.name = "deepseekharness"
+// build-logic/ 是复用根 classpath 的 applied Groovy 约定，不是产品模块或 included build。
+// Android 用 AGP built-in Kotlin；纯 JVM Kotlin 入口复用上面的固定 KGP 2.2.10。
 include ':app'
+
+// Explicit internal resolver trial; the normal repository path does not touch its inputs.
+if (gradle.startParameter.projectProperties.keySet().any { it in ['dsha.internalRepositoryMode', 'dsha.internalMaterialId'] }) {
+    apply from: new File(settingsDir, 'build-logic/verified-file-settings.gradle')
+}

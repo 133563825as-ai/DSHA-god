@@ -1435,7 +1435,7 @@
     "zh": "稳定版",
     "en": "Stable",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt",
       "app/src/main/res/layout/activity_update.xml"
     ]
   },
@@ -1778,7 +1778,7 @@
     "zh": "预览版",
     "en": "Preview",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt",
       "app/src/main/res/layout/activity_update.xml"
     ]
   },
@@ -1988,7 +1988,7 @@
     "zh": " · 兼容版",
     "en": " · Compatibility edition",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -2028,7 +2028,7 @@
     "zh": " · 标准版",
     "en": " · Standard edition",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -2036,7 +2036,7 @@
     "zh": " · 版本码 ",
     "en": " · Build ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -2950,7 +2950,7 @@
     "zh": "发现新版本 ",
     "en": "New version available: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt",
       "app/src/main/java/com/deepseekharness/app/ui/MainActivity.java"
     ]
   },
@@ -2960,7 +2960,7 @@
     "en": "Cancel",
     "files": [
       "app/src/low/java/com/deepseekharness/app/ui/GeckoPreviewActivity.java",
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java",
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt",
       "app/src/main/java/com/deepseekharness/app/ui/AdbPairActivity.java",
       "app/src/main/java/com/deepseekharness/app/ui/DeviceGrantsFragment.java",
       "app/src/main/java/com/deepseekharness/app/ui/ExtractActivity.java",
@@ -3459,7 +3459,7 @@
     "en": "Canceled",
     "files": [
       "app/src/main/java/com/deepseekharness/app/core/PluginTask.java",
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt",
       "app/src/main/java/com/deepseekharness/app/ui/WebDownloadModel.java"
     ]
   },
@@ -4095,7 +4095,7 @@
     "zh": "无法安装：",
     "en": "Cannot install: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -4425,7 +4425,7 @@
     "zh": "未允许安装更新，可稍后重试",
     "en": "Update installation was not allowed. Try again later.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -4601,7 +4601,7 @@
     "zh": "校验完成，返回此页面后继续安装",
     "en": "Verification complete. Return to this page to continue installation.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -4782,7 +4782,7 @@
     "zh": "正在重新校验安装包…",
     "en": "Verifying the APK again…",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -5967,7 +5967,7 @@
     "zh": "；可重试",
     "en": "; retry available",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ]
   },
   {
@@ -6087,7 +6087,7 @@
     "zh": "\n候选来源：",
     "en": "\nCandidate source: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -6151,7 +6151,7 @@
     "zh": "\n已保留 ",
     "en": "\nPreserved ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -6537,7 +6537,7 @@
     "zh": " 及已有下载文件，但无法确认查询来源；请联网重新检查，确认当前通道后才能下载/安装",
     "en": " and existing downloads, but their query source cannot be verified. Check online again and confirm the current channel before downloading or installing.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -7323,7 +7323,7 @@
     "zh": "DSHA 应用更新",
     "en": "DSHA app updates",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt"
     ]
   },
   {
@@ -7331,7 +7331,7 @@
     "zh": "DSHA 更新已就绪",
     "en": "DSHA update ready",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt"
     ]
   },
   {
@@ -9308,7 +9308,7 @@
     "zh": "下载及校验完成，点击「安装更新」继续",
     "en": "Download and verification complete. Tap Install update to continue.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9316,7 +9316,7 @@
     "zh": "下载尚未开始：",
     "en": "Download has not started: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9340,7 +9340,7 @@
     "zh": "下载暂停：",
     "en": "Download paused: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9348,7 +9348,7 @@
     "zh": "下载服务已中断，进度已保留，可继续下载",
     "en": "Download service interrupted. Progress is saved; resume downloading.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt"
     ]
   },
   {
@@ -9372,7 +9372,7 @@
     "zh": "下载重定向次数过多",
     "en": "Too many download redirects",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9380,7 +9380,7 @@
     "zh": "下载重定向缺少地址",
     "en": "Download redirect has no destination",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9388,7 +9388,7 @@
     "zh": "不匹配；切回来源通道或重新检查后才能下载/安装",
     "en": " does not match. Switch back to the source channel or check again before downloading/installing.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9732,7 +9732,7 @@
     "zh": "任务状态无法写入存储",
     "en": "Could not write task state to storage",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -9924,7 +9924,7 @@
     "zh": "候选来源与当前通道不匹配或任务已改变，请重新检查",
     "en": "Candidate source does not match the current channel, or the task changed. Check again.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10648,7 +10648,7 @@
     "zh": "失败：",
     "en": "Failed: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10664,7 +10664,7 @@
     "zh": "存储不足，请留出剩余下载大小加 32 MiB 空间",
     "en": "Insufficient storage. Leave space for the remaining download plus 32 MiB.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10808,8 +10808,8 @@
     "zh": "安装前校验失败：",
     "en": "Pre-installation verification failed: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java",
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -10817,7 +10817,7 @@
     "zh": "安装前校验已因进程重建中断，请点击「安装更新」重试",
     "en": "Pre-installation verification was interrupted by process recreation. Tap Install update to retry.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -10825,7 +10825,7 @@
     "zh": "安装包不支持当前 Android 版本",
     "en": "APK does not support this Android version",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10833,7 +10833,7 @@
     "zh": "安装包不是 DSHA",
     "en": "APK is not DSHA",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10841,7 +10841,7 @@
     "zh": "安装包不是当前高/低安卓版本",
     "en": "APK does not match the current Standard/Compatibility edition",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10857,7 +10857,7 @@
     "zh": "安装包已保留，安装前将重新校验",
     "en": "APK preserved. It will be verified again before installation.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10865,7 +10865,7 @@
     "zh": "安装包版本不匹配或不是更新版本",
     "en": "APK version does not match or is not newer",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -10873,7 +10873,7 @@
     "zh": "安装包签名不匹配",
     "en": "APK signature mismatch",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -11050,7 +11050,7 @@
     "zh": "尚未检查更新",
     "en": "Updates not yet checked",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -11170,7 +11170,7 @@
     "zh": "已取消下载，进度已保留",
     "en": "Download canceled; progress saved",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -11194,7 +11194,7 @@
     "zh": "已取消，可重新检查或下载",
     "en": "Canceled. Check or download again.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -11419,7 +11419,7 @@
     "zh": "应用更新下载",
     "en": "App update download",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt"
     ]
   },
   {
@@ -12437,7 +12437,7 @@
     "zh": "无法创建更新目录",
     "en": "Could not create update directory",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -12837,7 +12837,7 @@
     "zh": "无法读取安装包",
     "en": "Could not read APK",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -13078,7 +13078,7 @@
     "zh": "更新…",
     "en": "updates…",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13086,7 +13086,7 @@
     "zh": "更新候选已恢复，可重新检查或继续下载",
     "en": "Update candidate restored. Check again or continue downloading.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13094,7 +13094,7 @@
     "zh": "更新地址必须使用 HTTPS",
     "en": "Update URL must use HTTPS",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13102,7 +13102,7 @@
     "zh": "更新清单版本不兼容",
     "en": "Incompatible update manifest version",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13110,7 +13110,7 @@
     "zh": "更新清单过大",
     "en": "Update manifest is too large",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13435,7 +13435,7 @@
     "zh": "校验期间通道或候选已改变，请重试安装",
     "en": "The channel or candidate changed during verification. Retry installation.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13451,7 +13451,7 @@
     "zh": "检查",
     "en": "Check",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13571,7 +13571,7 @@
     "zh": "正在下载，离开页面后继续",
     "en": "Downloading; continues when you leave this page",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13627,8 +13627,8 @@
     "zh": "正在准备下载…",
     "en": "Preparing download…",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java",
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt",
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13636,7 +13636,7 @@
     "zh": "正在准备下载，可离开此页面",
     "en": "Preparing download; you may leave this page",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13740,7 +13740,7 @@
     "zh": "正在恢复下载…",
     "en": "Resuming download…",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13828,7 +13828,7 @@
     "zh": "正在核验包名、版本与签名…",
     "en": "Verifying package name, version and signature…",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13836,7 +13836,7 @@
     "zh": "正在检查",
     "en": "Checking ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -13980,7 +13980,7 @@
     "zh": "此通道暂无适合当前设备的更新；当前版本码 ",
     "en": "This channel has no update for the current device; current build ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -14589,7 +14589,7 @@
     "zh": "稳定通道",
     "en": "Stable channel",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -14725,7 +14725,7 @@
     "zh": "签名与已安装版本不同，已阻止安装",
     "en": "Signature differs from the installed version; installation blocked",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -14749,7 +14749,7 @@
     "zh": "系统已暂停长时间下载，进度已保留，请在更新页继续",
     "en": "Android paused the long download. Progress is saved; resume from Updates.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.java"
+      "app/src/main/java/com/deepseekharness/app/UpdateDownloadService.kt"
     ]
   },
   {
@@ -15382,7 +15382,7 @@
     "zh": "请先下载并校验安装包",
     "en": "Download and verify the APK first",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -15390,7 +15390,7 @@
     "zh": "请先在当前通道下载并校验安装包",
     "en": "Download and verify the APK from the current channel first",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -15793,7 +15793,7 @@
     "zh": "通道或候选已改变，请重新检查后重试安装",
     "en": "Channel or candidate changed. Check again before retrying installation.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -16009,7 +16009,7 @@
     "zh": "预览通道",
     "en": "Preview channel",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16049,7 +16049,7 @@
     "zh": "（来源：",
     "en": "(source: ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16113,7 +16113,7 @@
     "zh": "），与当前",
     "en": "), compared with the current ",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16242,7 +16242,7 @@
     "zh": "，请稍后重试或使用发布页下载",
     "en": "; try later or download from the releases page",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16282,7 +16282,7 @@
     "zh": "；保存任务状态失败，下次需要重新检查",
     "en": "; could not save task state, check again next time",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16290,7 +16290,7 @@
     "zh": "；保留此通道上次结果，可重试检查或继续使用已下载包",
     "en": "; retaining this channel's previous result. Retry the check or use the downloaded package.",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16306,7 +16306,7 @@
     "zh": "；可继续下载",
     "en": "; download can resume",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16314,7 +16314,7 @@
     "zh": "；可重新检查",
     "en": "; check again",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16362,7 +16362,7 @@
     "zh": "；请在更新页重试",
     "en": "; retry on the Updates page",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ]
   },
   {
@@ -16386,7 +16386,7 @@
     "zh": "；请重试",
     "en": "; retry",
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ]
   },
   {
@@ -26251,7 +26251,7 @@
     "en": "Checking %s failed: %s; this channel's previous result is retained. Retry the check or use the downloaded package",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_df5baf1459d5"
   },
@@ -26260,7 +26260,7 @@
     "en": "Checking %s failed: %s; retry the check",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_af240eb27b83"
   },
@@ -26269,7 +26269,7 @@
     "en": "Checking for %s updates…",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_8fb32916b6cc"
   },
@@ -26278,7 +26278,7 @@
     "en": "New version found: %s",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_40951b018bb0"
   },
@@ -26287,7 +26287,7 @@
     "en": "This channel has no update compatible with this device; current version code %s",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_27feea79601c"
   },
@@ -26296,7 +26296,7 @@
     "en": "Download did not start: %s; retry on the update page",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_9462f02584ff"
   },
@@ -26305,7 +26305,7 @@
     "en": "Download paused: %s; you can resume it",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_d1e6a9e39759"
   },
@@ -26314,7 +26314,7 @@
     "en": "%s\nRetained %s and its existing downloads, but the check channel is unknown; check online and confirm the current channel before downloading or installing",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_edd79ba77945"
   },
@@ -26323,7 +26323,7 @@
     "en": "%s\nCandidate channel: %s",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_4eb255f0ddaf"
   },
@@ -26332,7 +26332,7 @@
     "en": "%s\nRetained %s (source: %s), which does not match the current %s; switch back to its channel or check again before downloading or installing",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_81ee7efd5622"
   },
@@ -26341,7 +26341,7 @@
     "en": "%s; saving the task state failed; check again next time",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_d991c09c1250"
   },
@@ -26350,7 +26350,7 @@
     "en": "Pre-install validation failed: %s",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_5c72b57882fb"
   },
@@ -26359,7 +26359,7 @@
     "en": "Pre-install validation failed: %s; retry",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateRepository.kt"
     ],
     "id": "build156_3f4626726564"
   },
@@ -26368,7 +26368,7 @@
     "en": "The package is not a non-debug release",
     "uiFormat": false,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.java"
+      "app/src/main/java/com/deepseekharness/app/core/UpdateEngine.kt"
     ],
     "id": "build156_9a1651cb3fb2"
   },
@@ -28034,7 +28034,7 @@
     "en": "Cannot install: %s; retry available",
     "uiFormat": true,
     "files": [
-      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.java"
+      "app/src/main/java/com/deepseekharness/app/ui/UpdateActivity.kt"
     ],
     "id": "build156_3308ca34a13f"
   },
@@ -30799,6 +30799,119 @@
     "en": "Normal stop did not confirm the previous build exited. Force stop may interrupt writes.\\n\\nConfirming ends the old process first; identity changes are refused; cancelling keeps the current state.",
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ]
+  },
+  {
+    "id": "m9503",
+    "zh": "Root 模块清单",
+    "en": "Root module inventory",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java",
+      "app/src/main/java/com/deepseekharness/app/ui/DeviceChannelsFragment.java"
+    ]
+  },
+  {
+    "id": "m9504",
+    "zh": "仅在点击读取后申请本机 Root，读取已支持管理器的模块元数据。未知版本或无法核验时显示不可用；此页没有模块写操作。",
+    "en": "Root is requested only after you tap Read. This page reads module metadata for supported managers; unverified versions remain unavailable. It has no module write actions.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9505",
+    "zh": "读取清单",
+    "en": "Read inventory",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9506",
+    "zh": "尚未读取",
+    "en": "Not read yet",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9507",
+    "zh": "请先允许 Root Shell",
+    "en": "Enable Root shell first",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9508",
+    "zh": "授权已变化，请重新核对",
+    "en": "Authorization changed. Check it again.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9509",
+    "zh": "管理器版本尚不支持或无法核验",
+    "en": "Manager version unsupported or unverified",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9510",
+    "zh": "无法读取模块目录",
+    "en": "Module directory is unreadable",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9511",
+    "zh": "读取结果未知或不可用",
+    "en": "Inventory result unknown or unavailable",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9512",
+    "zh": "清单读取完整",
+    "en": "Inventory complete",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9513",
+    "zh": "清单不完整",
+    "en": "Inventory incomplete",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9514",
+    "zh": "没有模块",
+    "en": "No modules",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9515",
+    "zh": "等待移除",
+    "en": "Removal pending",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
+    ]
+  },
+  {
+    "id": "m9516",
+    "zh": "已停用",
+    "en": "Disabled",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/RootModulesFragment.java"
     ]
   }
 ]

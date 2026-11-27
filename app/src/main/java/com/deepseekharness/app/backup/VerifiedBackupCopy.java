@@ -10,11 +10,22 @@ public final class VerifiedBackupCopy {
   public final long bytes, entries, created;
   public final Map<String, Object> metadata;
 
-  private VerifiedBackupCopy(String id, File artifact, Map<String, Object> metadata)
+  final BackupFileSystem.Node directoryNode, artifactNode;
+  final String proofDigest;
+
+  VerifiedBackupCopy(
+      String id,
+      File artifact,
+      BackupFileSystem.Node directoryNode,
+      BackupFileSystem.Node artifactNode,
+      byte[] proof)
       throws IOException {
     this.id = id;
     this.artifact = artifact;
-    this.metadata = metadata;
+    this.directoryNode = directoryNode;
+    this.artifactNode = artifactNode;
+    proofDigest = BackupArchive.hex(BackupArchive.sha().digest(proof));
+    this.metadata = BackupJson.read(proof, BackupLimits.MANIFEST);
     sha256 = BackupJson.string(metadata, "encryptedSha256");
     bytes = BackupJson.number(metadata, "encryptedBytes");
     entries = BackupJson.number(metadata, "entries");
@@ -50,6 +61,8 @@ public final class VerifiedBackupCopy {
         || entries > BackupLimits.ENTRIES
         || !Set.of("QUIESCENT", "EXTERNAL_CHECKED", "PARTIAL", "BEST_EFFORT").contains(integrity))
       throw new IOException("VERIFIED_COPY_RECORD");
+    if (!artifactNode.type.equals("FILE") || artifactNode.size != bytes)
+      throw new IOException("VERIFIED_COPY_CHANGED");
   }
 
   public static VerifiedBackupCopy inspect(BackupFileSystem fs, File operations, String id)
@@ -58,20 +71,26 @@ public final class VerifiedBackupCopy {
       throw new IOException("VERIFIED_COPY_ID");
     File directory = HostOperationArchive.locate(fs, operations, id),
         artifact = fs.child(directory, "portable.dshbak");
+    var before = fs.stat(directory);
+    var file = fs.stat(artifact);
     var copy =
         new VerifiedBackupCopy(
             id,
             artifact,
-            BackupJson.read(
-                fs.small(fs.child(directory, "verified.json"), BackupLimits.MANIFEST),
-                BackupLimits.MANIFEST));
-    var file = fs.stat(artifact);
-    if (!file.type.equals("FILE") || file.size != copy.bytes)
+            before,
+            file,
+            fs.small(fs.child(directory, "verified.json"), BackupLimits.MANIFEST));
+    if (!before.same(fs.stat(directory)) || !file.same(fs.stat(artifact)))
       throw new IOException("VERIFIED_COPY_CHANGED");
     return copy;
   }
 
   public void verify(BackupFileSystem fs, BackupControl control) throws IOException {
+    if (!matchesDigest(fs, control)) throw new IOException("VERIFIED_COPY_CHANGED");
+  }
+
+  /** False only for a completed digest comparison. Read, format, cancellation and close errors propagate. */
+  boolean matchesDigest(BackupFileSystem fs, BackupControl control) throws IOException {
     try (InputStream input = fs.read(artifact, fs.stat(artifact))) {
       byte[] header = new byte[8];
       new DataInputStream(input).readFully(header);
@@ -79,8 +98,7 @@ public final class VerifiedBackupCopy {
         throw new IOException("VERIFIED_COPY_FORMAT");
     }
     try (InputStream input = fs.read(artifact, fs.stat(artifact))) {
-      if (!sha256.equals(BackupArchive.digest(input, control)))
-        throw new IOException("VERIFIED_COPY_CHANGED");
+      return sha256.equals(BackupArchive.digest(input, control));
     }
   }
 

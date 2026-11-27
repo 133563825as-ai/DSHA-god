@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.control.ControlTaskAuthority;
 import com.deepseekharness.app.util.ScreenActivityEvent;
 import com.deepseekharness.app.util.ScreenActivityFeed;
@@ -48,7 +49,7 @@ public final class ScreenActivityRecorder {
    * 标记本任务的记录开始（幂等）。身份变化时先清空上一个任务的事件，并刷新输入法/自身包名排除表。
    */
   public static void observeTask(Context context, ControlTaskAuthority.Binding binding) {
-    if (binding == null) return;
+    if (BuildConfig.REBIRTH_CANDIDATE || binding == null) return;
     if (!FEED.begin(binding.identity())) return;
     refreshIgnored(context);
   }
@@ -75,7 +76,7 @@ public final class ScreenActivityRecorder {
 
   /** 无障碍回调线程调用；未在记录任务时零成本返回，不读节点。 */
   public static void recordAccessibilityEvent(AccessibilityEvent event) {
-    if (event == null || !FEED.recording()) return;
+    if (BuildConfig.REBIRTH_CANDIDATE || event == null || !FEED.recording()) return;
     ScreenActivityPolicy.EventType type = eventType(event.getEventType());
     if (type == null) return;
     String packageName = text(event.getPackageName());
@@ -122,6 +123,7 @@ public final class ScreenActivityRecorder {
 
   /** 语义节点动作（点按/长按/滚动/输入）被系统接受后记录助手动作。 */
   public static void assistantNode(String action, ScreenTarget target, AccessibilityNodeInfo node) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     if (target == null || node == null || SensitiveAppPolicy.sensitive(target.packageName)) return;
     if (!FEED.recording()) return;
     try {
@@ -142,6 +144,7 @@ public final class ScreenActivityRecorder {
   /** 坐标手势被系统接受后记录助手动作；只记起始点，不保存轨迹。 */
   public static void assistantGesture(
       String gesture, ScreenTarget target, int x1, int y1, int x2, int y2) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     if (target == null || SensitiveAppPolicy.sensitive(target.packageName)) return;
     if (!FEED.recording()) return;
     recordAssistant(gesture, target, "", "", x1, y1, false);
@@ -149,6 +152,7 @@ public final class ScreenActivityRecorder {
 
   /** 导航键被系统接受后记录助手动作。 */
   public static void assistantKey(String key, ScreenTarget target) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     if (target == null || SensitiveAppPolicy.sensitive(target.packageName)) return;
     if (!FEED.recording()) return;
     recordAssistant("key:" + key, target, "", "", -1, -1, false);
@@ -182,6 +186,7 @@ public final class ScreenActivityRecorder {
 
   /** 把最近活动附到 {@code /app/ui/*} 的 JSON 回执里；非 JSON 回执原样返回。 */
   public static String attach(String reply, ControlTaskAuthority.Binding binding) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return reply;
     if (reply == null || reply.isEmpty() || binding == null || reply.charAt(0) != '{') return reply;
     try {
       JSONObject value = new JSONObject(reply);
@@ -197,6 +202,8 @@ public final class ScreenActivityRecorder {
    * 返回空 events，不返回别的任务内容。
    */
   public static String history(String since, String limit, String identity) {
+    if (BuildConfig.REBIRTH_CANDIDATE)
+      return ScreenReply.refused("TRIAL_ACTIVITY_HISTORY_UNAVAILABLE").toString();
     try {
       ScreenActivityQuery.Parsed query = ScreenActivityQuery.parse(since, limit);
       ScreenActivityFeed.History history = FEED.history(query.since(), query.limit(), identity);

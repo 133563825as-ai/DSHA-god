@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:node="remove" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" tools:node="remove" />
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/rebirth_no_os_backup"
+        android:dataExtractionRules="@xml/rebirth_no_os_transfer"
+        tools:replace="android:allowBackup,android:fullBackupContent,android:dataExtractionRules">
+        <service android:name="com.deepseekharness.app.DshaAccessibilityService" tools:node="remove" />
+        <service android:name="com.deepseekharness.app.DeviceBridgeService" tools:node="remove" />
+        <service android:name="com.deepseekharness.app.ShellService" tools:node="remove" />
+        <provider android:name="rikka.shizuku.ShizukuProvider" tools:node="remove" />
+        <receiver android:name="com.deepseekharness.app.AdbKeepAliveReceiver" tools:node="remove" />
+    </application>
+</manifest>

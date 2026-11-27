@@ -27,28 +27,6 @@ public final class FrameRatePolicy {
     return selected;
   }
 
-  /**
-   * 选中刷新率对应的显示模式 id（同分辨率的候选里刷新率最接近者）；0 表示不指定。
-   *
-   * <p>部分厂商系统只认 {@code preferredDisplayModeId}、忽略 {@code preferredRefreshRate}，两者一起设置。</p>
-   */
-  public static int modeFor(float selectedHz, int[] modeIds, float[] ratesHz) {
-    if (!(selectedHz > 0f)
-        || modeIds == null
-        || ratesHz == null
-        || modeIds.length != ratesHz.length) return 0;
-    int best = 0;
-    float distance = Float.MAX_VALUE;
-    for (int i = 0; i < modeIds.length; i++) {
-      float d = Math.abs(ratesHz[i] - selectedHz);
-      if (finite(ratesHz[i]) && d <= RATE_TOLERANCE_HZ && d < distance) {
-        best = modeIds[i];
-        distance = d;
-      }
-    }
-    return best;
-  }
-
   private static boolean finite(float value) {
     return !Float.isNaN(value) && !Float.isInfinite(value);
   }

@@ -140,6 +140,15 @@ public final class VirtualScreenActivity extends AppCompatActivity {
   @Override
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      Toast.makeText(
+              this,
+              t("本次试用不提供虚拟屏。", "Virtual screens are unavailable in this trial."),
+              Toast.LENGTH_LONG)
+          .show();
+      finish();
+      return;
+    }
     manager = VirtualScreenManager.from(this);
     setContentView(R.layout.activity_virtual_screen);
     scroll = findViewById(R.id.vscreen_scroll);
@@ -1536,6 +1545,7 @@ public final class VirtualScreenActivity extends AppCompatActivity {
   @Override
   protected void onResume() {
     super.onResume();
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     visible = true;
     callbackEpoch++;
     beginPreview();

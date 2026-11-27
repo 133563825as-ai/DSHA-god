@@ -1,0 +1,243 @@
+name: Rebirth current source software gates
+
+# 当前源码、同run门禁；不会生成APK，不引用旧359成功回执。
+on:
+  workflow_call:
+    inputs:
+      expected_sha:
+        required: true
+        type: string
+      handoff:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  contracts:
+    uses: ./.github/workflows/_node-contracts.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+  java-format:
+    uses: ./.github/workflows/_node-java-format.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+  kotlin-format:
+    uses: ./.github/workflows/_node-kotlin-format.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+  rust-check:
+    uses: ./.github/workflows/_node-rust.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+      mode: check
+      artifact: rebirth-rust-check
+  rust-differential:
+    uses: ./.github/workflows/_node-rust.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+      mode: differential
+      artifact: rebirth-rust-differential
+  host-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-rebirth-host
+      DSHA_PYTHON: python3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          gradle-cache: 'false'
+      - uses: ./.github/actions/android-sdk
+        with:
+          ndk: 'true'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ inputs.handoff }}
+          path: ${{ runner.temp }}/rebirth-handoff
+      - name: Current same-run inputs and native x64 host fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/rebirth-validation
+          git rev-parse HEAD > out/rebirth-validation/source-commit.txt
+          python3 tools/ci-handoff.py unpack --dir "$RUNNER_TEMP/rebirth-handoff"
+          python3 tools/verify-runtime-descriptor-source.py
+          # 保留冻结ARM64归档；只建立当前Linux x64 npm原生测试依赖，不重建发行归档。
+          python3 tools/prepare-test-runtime.py --platform host
+          python3 - <<'PY'
+          import json, os, pathlib
+          pointer = json.loads(pathlib.Path('app/build/test-runtimes/current.json').read_text())
+          if pointer['platform'] != {'os': 'linux', 'cpu': 'x64'} or pointer['archiveCurrent'] is not True:
+              raise SystemExit('CURRENT_NATIVE_HOST_FIXTURE_REQUIRED')
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('DSHA_TEST_RUNTIME=' + pointer['raw'] + '\n')
+              out.write('DSHA_TEST_MANAGED_RUNTIME=' + pointer['managed'] + '\n')
+              out.write('DSHA_ROBOLECTRIC_DEPENDENCY_DIR=' + os.environ['RUNNER_TEMP'] + '/robolectric-deps\n')
+              out.write('PLAYWRIGHT_BROWSERS_PATH=' + os.environ['RUNNER_TEMP'] + '/rebirth-browsers\n')
+          PY
+          python3 tools/prepare-semver-reference.py
+          npm ci --prefix tools/ci-browser --ignore-scripts --no-audit --no-fund
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/rebirth-browsers"
+          node tools/ci-browser/node_modules/playwright/cli.js install --with-deps chromium
+          python3 tools/prepare-browser-react-reference.py
+          python3 tools/prepare-sprout-host-jars.py --prepare
+          python3 tools/prepare-sprout-host-jars.py --check
+          python3 tools/test-vscreen-manager-http.py --self-test
+      - name: Trusted Ubuntu Gradle task graph fence and host dependency preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 本机tools/dsha-gradle是诊断拒绝器，不能用于独立Ubuntu CI执行项目任务。
+          # 全新CI home仅安装此固定受管init；它同时约束software脚本内部wrapper。
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cat > "$GRADLE_USER_HOME/init.d/rebirth-gates.gradle" <<'GRADLE'
+          gradle.startParameter.setParallelProjectExecutionEnabled(false)
+          gradle.startParameter.setMaxWorkerCount(2)
+          gradle.taskGraph.whenReady { graph ->
+            def forbidden = graph.allTasks.findAll { t ->
+              def n = t.name
+              def type = t.class.name
+              // packageStandard*Resources是aapt资源输入，不是APK，不能泛禁所有package前缀。
+              n ==~ /(?i)(assemble|publish|install|uninstall|clean|sign|validateSigning).*/ ||
+              n ==~ /(?i)(package|bundle)Standard(Debug|Release)(AndroidTest)?/ ||
+              n ==~ /(?i)(package|bundle).*AndroidTest.*/ ||
+              type.contains('PackageApplication') || type.contains('PackageAndroidArtifact') ||
+              type.contains('FinalizeBundleTask') || type.contains('PackageBundleTask')
+            }
+            if (!forbidden.empty) throw new GradleException('TEST_ONLY_FORBIDS_ARTIFACT_TASKS: ' + forbidden*.path)
+          }
+          gradle.projectsEvaluated {
+            rootProject.allprojects { p ->
+              p.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { t ->
+                t.maxParallelForks = 1
+                // 保持生产全套Robolectric需要的2GiB，不因CI包装降低原测试预算。
+                t.maxHeapSize = '2048m'
+              }
+            }
+          }
+          GRADLE
+          # 只覆盖CI临时home，不改源码gradle.properties或Android SDK。
+          cat > "$GRADLE_USER_HOME/gradle.properties" <<'PROPERTIES'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          org.gradle.workers.max=2
+          PROPERTIES
+          cat > "$RUNNER_TEMP/rebirth-host-deps.init.gradle" <<'GRADLE'
+          allprojects {
+            if (project.path == ':app') {
+              configurations.create('rebirthHostFixtures') { transitive = false }
+              dependencies {
+                rebirthHostFixtures 'junit:junit:4.13.2'
+                rebirthHostFixtures 'org.hamcrest:hamcrest-core:1.3'
+                rebirthHostFixtures 'com.google.code.gson:gson:2.13.1'
+                rebirthHostFixtures 'org.yaml:snakeyaml:2.4'
+                rebirthHostFixtures 'org.bouncycastle:bcprov-jdk15to18:1.85.2'
+                rebirthHostFixtures 'androidx.annotation:annotation-jvm:1.9.1'
+              }
+              tasks.register('prepareRebirthHostFixtures') {
+                doLast { configurations.rebirthHostFixtures.files.each { println it } }
+              }
+            }
+          }
+          GRADLE
+          bash gradlew --version --no-daemon
+          bash gradlew :app:mapStandardReleaseSourceSetPaths --no-daemon --max-workers=2
+          bash gradlew :app:prepareRebirthHostFixtures -I "$RUNNER_TEMP/rebirth-host-deps.init.gradle" --no-daemon --max-workers=2
+          mkdir -p "$RUNNER_TEMP/rebirth-toolchains"
+          ln -s "$ANDROID_HOME" "$RUNNER_TEMP/rebirth-toolchains/android-sdk"
+          ln -s "$GRADLE_USER_HOME" "$RUNNER_TEMP/rebirth-toolchains/gradle-user-home"
+          python3 - <<'PY'
+          import os, pathlib, tarfile
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'rebirth-pnpm'
+          out.mkdir()
+          prefix = 'usr/local/lib/dsha-pnpm/'
+          with tarfile.open('app/src/main/assets/pnpm-runtime.bin', 'r:gz') as archive:
+              for item in archive:
+                  name = item.name.removeprefix('./')
+                  if not name.startswith(prefix):
+                      continue
+                  relative = pathlib.PurePosixPath(name[len(prefix):])
+                  if relative.is_absolute() or '..' in relative.parts or item.issym() or item.islnk():
+                      raise SystemExit('UNSAFE_PNPM_MEMBER')
+                  if item.isfile():
+                      target = out / str(relative)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      with target.open('xb') as stream:
+                          stream.write(archive.extractfile(item).read())
+          if not (out / 'dist/pnpm.cjs').is_file():
+              raise SystemExit('PNPM_CLI_MISSING')
+          PY
+      - name: L1 complete fast gates
+        id: l1_fast
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l1-fast exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 tools/run-host-tests.py --stage fast --raw "$DSHA_TEST_RUNTIME" --managed "$DSHA_TEST_MANAGED_RUNTIME" --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/rebirth-toolchains" --pnpm-cli "$RUNNER_TEMP/rebirth-pnpm/dist/pnpm.cjs" --output app/build/host-fast-rebirth-ci 2>&1 | tee out/rebirth-validation/host-fast.log
+      - name: L3 locked historical input
+        id: l3_inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l3-historical-input exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 - <<'PY'
+          import importlib.util, os, pathlib, urllib.request
+          spec = importlib.util.spec_from_file_location('previous_fixture', 'tools/previous-runtime-fixture.py')
+          fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
+          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'rebirth-previous-runtime.apk'
+          if source.exists():
+              raise SystemExit('HISTORICAL_FIXTURE_TARGET_EXISTS')
+          request = urllib.request.Request(fixture.CONTRACT.url, headers={'User-Agent': 'DSHA-Rebirth-Test-CI'})
+          with urllib.request.urlopen(request, timeout=60) as response, source.open('xb') as output:
+              size = 0
+              while True:
+                  chunk = response.read(1024 * 1024)
+                  if not chunk:
+                      break
+                  size += len(chunk)
+                  if size > 512 * 1024 * 1024:
+                      raise SystemExit('HISTORICAL_FIXTURE_SIZE_LIMIT')
+                  output.write(chunk)
+          fixture.verify_apk(source)
+          PY
+      - name: L3 complete runtime gates
+        id: l3_runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; printf "::error::gate=l3-runtime exitCode=%s\n" "$rc"; exit "$rc"' ERR
+          python3 tools/run-host-tests.py --stage runtime --raw "$DSHA_TEST_RUNTIME" --managed "$DSHA_TEST_MANAGED_RUNTIME" --jdk "$JAVA_HOME" --toolchain-root "$RUNNER_TEMP/rebirth-toolchains" --pnpm-cli "$RUNNER_TEMP/rebirth-pnpm/dist/pnpm.cjs" --previous-runtime-apk "$RUNNER_TEMP/rebirth-previous-runtime.apk" --playwright "$GITHUB_WORKSPACE/tools/ci-browser/node_modules/playwright" --browsers-path "$PLAYWRIGHT_BROWSERS_PATH" --output app/build/host-runtime-rebirth-ci 2>&1 | tee out/rebirth-validation/host-runtime.log
+      - name: Upload complete host evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rebirth-current-host
+          path: |
+            out/rebirth-validation
+            app/build/host-fast-rebirth-ci
+            app/build/host-runtime-rebirth-ci
+          if-no-files-found: error
+          retention-days: 14
+  unit:
+    uses: ./.github/workflows/_node-unit-tests.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+      mode: full
+      handoff: ${{ inputs.handoff }}
+      require_fixtures: true
+      forks: 1
+      rust_host: true
+      sunset_test: false
+      artifact: rebirth-current-unit
+  lint:
+    uses: ./.github/workflows/_node-lint.yml
+    with:
+      ref: ${{ inputs.expected_sha }}
+      handoff: ${{ inputs.handoff }}
+      sunset_test: false
+      artifact: rebirth-current-lint

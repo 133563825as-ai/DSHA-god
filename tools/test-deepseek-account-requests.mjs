@@ -197,11 +197,27 @@ try{
       await browser.load('dsh-client-ui-settings-account',[clientPatch.recipe]);
       const observed=await browser.page.evaluate(async()=>{
         const messages=[],dispose=[];
+        // 与 Cordis effect/whenAllowed 一致：同步安装 callback，函数或迭代器产出的 disposer
+        // 归入测试生命周期；否则只补一个空 whenAccess 会让 apply 完成但账号读取永远不启动。
+        const install=callback=>{
+          const effect=callback();
+          if(typeof effect==='function'){dispose.push(effect);return effect;}
+          if(effect&&typeof effect[Symbol.iterator]==='function'){
+            const cleanups=[];
+            for(const value of effect)if(typeof value==='function')cleanups.push(value);
+            const cleanup=async()=>{for(const fn of cleanups.splice(0).reverse())await fn();};
+            dispose.push(cleanup);return cleanup;
+          }
+          return ()=>{};
+        };
         console.error=(...args)=>messages.push(args);
         const stream={async *[Symbol.asyncIterator](){yield {value:{status:'credential-stored',attempt:null,links:{}},accept(){}};},async dispose(){}};
-        const ctx={effect(fn){const cleanup=fn();if(typeof cleanup==='function')dispose.push(cleanup);return cleanup;},
+        const ctx={effect:install,
           locale:{register(){return ()=>{};},bind(){return key=>key;},getSnapshot(){return {active:'en'};}},
           theme:{getTheme(){return {active:{colorScheme:'light'}};}},slots:{inject(){}},
+          // 只模拟 synthetic account/watch 已授权且本例不撤销的分支；不证明拒绝／撤销或宿主权限强制执行。
+          // 真实客户端借此安装 stream/UI，空实现会使下方两条失败读取断言不被执行。
+          remoteAccess:{whenAccess(action,callback){if(action!=='account/watch')throw Error('Unexpected synthetic access action');return install(callback);}},
           remote:{$stream(){return stream;},account:{async getProfile(){return {ok:true,value:{status:'failed'}};},async getBalance(){return {ok:true,value:{status:'failed'}};},async getUnnotifiedBonuses(){return {ok:true,value:null};}}}};
         auditExports['@deepseek-ai/dsh-client-ui-settings-account'].apply(ctx);
         await new Promise(resolve=>setTimeout(resolve,40));for(const cleanup of dispose.reverse())await cleanup();

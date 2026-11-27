@@ -4,18 +4,19 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import {
   attachPolicy, captureExecution, prepareOperation, verifyDispatch,
-  preparedEnvironment, verifyBashRequest, guardIntent,
+  preparedEnvironment, verifyBashRequest, verifyGlobalConsent, guardIntent,
 } from '../app/src/main/assets/destructive-policy/index.js';
 import { classifyCommand } from '../app/src/main/assets/destructive-policy/destructive.js';
 
 const FULL = 'danger-full-access', GUARDED = 'guarded-full-access';
 const CWD = '/dsha-memory-workspace', COMMAND = 'mkdir -p /tmp/dsha-memory-only';
+const target = { targetKey: 'memory:file', displayPath: '/dsha-memory-file' };
 const results = [];
 let sequence = 0;
 
-// This suite isolates the official session-preset proof. The independent native
-// prerequisite is explicitly available and OFF, rather than missing or ON.
-// Global consent mutations and unavailable reads have their own companion suite.
+// Preset facts have no user-action provenance, even when all providers agree.
+// Use independent mock native consent for the positive and revocation controls.
+let activeNative;
 const originalLoad = Module._load;
 const nativeOff = Object.freeze({ schema: 1, available: true, globalAllow: false, revision: 0,
   installationId: '11111111-2222-3333-4444-555555555555',
@@ -27,11 +28,12 @@ Module._load = function(request, ...args) {
     bridgeFetch: async (route, init) => {
       assert.equal(route, '/device/consent'); assert.equal(init.expectedConnectionGeneration, 'controlled-native-off');
       assert(init.signal instanceof AbortSignal);
-      return { ok: true, json: async () => ({ result: JSON.stringify(nativeOff) }) };
+      return { ok: true, json: async () => ({ result: JSON.stringify(activeNative) }) };
     } };
 };
 
-function fixture({ preset = FULL, mode = FULL, policy = 'never', raw, agentless = false } = {}) {
+function fixture({ preset = FULL, mode = FULL, policy = 'never', raw, agentless = false, nativeOn = false } = {}) {
+  activeNative = { ...nativeOff, globalAllow: nativeOn };
   const state = { preset, mode, policy, raw: raw ?? { preset, sandbox: mode, approval: policy, seeded: false } };
   const counts = { approvals: 0, effects: 0, ensures: 0, stats: 0 };
   const disposers = [], session = { header: { cwd: CWD } };
@@ -68,9 +70,8 @@ function fixture({ preset = FULL, mode = FULL, policy = 'never', raw, agentless 
     captureExecution(runtime, exec, tool);
     return { exec, tool, prepare: () => prepareOperation(runtime, exec), dispatch: () => verifyDispatch(runtime, exec, tool), effect: () => tool.execute(exec.arguments, exec) };
   }
-  return { state, counts, services, ctx, runtime, session, captured,
+  return { state, counts, services, ctx, runtime, session, captured, native: activeNative,
     onStat: callback => { statHook = callback; },
-    guarded() { state.preset = GUARDED; state.mode = FULL; state.policy = 'ask'; state.raw = { preset: GUARDED, sandbox: FULL, approval: 'ask', seeded: false }; },
     dispose: () => { for (const dispose of disposers) dispose(); },
   };
 }
@@ -82,30 +83,34 @@ async function test(name, body) {
 async function withFixture(options, body) { const f = fixture(options); try { await body(f); } finally { f.dispose(); } }
 const blocked = /DSHA_DESTRUCTIVE_BLOCKED/;
 
-for (const command of [COMMAND, 'rm -rf /dsha-policy-memory-only', 'printf x > /dsha-policy-memory-only']) {
-  await test('explicit-full-memory-effect: ' + command, () => withFixture({}, async f => {
-    assert.equal(classifyCommand(command, { cwd: CWD }).requiresApproval, true);
-    const call = f.captured('bash', { command });
-    await call.prepare(); call.dispatch(); call.effect();
-    assert.deepEqual(f.counts, { approvals: 0, effects: 1, ensures: 1, stats: 0 });
-    assert.throws(call.dispatch, blocked, 'a full-access dispatch still cannot be replayed');
-  }));
-}
+await test('independent native ON permits one non-replayable memory effect', () => withFixture({ nativeOn: true }, async f => {
+  assert.equal(classifyCommand(COMMAND, { cwd: CWD }).requiresApproval, true);
+  const call = f.captured();
+  await call.prepare(); call.dispatch(); call.effect();
+  assert.deepEqual(f.counts, { approvals: 0, effects: 1, ensures: 1, stats: 0 });
+  assert.throws(call.dispatch, blocked);
+}));
 await test('guarded default retains one-time web approval', () => withFixture({ preset: GUARDED, policy: 'ask' }, async f => {
   const call = f.captured(); await call.prepare(); call.dispatch(); call.effect();
   assert.equal(f.counts.approvals, 1); assert.equal(f.counts.effects, 1);
 }));
-await test('fresh Cordis-shaped proxies preserve original provider identity', () => withFixture({}, async f => {
+await test('fresh Cordis-shaped proxies preserve original provider identity', () => withFixture({ nativeOn: true }, async f => {
   f.state.proxyReads = true;
   const call = f.captured(); await call.prepare(); call.dispatch(); call.effect();
   assert.equal(f.counts.approvals, 0); assert.equal(f.counts.effects, 1);
 }));
-await test('fresh projection objects and seeded explicit full remain valid', () => withFixture({}, async f => {
-  f.state.raw.seeded = true;
-  f.services.sessionProjections.stateOf = () => ({ ...f.state.raw });
-  const call = f.captured(); await call.prepare(); call.dispatch(); call.effect();
-  assert.equal(f.counts.approvals, 0); assert.equal(f.counts.effects, 1);
-}));
+// In the locked projection seeded=false is also the state of an automatically
+// pinned default. Even an actual Web choice yields no distinct host receipt.
+for (const [label, seeded] of [['default or explicit', false], ['seeded', true], ['absent', undefined], ['unknown', 'unknown']]) {
+  await test(label + ' full projection cannot waive host approval', () => withFixture({}, async f => {
+    if (seeded === undefined) delete f.state.raw.seeded; else f.state.raw.seeded = seeded;
+    f.services.sessionProjections.stateOf = () => ({ ...f.state.raw });
+    const call = f.captured(); await assert.rejects(call.prepare, blocked);
+    const write = f.captured('write', { memoryOnly: true }); await write.prepare(); write.dispatch();
+    await assert.rejects(() => guardIntent(f.ctx, write.exec, target, { version: 7 }, 'write'), blocked);
+    assert.equal(f.counts.approvals, 0); assert.equal(f.counts.effects, 0);
+  }));
+}
 await test('model/header full-access claims do not replace current authority', () => withFixture({ preset: GUARDED, policy: 'ask' }, async f => {
   f.session.header.permissionPreset = FULL;
   const call = f.captured('bash', { command: COMMAND, permissionPreset: FULL, approval: 'never' });
@@ -143,34 +148,38 @@ await test('agent-less call cannot acquire full exemption', () => withFixture({ 
 }));
 
 const revoked = [
-  ['switch back to guarded', f => f.guarded()],
-  ['projection becomes unavailable', f => { f.services.sessionProjections.stateOf = () => { throw Error('controlled unavailable'); }; }],
-  ...['permissionPresets', 'sessionProjections', 'sandboxPolicy', 'approval'].map(name => ['replace ' + name + ' provider', f => { f.services[name] = { ...f.services[name] }; }]),
+  ['switch off native consent', f => { f.native.globalAllow = false; f.native.revision++; }],
+  ['native authority becomes unavailable', f => { f.native.available = false; }],
+  ...['workingDirectory', 'sandboxPolicy', 'shellEnv', 'shell', 'tools'].map(name => ['replace ' + name + ' provider', f => { f.services[name] = { ...f.services[name] }; }]),
 ];
-for (const [name, revoke] of revoked) await test('prepare then ' + name + ' blocks dispatch', () => withFixture({}, async f => {
+for (const [name, revoke] of revoked) await test('prepare then ' + name + ' blocks dispatch', () => withFixture({ nativeOn: true }, async f => {
   const call = f.captured(); await call.prepare(); revoke(f);
-  assert.throws(call.dispatch, blocked); assert.equal(f.counts.effects, 0); assert.equal(f.counts.approvals, 0);
+  await assert.rejects(async () => { await verifyGlobalConsent(call.exec); call.dispatch(); }, blocked);
+  assert.equal(f.counts.effects, 0); assert.equal(f.counts.approvals, 0);
 }));
-for (const boundary of ['preparedEnvironment', 'verifyBashRequest']) await test('revoke after dispatch blocks ' + boundary, () => withFixture({}, async f => {
-  const call = f.captured(); await call.prepare(); call.dispatch(); f.guarded();
+await test('replacing the one-time approval provider blocks dispatch', () => withFixture({ policy: 'ask' }, async f => {
+  const call = f.captured(); await call.prepare(); f.services.approval = { ...f.services.approval };
+  assert.throws(call.dispatch, blocked); assert.equal(f.counts.effects, 0); assert.equal(f.counts.approvals, 1);
+}));
+for (const boundary of ['preparedEnvironment', 'verifyBashRequest']) await test('service replacement after dispatch blocks ' + boundary, () => withFixture({ nativeOn: true }, async f => {
+  const call = f.captured(); await call.prepare(); call.dispatch(); f.services.sandboxPolicy = { ...f.services.sandboxPolicy };
   assert.throws(() => boundary === 'preparedEnvironment' ? preparedEnvironment(call.exec) : verifyBashRequest(call.exec, CWD), blocked);
   assert.equal(f.counts.effects, 0);
 }));
-await test('working-directory wait rechecks full authority', () => withFixture({}, async f => {
-  f.services.workingDirectory.ensure = async () => { f.guarded(); return CWD; };
+await test('native consent revoked during working-directory wait cannot grant exemption', () => withFixture({ nativeOn: true }, async f => {
+  f.services.workingDirectory.ensure = async () => { f.native.globalAllow = false; f.native.revision++; return CWD; };
   const call = f.captured(); await assert.rejects(call.prepare, blocked); assert.equal(f.counts.effects, 0);
 }));
-await test('full access retains final Bash workdir check', () => withFixture({}, async f => {
+await test('native consent retains final Bash workdir check', () => withFixture({ nativeOn: true }, async f => {
   const call = f.captured(); await call.prepare(); call.dispatch();
   assert.throws(() => verifyBashRequest(call.exec, '/changed'), blocked); assert.equal(f.counts.effects, 0);
 }));
-await test('disposed policy cannot dispatch a prepared full call', () => withFixture({}, async f => {
+await test('disposed policy cannot dispatch a prepared native-authorized call', () => withFixture({ nativeOn: true }, async f => {
   const call = f.captured(); await call.prepare(); f.dispose(); assert.throws(call.dispatch, blocked); assert.equal(f.counts.effects, 0);
 }));
 
-const target = { targetKey: 'memory:file', displayPath: '/dsha-memory-file' };
 for (const [name, operation] of [['write', 'write'], ['edit', 'edit'], ['str_replace_editor', 'edit']]) {
-  await test('explicit full ' + name + ' retains version intent without approval', () => withFixture({}, async f => {
+  await test('native ON ' + name + ' retains version intent without web approval', () => withFixture({ nativeOn: true }, async f => {
     const call = f.captured(name, { memoryOnly: true }); await call.prepare(); call.dispatch();
     const intent = await guardIntent(f.ctx, call.exec, target, { kind: 'replaceIfVersion', version: 7 }, operation);
     assert.deepEqual(intent, operation === 'edit' ? { version: 7 } : { kind: 'replaceIfVersion', version: 7 });
@@ -188,11 +197,11 @@ await test('never without explicit full still rejects overwrite', () => withFixt
   assert.equal(f.counts.approvals, 0); assert.equal(f.counts.effects, 0);
 }));
 for (const kind of ['version-race', 'observed-version-mismatch', 'create-overwrite', 'non-file', 'revoke-on-first-stat', 'revoke-on-second-stat', 'replace-fs']) {
-  await test('full overwrite preserves ' + kind + ' rejection', () => withFixture({}, async f => {
+  await test('native ON overwrite preserves ' + kind + ' rejection', () => withFixture({ nativeOn: true }, async f => {
     const call = f.captured('write', {}); await call.prepare(); call.dispatch();
     const intent = kind === 'observed-version-mismatch' ? { version: 8 } : kind === 'create-overwrite' ? { kind: 'createIfAbsent' } : { version: 7 };
     f.onStat(count => {
-      if (kind === 'revoke-on-first-stat' && count === 1 || kind === 'revoke-on-second-stat' && count === 2) f.guarded();
+      if (kind === 'revoke-on-first-stat' && count === 1 || kind === 'revoke-on-second-stat' && count === 2) { f.native.globalAllow = false; f.native.revision++; }
       if (kind === 'replace-fs' && count === 1) f.services.fs = { ...f.services.fs };
       return { type: kind === 'non-file' ? 'directory' : 'file', version: kind === 'version-race' && count === 2 ? 8 : 7 };
     });
@@ -201,5 +210,5 @@ for (const kind of ['version-race', 'observed-version-mismatch', 'create-overwri
   }));
 }
 Module._load = originalLoad;
-console.log(JSON.stringify({ scope: 'SOURCE_UNIT_REAL_POLICY_CONTROLLED_SERVICES_MEMORY_EFFECT_ONLY', nativeConsent: 'CONTROLLED_AVAILABLE_OFF', sdkLoaded: false, shellExecuted: false, actualPermissionProjectionFold: false, cases: results.length, passed: results.filter(row => row.status === 'PASS').length, results }, null, 2));
+console.log(JSON.stringify({ scope: 'SOURCE_UNIT_REAL_POLICY_CONTROLLED_SERVICES_MEMORY_EFFECT_ONLY', nativeConsent: 'CONTROLLED_ON_OFF_AND_REVOCATION', sdkLoaded: false, shellExecuted: false, actualPermissionProjectionFold: false, cases: results.length, passed: results.filter(row => row.status === 'PASS').length, results }, null, 2));
 if (results.some(row => row.status !== 'PASS')) process.exitCode = 1;

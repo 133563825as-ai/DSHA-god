@@ -67,6 +67,27 @@ public final class ExternalToolPolicyTest {
         "EXTERNAL_LIBRARY_OUTSIDE_ROOT", ExternalToolPolicy.rejection(library, toolRoot.getPath()));
   }
 
+  @Test
+  public void androidLibrariesSubdirectoryRemainsInsideTheManagedRoot() throws Exception {
+    // 外接 adb 的 libbase.so.0 等位于 usr/lib/aarch64-linux-gnu/android，必须与主库目录、
+    // 兼容 lib 目录一起出现在 --library-path；三段都在受管 rootfs 内时策略照常放行。
+    var argv = toolPaths(adb("devices"));
+    argv.set(
+        2,
+        toolPath
+            + "/usr/lib/aarch64-linux-gnu"
+            + ":"
+            + toolPath
+            + "/usr/lib/aarch64-linux-gnu/android"
+            + ":"
+            + toolPath
+            + "/lib/aarch64-linux-gnu");
+    assertNull(ExternalToolPolicy.rejection(argv, toolRoot.getPath()));
+    var server = toolPaths(adb("-P", "40123", "nodaemon", "server"));
+    server.set(2, argv.get(2));
+    assertNull(ExternalToolPolicy.rejectionAdbServer(server, toolRoot.getPath()));
+  }
+
   private static List<String> adb(String... tail) {
     var value =
         new java.util.ArrayList<String>(
@@ -123,6 +144,23 @@ public final class ExternalToolPolicyTest {
           "logcat -v threadtime",
           "logcat -d Runtime:I"
         }) assertNull(command, rejection(adb(("-s serial shell " + command).split(" "))));
+  }
+
+  @Test
+  public void externalObservationCommandsStayReadOnly() {
+    // T134：watch 采样命令与动作后观察固定使用下面两种形状；改动它们前先看真机测量结论。
+    assertNull(
+        rejection(
+            adb(
+                ("-s serial shell logcat -d -b events -s wm_resume_activity:V"
+                        + " wm_set_resumed_activity:V am_focused_activity:V am_resume_activity:V"
+                        + " -v epoch")
+                    .split(" "))));
+    assertNull(rejection(adb(("-s serial shell dumpsys window").split(" "))));
+    assertNull(rejection(adb(("-s serial shell getprop ro.product.device").split(" "))));
+    assertEquals(
+        "EXTERNAL_ADB_SHELL_BLOCKED",
+        rejection(adb(("-s serial shell logcat -d -b events -c").split(" "))));
   }
 
   @Test

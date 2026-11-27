@@ -152,9 +152,9 @@ try {
   await test('global OFF retains guarded one-time approval', () => using({ global: false }, async f => {
     await f.prepare(); await f.dispatch(); assert.equal(f.approvals, 1); assert.equal(f.effects, 1);
   }), true);
-  await test('global OFF retains official explicit full exemption', () => using({ global: false, preset: FULL, approval: 'never' }, async f => {
-    await f.prepare(); await f.dispatch(); assert.equal(f.approvals, 0); assert.equal(f.effects, 1);
-  }));
+  await test('global OFF: even a selected Web full preset is not native consent', () => using({ global: false, preset: FULL, approval: 'never' }, async f => {
+    await assert.rejects(f.prepare, blocked); assert.equal(f.approvals, 0); assert.equal(f.effects, 0);
+  }), true);
   await test('global OFF and non-full never still reject', () => using({ global: false, approval: 'never' }, async f => {
     await assert.rejects(f.prepare, blocked); assert.equal(f.effects, 0); assert.equal(f.approvals, 0);
   }));

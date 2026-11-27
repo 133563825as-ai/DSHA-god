@@ -1,0 +1,15 @@
+name: Retired Rebirth 359 unsigned entry
+
+# 历史359准入不适用于最新同步；保留明确拒绝入口，不再响应旧分支push。
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  retired:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject retired baseline and identity entry
+        run: |
+          echo 'REBIRTH_OLD_ENTRY_RETIRED: use rebirth-candidate.yml on sync/rebirth-latest-20261116'
+          exit 1

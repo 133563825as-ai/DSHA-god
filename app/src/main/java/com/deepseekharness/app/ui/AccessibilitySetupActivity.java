@@ -16,6 +16,15 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
   @Override
   protected void onCreate(Bundle state) {
     super.onCreate(state);
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      Toast.makeText(
+              this,
+              t("本次试用不提供屏幕控制。", "Screen control is unavailable in this trial."),
+              Toast.LENGTH_LONG)
+          .show();
+      finish();
+      return;
+    }
     CardPage page =
         new CardPage(
             this,
@@ -72,6 +81,7 @@ public final class AccessibilitySetupActivity extends AppCompatActivity {
   }
 
   static void openSettings(android.app.Activity activity) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     try {
       Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
       if (android.os.Build.VERSION.SDK_INT >= 26) {

@@ -1,6 +1,7 @@
 # DSHA 现行构建说明
 
-> 当前身份（build350）：`DSH-A-Su` / `io.github.sunsetrne.dsha` / `0.2.1-rc.5-20261109.2300-dsh0.2.2-rc.1` / versionCode 350。
+> 当前候选身份（build368）：`DSH-A-Su` / `io.github.sunsetrne.dsha` / `0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1` / versionCode 368。
+> build367 已发布（tag `dsha-a-su-build367-20261115-230955`）；build368 完整 CI 与设备验收待完成，本页步骤不构成已通过回执。
 > 单一 Standard 变体：minSdk 30（Android 11+）、arm64-v8a、系统 WebView。原 `low`/GeckoView 兼容线与独立上岛包已删除。
 > 签名：Mod 自有新建证书（SHA-256 `a4b0413c67fa46dd30dc7e2bce3ad56151ed8bfde2a3315fff685baf786b5d5d`），不再使用原版 E7E3。
 > 固定构建输入：公开仓库预发布 Release 资产，SHA-256 锁定；流程见 [docs/fixed-build-inputs.md](docs/fixed-build-inputs.md)。
@@ -17,12 +18,14 @@
 
 | 输入 | 现行要求 |
 |---|---|
-| JDK / 原生语言 | Java 17，无 Kotlin |
+| JDK / 原生语言 | Java 17 / Kotlin（AGP 9.1.1 built-in，KGP 固定 2.2.10） |
 | Gradle / AGP | 仓库 Wrapper 9.3.1 / AGP 9.1.1 |
 | Android SDK | `platforms;android-37.0`、build-tools 36.0.0；compile/target API 37 |
 | NDK | 26.3.11579264（仅在有原生构建时使用；仓库已带 arm64 预编译 JNI） |
 | Python / Node | 生成器 Python 3.9+，CI 锁定版本见 `ci/toolchain.lock.json`；Node 24 |
 | Standard | minSdk 30，系统 WebView，arm64-v8a（唯一变体） |
+
+build368 的 517 项受管启动输入中含 439 个 Java + 18 个 Kotlin 文件（不是全仓生产源码总量）。Kotlin 使用 AGP 内置支持并固定 KGP 2.2.10，不应用 `org.jetbrains.kotlin.android`；旧“无 Kotlin”说法属于 Java-only 时期，不能作为当前构建要求。编译与格式门禁见 [Kotlin 工具链](docs/kotlin-toolchain.md)。
 
 当前只有一条 Standard 构建线；测试变体通过 `-Pdsha.sunsetTest=true`（`.test`）、`-Pdsha.debugPackage=true`（`.debug`，debuggable 的 debug 构建）或 `-Pdsha.devPackage=true`（`.dev`，release 构建）改包名/版本名，与正式包并存、数据隔离；三个变体互斥，且必须配合 `-Pdsha.unsignedPackage=true` 由测试证书签名。原 `dsh.android.client` 与更早的 `com.dsh.client` 均为独立包名，本 Mod 与之互不覆盖。
 
@@ -68,6 +71,18 @@ python3 tools/run-host-tests.py --stage runtime
 python3 tools/verify-stability.py --stage software
 ```
 
+Kotlin 工具链（AGP 9.1.1 built-in Kotlin，固定 KGP 2.2.10）与 ktfmt 格式门禁见
+[Kotlin 工具链](docs/kotlin-toolchain.md)。本机定向验证：
+
+```bash
+dsha-gradle :app:compileStandardDebugKotlin
+python3 tools/format-kotlin-tree.py --check
+JAVA_HOME=/opt/jdk17 python3 tools/format-java-tree.py --check
+```
+
+`assemble` 在 aarch64 上可能受 aapt2 / 原生工具限制；受限时如实记录为「未跑 / 受限」，
+不把编译通过写成 APK 或真机验证通过。
+
 Windows 使用 `gradlew.bat`，并以真实 Python 可执行文件代替不可用的系统别名。无法运行 AGP/aapt2 时，`tools/run-unit-tests.py` 是纯逻辑后备，不替代 Android 全编译、APK 或完整资源门禁。平台跳过、未运行项与 Lint 警告如实分类，不写成通过。
 
 `tools/verify-plugin-upgrade-gate.py` 检查当前自动提交/启用、用户禁用与安全模式、实际依赖、插件事务及受管资产。正式插件允许未锁定解析、生命周期脚本和 pnpmfile；不能把历史“原生审阅/依赖冻结”的测试口径复活为当前要求。
@@ -76,16 +91,25 @@ Windows 使用 `gradlew.bat`，并以真实 Python 可执行文件代替不可�
 
 显式提供 `DSHA_KEYSTORE`、`DSHA_KEYSTORE_PASSWORD`、`DSHA_KEY_PASSWORD`，别名默认 `dsha-a-su`（可用 `DSHA_KEY_ALIAS` 覆盖）。签名身份以 `ci/release-identity.json` 为准：`packageName = io.github.sunsetrne.dsha`，`certificateSha256 = a4b0413c67fa46dd30dc7e2bce3ad56151ed8bfde2a3315fff685baf786b5d5d`。`verifyPublishCertificate` 会在 `assembleStandardRelease`、`packageStandardRelease`、`validateSigningStandardRelease` 之前核对 keystore 证书与 applicationId，任一不符即停止打包；不再允许历史 E7E3 或 debug 证书出正式 Mod 包。私钥不进仓库，换钥会使本 Mod 已安装版本无法覆盖升级。
 
-### 双身份构建（`-Pdsha.identity`）
+### 三身份构建（`-Pdsha.identity`）
 
-`-Pdsha.identity=mod|upstream`，默认 `mod`，未知值直接配置失败。`mod` 即上文的 `io.github.sunsetrne.dsha` / DSH-A-Su / alias `dsha-a-su` / 测试后缀 `.test` / Mod 证书；`upstream` 是上游维护者的 `dsh.android.client` / DSHA / alias `androiddebugkey` / 测试后缀 `.SunsetRNE` / 历史 E7E3 证书。包名、显示名、测试后缀、默认 alias 与 `verifyPublishCertificate` 核对的证书分别来自 `ci/release-identity.mod.json` 与 `ci/release-identity.upstream.json`；versionCode / versionName 两种身份共用。完整对照表见 [Mod 身份与签名](docs/mod-identity-and-signing.md)。
+`-Pdsha.identity=mod|upstream|rebirth`，默认 `mod`，未知值直接配置失败。`mod` 即上文的 `io.github.sunsetrne.dsha` / DSH-A-Su / alias `dsha-a-su` / 测试后缀 `.test` / Mod 证书；`upstream` 是上游维护者的 `dsh.android.client` / DSHA / alias `androiddebugkey` / 测试后缀 `.SunsetRNE` / 历史 E7E3 证书；`rebirth` 是隔离实验发行线 `dsh.android.client.rebirth` / DSHA 新生 / alias `dsha-rebirth` / 测试后缀 `.rebirthtest`，使用独立固定候选测试证书（**2026-11-13 已创建**，SHA-256 `912ca1c1…9faec0`，别名 `dsha-rebirth`；私钥只进 GitHub Secrets 与本机仓库外目录，公钥见 `ci/rebirth-test-cert.pem`）。包名、显示名、测试后缀、默认 alias、versionCode / versionName 与 `verifyPublishCertificate` 核对的证书分别来自 `ci/release-identity.<identity>.json`。完整对照表见 [Mod 身份与签名](docs/mod-identity-and-signing.md)。
 
 ```bash
 ./gradlew :app:printReleaseIdentity -Pdsha.identity=upstream   # 只做配置，确认解析出的身份
-python3 tools/release-identity.py --check                      # 两套身份互斥，兼容入口与 mod 一致
+./gradlew :app:printReleaseIdentity -Pdsha.rebirthCandidate=true -Pdsha.unsignedPackage=true
+python3 tools/release-identity.py --check                      # 三套身份互斥，兼容入口与 mod 一致
 ```
 
-签名身份绝不混用：Mod 证书只签 mod 身份，E7E3 只签 upstream 身份。E7E3 私钥只在上游维护者私有仓库的 Secrets 中，本仓库与本机不保存，也不用 upstream 身份打正式包。
+Rebirth 身份只能经 `-Pdsha.rebirthCandidate=true` 进入；与 `.test/.debug/.dev` 测试变体或 `-Pdsha.identity=mod|upstream` 混用会在配置阶段失败。unsigned 候选与签名候选分开：
+
+```bash
+./gradlew :app:assembleStandardRelease -Pdsha.rebirthCandidate=true -Pdsha.unsignedPackage=true
+```
+
+产物标 `UNSIGNED_NOT_FOR_INSTALLATION`，**不得称可安装**；证书固定后 `verifyPublishCertificate` 还会拒绝复用 Mod/upstream 证书、applicationId 不符或指纹不符的签名候选。versionCode / versionName 仍以 `app/build.gradle` 为构建基准，三份身份文件记录同一值并在配置阶段交叉核对（当前 368 / `0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1`）；Rebirth 将来同线递增时须同时更新 build.gradle、身份文件与 `generate-changelog.py` / `release_names.py` / `sign-release-apks.py` 的版本解析，属 G1 版本源迁移。
+
+签名身份绝不混用：Mod 证书只签 mod 身份，E7E3 只签 upstream 身份，Rebirth 候选测试证书只签 rebirth 身份。E7E3 私钥只在上游维护者私有仓库的 Secrets 中，本仓库与本机不保存，也不用 upstream 身份打正式包。
 
 ```bash
 ./gradlew :app:assembleStandardRelease
@@ -113,7 +137,7 @@ python3 tools/release-identity.py --check                      # 两套身份互
 | [release-production.yml](.github/workflows/release-production.yml) | `-Pdsha.identity=mod` | `SunsetRNE/DSHA-Sunset-mod` 的 `main` | `dsha-a-su-build<code>-YYYYMMDD-HHMMSS` |
 | [release-upstream.yml](.github/workflows/release-upstream.yml) | `-Pdsha.identity=upstream` | `ym2025szz/DSHA-prerelase`（私有）的 `codex/prerelease-190` | `dsha-build<code>-YYYYMMDD-HHMMSS` |
 
-两者共用同一组门禁节点（契约、格式、主机回归、固定输入、完整单测、Lint），只有 `build-signed` 读取各自仓库的签名 Secrets。[test-package.yml](.github/workflows/test-package.yml) 的 `identity` 输入（默认 `mod`）选择历史 `.test` 测试包身份；[test-package-variants.yml](.github/workflows/test-package-variants.yml) 在同一 run 内用 matrix 分别构建 `.debug`（debuggable）与 `.dev`（非 debug）两个共存测试包，并额外产出正式包名的 unsigned 验证包。两者都只上传 Actions artifact，不创建 tag/Release；测试证书必须与两个正式证书都不同。
+两者共用同一组门禁节点（契约、格式、主机回归、固定输入、完整单测、Lint）。正式发布先由无 Secrets 的 `build-unsigned` 与门禁并行构建未签名正式 APK（该节点允许 Gradle 依赖缓存），全部门禁通过后由 `sign-verify` 用正式证书签名并复验证书与 v1/v2/v3——正式签名 Secrets 只由 `sign-verify` 读取、且该节点不写共享缓存；测试证书 Secrets 只由共享节点 [_node-test-packages.yml](.github/workflows/_node-test-packages.yml) 读取（同样按“未签名编译 / 签名”两段式拆分，只有无证书的编译段可缓存）。正式发布默认在同一 run 内附带 `.debug`（debuggable）与 `.dev`（非 debug）两个共存测试包，作为 Release 资产发布（`test_packages=debug+dev|debug|none`，`dry_run=true` 可只构建校验、不建 tag/Release）。[test-package.yml](.github/workflows/test-package.yml) 的 `identity` 输入（默认 `mod`）选择历史 `.test` 测试包身份；[test-package-variants.yml](.github/workflows/test-package-variants.yml) 复用同一测试包节点按需构建 `.debug` / `.dev`，并额外产出正式包名的 unsigned 验证包，只上传 Actions artifact、不创建 tag/Release。测试证书必须与两个正式证书都不同，正式发布的测试包必须来自固定测试证书（不能覆盖升级的一次性证书会被拒绝）。
 
 ## 手机与历史范围
 

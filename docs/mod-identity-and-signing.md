@@ -1,10 +1,10 @@
-# Mod 身份、包名与签名（build209 起；双身份见第 1 节）
+# 三身份、包名与签名：Mod / upstream / Rebirth
 
-本文记录 DSH-A-Su（Sunset Mod）与原版 DSHA 的身份分离方案、可切换的双身份构建，以及 `verifyPublishCertificate` 的校验来源。历史 E7E3 证书的来历见 [BUILD.md](../BUILD.md) 顶部说明与 `docs/releases/` 历史回执。
+本文区分来源 Mod、原版 DSHA 与本线 Rebirth 的身份和构建门禁。源码同时支持三种身份，不代表本会话获准构建、签名或发布。历史 E7E3 证书仅属原版；本线固定 Rebirth 证书不得重建或换用来源仓库的同包名证书。
 
-## 1. 双身份：mod（默认）与 upstream
+## 1. 三身份：mod（源码默认）、upstream 与 rebirth
 
-同一份源码可以按两套互斥的发布身份构建，用 `-Pdsha.identity=mod|upstream` 选择，默认 `mod`。未知值直接让 Gradle 配置失败，不回退到任何一方。两套身份的包名、显示名、测试后缀、默认 key alias 与 `verifyPublishCertificate` 核对的证书都从对应身份文件读取；versionCode / versionName 只写在 `app/build.gradle`，两种身份共用。
+同一份源码可用 `-Pdsha.identity=mod|upstream|rebirth` 选择互斥身份，源码默认 `mod`；本线必须显式 `rebirth`。未知值直接让 Gradle 配置失败，不回退。包名、显示名、测试后缀、key alias 与证书 pin 来自对应身份文件；`app/build.gradle` 为构建基准，三份身份 JSON 记录版本并在配置时交叉核对。Rebirth 的有效版本另加 `-Rebirth-Sprout.2` 后缀，不能把基础 versionName 当最终值。
 
 | 项 | mod（默认） | upstream |
 |---|---|---|
@@ -19,25 +19,40 @@
 | 允许发布的仓库 / 分支 | `SunsetRNE/DSHA-Sunset-mod` 的 `main` | `ym2025szz/DSHA-prerelase`（私有）的 `codex/prerelease-190` |
 | tag 格式 | `dsha-a-su-build<code>-YYYYMMDD-HHMMSS` | `dsha-build<code>-YYYYMMDD-HHMMSS` |
 
-共用项：versionCode / versionName（`app/build.gradle`）、v1 + v2 + v3 签名方案、Android 11（API 30）/ arm64-v8a。
+上表是来源 Mod/upstream 两种发布身份的既有说明；本线第三身份单列，不能沿用它们的证书或发布流程：
+
+| Rebirth 项 | 本线固定值/边界 |
+|---|---|
+| 身份文件 | [release-identity.rebirth.json](../ci/release-identity.rebirth.json) |
+| 应用名 / 包名 | DSHA 新生 / `dsh.android.client.rebirth` |
+| 固定测试证书 DER SHA-256 | `4639e61d95b7ff55271fa8d7d240cb66941da23cdd2b2e69149157110b288479` |
+| key alias / 签名方案 | `rebirth-test` / v2 + v3，非官方、Mod 或共享 debug 证书 |
+| 身份元数据测试/开发后缀 | `.rebirthtest` / `.rebirthdev`；本候选禁止 sunsetTest/debugPackage/devPackage，与 Rebirth 候选不混用 |
+| 候选参数 | `-Pdsha.identity=rebirth -Pdsha.unsignedPackage=true -Pdsha.rebirthCandidate=true -Pdsha.rust.mode=off`，仅非 debug release |
+| 候选入口与绑定 | [rebirth-candidate.yml](../.github/workflows/rebirth-candidate.yml)，`133563825as-ai/DSHA-god` / `refs/heads/sync/rebirth-latest-20261116`；转分支须同批更新准入，不放宽守卫 |
+| 有效版本 | build368 基础版本 + `-Rebirth-Sprout.2`；尚无本版新鲜工程/APK验收 |
+| 密钥边界 | CI unsigned-only、无sign/secrets；获准后在本地离线签同一原件，不读/复制/输出私钥或passfile，不重建证书 |
+| 备份与安装事实 | 离线备份 NOT_BACKED_UP，位置/交接方式未定；首包已由用户自行安装，旧“未安装”回执仅属旧时点，不能否认用户反馈 |
+
+共用平台为 Android 11（API30）/ arm64-v8a；签名方案不是三身份共用值，Rebirth 仅 v2/v3。
 
 | 共用项 | 当前值 | 权威来源 |
 |---|---|---|
-| versionCode / versionName | `350` / `0.2.1-rc.5-20261109.2300-dsh0.2.2-rc.1` | `app/build.gradle` |
-| 签名方案 | v1 + v2 + v3 | 身份文件 `schemes`（兼容入口 `ci/release-identity.json` 一致） |
+| versionCode / 基础 versionName（build368 来源） | `368` / `0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1`；Rebirth 有效名另加 Sprout.2 | `app/build.gradle` 与三身份 JSON 交叉核对 |
+| 签名方案 | Mod/upstream：v1 + v2 + v3；Rebirth：v2 + v3 | 各身份文件 `schemes`（兼容入口仅与 Mod 一致） |
 | 最低系统 | Android 11（API 30）/ arm64-v8a | `app/build.gradle` `minSdk` / `abiFilters` |
 
-`ci/release-identity.json` 保留为 Mod 身份的兼容入口（本地交付脚本 `sign-release-apks.py`、`verify-stability.py`、`generate-release-manifest.py`、`check-release-prerequisites.py` 等仍读取它）。它的 `packageName`、`certificateSha256`、`schemes` 必须与 `release-identity.mod.json` 一致，由 `python3 tools/release-identity.py --check` 与 `tools/test-release-identity.py` 强制核对；这些本地脚本只服务 Mod 身份。
+`ci/release-identity.json` 保留为 Mod 身份的兼容入口（本地交付脚本 `verify-stability.py`、`generate-release-manifest.py`、`check-release-prerequisites.py` 等仍读取它）。它的 `packageName`、`certificateSha256`、`schemes` 必须与 `release-identity.mod.json` 一致，由 `python3 tools/release-identity.py --check` 与 `tools/test-release-identity.py` 强制核对；这些本地脚本只服务 Mod 身份。发布签名工具 `tools/sign-release-apks.py` 经 `release-identity.py` 读取 mod 身份文件（与兼容入口同源核对），并新增未签名输入的清单 / “确实未签名” / 签名后载荷逐成员一致的检查；CI 的 `build-unsigned` → `sign-verify` 两段式见 [CI 构建与发布](ci-release.md)。
 
 ```bash
 python3 tools/release-identity.py --identity upstream --field packageName   # 读取单个字段
-python3 tools/release-identity.py --check                                   # 两套身份互斥 + 兼容入口一致
+python3 tools/release-identity.py --check                                   # 三套身份互斥 + Mod兼容入口一致
 ./gradlew :app:printReleaseIdentity -Pdsha.identity=upstream                # 只做配置，打印解析结果
 ```
 
 ### 签名身份绝不混用
 
-- mod 身份只用 Mod 自有证书（a4b0…5d5d）；upstream 身份只用历史 E7E3。两个证书、两个包名在身份文件中互不相同，`release-identity.py --check` 拒绝任何共享。
+- mod 身份只用 Mod 自有证书（a4b0…5d5d）；upstream 身份只用历史 E7E3；本线 Rebirth 只用固定4639…8479 / rebirth-test。三证书、三包名互不相同，`release-identity.py --check` 拒绝共享。来源仓库另一枚同包名 Rebirth 证书不适用于本线用户已装首包，不能替换。
 - 原版 `dsh.android.client` 与本 Mod 的包名不同，不存在覆盖安装关系，Mod 身份**不复用 E7E3**：新包名首次安装即全新数据目录，旧版应用、旧授权与旧签名链都保持原样。
 - E7E3 私钥只存在上游维护者 ym2025szz 私有仓库的 Secrets 中。本仓库不保存、不引用任何 E7E3 密钥文件，也不在本仓库用 upstream 身份打正式包。
 - 两个发布工作流都由 `bind` 节点的仓库 / 分支守卫决定是否运行，其它节点都依赖 `bind`：在对方仓库里整条发布链直接跳过。
@@ -45,7 +60,9 @@ python3 tools/release-identity.py --check                                   # �
 
 ## 2. `verifyPublishCertificate` 现在校验什么
 
-`app/build.gradle` 中该任务在 `assembleStandardRelease` / `packageStandardRelease` / `validateSigningStandardRelease` 之前执行，逐项检查：
+以下是 Mod/upstream 受保护签名路径的任务说明，不是 Rebirth unsigned-only 路径，也不是当前执行授权。Rebirth 候选必须同时显式开启 unsignedPackage/rebirthCandidate，配置期不读 key、签名输入被拒绝；本线CI不执行sign，后续离线签名是单独授权阶段。
+
+`app/build.gradle` 中该任务在对应签名的 `assembleStandardRelease` / `packageStandardRelease` / `validateSigningStandardRelease` 之前执行，逐项检查：
 
 1. 已通过 `DSHA_KEYSTORE`（或 `-Pdsha.keystore`）提供 keystore 文件；
 2. keystore 中 `DSHA_KEY_ALIAS`（默认取所选身份的 `keyAlias`）对应证书的 SHA-256 等于 `ci/release-identity.<identity>.json` 的 `certificateSha256`；
@@ -89,7 +106,7 @@ export DSHA_KEY_ALIAS=dsha-a-su
 ## 6. 相关文件
 
 - `ci/release-identity.json`：Mod 身份兼容入口（包名 + 证书哈希 + 签名方案）。
-- `ci/release-identity.mod.json` / `ci/release-identity.upstream.json`：两套发布身份；`tools/release-identity.py` 解析与核对。
+- `ci/release-identity.mod.json` / `ci/release-identity.upstream.json` / [release-identity.rebirth.json](../ci/release-identity.rebirth.json)：三套互斥身份；`tools/release-identity.py` 解析与核对。Rebirth固定证书与unsigned-only边界见第1节，不使用另两套发布命令。
 - `ci/sunset-inputs.lock.json`：固定构建输入的公开资产地址与 SHA-256。
 - [docs/fixed-build-inputs.md](fixed-build-inputs.md)：固定输入还原与升级流程。
 - [BUILD.md](../BUILD.md)：环境、构建、签名与门禁命令。

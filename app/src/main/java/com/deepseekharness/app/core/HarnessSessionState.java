@@ -52,6 +52,59 @@ public final class HarnessSessionState {
   final java.util.concurrent.CopyOnWriteArrayList<Runnable> restoreListeners =
       new java.util.concurrent.CopyOnWriteArrayList<>();
   Future<?> stopTask;
+  long stopSequence;
+  volatile com.deepseekharness.app.util.StopOperationId stopOperation;
+
+  static final class StopReceipt {
+    private final com.deepseekharness.app.util.StopOperationId operation;
+    private final java.util.concurrent.CompletableFuture<
+            com.deepseekharness.app.util.StopCompletion>
+        completion;
+    // 在 typed completion 发布之前冻结，只有精确 receipt 的续接可读取。
+    volatile WebProcessSession.StopRecheck recheck;
+
+    StopReceipt(
+        com.deepseekharness.app.util.StopOperationId operation,
+        java.util.concurrent.CompletableFuture<com.deepseekharness.app.util.StopCompletion>
+            completion) {
+      this.operation = operation;
+      this.completion = completion;
+    }
+
+    com.deepseekharness.app.util.StopOperationId operation() {
+      return operation;
+    }
+
+    java.util.concurrent.CompletableFuture<com.deepseekharness.app.util.StopCompletion>
+        completion() {
+      return completion;
+    }
+  }
+
+  record RestartHandoff(
+      com.deepseekharness.app.util.StopHandoff.Admission admission,
+      WebProcessSession.StopRecheck recheck) {}
+
+  volatile StopReceipt stopReceipt;
+  volatile com.deepseekharness.app.util.StopCompletion stopCompletion;
+  volatile com.deepseekharness.app.util.StopHandoff.Decision stopShadowDecision;
+
+  /** 只在原 lifecycle 锁内分配；不创建独立票据或生命周期 owner。 */
+  com.deepseekharness.app.util.StopOperationId identifyStop(long previous, long generation) {
+    if (!Thread.holdsLock(lifecycle)) throw new IllegalStateException("WEB_STOP_OWNER_LOCK");
+    var run = runs.get(previous);
+    stopOperation =
+        new com.deepseekharness.app.util.StopOperationId(
+            this,
+            ++stopSequence,
+            previous,
+            run == null ? "" : run.instanceId,
+            generation,
+            startProtection.cancellationRevision());
+    stopReceipt = new StopReceipt(stopOperation, new java.util.concurrent.CompletableFuture<>());
+    return stopOperation;
+  }
+
   WebRecovery recovery;
   StartupDiagnostics diagnostics;
   volatile String lastStopError = "";
@@ -59,4 +112,9 @@ public final class HarnessSessionState {
   volatile WebStopCoordinator.Result lastStopResult =
       new WebStopCoordinator.Result(
           WebStopCoordinator.Status.UNCONFIRMED, "WEB_STOP_NOT_REQUESTED", "");
+
+  /** 本次停止的开始时刻与稳定阶段码；只用于界面解释等待，不参与任何判定。 */
+  volatile long stopStartedAtMs;
+
+  volatile String stopStage = "";
 }

@@ -2,6 +2,50 @@
   "schema": 1,
   "tests": [
     {
+      "path": "tools/test-ci-toolchain.py",
+      "stage": "fast",
+      "reason": "Execute CI version discovery through the real shared Android convention, paired Java targets, missing wiring and duplicate owner negative controls, and the exact setup-toolchain CLI.",
+      "args": [],
+      "timeoutSeconds": 60,
+      "requires": [
+        "python39"
+      ],
+      "environment": {}
+    },
+    {
+      "path": "tools/test-source-layout.py",
+      "stage": "fast",
+      "reason": "Execute logical-to-physical source mapping, real Java/Kotlin/module moves and duplicate/link/undeclared-source negative controls; compare the current single-app source, launcher and format inventories with the original algorithms.",
+      "args": [],
+      "timeoutSeconds": 120,
+      "requires": [
+        "python39"
+      ],
+      "environment": {}
+    },
+    {
+      "path": "tools/test-unit-test-contract.py",
+      "stage": "fast",
+      "reason": "Execute fresh all-module JUnit identity conservation and missing task/XML/Kotlin, duplicate, skipped, stale, zero-test and historical CI import negative controls without claiming synthetic fixtures are production full runs.",
+      "args": [],
+      "timeoutSeconds": 180,
+      "requires": [
+        "python39"
+      ],
+      "environment": {}
+    },
+    {
+      "path": "tools/test-build-conventions.py",
+      "stage": "fast",
+      "reason": "Guard shared application/library/JVM build and test contracts, actual-setting hooks and all-module CI enumeration; validate generated external compile/test fixtures without creating empty product modules.",
+      "args": [],
+      "timeoutSeconds": 120,
+      "requires": [
+        "python39"
+      ],
+      "environment": {}
+    },
+    {
       "path": "tools/test-diagnostic-feedback.py",
       "stage": "fast",
       "reason": "Executes current diagnostic feedback observers on a JVM with LiveData/UI doubles; no Android device, clipboard or SAF execution",
@@ -270,6 +314,16 @@
         "node24"
       ],
       "timeoutSeconds": 60
+    },
+    {
+      "path": "tools/test-runtime-trial-readdir.mjs",
+      "stage": "fast",
+      "reason": "试运行预加载的 proroot scandir 回退：模拟供应商 scandir 对 payload 内路径报 ENOENT，验证只对本次 payload 内真实存在的目录改用 opendir、payload 外与递归枚举保留原错误、缺少 DSH_HOME 或 PROROOT_LIB_PATH 时不安装；不启动容器或设备",
+      "args": [],
+      "requires": [
+        "node24"
+      ],
+      "timeoutSeconds": 120
     },
     {
       "path": "tools/test-bridge-port.py",
@@ -1012,6 +1066,22 @@
       "cli": "no positional arguments; see explicit environment/requirements"
     },
     {
+      "path": "tools/test-plugin-entry-reader.py",
+      "stage": "runtime",
+      "reason": "Execute the fixed archive's real js-yaml on literal, opaque and ambiguous plugin entry patches; independently verify archive SHA, reject missing inputs without skips, and never load observer or plugin code.",
+      "args": [],
+      "timeoutSeconds": 180,
+      "requires": [
+        "python39",
+        "node24",
+        "current_archive"
+      ],
+      "environment": {
+        "DSHA_RUNTIME_ARCHIVE": "{runtimeArchive}"
+      },
+      "cli": "No positional arguments; reads only a SHA-verified current archive into a private parser fixture, without creating raw/managed provenance."
+    },
+    {
       "path": "tools/test-plugin-downloads.py",
       "stage": "fast",
       "reason": "隔离宿主或纯源码/协议回归，无发布密钥、设备和真实用户数据",
@@ -1169,6 +1239,16 @@
       ],
       "environment": {},
       "cli": "no positional arguments; see explicit environment/requirements"
+    },
+    {
+      "path": "tools/test-rc1-host-binding.py",
+      "stage": "fast",
+      "reason": "JDK source projection of current RC1 cache handoff and fixture home mapping; fake filesystem and runner, not Node/SettingsForms or full host validation.",
+      "requires": ["python39", "jdk17"],
+      "args": [],
+      "environment": {},
+      "timeoutSeconds": 120,
+      "cli": "No arguments; runs one 96MiB Java projection plus rejecting old-adapter mutations without guest, network or Android."
     },
     {
       "path": "tools/test-rc1-settings-migration.mjs",
@@ -1661,6 +1741,24 @@
       ]
     },
     {
+      "path": "tools/test-format-kotlin.py",
+      "stage": "fast",
+      "reason": "Synthetic Kotlin formatter path, lock, JDK, report and write-before-recheck failure controls; external execution and network mocked, no formatter or Android build.",
+      "requires": ["python39"],
+      "environment": {},
+      "timeoutSeconds": 120,
+      "args": []
+    },
+    {
+      "path": "tools/test-format-kotlin-tree.py",
+      "stage": "fast",
+      "reason": "Synthetic Kotlin formatter inventory, batching, report ordering and concurrent-source rejection; no Java formatter, Gradle or network.",
+      "requires": ["python39"],
+      "environment": {},
+      "timeoutSeconds": 120,
+      "args": []
+    },
+    {
       "path": "tools/test-format-java-tree.py",
       "stage": "fast",
       "reason": "Exact six-source-set formatter inventory and package batch regression; no device or APK",
@@ -1708,6 +1806,25 @@
       },
       "timeoutSeconds": 600,
       "args": []
+    },
+    {
+      "path": "tools/test-pty-birth-handshake.py",
+      "stage": "linux",
+      "reason": "Compile current PTY C with Linux JDK JNI headers and explicit fake callback table; real fork/self-stat/ACK/exec/reaping and unaffected sibling, no Android/JVM callback or device proof",
+      "requires": [
+        "python39",
+        "jdk17"
+      ],
+      "platform": [
+        "linux"
+      ],
+      "environment": {},
+      "timeoutSeconds": 120,
+      "args": [
+        "--jdk",
+        "{jdk}"
+      ],
+      "cli": "Real Linux /proc, host C compiler and JDK 17 headers are required; missing capability is an explicit failure, never a skipped Android claim"
     },
     {
       "path": "tools/test-native-session-handshake.py",
@@ -1933,6 +2050,18 @@
       "cli": "no positional arguments; see explicit environment/requirements"
     },
     {
+      "path": "tools/test-release-test-packages.py",
+      "stage": "fast",
+      "reason": "Merges release-attached .debug/.dev test package evidence (build-info.json, SHA256SUMS, release notes) with temporary fixtures; no APK build, no real certificate, Secret or phone access.",
+      "args": [],
+      "timeoutSeconds": 60,
+      "requires": [
+        "python39"
+      ],
+      "environment": {},
+      "cli": "no positional arguments; see explicit environment/requirements"
+    },
+    {
       "path": "tools/test-skill-import.mjs",
       "stage": "runtime",
       "reason": "Generate three real JVM SkillImports fixtures with JDK17 and SHA-verified SnakeYAML/Gson from the existing backup dependency lock, then exercise the current locked skill provider/tool: ordinary, user-only approval, and fully-disabled invocation policies; no Android, JUnit, phone or user-data operations.",
@@ -2084,21 +2213,18 @@
     {
       "path": "tools/test-browser-origin-server.py",
       "stage": "runtime",
-      "reason": "Actual Java HTTP handler, real loopback sockets and JVM filesystem; excludes Android syscall/UI execution",
+      "reason": "Actual Java HTTP handler, real loopback sockets and JVM filesystem; requires explicitly prepared pinned real host framework, excludes Android syscall/UI execution",
       "requires": [
         "python39",
-        "jdk17",
-        "toolchains"
+        "jdk17"
       ],
       "args": [
         "--jdk",
-        "{jdk}",
-        "--gradle-home",
-        "{gradleHome}"
+        "{jdk}"
       ],
       "timeoutSeconds": 300,
       "environment": {},
-      "cli": "--jdk --gradle-home; pinned real framework JSON and current release classes"
+      "cli": "--jdk [--framework pinned-jar]; offline checked default from prepare-sprout-host-jars.py and current release classes"
     },
     {
       "path": "tools/test-destructive-full-access.mjs",
@@ -2418,7 +2544,7 @@
     {
       "path": "tools/test-bundled-dsh-version.py",
       "stage": "fast",
-      "reason": "Production Gradle configuration gate executes in isolated offline assemble projects and rejects stale native/npm-lock/signed-registry generations and ambiguous native source anchors",
+      "reason": "Production Gradle configuration gate executes in isolated offline marker-only probe projects and rejects stale native/npm-lock/signed-registry generations and ambiguous native source anchors; no AGP assemble or APK execution",
       "args": [
         "--gradle-user-home",
         "{gradleHome}",
@@ -3228,7 +3354,19 @@
       "args": [],
       "timeoutSeconds": 60,
       "environment": {},
-      "reason": "Static Actions node graph: pinned external actions, read-only reusable nodes, release gates before signing, secrets only in the sign node, write permission only in publish"
+      "reason": "Static Actions node graph: pinned external actions, read-only reusable nodes, build-unsigned / sign-verify split with production secrets only in the signing node, unsigned handoff bound to commit/run with payload equality after signing, test-package compile/sign modes, evidence without a duplicated APK, write permission only in publish"
+    },
+    {
+      "path": "tools/test-release-signing.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Release signing tool pure contracts: unsigned manifest (package / version / minSdk 30 / arm64 / non-debuggable / no test identity), apksigner verify must reject the unsigned input, payload member CRC/size equality excluding META-INF, v1+v2+v3 scheme and certificate pin, source-vs-metadata version binding; no keystore, signing, network or Android SDK",
+      "cli": "no arguments; module-level pure functions only"
     },
     {
       "path": "tools/test-release-identity.py",
@@ -3331,6 +3469,17 @@
       "reason": "Execute the guest builtin-registry default-off policy in an isolated fake root: clean install and over-the-top APK generations disable dsh-web-mobile, only an explicit enable recorded for the current generation survives restarts, older-generation enables are reset, explicit disable wins and re-enable round-trips; no device or Web."
     },
     {
+      "path": "tools/test-backup-signed-builtin-files.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Generate the additive signedBuiltinFiles proof from isolated signed install rows; verify exact scope, file hashes, installed permission modes, sizes and bounded fail-closed inputs without restoring a runtime archive or writing production proof JSON."
+    },
+    {
       "path": "tools/test-git-guard.py",
       "stage": "fast",
       "requires": [
@@ -3340,6 +3489,251 @@
       "timeoutSeconds": 60,
       "environment": {},
       "reason": "proroot git SIGSEGV guard: rc=139 and '[proroot] SIGSEGV' stderr fail loudly with empty stdout, one execution and no retry; normal rc=0 and ordinary failures keep their behavior; module API, CLI and process exit are exercised with a simulated git and no device."
+    },
+    {
+      "path": "tools/test-verify-rebirth-candidate.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Rebirth unsigned candidate verifier pure contracts: identity file, badging manifest checks, authorities prefix, unsigned evidence (apksigner marker / v1 files / APK Signing Block), fixed-certificate rejection and exit codes 0/1/2; no real APK or Android SDK.",
+      "cli": "no arguments; module-level pure functions and fixture strings only"
+    },
+    {
+      "path": "tools/test-plugin-runtime-sampler.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 60,
+      "environment": {},
+      "reason": "Exercises current Loader sampler with bounded in-memory entries and the actual integration writer; verifies identity, unloading/null, parent/group uniqueness, no disk reads or expression replay, and same-frame redacted sidecar limits. Does not replace pinned real Loader tests."
+    },
+    {
+      "path": "tools/test-plugin-compatibility.py",
+      "stage": "runtime",
+      "requires": [
+        "python39",
+        "node24",
+        "current_archive"
+      ],
+      "args": [],
+      "environment": {
+        "DSHA_RUNTIME_ARCHIVE": "{runtimeArchive}"
+      },
+      "timeoutSeconds": 180,
+      "reason": "Verifies the exact pinned app-boot compatibility functions against the production SemVer reader without importing plugins, and exercises guarded preview/commit, read-only exact exemptions, source ABA, platform/prerelease and multi-package preflight on isolated real files."
+    },
+    {
+      "path": "tools/test-plugin-startup-metadata.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "environment": {},
+      "timeoutSeconds": 60,
+      "reason": "Executes the production observer in an isolated VM with real fixed compatibility checker, temporary manifests and injected YAML/Loader ports; verifies startup-only metadata, patch declarations and unverified preflight without claiming real Cordis Loader execution."
+    },
+    {
+      "path": "tools/test-dsha-gradle-guard.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic negative controls for diagnostic-only Gradle admission guard; every real project task remains refused, no Gradle/JVM launch or cache/network modifications.",
+      "cli": "No arguments; not actual Gradle or FileChannel admission evidence."
+    },
+    {
+      "path": "tools/test-mobile-scroll-lifecycle.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Exact pinned old and generated mobile scroll lifecycle code under controlled RAF; owner/request retirement, late cleanup, original 100-position regression and guard negative controls without browser or device execution.",
+      "cli": "No arguments; synthetic mechanism evidence does not substitute real browser or full runtime verification."
+    },
+    {
+      "path": "tools/test-previous-runtime-fixture.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Build212 historical APK single-source identity shared by runner and patch-chain; test-only byte controls reject missing, wrong-generation and changed inputs without weakening production pins.",
+      "cli": "No arguments; temporary synthetic controls are never accepted as a real historical APK."
+    },
+    {
+      "path": "tools/test-previous-module-boundary.py",
+      "stage": "fast",
+      "requires": [
+        "python39",
+        "jdk17"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Pinned build212 module absence set, duplicate/member identity negative controls and real production Java whole-chain canonical reconstruction; synthetic branch probe is not historical module bytes.",
+      "cli": "No arguments; JAVA_HOME selects JDK17. No Android/device execution."
+    },
+    {
+      "path": "tools/test-rust-build-environment.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic Cargo home isolation and single selected toolchain binding; all subprocess execution is mocked, no real Rust compilation or user configuration access.",
+      "cli": "No arguments; this does not substitute actual Cargo/rustup, native builds or cross-run reproduction evidence."
+    },
+    {
+      "path": "tools/test-rebirth-candidate-admission.py",
+      "stage": "fast",
+      "requires": ["python39"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic same-run candidate software admission and repository/ref/commit binding; rejects historical baseline reuse without building, signing or using the network.",
+      "cli": "No arguments; synthetic admission tests do not substitute actual successful workflow jobs."
+    },
+    {
+      "path": "tools/test-mobile-gear-owner.mjs",
+      "stage": "fast",
+      "requires": ["node24"],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic shared gear owner retirement and multi-instance mutation convergence using actual generator code; no browser, profile or device execution.",
+      "cli": "No arguments; mechanism evidence does not substitute a real browser lifecycle test."
+    },
+    {
+      "path": "tools/test-rebirth-unsigned-workflow.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic unsigned candidate admission and workflow boundaries; does not build, sign, publish, install or use the network.",
+      "cli": "No arguments; current candidate admission requires successful software gates from the same workflow run; historical baseline success is not reused."
+    },
+    {
+      "path": "tools/test-rebirth-rc1-host.py",
+      "stage": "runtime",
+      "requires": [
+        "python39",
+        "node24",
+        "raw",
+        "jdk17"
+      ],
+      "args": [
+        "--runtime",
+        "{raw}"
+      ],
+      "timeoutSeconds": 1800,
+      "environment": {},
+      "reason": "Current RC1 Java/Python/SettingsForms cross-layer and explicit host JUnit regression, including real StartupPipeline/WebReady consumers and an exact complete WebRun source slice, with documented rejecting Android adapters; not full WebLifecycleController, Robolectric, Android or Gradle validation. Uses locked offline jars, private synthetic profiles, no device or user data.",
+      "cli": "--runtime <proven raw fixture>; complete mode records separate cross-layer and JUnit stages. Do not replace with compile-only or junit-only for this manifest entry."
+    },
+    {
+      "path": "tools/test-sprout-host-jars.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Fixed real host framework and SnakeYAML preparation contract; offline checks and synthetic download rejection controls never substitute real artifact bytes.",
+      "cli": "No arguments; no network or Android device in unit controls."
+    },
+    {
+      "path": "tools/test-ci-safe-test-diagnostics.py",
+      "stage": "fast",
+      "requires": [
+        "python39",
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic allowlist and injection negative controls for fixed test phase diagnostics; no log text disclosure, network, Gradle, browser or device execution.",
+      "cli": "No arguments; diagnostics never modify test result status or substitute full gate evidence."
+    },
+    {
+      "path": "tools/test-rebirth-apk-check.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Historical build359 checker regression: duplicate members, full ABI and manifest/signature controls. This does not verify the current build368 candidate identity.",
+      "cli": "No arguments; historical synthetic checker coverage only. Current candidate identity is verified by test-verify-rebirth-candidate.py and the actual current APK checker."
+    },
+    {
+      "path": "tools/test-validation-inputs.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Synthetic validation-only input receipt binding and static gate-only workflow boundaries; no network, Gradle, APK or device execution.",
+      "cli": "No arguments; fixed bundle transportation never substitutes current HEAD recipe proof."
+    },
+    {
+      "path": "tools/test-runtime-stable-patches.py",
+      "stage": "fast",
+      "requires": [
+        "python39"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Exact opt-in full-module output identity for stable runtime patch chains, including marker bypass and unknown shared-anchor inputs; no device or dependency installation.",
+      "cli": "No arguments; isolated patch data negative controls."
+    },
+    {
+      "path": "tools/test-host-browser-launch.mjs",
+      "stage": "fast",
+      "requires": [
+        "node24"
+      ],
+      "args": [],
+      "timeoutSeconds": 120,
+      "environment": {},
+      "reason": "Pure host-browser configuration negative controls: engine/executable separation, conflicting legacy aliases and opt-in headless profile restrictions; does not launch a browser or device.",
+      "cli": "No arguments; synthetic option parsing only, not browser execution proof."
+    },
+    {
+      "path": "tools/test-browser-fixture-assets.mjs",
+      "stage": "runtime",
+      "requires": [
+        "node24",
+        "raw",
+        "browser"
+      ],
+      "args": [],
+      "timeoutSeconds": 300,
+      "environment": {},
+      "reason": "Locked real browser module static assets, exact bytes and bounded read-only fixture routes; malformed paths, wrong modules and symlink escapes reject without account/device operations.",
+      "cli": "No arguments; runner supplies verified raw, Playwright and browser cache."
     }
   ]
 }

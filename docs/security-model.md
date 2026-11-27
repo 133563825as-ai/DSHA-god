@@ -30,7 +30,7 @@
 
 ## 终端与插件
 
-正式终端允许修复 shell；链接、本地包和更新通过包格式、路径、摘要与事务检查后自动安装启用，不再要求插件审阅。依赖允许未锁定重解析、生命周期脚本和 pnpmfile，并记录实际锁与目录摘要以支持回切。用户主动禁用及安全模式意图仍保持。
+正式终端允许修复 shell。打开外部安装链接只显示请求，不代表同意。用户检查本机状态、核对来源、勾选本次脚本许可并点击「下载、安装并启用」后，才提交该请求。已提交的安装、本地包及更新通过包格式、路径、摘要与事务检查后可自动启用；关闭页面不代表已取消后台操作。依赖允许未锁定重解析、生命周期脚本和 pnpmfile，并记录实际锁与目录摘要以支持回切。用户主动禁用及安全模式意图仍保持。
 
 插件可以在应用 UID 下读写可访问文件并执行代码。自动安装不是独立安全认证。受管系统组件与用户插件分层；系统组件从当前签名 APK 重建，用户修改和个人依赖不得被当作缓存清掉。
 
@@ -38,7 +38,7 @@
 
 ### AI 工具破坏性策略（DSH 0.2.2）
 
-DSH 0.2.2 把工具执行移到 `dsh-tools/lib/pipeline.js` 的 `ToolExecutionPipeline`，原生执行器与 PTC（`run_code` 及其嵌套调用）共用它。签名补丁 `guard-tools-patch.json`（`attachPolicy`）与 `guard-tools-pipeline-patch.json`（`captureExecution` / `prepareOperation` / `verifyGlobalConsent` / `verifyDispatch`）共同生效：bash 删除/不透明命令与 write/edit/str_replace_editor 覆盖已有文件，在两种执行器下都须原生全局允许、会话 danger-full-access 档位或一次性网页审批。任一挂点缺失时 bash 与文件改写一律失败，不放行。
+DSH 0.2.2 把工具执行移到 `dsh-tools/lib/pipeline.js` 的 `ToolExecutionPipeline`，原生执行器与 PTC（`run_code` 及其嵌套调用）共用它。签名补丁 `guard-tools-patch.json`（`attachPolicy`）与 `guard-tools-pipeline-patch.json`（`captureExecution` / `prepareOperation` / `verifyGlobalConsent` / `verifyDispatch`）共同生效：bash 删除/不透明命令与 write/edit/str_replace_editor 覆盖已有文件，在两种执行器下都须经本机核实的原生全局允许，或当前操作的一次性网页审批。会话的完全访问预设（包括显式选择）不是宿主豁免；没有可用审批通道就拒绝。任一挂点缺失时 bash 与文件改写一律失败，不放行。
 
 上游新增的 `apply_patch`（dsh-tool-fs，可新建、改写、删除、移动文件）**不在**此策略内：`prepareOperation` 对它不要求同意，guard-fs 也未包装它的 `fs/write|edit|delete-intent`。上游默认关闭（`Config.applyPatch=false`；dsh-base 与 web 的 standard / ptc / cordis / minimal 预设都不开启，DSHA 不改这些配置），按用户决定不加 DSHA 拒绝补丁。用户若在 profile `cordis.patch.yml` 中覆盖某预设的 `tool-fs` 行为 `config.applyPatch: true`（或由插件自行注册同名工具），该工具即可在无审批、无先读校验（0.2.2 默认停用 `fs-observation-policy`）、danger-full-access 下无路径边界的情况下删除或覆盖文件；DSHA 仅保留执行身份冻结、工具身份与取消核验。
 
@@ -46,7 +46,7 @@ DSH 0.2.2 的默认安全取舍还包括：Web Fetch 沿用上游实现，默认
 
 ## 设备与浏览器能力
 
-Root、Shizuku、ADB 在发送前选择实际通道；设备命令由原生与特权执行侧策略检查。Root 通道另有用户可选的 strict / relaxed / full 三档拦截：strict 为默认白名单；relaxed 放行任意命令但拦截格式化、刷机、写块设备、重启、清应用数据及递归删除整块用户数据等不可逆操作；full 不按命令内容拦截。三档都要求 root shell 开关与真实 su 身份，短信读取闸门在三个档位都保留；Shizuku、ADB 通用执行器与普通设备命令继续使用 strict。短信、虚拟屏、截图/读屏、录音和存储仍依赖对应原生授权与 Android 实际权限；未知命令的确认不能替代设备身份核验。结果未知时不得换通道重放。
+Root、Shizuku、ADB 在发送前选择实际通道；设备命令由原生与特权执行侧策略检查。Root 通道另有用户可选的 strict / relaxed / full 三档拦截：strict 为默认白名单；relaxed 放行任意命令但拦截格式化、刷机、写块设备、重启、清应用数据及递归删除整块用户数据等不可逆操作；full 不按命令内容拦截。三档都要求 root shell 开关与真实 su 身份，短信读取闸门在三个档位都保留；Shizuku、ADB 通用执行器与普通设备命令继续使用 strict。短信、虚拟屏、截图/读屏、录音和存储仍依赖对应原生授权与 Android 实际权限；未知命令的确认不能替代设备身份核验。结果未知时不得换通道重放。实体屏特权执行（T130 Phase A，实验）是独立原生能力：默认关闭、可撤销、仅当前手机任务期间有效，复用同一受管 `app_process` 入口并逐项核验启动参数；它不需要无障碍，但已知敏感应用、未允许的目标应用与目标不明的窗口一律 fail-closed 拒绝，帧与动作凭据一次性、30 秒、绑定显示代次，UNKNOWN 不重放。详见[实体屏特权执行核心](privileged-screen-core.md)。
 
 root 原始命令仅在 uid 0 的特权子进程内执行，保留 65 秒结果收集上限、256 KiB 输出截断和执行身份校验；严格档的受管 argv 路径与文件适配器不变。放宽档的不可逆操作判定是文本级黑名单，不能宣称覆盖所有等价写法；用户选择 full 即接受该边界。
 
@@ -82,4 +82,4 @@ ADB 配对密钥目录 `.dsh/adbkeys` 按本机状态处理：备份与导出不
 
 ## 交付与验证限度
 
-正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）。构建不缺省发布口令，不替换为其它证书。build350 的 CI 只证明该 commit 在托管 runner 上的编译、门禁、单测、签名与发布流程；软件测试、APK/ELF/签名核验和手机覆盖安装是不同证据。发布准备的本地范围为本机宿主 contracts 整组、全树格式检查、全量单测（含 10 例 aarch64 环境基线）、lint、`test-vscreen-help` 与 `test-diagnostic-feedback`（见 [build350 更新说明](releases/build350-changes.zh.md)）；真机结论待用户按当次记录核对后补写，未预写通过，不能继承旧报告的通过范围。
+正式包使用 `io.github.sunsetrne.dsha` 与 `ci/release-identity.json` 记录的 Mod 发布证书（v1/v2/v3）；构建不缺省发布口令、不替换证书。build368 源码门禁、完整 CI 单测/lint、APK/ELF/签名和真机覆盖是各自独立证据，实际结果见准备与 CI 回执，不预写发布成功。版本与候选说明见 [build368 更新说明](releases/build368-changes.zh.md)。受管 `runtimeId` 为 `52624be1ad386017c68c2fc986c0e834eaeec5364e9539bd0f3aa8dc74e1daba` / 517 启动输入 / 205 资产输入；367→368 覆盖升级预期一次整屏维护页，`baseVersion=10` 与 `dataWrite` 不变。Rust 发布装配默认 prebuilt，运行时后端在 App 启动后默认启用；`.so` 未随包、加载失败或 ABI 不符时按类型化原因留在 JVM，`verify_plan` 选中 Rust 后仍 fail-closed，数据格式和恢复语义不变。A6 配置意图、运行证据和变更结果独立；缺 A5 退出/内容证明时保守未知，变更退出未确认保留占用，不因重启、UI 确认或文案改成成功。只读查询未知只使目录陈旧并交还共享租约。A7 授权围栏与各类动作证据不互换；Root 模块清单只读、有界、显式读取，固定源码样本不证明管理器兼容。A2 默认关闭工作台仍受系统授权/epoch、文件身份和发布前检查约束，Provider 边界和外部覆盖可能部分写入的限制保持。A3/RC1 旧证据缺失仍可阻断启动。这些本地保护不构成同 UID 任意代码的隔离保证。build367 已发布，build368 完整 CI 与设备验收待完成，不能继承旧版设备通过范围。

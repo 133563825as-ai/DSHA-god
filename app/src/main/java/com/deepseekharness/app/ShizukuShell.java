@@ -30,6 +30,7 @@ public final class ShizukuShell {
   private ShizukuShell() {}
 
   public static void init(Context ctx) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     if (ctx != null) context = ctx.getApplicationContext();
     synchronized (LOCK) {
       if (listening || context == null) return;
@@ -57,6 +58,7 @@ public final class ShizukuShell {
   }
 
   public static boolean isAvailable() {
+    if (BuildConfig.REBIRTH_CANDIDATE) return false;
     try {
       return Shizuku.pingBinder();
     } catch (Throwable e) {
@@ -75,6 +77,27 @@ public final class ShizukuShell {
   public static boolean isReady() {
     IShellService current = service;
     return hasPermission() && current != null && current.asBinder().pingBinder();
+  }
+
+  /** 只读事实，不触发绑定或授权；真实 UID 与本次业务许可仍需独立回执。 */
+  public static com.deepseekharness.app.util.DeviceChannelFacts channelFacts(Context ctx) {
+    var authority = com.deepseekharness.app.core.ConfigStore.deviceAuthorization(ctx);
+    boolean visible = isAvailable();
+    boolean permitted = visible && hasPermission();
+    boolean bound = permitted && isReady();
+    return new com.deepseekharness.app.util.DeviceChannelFacts(
+        com.deepseekharness.app.util.DeviceChannelFacts.Channel.SHIZUKU,
+        permitted,
+        visible,
+        permitted,
+        bound,
+        bound,
+        com.deepseekharness.app.util.DeviceChannelFacts.ConnectionEvidence.UNVERIFIED,
+        false,
+        com.deepseekharness.app.util.DeviceChannelFacts.UNKNOWN_UID,
+        false,
+        SystemClock.elapsedRealtime(),
+        authority.revision);
   }
 
   public static String status() {
@@ -106,6 +129,8 @@ public final class ShizukuShell {
   }
 
   public static String userStatus(Context ctx) {
+    if (BuildConfig.REBIRTH_CANDIDATE)
+      return UiText.choose("此试用版不提供 Shizuku", "Shizuku is unavailable in this trial");
     ShizukuChannelStatus.Step step = step(ctx);
     switch (step) {
       case INSTALL:
@@ -151,6 +176,11 @@ public final class ShizukuShell {
   public static void requestPermission(Shizuku.OnRequestPermissionResultListener callback) {
     MAIN.post(
         () -> {
+          if (BuildConfig.REBIRTH_CANDIDATE) {
+            if (callback != null)
+              callback.onRequestPermissionResult(0, PackageManager.PERMISSION_DENIED);
+            return;
+          }
           if (hasPermission()) {
             ensureBound(context);
             if (callback != null)
@@ -204,6 +234,7 @@ public final class ShizukuShell {
   }
 
   public static void ensureBound(Context ctx) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     init(ctx);
     if (Looper.myLooper() != Looper.getMainLooper()) {
       MAIN.post(() -> ensureBound(context));
@@ -314,6 +345,7 @@ public final class ShizukuShell {
 
   /** 只在发送前等待绑定；已经发送的命令失败后不自动重放。 */
   public static boolean awaitReady(Context ctx, long timeoutMs) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return false;
     ensureBound(ctx);
     if (Looper.myLooper() == Looper.getMainLooper()) return isReady();
     long until = SystemClock.elapsedRealtime() + timeoutMs;

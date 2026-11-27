@@ -1,0 +1,25 @@
+[workspace]
+members = ["crates/dsha-core"]
+resolver = "2"
+
+# R0 冻结首期依赖集与 vendor 字节；R3 起 flate2/sha2/sha1 均在真实实现中使用，
+# 未使用依赖恢复为硬告警（不再需要 R0/R2 期间的临时 allow）。空表保留，供 crate
+# 的 `[lints] workspace = true` 继承（不引入任何放宽）。
+[workspace.lints]
+[workspace.package]
+edition = "2021"
+rust-version = "1.100.0"
+license = "MIT"
+publish = false
+
+# R0 锁定（ADR-0004 决定四 / 方案 §0.2.3）：Android 上 abort 会杀整个 App 进程，
+# 因此 dev 与 release 都禁止 panic=abort；release 以体积为目标，不承诺性能倍数。
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "unwind"          # 禁止 abort：Android 上 abort 会杀整个 App 进程
+strip = "symbols"

@@ -91,7 +91,7 @@ public final class DeviceGrantsSensitiveScreenTest {
     host.get()
         .getSupportFragmentManager()
         .beginTransaction()
-        .replace(R.id.fragment_container, new DeviceGrantsFragment())
+        .replace(R.id.fragment_container, new ScreenOperationFragment())
         .commitNow();
     ShadowLooper.shadowMainLooper().idle();
   }

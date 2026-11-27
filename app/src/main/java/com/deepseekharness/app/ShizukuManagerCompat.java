@@ -44,6 +44,8 @@ public final class ShizukuManagerCompat {
 
   /** 权限声明者优先，其次按固定白名单顺序取第一个已安装的兼容管理器。 */
   private static ShizukuManagers.Selection select(Context context) {
+    if (BuildConfig.REBIRTH_CANDIDATE)
+      return new ShizukuManagers.Selection(null, ShizukuManagers.Kind.NONE);
     PackageManager pm = context.getPackageManager();
     Set<String> installed = new LinkedHashSet<>();
     for (String packageName : ShizukuManagers.knownPackages())

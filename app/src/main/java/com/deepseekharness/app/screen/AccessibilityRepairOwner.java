@@ -77,6 +77,7 @@ public final class AccessibilityRepairOwner {
       String authenticatedProbe,
       long repairIntentEpoch,
       BooleanSupplier current) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return false;
     // TCP reachability and a historic successful probe cannot authorize a settings write.
     if (authenticatedProbe == null
         || !AdbResult.shellReady(authenticatedProbe)

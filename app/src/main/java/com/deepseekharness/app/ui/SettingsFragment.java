@@ -53,6 +53,20 @@ public class SettingsFragment extends Fragment {
   /** 屏幕常亮/省电模式互斥的编程式开关同步；置位期间不再触发持久化、服务刷新与提示。 */
   private boolean syncingPowerSwitches;
 
+  private final LanguageSelectionOwner languageOwner = new LanguageSelectionOwner();
+
+  @Override
+  public void onStop() {
+    languageOwner.invalidate();
+    super.onStop();
+  }
+
+  @Override
+  public void onDestroyView() {
+    languageOwner.invalidate();
+    super.onDestroyView();
+  }
+
   private final androidx.fragment.app.FragmentManager.OnBackStackChangedListener detailStack =
       this::notifyHost;
 
@@ -221,33 +235,75 @@ public class SettingsFragment extends Fragment {
         requireContext().getPackageName() + " · Android " + android.os.Build.VERSION.RELEASE;
     TechNote.bind(ver, tech, disclosure, null);
     TextView updateSub = v.findViewById(R.id.settings_update_sub);
-    updateSub.setText(com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
+    updateSub.setText(
+        com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE
+            ? com.deepseekharness.app.util.UiText.choose(
+                "新生候选 · 请手动更新", "Rebirth candidate · Manual updates only")
+            : com.deepseekharness.app.util.UiText.text("稳定版与预览版更新"));
 
     View about = v.findViewById(R.id.settings_about);
     selectable.put(KEY_ABOUT, about);
     about.setOnClickListener(x -> select(KEY_ABOUT));
+    com.deepseekharness.app.contract.ContributionView demo = null;
+    try {
+      com.deepseekharness.app.contract.ModuleRegistry demoRegistry =
+          com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(requireContext());
+      // 合成存储只由测试或明确演示策略显式安装，普通模式不自动登记。
+      demo = visibleStorageDemo(demoRegistry);
+      for (var contribution : demoRegistry.visibleContributions()) {
+        if (com.deepseekharness.app.contract.BuiltinModules.ABOUT_CONTRIBUTION_KEY.equals(
+            contribution.key()))
+          about.setContentDescription(
+              com.deepseekharness.app.util.UiText.choose(
+                  contribution.title(), contribution.titleEn()));
+      }
+    } catch (RuntimeException unavailable) {
+      // Optional demo only: do not interrupt the existing About row or settings navigation.
+    }
+    android.widget.Button storageDemo =
+        new androidx.appcompat.widget.AppCompatButton(requireContext());
+    storageDemo.setText(demo == null ? "" : demo.title());
+    storageDemo.setAllCaps(false);
+    storageDemo.setVisibility(demo != null ? View.VISIBLE : View.GONE);
+    storageDemo.setMinHeight(dp(48));
+    storageDemo.setMinimumHeight(dp(48));
+    storageDemo.setBackgroundResource(R.drawable.bg_action_plain);
+    storageDemo.setTextColor(requireContext().getColor(R.color.shell_text));
+    android.view.ViewGroup support = (android.view.ViewGroup) about.getParent();
+    support.addView(
+        storageDemo,
+        support.indexOfChild(about) + 1,
+        new android.view.ViewGroup.LayoutParams(-1, -2));
+    selectable.put("storage-demo", storageDemo);
+    storageDemo.setOnClickListener(x -> select("storage-demo"));
+    android.widget.Button moduleCenter =
+        new androidx.appcompat.widget.AppCompatButton(requireContext());
+    moduleCenter.setText(com.deepseekharness.app.util.UiText.choose("内置模块", "Built-in modules"));
+    moduleCenter.setAllCaps(false);
+    moduleCenter.setMinHeight(dp(48));
+    moduleCenter.setMinimumHeight(dp(48));
+    moduleCenter.setBackgroundResource(R.drawable.bg_action_plain);
+    moduleCenter.setTextColor(requireContext().getColor(R.color.shell_text));
+    moduleCenter.setTag("builtin-module-center-entry");
+    moduleCenter.setOnClickListener(x -> select("builtin-module-center"));
+    support.addView(moduleCenter, new android.view.ViewGroup.LayoutParams(-1, -2));
+    selectable.put("builtin-module-center", moduleCenter);
     v.findViewById(R.id.settings_update).setOnClickListener(x -> checkUpdate());
     v.findViewById(R.id.settings_selftest).setOnClickListener(x -> runSelftest());
 
     // 语言入口：标题在中文界面下也带英文「Language」（只写「语言 · 简体中文」时，
     // 非中文用户根本认不出这是语言开关）；右侧只显示当前生效语言，不常显「跟随系统」说明。
-    String preference = config.getUiLanguagePreference();
     String effective = config.getUiLanguage();
     String currentLabel = com.deepseekharness.app.util.UiLanguagePreference.nativeName(effective);
     String summary = currentLabel;
     LinearLayout appearance = v.findViewById(R.id.settings_appearance);
     TextView languageSummary = v.findViewById(R.id.settings_language);
     languageSummary.setText(summary);
-    // 方案 A：跟随系统卡片 + 母语名网格，点选即生效。
-    View.OnClickListener openLanguageDialog =
-        x -> LanguagePicker.show(requireContext(), preference);
-    appearance.setOnClickListener(openLanguageDialog);
-    languageSummary.setOnClickListener(openLanguageDialog);
+    bindLanguageModule(appearance, languageSummary);
     // 主题入口只在设置里：独立页面，主界面顶栏不再直接切换。
     ((TextView) v.findViewById(R.id.settings_theme_title))
         .setText(com.deepseekharness.app.util.UiText.text("主题与外观"));
-    v.findViewById(R.id.settings_theme)
-        .setOnClickListener(x -> ThemeActivity.open(requireContext()));
+    bindThemeModule(v);
     renderThemeSummary(v);
     View overlayRow = v.findViewById(R.id.settings_overlay);
     selectable.put(KEY_OVERLAY, overlayRow);
@@ -256,6 +312,203 @@ public class SettingsFragment extends Fragment {
     installGroups(v);
     if (!twoPane) return v;
     return twoPaneShell(v, savedInstanceState);
+  }
+
+  private void bindLanguageModule(LinearLayout row, TextView summary) {
+    com.deepseekharness.app.contract.ModuleRegistry registered = null;
+    try {
+      registered =
+          com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(requireContext());
+    } catch (RuntimeException unavailable) {
+      // 原行与原 Picker 是冷态本地恢复入口，不依赖模块装配成功。
+    }
+    final var registry = registered;
+    TextView title = (TextView) row.getChildAt(1);
+    Runnable render =
+        () -> {
+          var contribution = visibleLanguage(registry);
+          // 标题沿用既有十语资源；模块贡献仍决定点击凭证与恢复路径。
+          title.setText(getString(R.string.ui_language_title));
+          row.setTag(contribution == null ? "host-language-recovery" : contribution.key());
+          row.setVisibility(View.VISIBLE);
+        };
+    View.OnClickListener open =
+        ignored -> {
+          render.run();
+          openLanguagePicker(this, languageOwner, registry);
+        };
+    row.setOnClickListener(open);
+    summary.setOnClickListener(open);
+    render.run();
+  }
+
+  /** 原设置和模块详情共享同一 Picker 与代次/页面 owner 守卫，不嵌套设置页。 */
+  static void openLanguagePicker(
+      Fragment page,
+      LanguageSelectionOwner owner,
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    final android.app.Activity capturedActivity = page.getActivity();
+    if (capturedActivity == null
+        || capturedActivity.isFinishing()
+        || capturedActivity.isDestroyed()) return;
+    var contribution = visibleLanguage(registry);
+    final var lease =
+        contribution == null
+            ? null
+            : com.deepseekharness.app.contract.BuiltinModules.languageLease(registry);
+    // 模块失效后绝不把已排队确认转成恢复确认；恢复只在下一次显式点击选定。
+    final boolean modulePath = contribution != null;
+    final View capturedPage = page.getView();
+    var ticket =
+        owner.open(
+            write -> {
+              if (capturedPage == null
+                  || page.getView() != capturedPage
+                  || !page.isResumed()
+                  || page.getActivity() != capturedActivity
+                  || capturedActivity.isFinishing()
+                  || capturedActivity.isDestroyed()) return false;
+              // 只在主线程调用原 select；锁序 owner → lease → registry，无装配 LOCK。
+              if (modulePath)
+                return lease != null
+                    && contribution.generation() == lease.generation()
+                    && com.deepseekharness.app.contract.BuiltinModules.runLanguageIfActive(
+                        registry, lease, write);
+              write.run();
+              return true;
+            });
+    LanguagePicker.show(
+        page.requireContext(),
+        HarnessController.get(page.requireContext()).config().getUiLanguagePreference(),
+        ticket);
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleLanguage(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null) return null;
+    try {
+      var lease = com.deepseekharness.app.contract.BuiltinModules.languageLease(registry);
+      if (lease == null) return null;
+      for (var view : registry.visibleContributions())
+        if (com.deepseekharness.app.contract.BuiltinModules.LANGUAGE_CONTRIBUTION
+                .globalKey()
+                .equals(view.key())
+            && view.generation() == lease.generation()
+            && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) return view;
+    } catch (RuntimeException unavailable) {
+      /* 同行恢复不随模块故障消失。 */
+    }
+    return null;
+  }
+
+  private boolean syncingThemeControls;
+
+  private void syncThemeControls(
+      View root, com.deepseekharness.app.contract.ModuleRegistry registry) {
+    ViewGroup controls = root.findViewWithTag("builtin-theme-controls");
+    if (controls == null) return;
+    syncingThemeControls = true;
+    try {
+      var show = (com.google.android.material.materialswitch.MaterialSwitch) controls.getChildAt(0);
+      var enabled =
+          (com.google.android.material.materialswitch.MaterialSwitch) controls.getChildAt(1);
+      boolean active = com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) != null;
+      show.setChecked(
+          !registry
+              .layout()
+              .isHidden(
+                  com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey()));
+      show.setEnabled(active);
+      enabled.setChecked(active);
+      root.findViewById(R.id.settings_theme)
+          .setVisibility(visibleTheme(registry) == null ? View.GONE : View.VISIBLE);
+    } finally {
+      syncingThemeControls = false;
+    }
+  }
+
+  private void bindThemeModule(View root) {
+    var registry =
+        com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext());
+    try {
+      com.deepseekharness.app.contract.BuiltinModules.ensureProductModules(registry);
+    } catch (RuntimeException unavailable) {
+      /* 可选装配不阻断法定入口。 */
+    }
+    View row = root.findViewById(R.id.settings_theme);
+    Runnable refresh =
+        () -> {
+          var contribution = visibleTheme(registry);
+          row.setVisibility(contribution == null ? View.GONE : View.VISIBLE);
+          if (contribution != null)
+            ((TextView) root.findViewById(R.id.settings_theme_title))
+                .setText(
+                    com.deepseekharness.app.util.UiText.choose(
+                        contribution.title(), contribution.titleEn()));
+        };
+    row.setOnClickListener(
+        x -> {
+          if (visibleTheme(registry) != null) ThemeActivity.open(requireContext());
+        });
+    // 控制入口独立于贡献本身，隐藏/停用后仍可恢复；不另建偏好 owner。
+    LinearLayout controls = new LinearLayout(requireContext());
+    controls.setOrientation(LinearLayout.VERTICAL);
+    controls.setTag("builtin-theme-controls");
+    var show = new com.google.android.material.materialswitch.MaterialSwitch(requireContext());
+    show.setText(com.deepseekharness.app.util.UiText.choose("显示主题入口", "Show theme entry"));
+    show.setMinHeight(dp(48));
+    show.setChecked(
+        !registry
+            .layout()
+            .hidden()
+            .contains(
+                com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey()));
+    show.setOnCheckedChangeListener(
+        (button, checked) -> {
+          if (syncingThemeControls) return;
+          registry.setContributionHidden(
+              com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION.globalKey(),
+              !checked);
+          syncThemeControls(root, registry);
+          refresh.run();
+        });
+    var enabled = new com.google.android.material.materialswitch.MaterialSwitch(requireContext());
+    enabled.setText(com.deepseekharness.app.util.UiText.choose("启用主题模块", "Enable theme module"));
+    enabled.setMinHeight(dp(48));
+    enabled.setChecked(
+        com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) != null);
+    enabled.setOnCheckedChangeListener(
+        (button, checked) -> {
+          if (syncingThemeControls) return;
+          var result =
+              com.deepseekharness.app.contract.BuiltinModules.setThemeEnabled(registry, checked);
+          syncThemeControls(root, registry);
+          if (result.rejected())
+            android.widget.Toast.makeText(
+                    requireContext(), result.code(), android.widget.Toast.LENGTH_SHORT)
+                .show();
+          refresh.run();
+        });
+    show.setEnabled(enabled.isChecked());
+    controls.addView(show, new LinearLayout.LayoutParams(-1, -2));
+    controls.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
+    ((ViewGroup) row.getParent()).addView(controls);
+    refresh.run();
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleTheme(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null
+        || com.deepseekharness.app.contract.BuiltinModules.themeLease(registry) == null)
+      return null;
+    for (var view : registry.visibleContributions())
+      if (com.deepseekharness.app.contract.BuiltinModules.THEME_CONTRIBUTION
+              .globalKey()
+              .equals(view.key())
+          && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) return view;
+    return null;
   }
 
   private void installGroups(View root) {
@@ -284,7 +537,12 @@ public class SettingsFragment extends Fragment {
   public void onResume() {
     super.onResume();
     // 从主题页返回且明暗未变时不会重建，这里刷新摘要。
-    if (getView() != null) renderThemeSummary(getView());
+    if (getView() != null) {
+      renderThemeSummary(getView());
+      syncThemeControls(
+          getView(),
+          com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext()));
+    }
   }
 
   /** 摘要显示偏好；跟随系统时补上当前实际明暗。 */
@@ -328,7 +586,9 @@ public class SettingsFragment extends Fragment {
     detail.setId(R.id.settings_detail);
     shell.addView(detail, new LinearLayout.LayoutParams(0, -1, 1f));
     // 首次进入：直接给右侧一个默认详情；旋转/恢复时由 FragmentManager 自行恢复原详情页。
-    if (getChildFragmentManager().findFragmentById(R.id.settings_detail) == null)
+    Fragment restoredDetail = getChildFragmentManager().findFragmentById(R.id.settings_detail);
+    if (restoredDetail == null
+        || (restoredDetail instanceof StorageDemoFragment && !storageDemoVisible()))
       shell.post(
           () -> {
             if (isAdded() && !getChildFragmentManager().isStateSaved()) showDetail(selectedKey);
@@ -406,6 +666,8 @@ public class SettingsFragment extends Fragment {
   private Fragment create(String key) {
     if (KEY_OVERLAY.equals(key)) return new OverlayFragment();
     if (KEY_ABOUT.equals(key)) return new AboutFragment();
+    if ("builtin-module-center".equals(key)) return new BuiltinModuleCenter();
+    if ("storage-demo".equals(key)) return storageDemoVisible() ? storageDemoPage() : null;
     if (key.startsWith("tab")) {
       try {
         int index = Integer.parseInt(key.substring(3));
@@ -415,6 +677,44 @@ public class SettingsFragment extends Fragment {
       }
     }
     return null;
+  }
+
+  static Fragment storageDemoPage() {
+    return new StorageDemoFragment();
+  }
+
+  private boolean storageDemoVisible() {
+    try {
+      return visibleStorageDemo(
+              com.deepseekharness.app.contract.BuiltinModules.ensureRegistered(requireContext()))
+          != null;
+    } catch (RuntimeException unavailable) {
+      return false;
+    }
+  }
+
+  @Nullable
+  static com.deepseekharness.app.contract.ContributionView visibleStorageDemo(
+      com.deepseekharness.app.contract.ModuleRegistry registry) {
+    if (registry == null) return null;
+    try {
+      if (!registry.isInstalled(
+          com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_MODULE_ID)) return null;
+      String key =
+          com.deepseekharness.app.contract.BuiltinModules.STORAGE_DEMO_CONTRIBUTION.globalKey();
+      com.deepseekharness.app.contract.ContributionView found = null;
+      for (com.deepseekharness.app.contract.ContributionView view :
+          registry.visibleContributions()) {
+        if (key.equals(view.key())
+            && view.kind() == com.deepseekharness.app.contract.Contribution.Kind.CARD) {
+          if (found != null) return null;
+          found = view;
+        }
+      }
+      return found;
+    } catch (RuntimeException unavailable) {
+      return null;
+    }
   }
 
   private void markSelected() {

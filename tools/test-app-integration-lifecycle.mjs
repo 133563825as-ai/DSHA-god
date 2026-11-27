@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {testRuntime} from './test-runtime-fixture.mjs';
 import {confirmedIdle} from '../app/src/main/assets/app-integration/activity.js';
-import {installedPluginSampler,runtimePlugins} from '../app/src/main/assets/app-integration/runtime-plugins.js';
+import {installedPluginSampler,runtimePlugins,pluginSessionIdentity,pluginActivityProjection} from '../app/src/main/assets/app-integration/runtime-plugins.js';
 
 const runtime=testRuntime('raw');
 const rawRequire=createRequire(path.join(runtime,'package.json'));
@@ -20,7 +20,7 @@ for(const service of ['agents','sessions','sessionProjections','dynamicCordisRun
 const identity={generation:'lifecycle-generation',instance:'lifecycle-instance',profile:'web'};
 const moduleName='./installed.js';
 const evidence={...identity,bundles:[{name:'installed',version:'1.0.0',profile:'web',entries:[{
-  id:'installed',moduleHash:createHash('sha256').update(moduleName).digest('hex'),group:false,
+  id:'installed',parentId:'',moduleHash:createHash('sha256').update(moduleName).digest('hex'),group:false,
 }]}]};
 const loader={root:{}};
 const include={options:{id:'include',name:'cordis:include'},parent:loader.root,subtree:{}};
@@ -34,7 +34,7 @@ ctx.provide('agents',{list:()=>[{...agent,id:'wrong-parent-session'}]});
 ctx.provide('sessions',{list:()=>[]});
 ctx.provide('sessionProjections',{stateOf:()=>({active:[]})});
 ctx.provide('jobs',{list:()=>[]});
-const routes=new Set(), timers=new Map(), writes=[], samplerContexts=[];
+const routes=new Set(), timers=new Map(), writes=[], sidecars=[], samplerContexts=[];
 let routeRegistrations=0, timerId=0, maxTimers=0;
 ctx.provide('webServer',{register(route){routeRegistrations++;routes.add(route);return()=>routes.delete(route);}});
 ctx.provide('connection',{authorizeIndex:()=>true});
@@ -44,13 +44,17 @@ const source=fs.readFileSync(index,'utf8').replace(/^import .*;\n/gm,'')
 const sandbox=vm.createContext({
   URL,
   process:{env:{DSHA_WEB_GENERATION:identity.generation,DSH_TASK_INSTANCE:identity.instance,DSHA_STARTUP_PROFILE:identity.profile},pid:123},
-  confirmedIdle,runtimePlugins,
+  confirmedIdle,runtimePlugins,pluginSessionIdentity,pluginActivityProjection,
   installedPluginSampler(context,binding){
     assert.ok(Context.is(context));assert.notEqual(context,ctx);
     samplerContexts.push(context);return installedPluginSampler(context,binding,evidence);
   },
   readFileSync:fs.readFileSync,
-  writeFileSync(file,json,options){assert.equal(options.mode,0o600);writes.push(JSON.parse(json));},
+  writeFileSync(file,json,options){
+    assert.equal(options.mode,0o600);
+    if(file==='/root/.dsha-web-activity.json.123.tmp') writes.push(JSON.parse(json));
+    else {assert.equal(file,'/root/.dsha-plugin-startup-evidence.json.123.tmp');sidecars.push(JSON.parse(json));}
+  },
   renameSync(){},unlinkSync(){},
   setInterval(callback,ms){assert.equal(ms,2000);const timer={id:++timerId,unref(){}};timers.set(timer,callback);maxTimers=Math.max(maxTimers,timers.size);return timer;},
   clearInterval(timer){assert.ok(timers.delete(timer),'disposal must clear its active timer exactly once');},
@@ -113,6 +117,13 @@ try {
 } finally {
   await removeRunner?.();await removeProjection?.();await removeSessions?.();await removeAgents?.();
   await ctx.fiber.dispose();
+}
+assert.equal(sidecars.length,writes.length);
+for(let i=0;i<writes.length;i++){
+  assert.equal(sidecars[i].observedAt,writes[i].at);
+  assert.equal(sidecars[i].generation,writes[i].generation);
+  assert.equal(sidecars[i].instance,writes[i].instance);
+  assert.deepEqual(sidecars[i].installedPlugins,writes[i].installedPlugins);
 }
 testRuntime('raw');
 fs.mkdirSync(path.dirname(output),{recursive:true});

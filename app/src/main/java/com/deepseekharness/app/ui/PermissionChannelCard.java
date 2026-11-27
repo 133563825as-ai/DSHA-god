@@ -1,5 +1,6 @@
 package com.deepseekharness.app.ui;
 
+import com.deepseekharness.app.BuildConfig;
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
@@ -52,9 +53,17 @@ final class PermissionChannelCard {
       java.util.function.Consumer<String> selectTab,
       Runnable refresh) {
     Context ctx = activity;
-    boolean shizuku = shizukuReady(), root = rootReady(ctx);
     PermissionCard.Model m = new PermissionCard.Model();
     m.icon = R.drawable.ic_terminal;
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      m.title = UiText.choose("设备执行通道", "Device command channel");
+      m.why =
+          UiText.choose(
+              "此试用版不提供；无需安装管理器或授权。", "Not offered in this trial. No manager or grant is needed.");
+      m.pill = UiText.choose("不提供", "Unavailable");
+      return m;
+    }
+    boolean shizuku = shizukuReady(), root = rootReady(ctx);
     boolean stellar = com.deepseekharness.app.ShizukuManagerCompat.isStellar(ctx);
     boolean hasManager = com.deepseekharness.app.ShizukuManagerCompat.manager(ctx) != null;
     m.title = UiText.choose("设备执行通道", "Device command channel");

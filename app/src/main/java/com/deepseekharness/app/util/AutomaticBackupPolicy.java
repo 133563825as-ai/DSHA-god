@@ -6,6 +6,17 @@ import java.time.*;
 public final class AutomaticBackupPolicy {
   private AutomaticBackupPolicy() {}
 
+  /** Presentation only: count other complete automatic records, never verified restore points. */
+  public static boolean isCompleteAutomaticRecord(boolean automatic, String recordedResult) {
+    return automatic
+        && ("COMPLETE".equals(recordedResult)
+            || "DATA_SAVED_PLUGIN_WARNINGS".equals(recordedResult));
+  }
+
+  public static int otherCompleteRecords(int completeRecords, boolean selectedCounts) {
+    return Math.max(0, completeRecords - (selectedCounts ? 1 : 0));
+  }
+
   public static boolean due(
       String mode,
       int intervalHours,

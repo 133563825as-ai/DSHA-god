@@ -55,6 +55,7 @@ public final class ScreenMode {
 
   /** 当前模式；新键缺失时按 {@link ScreenModePolicy#migrate} 写入一次默认值。 */
   public static Mode current(Context context) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return Mode.OFF;
     SharedPreferences prefs = prefs(context);
     String stored = prefs.getString(KEY, null);
     if (stored != null) return Mode.parse(stored);
@@ -82,6 +83,11 @@ public final class ScreenMode {
   /** 桥用：返回 null 放行，否则返回稳定拒绝码。 */
   public static String bridgeRejection(
       Context context, ScreenModePolicy.Domain domain, String operation) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      if (ScreenModePolicy.exempt(domain, operation)
+          || (domain == ScreenModePolicy.Domain.VIRTUAL && "close".equals(operation))) return null;
+      return "TRIAL_SCREEN_UNAVAILABLE";
+    }
     if (ScreenModePolicy.exempt(domain, operation)) return null;
     return ScreenModePolicy.rejection(current(context), domain);
   }
@@ -99,6 +105,11 @@ public final class ScreenMode {
    * @param orientation 进入 virtual 时自动创建的方向（portrait / landscape）
    */
   public static Result request(Context context, Mode target, String orientation) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE)
+      return target == Mode.OFF
+          ? new Result(ScreenModePolicy.Switch.UNCHANGED, Mode.OFF, "", null)
+          : new Result(
+              ScreenModePolicy.Switch.NOT_ADMITTED, Mode.OFF, "TRIAL_SCREEN_UNAVAILABLE", null);
     if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
       throw new IllegalStateException("ScreenMode.request blocks; call it off the main thread");
     Context app = context.getApplicationContext();
@@ -145,6 +156,7 @@ public final class ScreenMode {
    * 不自动换到另一模式。虚拟屏本身的回收由 {@link VirtualScreenManager#revokeFor} 负责。
    */
   public static void capabilityRevoked(Context context, String reason) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     Context app = context.getApplicationContext();
     synchronized (LOCK) {
       Mode current = current(app);

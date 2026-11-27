@@ -3,19 +3,29 @@ package com.deepseekharness.app.runtime;
 import android.content.Context;
 import android.util.Log;
 import com.deepseekharness.app.util.BoundedProcessRunner;
+import com.deepseekharness.app.util.GuestTimingEvidence;
 import com.deepseekharness.app.util.PluginDownloadSource;
+import com.deepseekharness.app.util.RegisterBudget;
 import com.deepseekharness.app.util.SensitiveData;
 import com.deepseekharness.app.util.ShellQuote;
 import com.deepseekharness.app.util.UiText;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /** 通过固定 proot 入口准备并运行插件与 profile 脚本。 */
 final class GuestPluginScripts {
   static final String BUILTIN_REGISTER_SCRIPT = "register-builtin-plugins.py";
   static final String RC1_MIGRATION_SCRIPT = "rc1-migration.py";
   static final String PLUGIN_MANAGER_SCRIPT = "plugin-manager.py";
+
+  /** 上一次成功注册写下的受管资产身份；只用于选择注册预算，不参与完成判定。 */
+  static final String REGISTER_IDENTITY = "usr/local/share/dsha/register-managed-asset-id";
+
   private static final GuestScriptQueue SCRIPT_QUEUE = new GuestScriptQueue(64);
   static final long MANAGER_TIMEOUT_MS = 3_000_000;
   static final long QUERY_TIMEOUT_MS = GuestScriptBudget.QUERY_TIMEOUT_MS;
@@ -23,6 +33,12 @@ final class GuestPluginScripts {
   interface Runner {
     BoundedProcessRunner.Result run(String command, long timeoutMs)
         throws IOException, InterruptedException;
+
+    /** 默认忽略进度行；真实 proot runner 覆写它，把 guest 的 REGISTER_TIMING 带进诊断。 */
+    default BoundedProcessRunner.Result run(String command, long timeoutMs, Consumer<String> onLine)
+        throws IOException, InterruptedException {
+      return run(command, timeoutMs);
+    }
   }
 
   interface Preparation {
@@ -34,10 +50,22 @@ final class GuestPluginScripts {
 
     void assets() throws IOException;
 
+    /** 启动观测版；默认按原入口执行，生产实现把准备命中/失效带进启动诊断。 */
+    default void assets(Consumer<String> output) throws IOException {
+      assets();
+    }
+
     boolean rootPresent();
 
-    default String reusableGeneration() throws IOException {
-      return null;
+    /** 缓存探测结果；ABSENT/NEW_INPUT/UNAVAILABLE 都必须交给真实 guest 决定。 */
+    default Rc1MigrationCache.Reuse reusableMigration() throws IOException {
+      return Rc1MigrationCache.Reuse.absent();
+    }
+
+    /** 缓存命中也必须把本次 history-only 交接落盘并读回；默认实现拒绝放行。 */
+    default void bindMigrationHistory(Rc1MigrationCache.Reuse reuse, String startupId)
+        throws IOException {
+      throw new IOException("MIGRATION_HISTORY_HANDOFF_UNAVAILABLE");
     }
 
     /** Query-only readiness; must not write, install, repair, migrate or register anything. */
@@ -48,11 +76,61 @@ final class GuestPluginScripts {
     default boolean cancelled(String taskId) {
       return false;
     }
+
+    /** 当前 APK 的受管资产身份；null 表示未知，注册按首启预算处理。 */
+    default String managedAssetId() {
+      return null;
+    }
+
+    /** 上一次成功注册绑定的受管资产身份；null 表示从未成功或未知。 */
+    default String lastRegisteredAssetId() {
+      return null;
+    }
+  }
+
+  /** 同一次 prepare 绑定的不可变票据；finalize 只消费一次。 */
+  private static final class Ticket {
+    final String generation, settingsSha256, inputDigest;
+    final Map<String, String> inputs;
+    final boolean cached;
+
+    Ticket(String generation) {
+      this.generation = generation;
+      settingsSha256 = inputDigest = null;
+      inputs = Map.of();
+      cached = false;
+    }
+
+    Ticket(Rc1MigrationCache.Reuse reuse) {
+      generation = reuse.generation;
+      settingsSha256 = reuse.settingsSha256;
+      inputDigest = reuse.inputDigest;
+      inputs = Map.copyOf(reuse.inputs);
+      cached = true;
+    }
+
+    /**
+     * 账本摘要不参与票据等值：导入器会在 prepare 与 finalize 之间合法推进分节终态。
+     * 代次、settings 来源摘要与（含 rename 归一化的）小输入指纹必须一致。
+     */
+    boolean matches(Rc1MigrationCache.Reuse reuse, String startupId) {
+      return startupId.equals(reuse.startupId)
+          && "history-only".equals(reuse.mode)
+          && reuse.status == Rc1MigrationCache.Reuse.Status.REUSABLE_HISTORY
+          && java.util.Objects.equals(generation, reuse.generation)
+          && java.util.Objects.equals(settingsSha256, reuse.settingsSha256)
+          && java.util.Objects.equals(inputDigest, reuse.inputDigest)
+          && com.deepseekharness.app.util.Rc1MigrationReuse.sameInputs(inputs, reuse.inputs);
+    }
   }
 
   private final Preparation preparation;
   private final Runner runner;
-  private final java.util.LinkedHashMap<String, String> preparedReuse =
+  private final java.util.LinkedHashMap<String, Ticket> preparedReuse =
+      new java.util.LinkedHashMap<>();
+
+  /** 已消费的 finalize 终态；保存原始 Result（含失败/超时），重复调用不再派 guest。 */
+  private final java.util.LinkedHashMap<String, BoundedProcessRunner.Result> finalizedReuse =
       new java.util.LinkedHashMap<>();
 
   GuestPluginScripts(Context context, File root, BooleanSupplier ready, Runner runner) {
@@ -93,16 +171,32 @@ final class GuestPluginScripts {
             RuntimeTools.prepare(context, root);
           }
 
-          public String reusableGeneration() throws IOException {
+          public void assets(Consumer<String> output) throws IOException {
+            RuntimeTools.prepare(context, root, output);
+          }
+
+          public Rc1MigrationCache.Reuse reusableMigration() throws IOException {
             var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
             var host =
                 com.deepseekharness.app.util.ColdInstallPackages.bindPrivateFiles(
                     fs, new File(context.getApplicationInfo().dataDir), context.getFilesDir());
             File current =
                 new com.deepseekharness.app.backup.UserDataLayout(fs, host.files).current();
-            String generation = Rc1MigrationCache.generation(fs, host.files, current);
+            Rc1MigrationCache.Reuse reuse = Rc1MigrationCache.reuse(fs, host.files, current);
             host.verify(fs);
-            return generation;
+            return reuse;
+          }
+
+          public void bindMigrationHistory(Rc1MigrationCache.Reuse reuse, String startupId)
+              throws IOException {
+            var fs = new com.deepseekharness.app.backup.AndroidBackupFileSystem();
+            var host =
+                com.deepseekharness.app.util.ColdInstallPackages.bindPrivateFiles(
+                    fs, new File(context.getApplicationInfo().dataDir), context.getFilesDir());
+            File current =
+                new com.deepseekharness.app.backup.UserDataLayout(fs, host.files).current();
+            Rc1MigrationCache.bindHistory(fs, host.files, current, reuse, startupId);
+            host.verify(fs);
           }
 
           public boolean queryReady() {
@@ -113,6 +207,14 @@ final class GuestPluginScripts {
             return taskId != null
                 && taskId.matches("[a-f0-9]{32}")
                 && new File(root, "root/.dsha-plugin-task-" + taskId + ".cancel").exists();
+          }
+
+          public String managedAssetId() {
+            return RuntimeTools.managedAssetId(context);
+          }
+
+          public String lastRegisteredAssetId() {
+            return RuntimeTools.lastRegisteredAssetId(context, root);
           }
         },
         runner);
@@ -125,11 +227,16 @@ final class GuestPluginScripts {
 
   /** One preparation for the two ordered startup helpers, without caching mutable root proof. */
   Startup startup() throws IOException, InterruptedException {
+    return startup(null);
+  }
+
+  /** 启动观测版：只把共享准备与 helper 调用诊断透传，不缓存任何退出/写入证明。 */
+  Startup startup(Consumer<String> output) throws IOException, InterruptedException {
     GuestScriptQueue.Lease lease =
         SCRIPT_QUEUE.enter(
             new GuestScriptBudget(35_000, () -> false, "PLUGIN_STARTUP_QUEUE"), true);
     try {
-      preparePlugins(null);
+      preparePlugins(null, output);
       return new Startup(lease);
     } catch (IOException | InterruptedException | RuntimeException | Error failure) {
       lease.close();
@@ -159,13 +266,7 @@ final class GuestPluginScripts {
         throw new IOException("STARTUP_PLUGIN_REGISTER_ALREADY_ATTEMPTED");
       // Mark before dispatch: UNKNOWN or failed commands never gain an implicit retry here.
       registerAttempted = true;
-      BoundedProcessRunner.Result result =
-          runner.run("python3 -u /root/.dsh/" + BUILTIN_REGISTER_SCRIPT + " 2>&1", 90_000);
-      String output =
-          com.deepseekharness.app.util.GuestCommandOutcome.requireCompleted(
-              result, "BUILTIN_REGISTER");
-      if (!output.contains("BUILTIN_REGISTER_OK"))
-        throw new IOException("BUILTIN_REGISTER_RECEIPT_MISSING");
+      BoundedProcessRunner.Result result = runRegister("", true);
       registered = true;
       return result;
     }
@@ -193,12 +294,11 @@ final class GuestPluginScripts {
         SCRIPT_QUEUE.enter(
             new GuestScriptBudget(35_000, () -> false, "PLUGIN_STARTUP_QUEUE"), true)) {
       preparePlugins();
-      return runner.run(
-          "python3 -u /root/.dsh/"
-              + BUILTIN_REGISTER_SCRIPT
-              + (extraArgs.isEmpty() ? "" : " " + extraArgs)
-              + " 2>&1",
-          90_000);
+      if (extraArgs.isEmpty()) return runRegister("", true);
+      BoundedProcessRunner.Result result =
+          runner.run(registerCommand(extraArgs), registerTimeoutMs());
+      if (result != null && result.timedOut) clearStaleProfileLock();
+      return result;
     }
   }
 
@@ -213,7 +313,7 @@ final class GuestPluginScripts {
 
   private String builtinText(String args) {
     try {
-      return GuestCommandOutput.legacy(builtin(args), 90_000);
+      return GuestCommandOutput.legacy(builtin(args), registerTimeoutMs());
     } catch (IOException | InterruptedException | RuntimeException error) {
       return failure(error, "内置插件脚本执行失败: %s", "ERROR: ");
     }
@@ -221,37 +321,129 @@ final class GuestPluginScripts {
 
   BoundedProcessRunner.Result migration(String command, String startupId)
       throws IOException, InterruptedException {
+    if (!"prepare".equals(command)
+        && !"finalize".equals(command)
+        && !"verify-existing".equals(command))
+      throw new IllegalArgumentException("RC1_MIGRATION_COMMAND");
+    if (startupId == null || startupId.isEmpty())
+      throw new IllegalArgumentException("RC1_MIGRATION_STARTUP_ID");
     if (!preparation.rootPresent())
       throw new GuestPreparationFailure(GuestPreparationFailure.Code.ENV_NOT_READY);
-    String reusable = null;
-    try {
-      reusable = preparation.reusableGeneration();
-    } catch (IOException | RuntimeException unavailable) {
-      /* 证据未知时仍走真实 guest 校验。 */
+    if ("verify-existing".equals(command)) {
+      // 审计不创建、消费或更新启动票据；脚本只读核验保留副本。
+      preparation.assets();
+      return runner.run(migrationCommand(command, startupId), 600_000);
     }
-    if (reusable != null) {
-      if ("prepare".equals(command)) {
-        synchronized (preparedReuse) {
-          preparedReuse.put(startupId, reusable);
-          while (preparedReuse.size() > 8)
-            preparedReuse.remove(preparedReuse.keySet().iterator().next());
-        }
-        return BoundedProcessRunner.localCompletion(Rc1MigrationCache.output(reusable, false));
-      }
-      if ("finalize".equals(command)) {
-        String prepared;
-        synchronized (preparedReuse) {
-          prepared = preparedReuse.remove(startupId);
-        }
-        if (reusable.equals(prepared))
-          return BoundedProcessRunner.localCompletion(Rc1MigrationCache.output(reusable, true));
-      }
-    }
+    boolean finalize = "finalize".equals(command);
+    Ticket ticket = null;
     synchronized (preparedReuse) {
-      preparedReuse.remove(startupId);
+      BoundedProcessRunner.Result recorded = finalizedReuse.get(startupId);
+      if (finalize && recorded != null) return recorded;
+      if (finalize) ticket = preparedReuse.remove(startupId);
+      else if (recorded != null || preparedReuse.containsKey(startupId))
+        return unknown(command, startupId, "PREPARE_ALREADY_ATTEMPTED", null);
+      else {
+        // 派发前占位：失败、取消或丢回执不能让同startup的prepare隐式重放。
+        preparedReuse.put(startupId, new Ticket((String) null));
+        trim(preparedReuse);
+      }
     }
-    preparation.assets();
-    return runner.run(migrationCommand(command, startupId), 600_000);
+    if (finalize && (ticket == null || ticket.generation == null)) {
+      var result = unknown(command, startupId, "FINALIZE_TICKET_MISSING", null);
+      recordFinalized(startupId, result);
+      return result;
+    }
+    Rc1MigrationCache.Reuse reuse;
+    try {
+      reuse = preparation.reusableMigration();
+      if (reuse == null) reuse = Rc1MigrationCache.Reuse.unavailable("MIGRATION_REUSE_NULL");
+    } catch (IOException | RuntimeException unavailable) {
+      reuse = Rc1MigrationCache.Reuse.unavailable("MIGRATION_REUSE_UNAVAILABLE");
+    }
+    // 缓存命中仍须持久降权并读回，不能沿用上次 write-allowed 的 current。
+    if (!finalize && reuse.status == Rc1MigrationCache.Reuse.Status.REUSABLE_HISTORY) {
+      Rc1MigrationCache.Reuse after;
+      try {
+        preparation.bindMigrationHistory(reuse, startupId);
+        after = preparation.reusableMigration();
+      } catch (IOException | RuntimeException unavailable) {
+        return unknown(
+            command, startupId, "MIGRATION_HISTORY_HANDOFF_UNVERIFIED", reuse.generation);
+      }
+      if (after == null || !new Ticket(reuse).matches(after, startupId))
+        return unknown(command, startupId, "PREPARE_EVIDENCE_UNAVAILABLE", reuse.generation);
+      synchronized (preparedReuse) {
+        preparedReuse.put(startupId, new Ticket(after));
+        trim(preparedReuse);
+      }
+      return BoundedProcessRunner.localCompletion(
+          Rc1MigrationCache.output(after, false, startupId));
+    }
+    if (finalize && ticket.cached) {
+      var result =
+          ticket.matches(reuse, startupId)
+              ? BoundedProcessRunner.localCompletion(
+                  Rc1MigrationCache.output(reuse, true, startupId))
+              : unknown(command, startupId, "FINALIZE_EVIDENCE_UNAVAILABLE", ticket.generation);
+      recordFinalized(startupId, result);
+      return result;
+    }
+    // guest prepare 的票据不能用后来出现的 Java 历史 cache 替代；finalize 仍走同代 guest。
+    try {
+      preparation.assets();
+      BoundedProcessRunner.Result result =
+          runner.run(
+              migrationCommand(command, startupId, finalize ? ticket.generation : null), 600_000);
+      if (finalize) {
+        if (result == null)
+          result = unknown(command, startupId, "FINALIZE_DISPATCH_UNKNOWN", ticket.generation);
+        else if (!result.timedOut && result.exitCode == 0 && !result.truncated) {
+          try {
+            var receipt = com.deepseekharness.app.util.Rc1MigrationResult.parse(result.output);
+            if (!com.deepseekharness.app.util.Rc1MigrationResult.boundTo(
+                receipt, startupId, "finalize", ticket.generation))
+              result = unknown(command, startupId, "FINALIZE_RESULT_BINDING", ticket.generation);
+          } catch (IOException invalid) {
+            result = unknown(command, startupId, "FINALIZE_RESULT_INVALID", ticket.generation);
+          }
+        }
+        // 保留失败/超时原始Result；顺序重复调用不得把它变成本地成功或重新派发。
+        recordFinalized(startupId, result);
+      } else if (result != null && !result.timedOut && result.exitCode == 0 && !result.truncated) {
+        var receipt = com.deepseekharness.app.util.Rc1MigrationResult.parse(result.output);
+        if (com.deepseekharness.app.util.Rc1MigrationResult.boundTo(receipt, startupId)
+            && com.deepseekharness.app.util.Rc1MigrationResult.allowsStart(receipt)
+            && receipt.get("generation") instanceof String) {
+          synchronized (preparedReuse) {
+            preparedReuse.put(startupId, new Ticket((String) receipt.get("generation")));
+            trim(preparedReuse);
+          }
+        }
+      }
+      return result;
+    } catch (IOException | InterruptedException | RuntimeException failure) {
+      if (finalize)
+        recordFinalized(
+            startupId, unknown(command, startupId, "FINALIZE_DISPATCH_UNKNOWN", ticket.generation));
+      throw failure;
+    }
+  }
+
+  private static BoundedProcessRunner.Result unknown(
+      String phase, String startupId, String reason, String generation) {
+    return BoundedProcessRunner.localCompletion(
+        Rc1MigrationCache.unknown(phase, startupId, reason, generation));
+  }
+
+  private void recordFinalized(String startupId, BoundedProcessRunner.Result outcome) {
+    synchronized (preparedReuse) {
+      finalizedReuse.put(startupId, outcome);
+      trim(finalizedReuse);
+    }
+  }
+
+  private static void trim(java.util.LinkedHashMap<String, ?> values) {
+    while (values.size() > 8) values.remove(values.keySet().iterator().next());
   }
 
   String migrationText(String command, String startupId) {
@@ -264,14 +456,25 @@ final class GuestPluginScripts {
   }
 
   static String migrationCommand(String command, String startupId) {
-    if (!"prepare".equals(command) && !"finalize".equals(command))
+    return migrationCommand(command, startupId, null);
+  }
+
+  static String migrationCommand(String command, String startupId, String expectedGeneration) {
+    if (!"prepare".equals(command)
+        && !"finalize".equals(command)
+        && !"verify-existing".equals(command))
       throw new IllegalArgumentException("RC1_MIGRATION_COMMAND");
+    if ("finalize".equals(command) && !com.deepseekharness.app.util.Ids.uuid(expectedGeneration))
+      throw new IllegalArgumentException("RC1_MIGRATION_EXPECTED_GENERATION");
     return "python3 -B /root/.dsh/"
         + RC1_MIGRATION_SCRIPT
         + " "
         + command
         + " --root /root --state-root /run/dsha-rc1-state --startup-id "
         + ShellQuote.arg(startupId)
+        + (expectedGeneration == null
+            ? ""
+            : " --expected-generation " + ShellQuote.arg(expectedGeneration))
         + " --approved-root /sdcard/Documents/dshdata --approved-root /storage/emulated/0/Documents/dshdata 2>&1";
   }
 
@@ -373,6 +576,11 @@ final class GuestPluginScripts {
   }
 
   private void preparePlugins(GuestScriptBudget budget) throws IOException, InterruptedException {
+    preparePlugins(budget, null);
+  }
+
+  private void preparePlugins(GuestScriptBudget budget, Consumer<String> output)
+      throws IOException, InterruptedException {
     if (budget != null) budget.remainingMillis();
     if (!preparation.environmentReady())
       throw new GuestPreparationFailure(GuestPreparationFailure.Code.ENV_NOT_READY);
@@ -385,8 +593,96 @@ final class GuestPluginScripts {
     // pnpm 失败不阻断列表、开关和删除；依赖安装单独报告其失败。
     preparation.pnpm();
     if (budget != null) budget.remainingMillis();
-    preparation.assets();
+    preparation.assets(output);
     if (budget != null) budget.remainingMillis();
+  }
+
+  /** 覆盖升级后首启或上次注册不完整时使用宽预算；常规启动保持 90 秒。 */
+  long registerTimeoutMs() {
+    return RegisterBudget.timeoutMs(
+        preparation.lastRegisteredAssetId(), preparation.managedAssetId());
+  }
+
+  private static String registerCommand(String extraArgs) {
+    return "python3 -u /root/.dsh/"
+        + BUILTIN_REGISTER_SCRIPT
+        + (extraArgs.isEmpty() ? "" : " " + extraArgs)
+        + " 2>&1";
+  }
+
+  /**
+   * 启动注册的唯一执行路径：分级预算 + guest 阶段证据 + 超时清锁 + 完成回执。
+   *
+   * <p>失败消息只追加宿主与 guest 的分段数字，不把 guest 自报时间当成完成、失败或重试依据。
+   */
+  private BoundedProcessRunner.Result runRegister(String extraArgs, boolean requireReceipt)
+      throws IOException, InterruptedException {
+    RegisterTiming timing = new RegisterTiming();
+    BoundedProcessRunner.Result result =
+        runner.run(registerCommand(extraArgs), registerTimeoutMs(), timing);
+    if (result == null) throw new IOException("BUILTIN_REGISTER_NO_RESULT");
+    if (result.timedOut) clearStaleProfileLock();
+    try {
+      String output =
+          com.deepseekharness.app.util.GuestCommandOutcome.requireCompleted(
+              result, "BUILTIN_REGISTER");
+      if (requireReceipt && !output.contains("BUILTIN_REGISTER_OK"))
+        throw new IOException("BUILTIN_REGISTER_RECEIPT_MISSING");
+      return result;
+    } catch (IOException incomplete) {
+      throw new IOException(incomplete.getMessage() + " " + timing.evidence(), incomplete);
+    }
+  }
+
+  /** 宿主杀进程后 guest 的 finally 不会执行；只清理由已退出持有者留下的 profile 锁。 */
+  private void clearStaleProfileLock() {
+    try {
+      BoundedProcessRunner.Result cleared =
+          runner.run(
+              "python3 /root/.dsh/" + BUILTIN_REGISTER_SCRIPT + " --clear-stale-profile-lock 2>&1",
+              10_000);
+      if (cleared != null && cleared.output.contains("PROFILE_LOCK_CLEARED"))
+        Log.i("DSHA", "PROFILE_LOCK_CLEARED after register timeout");
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    } catch (IOException | RuntimeException ignored) {
+      // 清理失败不改变超时结论；恢复页列表会提示待确认的锁。
+    }
+  }
+
+  /** 上一次成功注册写下的受管资产身份；只读 rootfs 内的固定标记。 */
+  static String readRegisterIdentity(File root) {
+    if (root == null) return null;
+    File marker = new File(root, REGISTER_IDENTITY);
+    try {
+      if (!marker.isFile() || com.deepseekharness.app.util.Compat.isSymbolicLink(marker))
+        return null;
+      byte[] bytes = java.nio.file.Files.readAllBytes(marker.toPath());
+      if (bytes.length > 128) return null;
+      return RegisterBudget.identity(new String(bytes, java.nio.charset.StandardCharsets.US_ASCII));
+    } catch (IOException | RuntimeException unavailable) {
+      return null;
+    }
+  }
+
+  /** 只收集应用自己的 REGISTER_TIMING 行；数量有界，最后一行用于失败诊断。 */
+  private static final class RegisterTiming implements Consumer<String> {
+    private static final int LIMIT = 24;
+    private final long started = System.nanoTime();
+    private final List<GuestTimingEvidence.Phase> phases = new ArrayList<>();
+
+    public void accept(String line) {
+      GuestTimingEvidence.Phase phase = GuestTimingEvidence.parse(line);
+      if (phase == null) return;
+      if (phases.size() >= LIMIT) phases.remove(0);
+      phases.add(phase);
+    }
+
+    String evidence() {
+      long elapsed = Math.max(0, System.nanoTime() - started) / 1_000_000;
+      return GuestTimingEvidence.evidence(
+          elapsed, phases.isEmpty() ? null : phases.get(phases.size() - 1));
+    }
   }
 
   private static String failure(Exception error, String context, String prefix) {

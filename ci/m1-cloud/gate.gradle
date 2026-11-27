@@ -1,0 +1,126 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+import org.gradle.api.Action
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.junit.JUnitOptions
+
+// One-time backup JVM scope. No name-family admission or -x bypass.
+final String phase = System.getenv('M1_PHASE')
+if (!(phase in ['compile','jvm'])) throw new GradleException('M1_BAD_PHASE')
+final boolean compileOnly = phase == 'compile'
+final String target = compileOnly ? ':app:compileStandardDebugUnitTestJavaWithJavac' : ':app:testStandardDebugUnitTest'
+final String expectedRoot = System.getenv('GITHUB_WORKSPACE')
+final List methods = new JsonSlurper().parseText(System.getenv('M1_METHODS') ?: '[]')
+// Only the ten plain JUnit methods; no Android behavior tests.
+final List knownJvm = [
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.onlyOlderCompleteAutomaticCopiesAreRotated',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.changedDigestRetainsDamagedCopyAndRotatesHealthyOldCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.damagedNewestDoesNotDisplaceThirdHealthyCopy',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.insufficientHealthyCopiesRemainIntact',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.unconfirmedJournalDoesNotCountTowardReserve',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.discoveryIoWithMismatchMessageAbortsBeforeDeletion',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.closeFailureOnMismatchedDigestAbortsBeforeDeletion',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.preDeleteRecheckFailurePreservesCandidateAndRemainingCopies',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.cancellationAfterOneRemovalLeavesAllOtherCopiesIntact',
+ 'com.deepseekharness.app.backup.AutomaticBackupPrunerTest.busyUnfinishedAndUnknownOriginCopiesSurviveOrdinaryRotation']
+if (methods != (compileOnly ? [] : knownJvm))
+    throw new GradleException('M1_BAD_EXACT_METHODS')
+final List tokens = [target]
+methods.each { tokens.addAll(['--tests',it]) }
+final def s = gradle.startParameter
+final Map props = ['dsha.identity':'rebirth','dsha.rebirthCandidate':'true',
+ 'dsha.unsignedPackage':'true','dsha.rust.mode':'off',
+ 'org.gradle.java.installations.auto-download':'false','android.builder.sdkDownload':'false',
+ 'kotlin.compiler.execution.strategy':'in-process']
+if (s.taskNames != tokens || s.projectProperties != props || !s.excludedTaskNames.isEmpty() ||
+ s.maxWorkerCount != 1 || s.parallelProjectExecutionEnabled || s.dryRun || s.taskGraph ||
+ s.continuous || s.buildCacheEnabled || s.buildScan || s.refreshDependencies ||
+ !s.includedBuilds.isEmpty() || s.writeDependencyLocks || !s.writeDependencyVerifications.isEmpty() ||
+ s.dependencyVerificationMode != DependencyVerificationMode.STRICT || s.configurationCacheRequested ||
+ s.configureOnDemand || s.continueOnFailure || s.rerunTasks || System.getenv('DSHA_UNIT_TEST_STATE') != null)
+    throw new GradleException('M1_REFUSED_START_PARAMETERS')
+final def digest = { byte[] bytes -> MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString() }
+final File xml = new File(expectedRoot,'app/build/test-results/testStandardDebugUnitTest')
+final File html = new File(expectedRoot,'app/build/reports/tests/testStandardDebugUnitTest')
+gradle.settingsEvaluated { settings ->
+ if (settings.settingsDir.canonicalPath != expectedRoot) throw new GradleException('M1_ROOT_DRIFT')
+}
+gradle.taskGraph.whenReady { graph ->
+ def tasks = graph.allTasks
+ def rows = tasks.collect { t -> [path:t.path,type:t.class.name,needs:graph.getDependencies(t)*.path.sort()] }
+ println 'M1_CLOUD_GRAPH=' + JsonOutput.toJson(rows)
+ def hash = digest(JsonOutput.toJson(rows.sort(false) { it.path }).getBytes('UTF-8'))
+ def expected = compileOnly ? '0728ffaa72386f94443366534232fd6deb18ef7dff1c01774d6cbddea72c6ddf' : 'a64f220adcbba0675b3aac62a13442dfaded848bbec9225fac2ca550f7d10056'
+ if (hash != expected || rows.size() != (compileOnly ? 45 : 54))
+    throw new GradleException('M1_EXACT_GRAPH_DRIFT:' + hash)
+ def tests = tasks.findAll { it instanceof Test }
+ if (compileOnly ? !tests.isEmpty() : (tests.size()!=1 || tests[0].path!=target ||
+     tests[0].class.name!='com.android.build.gradle.tasks.factory.AndroidUnitTest_Decorated'))
+    throw new GradleException('M1_TEST_TYPE_COUNT')
+ def rust = tasks.find { it.path == ':app:prepareRustNative' }
+ def project = rust.project
+ def script = project.rootProject.file('tools/rust/artifact.py')
+ if (!(rust instanceof Exec) || rust.actions.size()!=2 ||
+    digest(script.bytes)!='e31ba5e69a04192c65214888d1f54fc11727ae0e0a76a9fb8faf279d097740c5' ||
+    digest(project.buildFile.bytes)!='861669aebfb120d1204ad23b1dd91a5d1d6140743b42753e046026831c38a656' ||
+    project.providers.gradleProperty('dsha.rust.mode').getOrElse('')!='off' ||
+    project.providers.gradleProperty('dsha.rust.artifactDir').isPresent() ||
+    project.providers.gradleProperty('dsha.rust.candidateEvidence').isPresent())
+    throw new GradleException('M1_RUST_OFF_DRIFT')
+ def expectedRust = ['/usr/bin/python3','-B',script.absolutePath,'stage','--mode','off','--out',
+    project.layout.buildDirectory.dir('rust-jniLibs').get().asFile.absolutePath,'--assets-out',
+    project.layout.buildDirectory.dir('generated/rustAssets').get().asFile.absolutePath]
+ rust.actions.add(1,{ unused ->
+    if (rust.commandLine!=expectedRust) throw new GradleException('M1_RUST_ARGV_DRIFT')
+    println 'M1_RUST_OFF_ARGV='+JsonOutput.toJson(rust.commandLine)
+ } as Action)
+ tasks.findAll { it instanceof JavaCompile }.each { task ->
+    task.doFirst {
+      def opts=task.options
+      def args=opts.allCompilerArgs
+      def types=opts.compilerArgumentProviders.collect { it.class.name }
+      def systems=args.findAll { it=='--system' || it.startsWith('--system=') }
+      def count=types.count { it=='com.android.build.gradle.tasks.JdkImageInput' }
+      if (task.sourceCompatibility!='17' || task.targetCompatibility!='17' ||
+          task.javaCompiler.get().metadata.languageVersion.asInt()!=17 || opts.release.present)
+          throw new GradleException('M1_JAVA17_DRIFT')
+      if (task.path==':app:compileStandardDebugJavaWithJavac' && (systems!=['--system'] || count!=1))
+          throw new GradleException('M1_PRODUCTION_SYSTEM_DRIFT')
+      if (task.path==':app:compileStandardDebugUnitTestJavaWithJavac' && (!systems.isEmpty() || count!=0))
+          throw new GradleException('M1_UNIT_SYSTEM_DRIFT')
+      println 'M1_JAVAC='+JsonOutput.toJson([task:task.path,args:args,providers:types,
+          jdk:task.javaCompiler.get().metadata.installationPath.asFile.absolutePath])
+    }
+ }
+ if (!compileOnly) {
+    if (xml.exists() || html.exists()) throw new GradleException('M1_OLD_TEST_REPORTS')
+    def test=tests[0]
+    test.doFirst {
+      def o=test.options
+      def state=[cli:test.filter.commandLineIncludePatterns.toList().sort(),
+        includes:test.filter.includePatterns.toList(),excludes:test.filter.excludePatterns.toList(),
+        filesIn:test.includes.toList(),filesOut:test.excludes.toList(),
+        discovery:test.scanForTestClasses,failNoMatch:test.filter.failOnNoMatchingTests,
+        enabled:test.enabled,ignoreFailures:test.ignoreFailures,sourceOnly:test.systemProperties['dsha.sourceOnlyTests'],
+        offline:test.systemProperties['robolectric.offline'],sdkDir:test.systemProperties['robolectric.dependency.dir']]
+      if (!(o instanceof JUnitOptions) || !o.includeCategories.isEmpty() || !o.excludeCategories.isEmpty() ||
+        state.cli!=methods.sort(false) || !state.includes.isEmpty() || !state.excludes.isEmpty() ||
+        !state.filesIn.isEmpty() || !state.filesOut.isEmpty() || !state.discovery || !state.failNoMatch ||
+        !state.enabled || state.ignoreFailures || state.sourceOnly!='false' ||
+        test.maxParallelForks!=1 || test.maxHeapSize!='2048m' || !test.reports.junitXml.required.get() ||
+        test.reports.junitXml.outputLocation.get().asFile.canonicalPath!=xml.canonicalPath)
+        throw new GradleException('M1_PREWORKER_FILTER_DRIFT:'+JsonOutput.toJson(state))
+      if (phase=='jvm' && (state.offline!='true' || state.sdkDir!=System.getenv('DSHA_ROBOLECTRIC_DEPENDENCY_DIR')))
+        throw new GradleException('M1_ROBOLECTRIC_OFFLINE_REQUIRED')
+      [xml,html].each { dir -> if (dir.exists()) dir.eachFileRecurse { file ->
+        if (file.isFile()) throw new GradleException('M1_NONFRESH_TEST_FILE')
+      } }
+      println 'M1_PREWORKER='+JsonOutput.toJson(state)
+    }
+ }
+ println 'M1_CLOUD_GRAPH_ACCEPTED='+hash
+}

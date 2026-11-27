@@ -2,6 +2,7 @@
 """Execute explicit current host tests; collect every failure and never run device/history implicitly."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,9 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+_previous_spec = importlib.util.spec_from_file_location("previous_runtime_fixture", ROOT / "tools/previous-runtime-fixture.py")
+previous_runtime_fixture = importlib.util.module_from_spec(_previous_spec)
+_previous_spec.loader.exec_module(previous_runtime_fixture)
 MANIFEST = ROOT / "tools/host-tests.manifest.json"
 STAGES = ("fast", "runtime", "package", "windows", "linux")
 REQUIRES = {"node24", "python39", "powershell", "raw", "managed", "browser", "browser_react", "jdk17", "pnpm", "current_archive", "tar", "guide_fixture", "native_host", "generated_recovery", "mobile_upstream", "git_bash", "toolchains", "debug_classes", "linux_node", "linux_publish_packages", "semver_reference", "previous_runtime_apk"}
@@ -156,14 +160,7 @@ class Inputs:
         if "previous_runtime_apk" in req:
             if not self.args.previous_runtime_apk:
                 raise ValueError("HOST_PREVIOUS_RUNTIME_APK_REQUIRED: pass --previous-runtime-apk")
-            previous = required_file(self.args.previous_runtime_apk, "HOST_PREVIOUS_RUNTIME_APK_MISSING")
-            digest = hashlib.sha256()
-            with previous.open("rb") as stream:
-                for block in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(block)
-            if digest.hexdigest() != "f1b332bc087e999bf9bd8954a70c9c7ad869d0a04193933d446854f0e31fbf3c":
-                raise ValueError("HOST_PREVIOUS_PUBLISHED192_APK_IDENTITY")
-            values["previousRuntimeApk"] = str(previous)
+            values["previousRuntimeApk"] = str(previous_runtime_fixture.verify_apk(self.args.previous_runtime_apk))
         if "pnpm" in req:
             entry = Path(self.args.pnpm_cli).resolve() if self.args.pnpm_cli else None
             if entry is None:
@@ -253,7 +250,25 @@ class Inputs:
             env["LD_LIBRARY_PATH"]=str(Path(self.args.linux_host).resolve())
         if "browser" in row.get("requires", []):
             env.update(DSHA_PLAYWRIGHT=str(self.playwright), PLAYWRIGHT_BROWSERS_PATH=str(self.browsers))
-            if self.args.browser: env.update(DSHA_BROWSER=self.args.browser, DSHA_CHROME=self.args.browser)
+            # engine与可执行路径独立；旧--browser仅保留明确枚举/绝对路径兼容。
+            legacy = self.args.browser
+            legacy_engine = legacy if legacy in ("chromium", "firefox") else None
+            legacy_executable = legacy if legacy and legacy_engine is None else None
+            engine = self.args.browser_engine or legacy_engine or "chromium"
+            if legacy_engine and legacy_engine != engine:
+                raise ValueError("HOST_BROWSER_ENGINE_CONFLICT")
+            candidates = [value for value in (self.args.browser_executable, legacy_executable) if value is not None]
+            if any(not value or not Path(value).is_absolute() for value in candidates):
+                raise ValueError("HOST_BROWSER_EXECUTABLE_ABSOLUTE_REQUIRED")
+            if len({str(Path(value).resolve()) for value in candidates}) > 1:
+                raise ValueError("HOST_BROWSER_EXECUTABLE_CONFLICT")
+            if candidates:
+                browser = str(required_file(candidates[0], "HOST_BROWSER_EXECUTABLE_MISSING"))
+                env.update(DSHA_BROWSER_EXECUTABLE=browser, DSHA_CHROME=browser)
+            profile = self.args.browser_profile
+            if profile == "disable-gpu" and engine != "chromium":
+                raise ValueError("HOST_BROWSER_PROFILE_INVALID")
+            env.update(DSHA_BROWSER_ENGINE=engine, DSHA_BROWSER=engine, DSHA_HOST_BROWSER_PROFILE=profile)
         for key, value in row.get("environment", {}).items(): env[key] = resolve(value, values)
         if self.session is not None:
             env.update(self.session.environment())
@@ -302,6 +317,8 @@ def run_one(inputs, row, output):
             else:
                 command = [inputs.python,"-B"] if path.suffix==".py" else [inputs.node] if path.suffix in (".mjs",".cjs") else [executable(inputs.args.powershell),"-NoProfile","-File"]
                 command += [str(path)] + args;env=inputs.environment(fixture,row,values)
+            if row["path"] == "tools/test-vscreen-protocol.py" and getattr(inputs.args, "vscreen_offline_material", None) is not None:
+                command += ["--offline-material", str(inputs.args.vscreen_offline_material)]
             item["command"] = command
             result = subprocess.run(command, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=row["timeoutSeconds"], check=False)
             item.update(exitCode=result.returncode,status="PASS" if result.returncode==0 else "FAILED")
@@ -319,10 +336,17 @@ def main():
     parser.add_argument("--check-manifest",action="store_true");parser.add_argument("--list",action="store_true");parser.add_argument("--only",action="append",default=[])
     parser.add_argument("--node",default=shutil.which("node") or "node");parser.add_argument("--powershell",default=shutil.which("pwsh") or "pwsh")
     parser.add_argument("--raw");parser.add_argument("--managed");parser.add_argument("--pnpm-cli");parser.add_argument("--toolchain-root",default=os.environ.get("DSHA_TOOLCHAINS"));parser.add_argument("--jdk")
-    parser.add_argument("--playwright");parser.add_argument("--browsers-path");parser.add_argument("--browser");parser.add_argument("--mobile-upstream",default=str(ROOT/"tools/mobile-plugin-upstream/lib"))
+    parser.add_argument("--playwright");parser.add_argument("--browsers-path")
+    parser.add_argument("--vscreen-offline-material", type=Path,
+                        help="Explicit locked material directory for the virtual-screen protocol host test")
+    parser.add_argument("--browser", help="Deprecated: browser engine enum or absolute executable path; use separate options")
+    parser.add_argument("--browser-engine", choices=("chromium", "firefox"))
+    parser.add_argument("--browser-executable", help="Absolute existing host browser executable")
+    parser.add_argument("--browser-profile", choices=("default", "disable-gpu"), default="default", help="Explicit host-only reviewed headless compatibility profile")
+    parser.add_argument("--mobile-upstream",default=str(ROOT/"tools/mobile-plugin-upstream/lib"))
     parser.add_argument("--linux-host");parser.add_argument("--wsl-distro",default="docker-desktop");parser.add_argument("--linux-tempdir",help="Explicit writable Linux fixture directory; no WSL repair or remount");parser.add_argument("--flavor",choices=("standard",),default="standard")
     parser.add_argument("--linux-native-inputs",default=str(ROOT/"app/build/audit-build156/linux-native"),help="Prepared NDK/Ubuntu sysroot receipt for the explicit WSL native handshake fixture")
-    parser.add_argument("--previous-runtime-apk",help="Exact published build192 Standard APK; required only by historical-upgrade fixtures")
+    parser.add_argument("--previous-runtime-apk",help=f"Exact published build{previous_runtime_fixture.CONTRACT.build} Standard APK (DSH {previous_runtime_fixture.CONTRACT.generation}); required only by historical-upgrade fixtures; source: {previous_runtime_fixture.CONTRACT.url}")
     parser.add_argument("--apks",nargs=2);parser.add_argument("--output",type=Path,default=ROOT/"app/build/host-tests")
     args=parser.parse_args()
     if sys.flags.optimize:parser.error("禁止 -O/PYTHONOPTIMIZE，测试断言必须执行")

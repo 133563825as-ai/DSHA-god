@@ -16,6 +16,7 @@ import android.widget.TextView;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModelProvider;
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.DeviceBridgeService;
 import com.deepseekharness.app.DshaAccessibilityService;
 import com.deepseekharness.app.bridge.AdbBridge;
@@ -36,6 +37,15 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
   @Override
   protected void onCreate(Bundle saved) {
     super.onCreate(saved);
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      TextView disabled = new TextView(this);
+      disabled.setText(
+          com.deepseekharness.app.util.UiText.choose(
+              "本次试用不提供无线 ADB 配对或连接",
+              "Wireless ADB pairing and connection are unavailable in this trial"));
+      setContentView(disabled);
+      return;
+    }
     model = new ViewModelProvider(this).get(PairModel.class);
     model.restore(saved);
     setContentView(buildUi());
@@ -62,7 +72,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
 
   @Override
   protected void onSaveInstanceState(Bundle out) {
-    model.save(out);
+    if (model != null) model.save(out);
     super.onSaveInstanceState(out);
   }
 
@@ -74,7 +84,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
   @Override
   public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(code, permissions, results);
-    if (code == 37)
+    if (code == 37 && model != null)
       model.message(
           LocalNetworkAccess.granted(this)
               ? com.deepseekharness.app.util.UiText.text("权限已允许，请输入配对码")
@@ -144,10 +154,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     root.findViewById(com.deepseekharness.app.R.id.adb_pair_disconnect)
         .setOnClickListener(
             v -> {
-              getSharedPreferences(com.deepseekharness.app.util.Constants.PREFS, 0)
-                  .edit()
-                  .putBoolean("adb_enabled", false)
-                  .apply();
+              com.deepseekharness.app.core.ConfigStore.setAdbEnabled(this, false, false);
               stopService(new Intent(this, DeviceBridgeService.class));
               model.message(
                   com.deepseekharness.app.util.UiText.choose(
@@ -352,6 +359,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     }
 
     void watch() {
+      if (BuildConfig.REBIRTH_CANDIDATE) return;
       final long epoch = ++watchEpoch;
       message(com.deepseekharness.app.util.UiText.text("已开始监听；请打开系统配对弹窗"));
       DshaAccessibilityService.startWatch(
@@ -381,6 +389,7 @@ public class AdbPairActivity extends androidx.appcompat.app.AppCompatActivity {
     }
 
     void start(boolean verify, String readHost, int readPort) {
+      if (BuildConfig.REBIRTH_CANDIDATE) return;
       if (busy || cleared) return;
       boolean prepareOffline = false;
       // 无线调试关闭时仍可先准备离线依赖，避免准备时间消耗本次配对码的有效期。

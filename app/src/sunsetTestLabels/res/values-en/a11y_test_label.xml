@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 测试包专用：无障碍服务名加 Test，系统无障碍列表里与正式包区分（两包同名时用户分不清开的是哪个）。 -->
-<resources>
-    <string name="accessibility_service_label" formatted="false">"DSH-A-Su screen control Test"</string>
-</resources>

@@ -13,6 +13,10 @@ public final class AboutDialog {
   public static final String GITHUB_URL = com.deepseekharness.app.util.Constants.REPOSITORY_URL;
   public static final String QQ_GROUP = "975836806";
 
+  /** 随包许可的完整第三方声明；关于页的在线入口在此打开。 */
+  public static final String THIRD_PARTY_NOTICES_URL =
+      "https://github.com/SunsetRNE/DSHA-Sunset-mod/blob/main/THIRD_PARTY_NOTICES.md";
+
   private AboutDialog() {}
 
   public static AlertDialog show(Context ctx) {
@@ -25,7 +29,7 @@ public final class AboutDialog {
         android.view.LayoutInflater.from(ctx)
             .inflate(com.deepseekharness.app.R.layout.dialog_about, null);
     ((android.widget.TextView) content.findViewById(com.deepseekharness.app.R.id.about_version))
-        .setText(com.deepseekharness.app.util.UiText.format("DSHA v%s", version) + testBuildLine());
+        .setText(ctx.getString(com.deepseekharness.app.R.string.app_name) + " · " + version);
     android.widget.TextView repository =
         content.findViewById(com.deepseekharness.app.R.id.about_repository);
     repository.setText(Uri.parse(GITHUB_URL).getPath().substring(1));
@@ -44,21 +48,6 @@ public final class AboutDialog {
         .setOnClickListener(v -> openQQGroup(ctx));
     dialog.show();
     return dialog;
-  }
-
-  /** 测试包的留痕行（换行开头）；正式包为空。 */
-  static String testBuildLine() {
-    String mark = testBuildMark();
-    return mark.isEmpty() ? "" : "\n" + mark;
-  }
-
-  static String testBuildMark() {
-    String signature = com.deepseekharness.app.BuildConfig.TEST_SIGNATURE;
-    String build = com.deepseekharness.app.BuildConfig.TEST_BUILD;
-    // 两种语言的整句都先拼好，再按界面语言选一句（不拼接已翻译片段）。
-    return com.deepseekharness.app.util.UiText.choose(
-        com.deepseekharness.app.util.TestBuildMark.text(signature, build, true),
-        com.deepseekharness.app.util.TestBuildMark.text(signature, build, false));
   }
 
   public static void openBrowser(Context ctx, String url) {

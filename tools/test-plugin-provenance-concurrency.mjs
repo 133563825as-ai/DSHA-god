@@ -14,6 +14,7 @@ import { preparePrivatePluginInventory } from './private-plugin-inventory-fixtur
 // runtime. No stale managed fixture or hand-reimplemented Host decision is used.
 const source = path.resolve(import.meta.dirname, '..');
 const raw = testRuntime('raw');
+const { Context } = await import(pathToFileURL(path.join(raw, 'node_modules/@deepseek-ai/cordis/lib/index.js')));
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsha-plugin-async-'));
 const previousProof = process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -82,7 +83,8 @@ for (const name of [...fixtureNames, libraryName]) packages[name] = proofOf(path
 const proofFile = path.join(home, 'managed-package-proofs.json');
 fs.writeFileSync(proofFile, JSON.stringify({ version: 1, packages }));
 process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256 = sha(fs.readFileSync(proofFile));
-const ctx = { get: () => undefined, emit: () => {}, loader: { entries: () => [] }, logger: { warn: () => {} } };
+const ctx = new Context();
+ctx.provide('loader', { entries: () => [] });
 const manager = Object.create(PluginManager.prototype);
 Object.defineProperty(manager, 'ctx', { value: ctx });
 Object.assign(manager, {
@@ -263,6 +265,7 @@ try {
 } finally {
   measured = false; fs.promises.open = originalOpen; Buffer.alloc = originalAlloc;
   await new Promise(resolve => server.close(resolve));
+  await ctx.fiber.dispose();
   if (previousProof === undefined) delete process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256;
   else process.env.DSHA_MANAGED_PACKAGE_PROOFS_SHA256 = previousProof;
   fs.rmSync(directory, { recursive: true, force: true });

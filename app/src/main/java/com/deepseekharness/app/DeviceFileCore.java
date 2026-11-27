@@ -12,6 +12,7 @@ public final class DeviceFileCore {
   public static void main(String[] args) {
     int exit = 126;
     try {
+      if (BuildConfig.REBIRTH_CANDIDATE) throw new IOException("TRIAL_DEVICE_CHANNEL_UNAVAILABLE");
       int uid = android.os.Process.myUid();
       if (uid != 0 && uid != 2000) throw new IOException("PRIVILEGED_DEVICE_CHANNEL_REQUIRED");
       if (args == null

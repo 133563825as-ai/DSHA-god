@@ -8,6 +8,8 @@ import {pathToFileURL} from 'node:url';
 
 const raw=testRuntime('raw'),managed=testRuntime('managed'),root=process.cwd();
 const {PluginManager}=await import(pathToFileURL(path.join(managed,'node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js')));
+const {Context}=await import(pathToFileURL(path.join(raw,'node_modules/@deepseek-ai/cordis/lib/index.js')));
+const managerContext=new Context();managerContext.provide('loader',{entries:()=>[]});
 const registry=JSON.parse(fs.readFileSync('app/src/main/assets/builtin-plugins.json','utf8'));
 const targets=registry.plugins.filter(p=>p.name!=='dsh-auto-review').map(p=>p.name);
 assert.equal(targets.length,10);
@@ -26,7 +28,7 @@ function native(args=[]){
   assert.equal(result.status,0,result.stderr||result.stdout||String(result.error));return result;
 }
 function managerFor(dir){
-  const manager=Object.create(PluginManager.prototype),ctx={get:()=>undefined,emit:()=>{},loader:{entries:()=>[]},logger:{warn:()=>{}}};
+  const manager=Object.create(PluginManager.prototype),ctx=managerContext;
   Object.defineProperty(manager,'ctx',{value:ctx});
   Object.assign(manager,{profile:{name:path.basename(dir),dir,home:path.dirname(dir),patchPath:path.join(dir,'cordis.patch.yml'),overlays:[],startedBundles:[],installAnchor:path.join(raw,'node_modules/@deepseek-ai/dsh/package.json')},ownerContext:ctx,managementBundles:new Set(),installedFrom:new Map(),packageOperations:new Set(),installs:new Map(),abort:new AbortController(),lockWaitMs:1000});
   return manager;
@@ -97,4 +99,4 @@ try {
   assert.deepEqual(fs.readFileSync(path.join(other,'package.json')),otherBefore);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(profile,'package.json'),'utf8')).fixtureUntouched,{keep:'same bytes and values'});
   console.log('PASS: all ten real native OFF processes wait for actual Host Web ON lock ownership, then win after release; unrelated profile/settings remain unchanged.');
-} finally {fs.rmSync(owned,{recursive:true,force:true});}
+} finally {await managerContext.fiber.dispose();fs.rmSync(owned,{recursive:true,force:true});}

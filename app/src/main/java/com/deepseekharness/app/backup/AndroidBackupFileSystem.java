@@ -154,6 +154,40 @@ public class AndroidBackupFileSystem implements BackupFileSystem {
   }
 
   @Override
+  public List<String> listBounded(File directory, int limit, BackupControl control)
+      throws IOException {
+    control.check();
+    Node before = stat(directory);
+    if (limit < 0 || !before.type.equals("DIRECTORY")) throw new IOException("DIRECTORY_TYPE");
+    try (ParcelFileDescriptor handle =
+        owned(
+            directory,
+            OsConstants.O_RDONLY | O_DIRECTORY | O_CLOEXEC | OsConstants.O_NOFOLLOW,
+            0)) {
+      if (!before.same(node(Os.fstat(handle.getFileDescriptor()))))
+        throw new IOException("SOURCE_CHANGED");
+      List<String> names = new ArrayList<>();
+      try (var entries =
+          java.nio.file.Files.newDirectoryStream(
+              new File("/proc/self/fd/" + handle.getFd()).toPath())) {
+        for (var entry : entries) {
+          control.check();
+          if (names.size() >= limit) throw new IOException("ENTRY_LIMIT");
+          names.add(entry.getFileName().toString());
+        }
+      } catch (java.nio.file.DirectoryIteratorException failure) {
+        throw failure.getCause();
+      }
+      control.check();
+      if (!before.same(node(Os.fstat(handle.getFileDescriptor()))) || !before.same(stat(directory)))
+        throw new IOException("SOURCE_CHANGED");
+      return names;
+    } catch (ErrnoException error) {
+      throw failure(error);
+    }
+  }
+
+  @Override
   public InputStream read(File file, Node expected) throws IOException {
     if (!expected.type.equals("FILE")) throw new IOException("FILE_TYPE");
     try {

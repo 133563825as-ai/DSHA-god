@@ -302,6 +302,7 @@ public final class BackupTask {
   }
 
   public boolean prepareRestore(Uri uri) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return false;
     return start(
         com.deepseekharness.app.util.BackupTaskKinds.RESTORE,
         false,

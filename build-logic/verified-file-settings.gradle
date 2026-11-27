@@ -1,0 +1,153 @@
+// Explicit internal resolver/Release graph planning. Actual packaging and signing are disabled.
+import groovy.json.JsonSlurper
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.security.MessageDigest
+import org.gradle.api.GradleException
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+
+String selectedTask = ':app:verifyInternalFileRuntime'
+String releaseTask = ':app:assembleStandardRelease'
+String prefix = 'VERIFIED_FILE_REJECTED:'
+def need = { boolean condition, String rule -> if (!condition) throw new GradleException(prefix + rule) }
+def hash = { File f -> MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString() }
+String modeKey = 'dsha.internalRepositoryMode'
+String idKey = 'dsha.internalMaterialId'
+def start = gradle.startParameter
+// There is intentionally no path/URL override, init injection or environment fallback.
+need(start.projectProperties[modeKey] == 'verified-file-v1' && start.projectProperties[idKey] == 'guava-listenablefuture-1', 'SELECTOR')
+need(start.projectProperties == [(modeKey):'verified-file-v1', (idKey):'guava-listenablefuture-1',
+         'dsha.rebirthCandidate':'true', 'dsha.identity':'rebirth', 'dsha.unsignedPackage':'true', 'dsha.rust.mode':'off',
+         'android.builder.sdkDownload':'false', 'org.gradle.java.installations.auto-download':'false'], 'IDENTITY')
+boolean graphPlan = start.taskNames == [releaseTask]
+need(start.taskNames == [selectedTask] || graphPlan, 'TASK_SCOPE')
+need(graphPlan == start.dryRun, 'RELEASE_REQUIRES_DRY_RUN')
+need(start.offline && start.dependencyVerificationMode == DependencyVerificationMode.STRICT &&
+     !start.configurationCacheRequested && !start.buildCacheEnabled && !start.refreshDependencies &&
+     !start.parallelProjectExecutionEnabled && start.maxWorkerCount == 1 && !start.continuous && !start.profile && !start.buildScan &&
+     start.allInitScripts.empty && start.includedBuilds.empty && start.excludedTaskNames.empty &&
+     start.writeDependencyVerifications.empty && !start.writeDependencyLocks && start.lockedDependenciesToUpdate.empty,
+     'INVOCATION')
+
+File root = settingsDir.canonicalFile.parentFile
+File snapshot = new File(root, 'file-supply')
+File material = new File(snapshot, 'maven')
+File approval = new File(snapshot, 'binding.json')
+def noLinks = { File f ->
+    f.absoluteFile == f.canonicalFile && !Files.isSymbolicLink(f.toPath())
+}
+need(noLinks(snapshot) && noLinks(material) && noLinks(approval) && material.isDirectory() && approval.isFile(), 'SNAPSHOT_LAYOUT')
+def mountRows = new File('/proc/self/mountinfo').readLines().findAll {
+    def target = it.split(' ')[4]
+    target == snapshot.path || target.startsWith(snapshot.path + '/')
+}
+need(mountRows.size() == 1 && mountRows[0].split(' ')[4] == snapshot.path, 'READONLY_MOUNT')
+String mountRow = mountRows[0]
+def mf = mountRow.split(' ').toList()
+need(mf[5].tokenize(',').containsAll(['ro','nodev','nosuid','noexec']) && mf[mf.indexOf('-')+1] == 'tmpfs' &&
+     mf[-1].tokenize(',').contains('ro') && !Files.isWritable(snapshot.toPath()), 'READONLY_MOUNT')
+need(approval.length() > 0 && approval.length() < 8192, 'BINDING_SIZE')
+def contract = new JsonSlurper().parse(approval)
+def bindingFields = ['schema','kind','materialId','checkout','commit','tree','lockSha256','expiresEpoch','mountId','files','requestedTask'] as Set
+if (graphPlan) bindingFields.add('releaseGraphSha256')
+need(contract.keySet().toSet() == bindingFields, 'BINDING_FIELDS')
+String graphPin = 'b2a2eef0d89e7a0bffbb689c8666aea9c64d2772ce6b8a409b0e11134653209a'
+List<String> approvedReleasePaths = []
+if (graphPlan) {
+    File recordedGraph = new File(settingsDir, 'build-logic/rebirth-standard-release-graph.txt')
+    need(noLinks(recordedGraph) && recordedGraph.isFile() && recordedGraph.length() < 16384 && hash(recordedGraph)==graphPin,
+         'RELEASE_GRAPH_FILE_PIN')
+    need(contract.releaseGraphSha256==graphPin, 'RELEASE_GRAPH_BINDING')
+    approvedReleasePaths = recordedGraph.readLines('UTF-8')
+    need(approvedReleasePaths.size()==75 && approvedReleasePaths.toSet().size()==75 && approvedReleasePaths[-1]==releaseTask,
+         'RELEASE_GRAPH_FILE_SHAPE')
+}
+// Outer broker must attest who authorized this binding and that the mount/parent cannot be replaced.
+// A matching JSON alone is not proof of authority; these routes permit a resolver trial or a dry-run graph, not packaging.
+String expectedPurpose = graphPlan ? 'INTERNAL_UNSIGNED_RELEASE_GRAPH_ONLY' : 'INTERNAL_FILE_RESOLUTION_TRIAL_ONLY'
+need(contract.schema == 2 && contract.kind == expectedPurpose && contract.requestedTask == start.taskNames[0] &&
+     contract.materialId == start.projectProperties[idKey] && contract.checkout == settingsDir.canonicalPath &&
+     contract.mountId == mf[0] && contract.expiresEpoch instanceof Number, 'BINDING_SCOPE')
+long now = System.currentTimeMillis().intdiv(1000)
+need(contract.expiresEpoch > now && contract.expiresEpoch <= now + 900, 'BINDING_EXPIRY')
+def gitHead = providers.exec {
+    workingDir(settingsDir)
+    commandLine('/usr/bin/git', '--no-replace-objects', 'rev-parse', 'HEAD')
+}.standardOutput.asText.get().trim()
+def gitTree = providers.exec {
+    workingDir(settingsDir)
+    commandLine('/usr/bin/git', '--no-replace-objects', 'rev-parse', 'HEAD^{tree}')
+}.standardOutput.asText.get().trim()
+need(gitHead ==~ /[0-9a-f]{40}/ && gitHead == contract.commit && gitTree == contract.tree, 'BINDING_COMMIT_TREE')
+File lock = new File(settingsDir,'gradle/verification-metadata.xml')
+String frozenLock = 'ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26'
+need(contract.lockSha256 == frozenLock && hash(lock) == frozenLock, 'VERIFICATION_LOCK')
+
+final Map fixed = [
+    'com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar':[3149,'e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069'],
+    'com/google/guava/listenablefuture/1.0/listenablefuture-1.0.pom':[2226,'53873caf26bc1ed8a567ea6c939ab2aaa3f47a5e32d5cade95ddf5080d23238a'],
+    'com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom':[10180,'f8698ab46ca996ce889c1afc8ca4f25eb8ac6b034dc898d4583742360016cc04'],
+    'org/sonatype/oss/oss-parent/9/oss-parent-9.pom':[6569,'fb40265f982548212ff82e362e59732b2187ec6f0d80182885c14ef1f982827a']
+]
+need(contract.files == fixed, 'BINDING_FILE_PINS')
+Set allowedDirs = [] as Set
+fixed.keySet().each { rel ->
+    int i = rel.lastIndexOf('/')
+    while (i >= 0) { allowedDirs.add(rel.substring(0,i)); i = rel.lastIndexOf('/', i-1) }
+}
+Set found = [] as Set
+List<File> dirs = [material]
+while (!dirs.empty) {
+    File dir = dirs.remove(dirs.size()-1)
+    File[] entries = dir.listFiles()
+    need(entries != null, 'UNREADABLE_DIRECTORY')
+    entries.each { f ->
+        String rel = material.toPath().relativize(f.toPath()).toString()
+        need(noLinks(f), 'LINK')
+        if (f.isDirectory()) {
+            need(allowedDirs.contains(rel), 'EXTRA_DIRECTORY')
+            dirs.add(f)
+        } else {
+            need(fixed.containsKey(rel) && Files.isRegularFile(f.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                 Files.getAttribute(f.toPath(), 'unix:nlink', LinkOption.NOFOLLOW_LINKS) == 1, 'EXTRA_OR_SPECIAL_FILE')
+            need(f.length() == fixed[rel][0] && hash(f) == fixed[rel][1], 'ARTIFACT_PIN')
+            need(found.add(rel), 'DUPLICATE_FILE')
+        }
+    }
+}
+need(found == fixed.keySet(), 'MISSING_FILE')
+need(dependencyResolutionManagement.repositoriesMode.get().name() == 'FAIL_ON_PROJECT_REPOS', 'REPOSITORY_MODE')
+final List coordinates = [['com.google.guava','listenablefuture','1.0'], ['com.google.guava','guava-parent','26.0-android'],
+                          ['org.sonatype.oss','oss-parent','9']]
+def repos = dependencyResolutionManagement.repositories
+final List originalUrls = ['https://dl.google.com/dl/android/maven2/', 'https://repo.maven.apache.org/maven2/',
+                           'https://jitpack.io', 'https://maven.mozilla.org/maven2/']
+need(repos.collect { it.url.toString() } == originalUrls, 'ORIGINAL_REPOSITORIES')
+def verified = repos.maven {
+    name = 'DshaVerifiedFileV1'
+    url = material.toURI()
+    metadataSources { mavenPom(); ignoreGradleMetadataRedirection() }
+    content { coordinates.each { g,a,v -> includeVersion(g,a,v) } }
+}
+repos.exclusiveContent {
+    forRepositories(verified)
+    filter { coordinates.each { g,a,v -> includeVersion(g,a,v) } }
+}
+need(repos.collect { it.url.toString() } == originalUrls + [material.toURI().toString()] &&
+     verified.metadataSources.mavenPomEnabled && verified.metadataSources.ignoreGradleMetadataRedirectionEnabled &&
+     !verified.metadataSources.gradleMetadataEnabled && !verified.metadataSources.artifactEnabled, 'REPOSITORY_POLICY')
+gradle.ext.verifiedFileTrial = [repository:verified.name, material:material, checkout:gitHead, tree:gitTree, task:selectedTask,
+                                repositories:repos.collect { it.url.toString() }, mountId:mf[0], files:fixed]
+gradle.taskGraph.whenReady { graph ->
+    List<String> paths = graph.allTasks*.path
+    if (!graphPlan) {
+        need(paths == [selectedTask], 'TASK_GRAPH')
+    } else {
+        need(start.dryRun && paths == approvedReleasePaths, 'RELEASE_TASK_GRAPH_MISMATCH')
+        need(paths.every { !it.toLowerCase(Locale.ROOT).startsWith(':app:install') &&
+                          !it.toLowerCase(Locale.ROOT).contains('upload') }, 'UNEXPECTED_RELEASE_TASK')
+        println('B368_FILE_RELEASE_GRAPH=' + groovy.json.JsonOutput.toJson([
+            commit:gitHead, tree:gitTree, task:releaseTask, dryRun:true, mountId:mf[0],
+            repository:verified.name, graphSha256:graphPin, tasks:paths, executed:false, apkBuilt:false, formalAdmission:false]))
+    }
+}

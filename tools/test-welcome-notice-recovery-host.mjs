@@ -89,16 +89,17 @@ try{
   });
   await page.addInitScript({content:'window.__DSHA_NATIVE_PLUGINS__=true;'});
   await page.goto(origin+'/');
-  const enter=page.getByRole('button',{name:/^(Continue|继续)$/});await enter.waitFor({timeout:45000});assert.equal(patchCount,1);
+  const noticeDialog=page.getByRole('dialog',{name:/^(Preview Notice|预览版说明)$/});
+   const enter=noticeDialog.getByRole('button',{name:/^(Continue|继续)$/});await enter.waitFor({timeout:45000});assert.equal(patchCount,1);
   await enter.click();await deliveryDone;
   const shouldFinish=scenario!=='refused-without-host-write'&&expected==='fixed';
   if(shouldFinish){
-   await page.waitForFunction(()=>!document.querySelector('[role="dialog"]'),undefined,{timeout:15000});
+   await noticeDialog.waitFor({state:'hidden',timeout:15000});
    assert.equal((await describe()).value.welcomeNoticeVersion,version);
   }else{
-   await page.getByRole('alert').waitFor({timeout:15000});await delay(500);
-   assert.equal(await page.getByRole('dialog').count(),1);
-   assert.equal(await page.getByRole('button',{name:/^(Retry save|重试保存)$/}).count(),1);
+   await noticeDialog.getByRole('alert').waitFor({timeout:15000});await delay(500);
+   assert.equal(await noticeDialog.count(),1);
+   assert.equal(await noticeDialog.getByRole('button',{name:/^(Retry save|重试保存)$/}).count(),1);
   }
   const saved=await describe();
   if(scenario==='lost-response-before-host-commit'){

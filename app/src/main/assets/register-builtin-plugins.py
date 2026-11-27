@@ -16,13 +16,15 @@ dsh-web-mobile）的实体随离线 rootfs 烘焙在 /root/dsha-*，但 dsh 只�
   python3 register-builtin-plugins.py                # 注册：把未禁用的内置插件并进 profile
   python3 register-builtin-plugins.py --enable 名字   # 启用：加回 bundles + 建链
   python3 register-builtin-plugins.py --disable 名字  # 禁用：移出 bundles + 摘链 + 写禁用标记
+  python3 register-builtin-plugins.py --clear-stale-profile-lock  # 宿主超时后清理已退出持有者的 profile 锁
 
 注册名单与实体路径由签名 builtin-plugins.json 唯一声明；注册契约为：
   1. profiles/web/package.json 的 dsh.profile.bundles 含插件名；
   2. dependencies 有 link: 声明（pnpm 重装/加插件时不会把内置链接摘掉）；
   3. profiles/web/node_modules/<name> 是指向 /root/dsha-* 的符号链接。
-禁用标记：profiles/web/node_modules/<name>.disabled（空文件）—— 存在即表示用户主动
-禁用，注册流程会尊重它而永远跳过（与 selftest.py 的判定一致），只有 --enable 会清掉。
+禁用标记：profiles/web/node_modules/<name>.disabled（原生仍写空文件）—— 存在即禁用。
+旧空标记来源不可追溯，按用户意图保留；只有 --enable 会清掉。自动默认禁用另外写入
+<name>.default-disabled.json，恢复默认启用时仅撤销来源与文件身份均仍一致的自动标记。
 
 默认启停：builtin-plugins.json 的行可声明 defaultDisabled=true。没有当前 APK 代次的显式
 启用记录时，注册器把该插件收敛为禁用（全新安装与覆盖更新一致，不保留旧版本启用状态）；
@@ -112,6 +114,8 @@ def local(path):
 BUILTIN_LIST = local("/root/dsha-builtin.txt")
 MANAGED_ASSET_MARKER = local("/usr/local/share/dsha/managed-assets-v2")
 APK_GENERATION_MARKER = local("/usr/local/share/dsha/apk-generation")
+# 上一次成功注册对应的受管资产身份；宿主只读它来选择注册预算，不参与完成判定。
+REGISTER_ASSET_IDENTITY = local("/usr/local/share/dsha/register-managed-asset-id")
 APK_GENERATION_HEADER = "DSHA_APK_GENERATION_V1"
 DEFAULT_DISABLED_ENABLED_HEADER = "DSHA_DEFAULT_OFF_ENABLED_V1"
 
@@ -215,6 +219,25 @@ def apk_generation():
     return 'runtime:' + identity if identity else 'unmanaged'
 
 
+def write_register_identity():
+    """记录本次成功注册对应的受管资产身份（只给宿主选择下一次注册预算）。
+
+    覆盖更新会换成新的受管资产身份：宿主读到旧身份就用宽预算；若本次注册被超时
+    结束则这里不会执行，下一次仍按宽预算重试。写失败只影响预算，不影响注册结果。
+    """
+    identity = managed_asset_identity()
+    if not identity:
+        return
+    try:
+        os.makedirs(os.path.dirname(REGISTER_ASSET_IDENTITY), exist_ok=True)
+        temporary = REGISTER_ASSET_IDENTITY + '.tmp'
+        with open(temporary, 'w', encoding='ascii') as stream:
+            stream.write(identity + '\n')
+        os.replace(temporary, REGISTER_ASSET_IDENTITY)
+    except OSError:
+        pass
+
+
 def ensure_runtime_modules(force=False):
     cache = local(os.path.join(DSH_HOME, '.runtime-links-cache.json'))
     started = time.monotonic()
@@ -290,6 +313,109 @@ def repair_runtime_modules():
     return count
 
 
+def read_profile_lock_record(lock_path):
+    try:
+        with open(lock_path, encoding='ascii') as stream:
+            return stream.read(128)
+    except (OSError, UnicodeError):
+        return None
+
+
+def profile_lock_state(lock_path):
+    """profile 写入锁的持有者状态：missing / live / stale / unknown。
+
+    只有能证明记录里的 PID 已退出才返回 stale；格式不完整、权限被拒或 Windows
+    句柄无法确认时一律 unknown。宿主超时清理与恢复页提示都只按这个结论行动。
+    """
+    value = read_profile_lock_record(lock_path)
+    if value is None:
+        return 'unknown' if os.path.lexists(lock_path) else 'missing'
+    if not re.fullmatch(r'[0-9]+\n', value):
+        return 'unknown'
+    pid = int(value)
+    if pid <= 0 or pid > 2147483647:
+        return 'unknown'
+    if pid == os.getpid():
+        return 'live'
+    if os.name == 'nt':
+        # Python os.kill(pid, 0) can terminate on Windows. Only observe a
+        # SYNCHRONIZE handle; denied/unknown states never authorize takeover.
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+            kernel.WaitForSingleObject.restype = wintypes.DWORD
+            kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+            kernel.CloseHandle.restype = wintypes.BOOL
+            process_handle = kernel.OpenProcess(0x00100000, False, pid)
+            if not process_handle:
+                return 'stale' if ctypes.get_last_error() == 87 else 'unknown'
+            try:
+                return 'stale' if kernel.WaitForSingleObject(process_handle, 0) == 0 else 'live'
+            finally:
+                kernel.CloseHandle(process_handle)
+        except (OSError, AttributeError):
+            return 'unknown'
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return 'stale'
+    except OSError:
+        return 'unknown'
+    return 'live'
+
+
+def take_over_dead_profile_lock(lock_path, record):
+    """只接管已确认退出持有者的锁；与 Node 的 dsh-atomic-write 使用同一种 claim。"""
+    previous = read_profile_lock_record(lock_path)
+    if previous is None or profile_lock_state(lock_path) != 'stale':
+        return False
+    claim = lock_path + '.takeover-' + hashlib.sha256(previous.encode('ascii')).hexdigest()[:16]
+    try:
+        fd = os.open(claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(fd, 'w', encoding='ascii') as stream:
+            stream.write(record)
+        if read_profile_lock_record(lock_path) != previous or profile_lock_state(lock_path) != 'stale':
+            return False
+        try:
+            os.unlink(lock_path)
+            return True
+        except OSError:
+            return False
+    finally:
+        try:
+            os.unlink(claim)
+        except OSError:
+            pass
+
+
+def clear_stale_profile_lock():
+    """宿主超时后由短命令调用：只清理已退出进程留下的 profile 写入锁。
+
+    该入口不走 operation_lock：要清理的锁正是它要处理的同一路径。记录不完整、
+    持有者仍存活或无法确认时一律保留，绝不为了「看起来干净」删除别人的锁。
+    """
+    lock_path = local(MANIFEST) + '.lock'
+    state = profile_lock_state(lock_path)
+    if state == 'missing':
+        print('PROFILE_LOCK_ABSENT')
+        return 0
+    if state != 'stale':
+        print('PROFILE_LOCK_RETAINED: ' + state)
+        return 0
+    if take_over_dead_profile_lock(lock_path, str(os.getpid()) + '\n'):
+        print('PROFILE_LOCK_CLEARED')
+        return 0
+    print('PROFILE_LOCK_RETAINED: ' + profile_lock_state(lock_path))
+    return 0
+
+
 @contextmanager
 def profile_writer_lock(check_cancel=None, timeout=120, timing=None):
     """Match dsh-atomic-write's package.json.lock; always after the data lock.
@@ -302,72 +428,6 @@ def profile_writer_lock(check_cancel=None, timeout=120, timing=None):
     os.makedirs(local(PROFILE), exist_ok=True)
     lock_path = local(MANIFEST) + '.lock'
     record = str(os.getpid()) + '\n'
-
-    def read_record(path):
-        try:
-            with open(path, encoding='ascii') as stream:
-                return stream.read(128)
-        except (OSError, UnicodeError):
-            return None
-
-    def holder_exited(value):
-        if not isinstance(value, str) or not re.fullmatch(r'[0-9]+\n', value):
-            return False
-        pid = int(value)
-        if pid <= 0 or pid > 2147483647 or pid == os.getpid():
-            return False
-        if os.name == 'nt':
-            # Python os.kill(pid, 0) can terminate on Windows. Only observe a
-            # SYNCHRONIZE handle; denied/unknown states never authorize takeover.
-            try:
-                import ctypes
-                from ctypes import wintypes
-                kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-                kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-                kernel.OpenProcess.restype = wintypes.HANDLE
-                kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-                kernel.WaitForSingleObject.restype = wintypes.DWORD
-                kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
-                kernel.CloseHandle.restype = wintypes.BOOL
-                process_handle = kernel.OpenProcess(0x00100000, False, pid)
-                if not process_handle:
-                    return ctypes.get_last_error() == 87  # invalid PID
-                try:
-                    return kernel.WaitForSingleObject(process_handle, 0) == 0
-                finally:
-                    kernel.CloseHandle(process_handle)
-            except (OSError, AttributeError):
-                return False
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        except OSError:
-            pass
-        return False
-
-    def take_over():
-        previous = read_record(lock_path)
-        if not holder_exited(previous):
-            return False
-        claim = lock_path + '.takeover-' + hashlib.sha256(previous.encode('ascii')).hexdigest()[:16]
-        try:
-            fd = os.open(claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            return False
-        try:
-            with os.fdopen(fd, 'w', encoding='ascii') as stream:
-                stream.write(record)
-            if read_record(lock_path) != previous or not holder_exited(previous):
-                return False
-            try:
-                os.unlink(lock_path)
-                return True
-            except OSError:
-                return False
-        finally:
-            os.unlink(claim)
-
     deadline = time.monotonic() + max(0, timeout)
     delay = 0.02
     while True:
@@ -379,7 +439,7 @@ def profile_writer_lock(check_cancel=None, timeout=120, timing=None):
                 stream.write(record)
             break
         except FileExistsError:
-            if take_over():
+            if take_over_dead_profile_lock(lock_path, record):
                 continue
         if time.monotonic() >= deadline:
             raise TimeoutError('PLUGIN_PROFILE_LOCK_TIMEOUT；未更改插件或终止其他进程')
@@ -456,30 +516,34 @@ def runtime_bundle_dir(name):
     return candidate
 
 
-def managed_package_proofs(path=None):
-    """Read only the proof bytes authenticated by the APK-owning launcher.
-
-    A guest-written JSON or an installation package.json dependency is not an
-    authority. Missing/unreadable evidence keeps packages user/unverified.
-    """
+def managed_package_proof_document(path=None):
+    """仅接受启动器绑定摘要的证明表；新增签名文件字段与旧 packages 共用此身份。"""
     expected = os.environ.get('DSHA_MANAGED_PACKAGE_PROOFS_SHA256', '')
     if not re.fullmatch(r'[a-f0-9]{64}', expected):
         return {}
     try:
         path = Path(path or local(os.path.join(DSH_HOME, 'managed-package-proofs.json')))
-        if path.is_symlink() or path.stat().st_size > 2 * 1024 * 1024:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 2 * 1024 * 1024:
             return {}
-        data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != expected:
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+        with os.fdopen(os.open(path, flags), 'rb') as stream:
+            data = stream.read(2 * 1024 * 1024 + 1)
+        if len(data) > 2 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
             return {}
         value = json.loads(data)
-        packages = value.get('packages')
-        if value.get('version') != 1 or not isinstance(packages, dict):
+        if not isinstance(value, dict) or value.get('version') != 1 or not isinstance(value.get('packages'), dict):
             return {}
-        return {name: digest for name, digest in packages.items()
-                if valid_name(name) and isinstance(digest, str) and re.fullmatch(r'[a-f0-9]{64}', digest)}
+        return value
     except (OSError, ValueError, TypeError, AttributeError):
         return {}
+
+
+def managed_package_proofs(path=None):
+    """旧运行时包消费者只读取 packages，保持既有字段与编码。"""
+    packages = managed_package_proof_document(path).get('packages', {})
+    return {name: digest for name, digest in packages.items()
+            if valid_name(name) and isinstance(digest, str) and re.fullmatch(r'[a-f0-9]{64}', digest)}
 
 
 def package_content_proof(directory, check_cancel=None):
@@ -537,6 +601,110 @@ def managed_runtime_package(name, directory, proofs=None, check_cancel=None):
             if json.load(stream).get('name') != name:
                 return False
         return package_content_proof(directory, check_cancel) == expected
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+SIGNED_BUILTIN_MAX_FILES = 2048
+SIGNED_BUILTIN_MAX_BYTES = 64 * 1024 * 1024
+SIGNED_BUILTIN_MAX_NODES = 8192
+
+
+def signed_builtin_package(name, directory, check_cancel=None):
+    """核对当前安装文件集合与摘要绑定的签名清单；不把名称/路径当作内容证明。
+
+    只排除根 node_modules：它由共享运行时依赖修复创建，另受依赖/加载链检查。
+    此处不缓存，也不扫描该子树；其余目录、文件、模式与字节必须精确一致。
+    """
+    if name not in DEFAULT_BUILTINS or not directory:
+        return False
+    expected_root = local(BUILTIN_DIRECTORIES[name])
+    try:
+        if (not stat.S_ISDIR(os.lstat(expected_root).st_mode)
+                or os.path.realpath(directory) != os.path.realpath(expected_root)):
+            return False
+        table = managed_package_proof_document().get('signedBuiltinFiles')
+        rows = table.get(name) if isinstance(table, dict) else None
+        if not isinstance(rows, list) or not rows or len(rows) > SIGNED_BUILTIN_MAX_FILES:
+            return False
+        files, children, nodes, total = {}, {'': set()}, set(), 0
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != {'path', 'sha256', 'mode', 'size'}:
+                return False
+            relative = row['path']
+            if (not isinstance(relative, str) or not relative or len(relative) > 1024
+                    or re.search(r'[\\\\:\x00-\x1f\x7f]', relative)):
+                return False
+            parts = relative.split('/')
+            if (len(parts) > 32 or any(part in ('', '.', '..') for part in parts)
+                    or parts[0] == 'node_modules' or relative in files
+                    or not isinstance(row['sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', row['sha256'])
+                    or type(row['mode']) is not int or not 0 <= row['mode'] <= 0o7777
+                    or type(row['size']) is not int or row['size'] < 0):
+                return False
+            total += row['size']
+            if total > SIGNED_BUILTIN_MAX_BYTES:
+                return False
+            files[relative] = row
+            for index, part in enumerate(parts):
+                parent = '/'.join(parts[:index])
+                children.setdefault(parent, set()).add(part)
+                nodes.add('/'.join(parts[:index + 1]))
+        if len(nodes) > SIGNED_BUILTIN_MAX_NODES or 'package.json' not in files:
+            return False
+        identity = lambda node: (node.st_dev, node.st_ino, node.st_mode, node.st_size,
+                                 node.st_mtime_ns, node.st_ctime_ns)
+        count = 0
+
+        def walk(path, relative):
+            nonlocal count
+            if check_cancel:
+                check_cancel()
+            before = os.lstat(path)
+            if relative:
+                count += 1
+                if count > SIGNED_BUILTIN_MAX_NODES:
+                    raise ValueError('SIGNED_BUILTIN_LIMIT')
+            if stat.S_ISDIR(before.st_mode):
+                if relative in files:
+                    raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+                members = set()
+                with os.scandir(path) as entries:
+                    for entry in entries:
+                        if not relative and entry.name == 'node_modules':
+                            continue
+                        members.add(entry.name)
+                        if len(members) > SIGNED_BUILTIN_MAX_NODES:
+                            raise ValueError('SIGNED_BUILTIN_LIMIT')
+                if members != children.get(relative, set()):
+                    raise ValueError('SIGNED_BUILTIN_MEMBERS_CHANGED')
+                for member in sorted(members):
+                    walk(os.path.join(path, member), relative + '/' + member if relative else member)
+            else:
+                row = files.get(relative)
+                if (row is None or not stat.S_ISREG(before.st_mode)
+                        or before.st_size != row['size'] or stat.S_IMODE(before.st_mode) != row['mode']):
+                    raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+                flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+                with os.fdopen(os.open(path, flags), 'rb') as stream:
+                    if identity(os.fstat(stream.fileno())) != identity(before):
+                        raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+                    digest, size = hashlib.sha256(), 0
+                    for block in iter(lambda: stream.read(64 * 1024), b''):
+                        if check_cancel:
+                            check_cancel()
+                        size += len(block)
+                        if size > row['size']:
+                            raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+                        digest.update(block)
+                    if (size != row['size'] or digest.hexdigest() != row['sha256']
+                            or identity(os.fstat(stream.fileno())) != identity(before)):
+                        raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+            if identity(os.lstat(path)) != identity(before):
+                raise ValueError('SIGNED_BUILTIN_FILE_CHANGED')
+
+        walk(expected_root, '')
+        return True
     except (OSError, ValueError, TypeError, AttributeError):
         return False
 
@@ -984,6 +1152,7 @@ def enable_plugin(name):
             lines.append("本就启用：%s" % name)
         if d is not None:
             for alias in selection_aliases(name):
+                clear_default_disabled_intent(alias)
                 if os.path.isfile(marker_path(alias)):
                     os.remove(marker_path(alias))
                     lines.append("已清除禁用标记：" + alias)
@@ -1013,6 +1182,9 @@ def disable_plugin(name):
                 clear_enable_intent(name)
             except OSError as error:
                 raise RuntimeError("无法清除启用记录：" + str(error))
+        # 显式关闭必须先失效自动来源，即使当前已禁用或签名实体暂时缺失。
+        for alias in selection_aliases(name):
+            clear_default_disabled_intent(alias)
         if d is not None:
             marker_name = AUTO_REVIEW_ALIASES[0] if name in AUTO_REVIEW_ALIASES else name
             os.makedirs(os.path.dirname(marker_path(marker_name)), exist_ok=True)
@@ -1065,12 +1237,112 @@ def disable_plugin(name):
 
 # ================= 注册主流程 =================
 
+def default_disabled_intent_path(name):
+    """独立来源记录；不复用旧 .disabled / .enabled 的内容或键名。"""
+    return os.path.join(local(NODE_MODULES), name + '.default-disabled.json')
+
+
+def disabled_stat(node):
+    return [node.st_dev, node.st_ino, node.st_mode, node.st_size,
+            node.st_mtime_ns, node.st_ctime_ns]
+
+
+def clear_default_disabled_intent(name):
+    if name in DEFAULT_BUILTINS:
+        try:
+            os.unlink(default_disabled_intent_path(name))
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            raise RuntimeError('无法清除自动默认禁用来源：' + str(error))
+
+
+def default_disabled_fields(pairs):
+    value = dict(pairs)
+    if len(value) != len(pairs):
+        raise ValueError('自动默认禁用来源包含重复字段')
+    return value
+
+
+def read_default_disabled_intent(name):
+    """只认有界的普通文件；未知、断写、链接和被替换的来源均不提供自动恢复依据。"""
+    path = default_disabled_intent_path(name)
+    try:
+        before = os.lstat(path)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 1024:
+            return None
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+        with os.fdopen(os.open(path, flags), 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            data = stream.read(1025)
+            after = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(opened.st_mode) or disabled_stat(before) != disabled_stat(opened)
+                or disabled_stat(opened) != disabled_stat(after)
+                or disabled_stat(after) != disabled_stat(os.lstat(path))):
+            return None
+        value = json.loads(data, object_pairs_hook=default_disabled_fields)
+        if (not isinstance(value, dict) or set(value) != {'version', 'source', 'disabledStat'}
+                or type(value['version']) is not int or value['version'] != 1
+                or value['source'] != 'builtin-default'
+                or not isinstance(value['disabledStat'], list) or len(value['disabledStat']) != 6
+                or any(type(item) is not int for item in value['disabledStat'])):
+            return None
+        return value, disabled_stat(after)
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def restore_default_enabled():
+    """只撤销本工具自动创建、且用户/外部没有改写过的默认禁用。旧空标记保留。"""
+    for name in DEFAULT_BUILTINS:
+        if name in DEFAULT_DISABLED:
+            continue
+        observed = read_default_disabled_intent(name)
+        if observed is None:
+            continue
+        intent, source_stat = observed
+        marker = marker_path(name)
+        try:
+            current = os.lstat(marker)
+        except FileNotFoundError:
+            # 上次已清标记但收尾失败：只清本次核验过的来源，重入后继续正常注册。
+            if disabled_stat(os.lstat(default_disabled_intent_path(name))) == source_stat:
+                clear_default_disabled_intent(name)
+            continue
+        if (not stat.S_ISREG(current.st_mode) or current.st_size != 0
+                or disabled_stat(current) != intent['disabledStat'] or entity_dir(name) is None):
+            continue
+        # 共享 profile writer 锁串行化原生/Web 写者；提交前仍核验两个路径项未被外部替换。
+        if (disabled_stat(os.lstat(marker)) != intent['disabledStat']
+                or disabled_stat(os.lstat(default_disabled_intent_path(name))) != source_stat):
+            continue
+        os.unlink(marker)
+        clear_default_disabled_intent(name)
+
+
 def persist_default_disabled(name):
-    """默认关闭：落与原生禁用一致的空标记，注册器下次启动不会再把它补回 bundles。"""
+    """自动默认关闭仍写旧空标记，另记新来源；绝不收养已有用户/历史禁用标记。"""
     marker = marker_path(name)
     os.makedirs(os.path.dirname(marker), exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    os.close(os.open(marker, flags, 0o600))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
+    try:
+        descriptor = os.open(marker, flags, 0o600)
+    except FileExistsError:
+        return
+    try:
+        os.fsync(descriptor)
+        observed = disabled_stat(os.fstat(descriptor))
+    finally:
+        os.close(descriptor)
+    if disabled_stat(os.lstat(marker)) != observed:
+        return
+    # 先落禁用、再落来源；断写/失败只留下保守禁用，不能凭未完成的来源自动恢复。
+    descriptor = os.open(default_disabled_intent_path(name), flags, 0o600)
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+        json.dump({'version': 1, 'source': 'builtin-default', 'disabledStat': observed}, stream)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def apply_default_disabled():
@@ -1080,7 +1352,9 @@ def apply_default_disabled():
     - 覆盖更新（APK 代次变化）：旧版本启用过的也收敛为禁用；
     - 用户在当前安装代次从原生插件页显式启用：.enabled 记录与代次一致，保持启用；
     - 显式禁用标记优先，并清掉旧启用记录。
+    - 默认恢复启用时，只迁移仍与独立来源记录一致的自动禁用。
     """
+    restore_default_enabled()
     if not DEFAULT_DISABLED:
         return
     for name in DEFAULT_DISABLED:
@@ -1201,6 +1475,8 @@ def register():
     if not present:
         lines.append("内置插件均已禁用，无需注册")
         _write_log(lines, ok=not missing)
+        if not missing:
+            write_register_identity()
         print(("BUILTIN_REGISTER_PARTIAL" if missing else "BUILTIN_REGISTER_OK") + ": 无待注册内置插件（已禁用 %s）" % ", ".join(skipped))
         return 1 if missing else 0
 
@@ -1257,6 +1533,8 @@ def register():
         lines.append("内置插件注册均已就绪，无需改动")
 
     _write_log(lines, ok=not missing)
+    if not missing:
+        write_register_identity()
     print(("BUILTIN_REGISTER_PARTIAL" if missing else "BUILTIN_REGISTER_OK") + ": %d 个内置插件注册就绪" % len(present))
     return 1 if missing else 0
 
@@ -1280,5 +1558,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # 宿主超时清理入口不进入 operation_lock：它要处理的就是 profile 写入锁本身。
+    if sys.argv[1:] == ["--clear-stale-profile-lock"]:
+        sys.exit(clear_stale_profile_lock())
     with operation_lock():
         sys.exit(main())

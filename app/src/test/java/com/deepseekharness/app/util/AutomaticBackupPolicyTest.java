@@ -10,6 +10,19 @@ public class AutomaticBackupPolicyTest {
   }
 
   @Test
+  public void detailCountsOnlyOtherReadableCompleteAutomaticRecords() {
+    assertTrue(AutomaticBackupPolicy.isCompleteAutomaticRecord(true, "COMPLETE"));
+    assertTrue(AutomaticBackupPolicy.isCompleteAutomaticRecord(true, "DATA_SAVED_PLUGIN_WARNINGS"));
+    assertFalse(AutomaticBackupPolicy.isCompleteAutomaticRecord(false, "COMPLETE"));
+    assertFalse(AutomaticBackupPolicy.isCompleteAutomaticRecord(true, "PARTIAL_RESCUE"));
+    assertFalse(AutomaticBackupPolicy.isCompleteAutomaticRecord(true, "BEST_EFFORT_RESCUE"));
+    assertFalse(AutomaticBackupPolicy.isCompleteAutomaticRecord(true, null));
+    assertEquals(0, AutomaticBackupPolicy.otherCompleteRecords(1, true));
+    assertEquals(2, AutomaticBackupPolicy.otherCompleteRecords(3, true));
+    assertEquals(3, AutomaticBackupPolicy.otherCompleteRecords(3, false));
+  }
+
+  @Test
   public void intervalDoesNotBackupOnEveryStart() {
     long start = 100000;
     assertFalse(

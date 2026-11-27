@@ -239,6 +239,9 @@ public final class AutomaticBackups {
   /** 只轮换明确标记、已验证的自动产物，手动副本及未知记录不删除。 */
   public static void prune(Context context, BackupControl control) throws IOException {
     var fs = new AndroidBackupFileSystem();
-    AutomaticBackupPruner.prune(fs, NativeBackupJobs.get(context).verifiedCopies().valid, control);
+    var copies = NativeBackupJobs.get(context).verifiedCopies();
+    if (!copies.unreadable.isEmpty()) throw new IOException("BACKUP_PRUNE_RECORD_UNREADABLE");
+    if (AutomaticBackupPruner.prune(fs, copies.valid, control) > 0)
+      recordError(context, "BACKUP_PRUNE_DIGEST_MISMATCH_RETAINED");
   }
 }

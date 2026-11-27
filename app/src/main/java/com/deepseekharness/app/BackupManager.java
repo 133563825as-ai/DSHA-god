@@ -27,6 +27,10 @@ import java.util.UUID;
 public final class BackupManager {
   private BackupManager() {}
 
+  private static void requireBackupRestore() throws IOException {
+    if (BuildConfig.REBIRTH_CANDIDATE) throw new IOException("TRIAL_BACKUP_RESTORE_DISABLED");
+  }
+
   private static final Object LOCK =
       com.deepseekharness.app.core.MaintenanceCoordinator.archiveLock();
   private static final long MAX_ARCHIVE = 16L * 1024 * 1024 * 1024;
@@ -146,6 +150,7 @@ public final class BackupManager {
   /** 独立任务内恢复，共用原有引擎的预检、逐文件校验与延迟提交协议。 */
   public static String restoreWithinDataTask(HarnessController controller, PreparedRestore prepared)
       throws Exception {
+    requireBackupRestore();
     if (!isDataTaskOwner())
       throw new IOException(com.deepseekharness.app.util.UiText.text("恢复必须持有全局任务锁"));
     try (InputStream in = files().read(prepared.archive, files().stat(prepared.archive))) {
@@ -189,6 +194,7 @@ public final class BackupManager {
   /** 从私有安全归档恢复到新容器；只拷贝本次输入，绝不把安全归档交给 close 删除。 */
   public static void restoreMaintenanceBackup(HarnessController controller, File archive)
       throws Exception {
+    requireBackupRestore();
     if (!isDataTaskOwner())
       throw new IOException(com.deepseekharness.app.util.UiText.text("维护恢复必须持有全局任务锁"));
     try (InputStream source = files().read(archive, files().stat(archive))) {
@@ -272,6 +278,10 @@ public final class BackupManager {
   }
 
   public static String backupToExternal(Context ctx, HarnessController controller, int scope) {
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      error = "REBIRTH_EXPORT_DISABLED";
+      return null;
+    }
     error = "";
     String operation = "";
     var jobs = com.deepseekharness.app.backup.NativeBackupJobs.get(ctx);
@@ -460,6 +470,7 @@ public final class BackupManager {
   /** 先保存独立副本并完整预检，再给用户展示真实内容和影响范围。 */
   public static PreparedRestore prepareRestore(Context ctx, HarnessController controller, Uri uri)
       throws Exception {
+    requireBackupRestore();
     synchronized (LOCK) {
       String name = "";
       try (android.database.Cursor cursor =
@@ -534,6 +545,7 @@ public final class BackupManager {
   public static String restorePrepared(HarnessController controller, PreparedRestore prepared)
       throws Exception {
     try {
+      requireBackupRestore();
       return com.deepseekharness.app.core.MaintenanceCoordinator.exclusive(
           controller,
           () -> {
@@ -624,6 +636,10 @@ public final class BackupManager {
   }
 
   public static String exportToDownloads(Context ctx, File source, String name) {
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      error = "REBIRTH_EXPORT_DISABLED";
+      return null;
+    }
     try (com.deepseekharness.app.core.RuntimeTasks work =
         com.deepseekharness.app.core.RuntimeTasks.begin("数据维护")) {
       return DownloadsExport.write(ctx, source, name).uri.toString();

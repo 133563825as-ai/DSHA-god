@@ -22,17 +22,53 @@ final class WorkerQuiescence {
     }
   }
 
+  /** 当前选择与物理 worker 分开：即使取消，lease 也只由工作线程的 finally 释放。 */
+  final class Read {
+    final BackupControl control = new BackupControl(null);
+    final Lease worker = new Lease();
+
+    void cancel() {
+      synchronized (WorkerQuiescence.this) {
+        if (current == this) invalidateRead();
+      }
+    }
+
+    boolean current() {
+      synchronized (WorkerQuiescence.this) {
+        return current == this;
+      }
+    }
+  }
+
+  private Read current;
   private boolean closed;
   private int active;
 
+  synchronized void invalidateRead() {
+    if (current != null) {
+      current.control.cancel(); // 此只读流只轮询取消，不登记 I/O 回调。
+      current = null;
+    }
+  }
+
+  synchronized Read tryRead(boolean ownerIdle) {
+    invalidateRead(); // 重新选择即作废旧结果，即使旧读仍未退出而无法接单。
+    if (!ownerIdle || closed || active != 0) return null;
+    current = new Read();
+    active++;
+    return current;
+  }
+
   synchronized Lease tryBegin() {
     if (closed) return null;
+    invalidateRead(); // 普通作业优先，不等待已取消的软读退出。
     active++;
     return new Lease();
   }
 
   synchronized void closeGate() {
     closed = true;
+    invalidateRead();
   }
 
   synchronized void reopen() {

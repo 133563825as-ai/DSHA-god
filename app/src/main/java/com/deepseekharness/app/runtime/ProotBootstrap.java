@@ -77,7 +77,21 @@ public class ProotBootstrap {
             ctx, rootfsDir, baseDir, libDir, tmpDir, nativeFiles, launcher, hostPorts);
     pluginScripts =
         new GuestPluginScripts(
-            ctx, rootfsDir, this::isEnvironmentReady, this::execAndReadWithProotResult);
+            ctx,
+            rootfsDir,
+            this::isEnvironmentReady,
+            new GuestPluginScripts.Runner() {
+              public BoundedProcessRunner.Result run(String command, long timeoutMs)
+                  throws IOException, InterruptedException {
+                return execution.collect(command, timeoutMs, true);
+              }
+
+              public BoundedProcessRunner.Result run(
+                  String command, long timeoutMs, java.util.function.Consumer<String> onLine)
+                  throws IOException, InterruptedException {
+                return execution.collect(command, timeoutMs, true, onLine);
+              }
+            });
   }
 
   public RuntimeHostPorts hostPorts() {
@@ -174,17 +188,27 @@ public class ProotBootstrap {
   }
 
   public void ensureRuntimeFiles() {
+    ensureRuntimeFiles(null);
+  }
+
+  /** 启动观测版：固定工具准备结果只作诊断，失败语义与原入口一致。 */
+  public void ensureRuntimeFiles(java.util.function.Consumer<String> output) {
     try {
       nativeFiles.prepare();
     } catch (IOException error) {
       throw new IllegalStateException("NATIVE_LIBRARY_PREPARATION_FAILED", error);
     }
-    ensureDshRuntimePatches();
+    ensureDshRuntimePatches(output);
   }
 
   /** Prepares the shared current recipe chain for cold, managed and installed roots. */
   public void ensureDshRuntimePatches() {
-    execution.ensurePatches();
+    ensureDshRuntimePatches(null);
+  }
+
+  /** 启动观测版：运行工具准备的命中/失效随同一次准备进入启动诊断。 */
+  public void ensureDshRuntimePatches(java.util.function.Consumer<String> output) {
+    execution.ensurePatches(output);
   }
 
   public static final String BUILTIN_REGISTER_SCRIPT = GuestPluginScripts.BUILTIN_REGISTER_SCRIPT;
@@ -202,7 +226,13 @@ public class ProotBootstrap {
 
   /** Synchronous startup scope; every helper still has its own bounded guest and exit proof. */
   public StartupPlugins prepareStartupPlugins() throws IOException, InterruptedException {
-    return new StartupPlugins(pluginScripts.startup());
+    return prepareStartupPlugins(null);
+  }
+
+  /** 启动观测版：共享 helper 准备与后续 guest 调用仍走同一条链，仅透传有界诊断。 */
+  public StartupPlugins prepareStartupPlugins(java.util.function.Consumer<String> output)
+      throws IOException, InterruptedException {
+    return new StartupPlugins(pluginScripts.startup(output));
   }
 
   public static final class StartupPlugins implements AutoCloseable {
@@ -241,6 +271,16 @@ public class ProotBootstrap {
   public BoundedProcessRunner.Result finalizeRc1MigrationResult(String startupId)
       throws IOException, InterruptedException {
     return pluginScripts.migration("finalize", startupId);
+  }
+
+  /** P1b 最小只读核对入口：同代读回既有副本与账本，不授予恢复/删除。 */
+  public String verifyExistingRc1Migration(String startupId) {
+    return pluginScripts.migrationText("verify-existing", startupId);
+  }
+
+  public BoundedProcessRunner.Result verifyExistingRc1MigrationResult(String startupId)
+      throws IOException, InterruptedException {
+    return pluginScripts.migration("verify-existing", startupId);
   }
 
   public String setPluginEnabled(String name, boolean enable) {
@@ -303,6 +343,17 @@ public class ProotBootstrap {
     return execution.exec(command, environment);
   }
 
+  /** 仅在全部启动准备完成后调用；调用者仍拥有本次操作与取消状态。 */
+  public interface LaunchCheck {
+    void verify() throws IOException;
+  }
+
+  public Process execRootfs(
+      String command, java.util.Map<String, String> environment, LaunchCheck beforeStart)
+      throws IOException {
+    return execution.exec(command, environment, beforeStart);
+  }
+
   public Process execRootfsForInstall(String command) throws IOException {
     return execution.install(command, false);
   }
@@ -339,6 +390,13 @@ public class ProotBootstrap {
   public BoundedProcessRunner.Result execAndReadWithProotResult(String command, long timeoutMs)
       throws IOException, InterruptedException {
     return execution.collect(command, timeoutMs, true);
+  }
+
+  /** 带完整行回调的 proot 命令；用于把固定 guest 阶段行带进宿主诊断。 */
+  public BoundedProcessRunner.Result execAndReadWithProotResult(
+      String command, long timeoutMs, java.util.function.Consumer<String> onLine)
+      throws IOException, InterruptedException {
+    return execution.collect(command, timeoutMs, true, onLine);
   }
 
   /** 旧 CAS 迁移仍使用固定 proot，诊断只记录本次宿主阶段。 */

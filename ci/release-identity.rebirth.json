@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "identity": "rebirth",
+  "packageName": "dsh.android.client.rebirth",
+  "certificateSha256": "4639e61d95b7ff55271fa8d7d240cb66941da23cdd2b2e69149157110b288479",
+  "schemes": [
+    "v2",
+    "v3"
+  ],
+  "versionCode": 368,
+  "versionName": "0.2.1-rc.5-20261116.0500-dsh0.2.2-rc.1",
+  "appName": "DSHA 新生",
+  "keyAlias": "rebirth-test",
+  "testSuffix": ".rebirthtest",
+  "devSuffix": ".rebirthdev",
+  "tagPrefix": "dsha-rebirth-build",
+  "apkPrefix": "dsha-rebirth",
+  "repository": "133563825as-ai/DSHA-god",
+  "ref": "refs/heads/sync/rebirth-latest-20261116",
+  "privateRepository": false,
+  "workflow": ".github/workflows/rebirth-candidate.yml"
+}

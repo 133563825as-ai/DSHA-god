@@ -18,6 +18,9 @@ final class RuntimeTools {
   static final String CERT_PATH = "/usr/local/share/dsha/ca-certificates.crt";
   private static final String MANAGED_MARKER = "usr/local/share/dsha/managed-assets-v2";
 
+  /** 跨进程的受管准备完成戳：只证明受管文件集合已由当前 APK 写入，不授权跳过内容核验。 */
+  private static final String PREPARED_PROOF = ".runtime-tools-prepared";
+
   /** 覆盖安装代次；guest 内置插件默认禁用策略用它区分「本安装内显式启用」与旧版本状态。 */
   private static final String APK_GENERATION = "usr/local/share/dsha/apk-generation";
 
@@ -35,15 +38,25 @@ final class RuntimeTools {
   private static final java.util.Set<File> preparedFiles = new java.util.LinkedHashSet<>();
 
   static void prepare(Context context, File rootfs) throws IOException {
-    prepare(context, rootfs, true);
+    prepare(context, rootfs, true, null);
   }
 
   static void stage(Context context, File rootfs) throws IOException {
-    prepare(context, rootfs, false);
+    prepare(context, rootfs, false, null);
   }
 
-  private static void prepare(Context context, File rootfs, boolean requireNpm) throws IOException {
+  /** 启动观测入口：准备结果经 output 进入既有启动诊断；null 时保留原 logcat 行为。 */
+  static void prepare(Context context, File rootfs, java.util.function.Consumer<String> output)
+      throws IOException {
+    prepare(context, rootfs, true, output);
+  }
+
+  private static void prepare(
+      Context context, File rootfs, boolean requireNpm, java.util.function.Consumer<String> output)
+      throws IOException {
     RuntimeToolsTiming timing = new RuntimeToolsTiming();
+    String outcome = "not-prepared", missCode = "";
+    long files = -1;
     try {
       GuestScriptBudget.checkpoint();
       rootfs = RuntimeAssetFiles.root(context, rootfs);
@@ -83,8 +96,19 @@ final class RuntimeTools {
             if (expected.equals(descriptorRuntimeId(installedDescriptor))) {
               String miss = cacheMiss(rootfs, root, identity, true);
               timing.mark(5);
-              if (miss == null) return;
+              if (miss == null) {
+                outcome = "hit-in-process";
+                files = preparedFiles.size();
+                return;
+              }
+              if (reusePreparedProof(context, rootfs, root, identity)) {
+                outcome = "hit-prepared-proof";
+                files = preparedFiles.size();
+                timing.mark(6);
+                return;
+              }
               reportCacheMiss(miss);
+              missCode = cacheMissCode(miss);
               preparedInvalidation = "preparation-incomplete";
               preparedStamp = null;
               prepareManagedOverlay(context, rootfs, expected);
@@ -95,14 +119,30 @@ final class RuntimeTools {
               preparedApk = identity;
               preparedWithNpm = true;
               preparedStamp = stamp(rootfs);
+              persistPreparedProof(context, rootfs, identity);
+              outcome = "prepared";
+              files = preparedFiles.size();
               timing.mark(6);
+            } else {
+              outcome = "skipped-identity";
             }
             return;
           }
           String miss = cacheMiss(rootfs, root, identity, requireNpm);
           timing.mark(5);
-          if (miss == null) return;
+          if (miss == null) {
+            outcome = "hit-in-process";
+            files = preparedFiles.size();
+            return;
+          }
+          if (requireNpm && reusePreparedProof(context, rootfs, root, identity)) {
+            outcome = "hit-prepared-proof";
+            files = preparedFiles.size();
+            timing.mark(6);
+            return;
+          }
           reportCacheMiss(miss);
+          missCode = cacheMissCode(miss);
           preparedInvalidation = "preparation-incomplete";
           preparedStamp = null;
           preparedFiles.clear();
@@ -120,11 +160,49 @@ final class RuntimeTools {
           preparedApk = identity;
           preparedWithNpm = requireNpm;
           preparedStamp = stamp(rootfs);
+          if (requireNpm) persistPreparedProof(context, rootfs, identity);
+          outcome = "prepared";
+          files = preparedFiles.size();
           timing.mark(6);
         }
       }
+    } catch (IOException | RuntimeException | Error failure) {
+      outcome = "failed";
+      throw failure;
     } finally {
-      timing.finish(line -> android.util.Log.i("DSHA", line));
+      timing.finish(line -> emit(output, line));
+      if (output != null) emit(output, preparationLine(outcome, files, missCode));
+    }
+  }
+
+  /** 失效原因只保留固定 reason 记号；asset/entry 等细节不进入启动诊断。 */
+  static String cacheMissCode(String reason) {
+    java.util.regex.Matcher matcher =
+        java.util.regex.Pattern.compile("reason=([a-z-]{1,32})").matcher(String.valueOf(reason));
+    return matcher.find() ? matcher.group(1) : "unknown";
+  }
+
+  /** 准备命中/失效与固定受管文件数；files 未知时显式写 unknown，不伪造 0。 */
+  static String preparationLine(String outcome, long files, String missCode) {
+    return "RUNTIME_TOOLS_PREPARATION: outcome="
+        + outcome
+        + " files="
+        + (files < 0 ? "unknown" : files)
+        + " miss="
+        + (missCode == null || missCode.isEmpty() ? "none" : missCode);
+  }
+
+  private static void emit(java.util.function.Consumer<String> output, String line) {
+    try {
+      android.util.Log.i("DSHA", line);
+    } catch (RuntimeException ignored) {
+      // 诊断不得改变准备结果。
+    }
+    if (output == null) return;
+    try {
+      output.accept(line);
+    } catch (RuntimeException ignored) {
+      // 启动诊断不可用只是少一行观测，不能影响准备或启动。
     }
   }
 
@@ -170,6 +248,95 @@ final class RuntimeTools {
       preparedInvalidation = "explicit-repair";
       preparedStamp = null;
     }
+  }
+
+  /** 供注册预算读取当前 APK 的受管资产身份；未知时返回 null（按首启预算）。 */
+  static String managedAssetId(Context context) {
+    try {
+      return assetRuntimeId(context);
+    } catch (IOException unavailable) {
+      return null;
+    }
+  }
+
+  /** 上一次成功注册写下的身份；按受管根映射后读取，未知时返回 null（按首启预算）。 */
+  static String lastRegisteredAssetId(Context context, File requestedRoot) {
+    try {
+      return GuestPluginScripts.readRegisterIdentity(
+          RuntimeAssetFiles.root(context, requestedRoot));
+    } catch (IOException | RuntimeException unavailable) {
+      return null;
+    }
+  }
+
+  /**
+   * 受管覆盖层的跨进程完成戳：只有戳记里的 APK 身份一致、已登记运行时身份一致，
+   * 且同一文件集合的元数据戳仍完全相等时才复用；任何不一致都退回完整准备。
+   */
+  private static boolean reusePreparedProof(
+      Context context, File rootfs, String root, String apkIdentity) {
+    try {
+      File target = preparedProofFile(rootfs);
+      if (!target.isFile()
+          || Compat.isSymbolicLink(target)
+          || target.length() <= 0
+          || target.length() > com.deepseekharness.app.util.RuntimePreparedProof.MAX_BYTES)
+        return false;
+      byte[] bytes = java.nio.file.Files.readAllBytes(target.toPath());
+      com.deepseekharness.app.util.RuntimePreparedProof.Proof proof =
+          com.deepseekharness.app.util.RuntimePreparedProof.parse(
+              new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+      if (proof == null || !proof.apk.equals(apkIdentity)) return false;
+      File descriptor = new File(rootfs.getParentFile(), ".runtime-descriptor.json");
+      if (!descriptor.isFile() || !assetRuntimeId(context).equals(descriptorRuntimeId(descriptor)))
+        return false;
+      java.util.List<File> files = new java.util.ArrayList<>(proof.files.size());
+      for (String relative : proof.files) files.add(new File(rootfs, relative));
+      RuntimeAssetStamp.Snapshot observed = RuntimeAssetStamp.inspect(rootfs, files);
+      if (observed.value == null || !observed.value.equals(proof.stamp)) return false;
+      preparedRoot = root;
+      preparedApk = apkIdentity;
+      preparedWithNpm = true;
+      preparedFiles.clear();
+      preparedFiles.addAll(files);
+      preparedStamp = proof.stamp;
+      android.util.Log.i("DSHA", "RUNTIME_TOOLS_PREPARED_PROOF_HIT entries=" + files.size());
+      return true;
+    } catch (IOException | RuntimeException unavailable) {
+      return false;
+    }
+  }
+
+  /** 只记录 rootfs 内的固定受管文件；外部描述符身份由下一次启动单独复核。 */
+  private static void persistPreparedProof(Context context, File rootfs, String apkIdentity) {
+    try {
+      String root = rootfs.getCanonicalPath();
+      String prefix = root + File.separator;
+      java.util.LinkedHashSet<String> relative = new java.util.LinkedHashSet<>();
+      for (File file : preparedFiles) {
+        String path = file.getCanonicalPath();
+        if (!path.startsWith(prefix)) continue;
+        String value = path.substring(prefix.length()).replace(File.separatorChar, '/');
+        if (com.deepseekharness.app.util.RuntimePreparedProof.validRelative(value))
+          relative.add(value);
+      }
+      if (relative.isEmpty()) return;
+      java.util.List<File> files = new java.util.ArrayList<>(relative.size());
+      for (String value : relative) files.add(new File(rootfs, value));
+      String proofStamp = RuntimeAssetStamp.read(rootfs, files);
+      if (proofStamp == null) return;
+      byte[] bytes =
+          com.deepseekharness.app.util.RuntimePreparedProof.format(
+                  apkIdentity, proofStamp, new java.util.ArrayList<>(relative))
+              .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      RuntimeAssetFiles.write(context, preparedProofFile(rootfs), bytes, false);
+    } catch (IOException | RuntimeException unavailable) {
+      android.util.Log.w("DSHA", "RUNTIME_TOOLS_PREPARED_PROOF_WRITE");
+    }
+  }
+
+  private static File preparedProofFile(File rootfs) {
+    return new File(rootfs.getParentFile(), PREPARED_PROOF);
   }
 
   /** Same reuse predicate as preparation; names and indices explain work without authorizing it. */
@@ -474,7 +641,13 @@ final class RuntimeTools {
             .computeIfAbsent(module, key -> new java.util.ArrayList<>())
             .add(
                 new com.deepseekharness.app.util.ManagedPatchChain.Recipe(
-                    asset, patches, markers, previous));
+                    asset,
+                    patches,
+                    markers,
+                    previous,
+                    spec.has("expectedOutputSha256")
+                        ? spec.getString("expectedOutputSha256")
+                        : null));
       }
       var retired = registry.getJSONArray("retired");
       for (int i = 0; i < retired.length(); i++)

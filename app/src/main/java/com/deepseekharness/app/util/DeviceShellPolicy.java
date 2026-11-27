@@ -1,5 +1,6 @@
 package com.deepseekharness.app.util;
 
+import com.deepseekharness.app.BuildConfig;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -138,7 +139,14 @@ public final class DeviceShellPolicy {
   }
 
   private static Plan plan(Kind kind, List<String> args, List<String> paths) {
-    return new Plan(kind, args, paths, "", null, null);
+    Plan checked = new Plan(kind, args, paths, "", null, null);
+    // Do not delegate a walker to a device utility: its children lack per-item provenance.
+    // Disable the option-rich walkers as whole verbs, not a blacklist of recursive spellings.
+    if (BuildConfig.REBIRTH_CANDIDATE
+        && ((kind == Kind.READ && Set.of("find", "du", "ls", "grep").contains(checked.command()))
+            || (kind == Kind.FILE && rootReadMayDescend(checked))))
+      return deny("TRIAL_DEVICE_TRAVERSAL_UNAVAILABLE");
+    return checked;
   }
 
   private static Plan shellPlan(String command, Mode mode) {
@@ -167,6 +175,7 @@ public final class DeviceShellPolicy {
     // 不能被“放宽”成任意 shell，否则复合脚本可绕过短信授权。
     if (strict.kind == Kind.SENSITIVE_READ) return strict;
     if (effective == Mode.STRICT) return strict;
+    if (BuildConfig.REBIRTH_CANDIDATE) return deny("TRIAL_RAW_DEVICE_SHELL_UNAVAILABLE");
     if (command == null || command.trim().isEmpty()) return deny(UiText.text("命令为空"));
     if (command.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_SHELL_COMMAND)
       return deny(UiText.format("root 命令超过 %d 字节上限", MAX_SHELL_COMMAND));
@@ -402,10 +411,10 @@ public final class DeviceShellPolicy {
     if (name.equals("logcat")) return inspectLogcat(args);
     if (name.equals("am") && args.size() == 2 && args.get(1).equals("get-current-user"))
       return plan(Kind.READ, args, Collections.emptyList());
-    // app_process can load arbitrary DEX code. The narrowly managed virtual-screen
-    // launcher has a separate typed entry point and is never accepted as a shell command.
+    // app_process can load arbitrary DEX code. The narrowly managed virtual/physical-screen
+    // launchers have separate typed entry points and are never accepted as a shell command.
     if (name.equals("app_process"))
-      return deny(com.deepseekharness.app.util.UiText.text("app_process 仅允许原生受管虚拟屏入口"));
+      return deny(com.deepseekharness.app.util.UiText.text("app_process 仅允许原生受管虚拟屏/实体屏入口"));
     if (name.equals("am")
         && args.size() == 3
         && set("force-stop kill").contains(args.get(1))
@@ -510,11 +519,48 @@ public final class DeviceShellPolicy {
     return plan(Kind.VIRTUAL_SCREEN, args, Collections.emptyList());
   }
 
+  /**
+   * T130 Phase A：实体屏特权 Core 的启动器。与虚拟屏启动器共用同一 {@code app_process} 与 Core 类，
+   * 只多一个固定的 {@code --physical}；参数逐项精确核验，仍然不放开 app_process 通用执行。
+   */
+  public static Plan inspectPhysicalScreenLaunch(
+      String command, String installedApkPath, String expectedPackage) {
+    final List<String> args;
+    try {
+      args = split(command);
+    } catch (IllegalArgumentException error) {
+      return deny(error.getMessage());
+    }
+    if (args.isEmpty()) return deny(com.deepseekharness.app.util.UiText.text("实体屏特权启动命令为空"));
+    String name = executable(args.get(0));
+    if (!"app_process".equals(name))
+      return deny(com.deepseekharness.app.util.UiText.text("实体屏特权启动器无法核验"));
+    args.set(0, name);
+    if (args.size() != 10
+        || !canonicalApkPath(installedApkPath)
+        || !SelfPackageIdentity.validName(expectedPackage)
+        || !args.get(1).equals("-Djava.class.path=" + installedApkPath)
+        || !args.get(2).equals("/system/bin")
+        || !args.get(3).equals("com.deepseekharness.app.vscreen.VirtualScreenCore")
+        || !args.get(4).equals("--launch")
+        || !args.get(5).equals("--physical")
+        || !args.get(6).equals("--port")
+        || !args.get(7).equals("0")
+        || !args.get(8).equals("--package")
+        || !args.get(9).equals(expectedPackage))
+      return deny(com.deepseekharness.app.util.UiText.text("实体屏特权启动参数无法核验"));
+    return plan(Kind.VIRTUAL_SCREEN, args, Collections.emptyList());
+  }
+
   public static Plan inspectManagedVirtualScreen(
       String command, String installedApkPath, String expectedPackage) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE)
+      return inspectVirtualScreenProbe(command, installedApkPath, expectedPackage);
     Plan start = inspectVirtualScreenLaunch(command, installedApkPath, expectedPackage);
-    return start.allowed()
-        ? start
+    if (start.allowed()) return start;
+    Plan physical = inspectPhysicalScreenLaunch(command, installedApkPath, expectedPackage);
+    return physical.allowed()
+        ? physical
         : inspectVirtualScreenProbe(command, installedApkPath, expectedPackage);
   }
 

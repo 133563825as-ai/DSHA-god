@@ -1,7 +1,10 @@
 {
   "schema": 1,
   "kind": "retained-official-npm-canonical-source",
-  "description": "Exact official rc2 client source retained for historical recipe reconstruction only. Current rc3 source is checked independently; these files are never runtime inputs.",
+  "description": "Exact official rc2 module source retained for historical recipe reconstruction only. Current source is checked independently; these files are never runtime inputs.",
+  "sourceLockCommit": "4e215b74",
+  "additionalModuleAttachmentSha256": "e2bf6fc26374cc4f38263c7a924abe4e3f755d61197b21172ac64d92166b0ac0",
+  "additionalModuleSource": "User-supplied rebirth-patch-fixture-fix-20261112(1).zip; npm-rc2 tarballs verified against the historical lock SHA512, then only the unique regular package/lib module extracted; no package scripts executed and no APK supplied.",
   "sourceLockSha256": "c67d0d3b6423db35faae8d91d6054e7d0fa7cb9e197bede42438326f123ca8a7",
   "upstreamRepository": "https://github.com/deepseek-ai/deepseek-harness",
   "files": [
@@ -20,6 +23,22 @@
       "packageVersion": "0.2.1-rc.2",
       "packageIntegrity": "sha512-Tp3CI/LpwykU3ttjG7MfLHk+5jep/qgwL982MAyYuoRHItuj/zvGLH/fXX0X8VAWW9OtRyv7gs/yFffkfXZ5dQ==",
       "packageResolved": "https://registry.npmjs.org/@deepseek-ai/dsh-client-ui-agent-preset/-/dsh-client-ui-agent-preset-0.2.1-rc.2.tgz"
+    },
+    {
+      "file": "dsh-client-ui-settings-models.js",
+      "module": "@deepseek-ai/dsh-client-ui-settings-models/lib/client.js",
+      "sha256": "190498e15358bcd3fe6810fe6368023a20b0403e3ea493bc979eca9bdb593b28",
+      "packageVersion": "0.2.1-rc.2",
+      "packageIntegrity": "sha512-tjxvP66xh+i3h4Qf7h1tv7cEWVVtNAONDEN2ZM+Sv7Z2Z6P+hnr+mlXIjQdC+ovfsYQdg6TMXRle3cRr9x3Vug==",
+      "packageResolved": "https://registry.npmjs.org/@deepseek-ai/dsh-client-ui-settings-models/-/dsh-client-ui-settings-models-0.2.1-rc.2.tgz"
+    },
+    {
+      "file": "dsh-web-search-deepseek.js",
+      "module": "@deepseek-ai/dsh-web-search-deepseek/lib/index.js",
+      "sha256": "fc13dd4eaba3c9298af41a4d0559a1b8bb61614462fe18ba6e76d8c598c332bd",
+      "packageVersion": "0.2.1-rc.2",
+      "packageIntegrity": "sha512-1RkLY8uYawWOOrEWPCg7eemvA7T/bPXDJOdHsqhsDwejjZdv496G01hKf/W+T8twdUt8gnx5G19h06R499DoGA==",
+      "packageResolved": "https://registry.npmjs.org/@deepseek-ai/dsh-web-search-deepseek/-/dsh-web-search-deepseek-0.2.1-rc.2.tgz"
     }
   ]
 }

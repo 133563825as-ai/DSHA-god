@@ -1,5 +1,6 @@
 package com.deepseekharness.app.backup;
 
+import com.deepseekharness.app.util.Rc1MigrationReuse;
 import java.io.*;
 import java.util.*;
 
@@ -555,33 +556,165 @@ public final class RetainedCatalogue {
                   ("DSHA-MIGRATION:" + root.getAbsolutePath())
                       .getBytes(java.nio.charset.StandardCharsets.UTF_8))
               .toString();
-      String status = "RETAINED";
-      File receipt = new File(root, "receipt.json");
-      File current = new File(root, "current.json");
-      File marker = fs.stat(current).type.equals("FILE") ? current : receipt;
-      if (fs.stat(marker).type.equals("FILE"))
-        try {
-          Map<String, Object> value =
-              BackupJson.read(fs.small(marker, BackupLimits.MANIFEST), BackupLimits.MANIFEST);
-          String state = BackupJson.string(value, "status");
-          if (state.equals("pending")) status = "PENDING_RETRY";
-          else if (state.equals("committed") || state.equals("verified")) status = "COMMITTED";
-        } catch (IOException ignored) {
-          status = "UNREADABLE";
-        }
+      MigrationReport report =
+          root.getName().equals("rc1-migration-state")
+              ? hostMigrationReport(root)
+              : publicMigrationReport(root);
       entries.add(
           new Entry(
               Kind.MIGRATION,
               id,
               "records",
               "settings",
-              status,
+              report.status,
               "READ_ONLY_RESCUE_NO_AUTOMATIC_DELETION",
               root,
               root,
               fs.stat(root).modified,
-              "rc1 migration records"));
+              "rc1 migration records" + report.detail));
     }
+  }
+
+  /** 真实 Python 产物的宿主索引：current 不写 status，须按 generation→receipt/账本投影。 */
+  private MigrationReport hostMigrationReport(File root) throws IOException {
+    File current = new File(root, "current.json");
+    // 宿主状态根缺 current：权威索引不可判，不能当作“原件保留”健康态。
+    if (!fs.stat(current).type.equals("FILE")) return new MigrationReport("UNKNOWN", "");
+    Map<String, Object> index;
+    try {
+      index = BackupJson.read(fs.small(current, BackupLimits.MANIFEST), BackupLimits.MANIFEST);
+    } catch (IOException unreadable) {
+      return new MigrationReport("UNREADABLE", "");
+    }
+    Object explicit = index.get("status");
+    if (explicit instanceof String && !index.containsKey("inputs"))
+      return new MigrationReport(legacyStatus((String) explicit), "");
+    Object generation = index.get("generation");
+    if (!versionTwo(index) || !(generation instanceof String) || !uuid((String) generation))
+      return new MigrationReport("UNKNOWN", "");
+    File folder = new File(root, "generations/" + generation);
+    String receipt = recordStatus(new File(folder, "receipt.json"), (String) generation);
+    if (receipt == null) {
+      String prepare = recordStatus(new File(folder, "prepare.json"), (String) generation);
+      if (prepare == null) return new MigrationReport("UNKNOWN", "");
+      return new MigrationReport(
+          "prepared".equals(prepare) || "failed".equals(prepare) ? "PENDING_RETRY" : "UNKNOWN",
+          " · " + ((String) generation).substring(0, 8));
+    }
+    var evidence = settingsLedgerState(folder, index);
+    String settings = evidence.state;
+    String status;
+    if ("committed".equals(receipt)) {
+      status =
+          "unknown".equals(settings)
+              ? "UNKNOWN"
+              : "pending".equals(settings) ? "PENDING_RETRY" : "HISTORICAL_COMMITTED";
+    } else if ("pending".equals(receipt)) {
+      status = "unknown".equals(settings) ? "UNKNOWN" : "PENDING_RETRY";
+    } else if ("unknown".equals(receipt)) {
+      status = "UNKNOWN";
+    } else {
+      status = "PENDING_RETRY";
+    }
+    return new MigrationReport(
+        status,
+        " · "
+            + ((String) generation).substring(0, 8)
+            + (evidence.reason == null ? "" : " · " + evidence.reason));
+  }
+
+  /** 公开兼容索引只有 prepare/receipt；旧字段只作历史事实，不升级为当前健康。 */
+  private MigrationReport publicMigrationReport(File root) throws IOException {
+    String receipt = recordStatus(new File(root, "receipt.json"));
+    if (receipt != null) return new MigrationReport(legacyStatus(receipt), "");
+    String prepare = recordStatus(new File(root, "prepare.json"));
+    if (prepare == null) return new MigrationReport("UNKNOWN", "");
+    return new MigrationReport("prepared".equals(prepare) ? "PENDING_RETRY" : "UNKNOWN", "");
+  }
+
+  private static final class MigrationReport {
+    final String status, detail;
+
+    MigrationReport(String status, String detail) {
+      this.status = status;
+      this.detail = detail;
+    }
+  }
+
+  private String recordStatus(File file) throws IOException {
+    return recordStatus(file, null);
+  }
+
+  private String recordStatus(File file, String generation) throws IOException {
+    if (!fs.stat(file).type.equals("FILE")) return null;
+    Map<String, Object> value;
+    try {
+      value = BackupJson.read(fs.small(file, BackupLimits.MANIFEST), BackupLimits.MANIFEST);
+    } catch (IOException unreadable) {
+      return "unknown";
+    }
+    if (generation != null && (!versionTwo(value) || !generation.equals(value.get("generation"))))
+      return "unknown";
+    Object status = value.get("status");
+    return status instanceof String ? (String) status : null;
+  }
+
+  private static boolean versionTwo(Map<String, Object> value) {
+    Object version = value.get("version");
+    return Integer.valueOf(2).equals(version) || Long.valueOf(2).equals(version);
+  }
+
+  private static String legacyStatus(String status) {
+    if ("committed".equals(status) || "verified".equals(status)) return "HISTORICAL_COMMITTED";
+    if ("pending".equals(status)) return "PENDING_RETRY";
+    if ("unknown".equals(status)) return "UNKNOWN";
+    return "RETAINED";
+  }
+
+  /** 只读设置证据与启动门禁共用；无 settings 输入为 not-required。 */
+  private Rc1MigrationReuse.LedgerEvidence settingsLedgerState(
+      File folder, Map<String, Object> index) throws IOException {
+    Object inputs = index.get("inputs");
+    if (!Rc1MigrationReuse.validInputs(inputs))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_INPUTS_UNKNOWN");
+    Map<?, ?> inputMap = (Map<?, ?>) inputs;
+    String generation = (String) index.get("generation");
+    if (!inputMap.containsKey("settings.yaml") && !inputMap.containsKey("settings.yaml.imported"))
+      return Rc1MigrationReuse.ledgerEvidence(generation, null, null, null);
+    Object sha =
+        inputMap.containsKey("settings.yaml")
+            ? inputMap.get("settings.yaml")
+            : inputMap.get("settings.yaml.imported");
+    if (!(sha instanceof String))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_IDENTITY");
+    File ledger = new File(folder, "settings-result.json");
+    if (!fs.stat(ledger).type.equals("FILE"))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_MISSING");
+    Map<String, Object> value;
+    try {
+      value = BackupJson.read(fs.small(ledger, BackupLimits.MANIFEST), BackupLimits.MANIFEST);
+    } catch (IOException unreadable) {
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_UNREADABLE");
+    }
+    Map<String, Object> checkpoint = null;
+    {
+      File reuse = new File(folder, "reuse.json");
+      try {
+        if (fs.stat(reuse).type.equals("FILE"))
+          checkpoint = BackupJson.read(fs.small(reuse, 64 * 1024), 64 * 1024);
+      } catch (IOException unreadable) {
+        // 不可读的可选 checkpoint 不是期望集合证据，仍显示 unknown 并保留导出。
+      }
+    }
+    if (checkpoint != null
+        && checkpoint.containsKey("inputs")
+        && !Rc1MigrationReuse.checkpointBinding(index, checkpoint))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_CHECKPOINT_IDENTITY");
+    if (value.containsKey("inputDigest")
+        && (checkpoint == null
+            || !Objects.equals(value.get("inputDigest"), checkpoint.get("inputDigest"))))
+      return Rc1MigrationReuse.LedgerEvidence.unknown("SETTINGS_LEDGER_IDENTITY");
+    return Rc1MigrationReuse.ledgerEvidence(generation, (String) sha, value, checkpoint);
   }
 
   private void add(

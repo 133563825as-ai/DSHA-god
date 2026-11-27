@@ -22,6 +22,8 @@ public final class BackupDirectoryTarget {
 
   public static BackupDirectoryTarget create(
       ContentResolver resolver, Uri tree, String name, BackupControl control) throws IOException {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE)
+      throw new IOException("REBIRTH_EXPORT_DISABLED");
     if (tree == null
         || !"content".equals(tree.getScheme())
         || !androidx.core.provider.DocumentsContractCompat.isTreeUri(tree)

@@ -277,27 +277,87 @@ public class ConfigStore {
     prefs.edit().putBoolean(Constants.KEY_CONFIRM_SHELL, v).apply();
   }
 
+  /** 原偏好仍是唯一存储；组合读取与意图变更由同一进程内围栏核验。 */
+  public static com.deepseekharness.app.util.DeviceAuthorization.Snapshot deviceAuthorization(
+      Context context) {
+    return authorizationSnapshot(
+        context.getSharedPreferences(Constants.PREFS, Context.MODE_PRIVATE));
+  }
+
+  private static com.deepseekharness.app.util.DeviceAuthorization.Snapshot authorizationSnapshot(
+      SharedPreferences preferences) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE)
+      return com.deepseekharness.app.util.DeviceAuthorization.shared()
+          .snapshot(
+              () ->
+                  com.deepseekharness.app.util.DeviceAuthorization.Values.fromPreferences(
+                      java.util.Map.of()));
+    return com.deepseekharness.app.util.DeviceAuthorization.shared()
+        .snapshot(
+            () ->
+                com.deepseekharness.app.util.DeviceAuthorization.Values.fromPreferences(
+                    preferences.getAll()));
+  }
+
   public boolean isRootShellAllowed() {
-    return flag(Constants.KEY_ALLOW_ROOT_SHELL, false);
+    return authorizationSnapshot(prefs).rootAllowed();
   }
 
   public void setRootShellAllowed(boolean v) {
-    prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, v).apply();
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE && v) return;
+    com.deepseekharness.app.util.DeviceAuthorization.shared()
+        .change(
+            () -> {},
+            () -> {
+              prefs.edit().putBoolean(Constants.KEY_ALLOW_ROOT_SHELL, v).apply();
+              return true;
+            });
   }
 
   /** root 命令拦截档位；非法或缺失一律回落严格档（fail-closed）。 */
   public com.deepseekharness.app.util.DeviceShellPolicy.Mode rootPolicyMode() {
-    return com.deepseekharness.app.util.DeviceShellPolicy.Mode.parse(
-        text(Constants.KEY_ROOT_POLICY_MODE, "strict"));
+    return authorizationSnapshot(prefs).rootMode();
   }
 
   public void setRootPolicyMode(com.deepseekharness.app.util.DeviceShellPolicy.Mode mode) {
-    prefs
-        .edit()
-        .putString(
-            Constants.KEY_ROOT_POLICY_MODE,
-            (mode == null ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT : mode).id)
-        .apply();
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE
+        && mode != com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT) return;
+    com.deepseekharness.app.util.DeviceAuthorization.shared()
+        .change(
+            () -> {},
+            () -> {
+              prefs
+                  .edit()
+                  .putString(
+                      Constants.KEY_ROOT_POLICY_MODE,
+                      (mode == null
+                              ? com.deepseekharness.app.util.DeviceShellPolicy.Mode.STRICT
+                              : mode)
+                          .id)
+                  .apply();
+              return true;
+            });
+  }
+
+  /** ADB 意图的原生唯一写接缝；先取消旧探活/短信请求，再发布原键值。 */
+  public static boolean setAdbEnabled(Context context, boolean enabled, boolean synchronous) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE && enabled) return false;
+    return com.deepseekharness.app.util.DeviceAuthorization.shared()
+        .change(
+            () -> {
+              com.deepseekharness.app.DeviceBridgeService.adbIntentChanging();
+              com.deepseekharness.app.HttpShellService.smsPolicyChanged(context);
+            },
+            () -> {
+              var edit =
+                  context
+                      .getSharedPreferences(Constants.PREFS, Context.MODE_PRIVATE)
+                      .edit()
+                      .putBoolean("adb_enabled", enabled);
+              if (synchronous) return edit.commit();
+              edit.apply();
+              return true;
+            });
   }
 
   public boolean isCheckUpdate() {
@@ -452,23 +512,6 @@ public class ConfigStore {
     prefs.edit().putString(Constants.KEY_CONTAINER_RUNTIME, v ? "proroot" : "proot").apply();
   }
 
-  /** 保存运行环境选择；下次启动 Web 生效（正在运行的 Web 按它启动时的运行环境停止）。 */
-  public void setDshEngine(boolean nativeEngine) {
-    prefs
-        .edit()
-        .putString(
-            Constants.KEY_DSH_ENGINE,
-            nativeEngine
-                ? com.deepseekharness.app.util.DshEngineChoice.NATIVE
-                : com.deepseekharness.app.util.DshEngineChoice.UBUNTU)
-        .apply();
-  }
-
-  /** 用户选择的 DSH 运行环境；缺省与不认识的值都按容器处理（见 DshEngineChoice）。 */
-  public com.deepseekharness.app.util.DshEngineChoice dshEngine() {
-    return com.deepseekharness.app.util.DshEngineChoice.parse(text(Constants.KEY_DSH_ENGINE, ""));
-  }
-
   /** 首次安装同样默认稳定 proot；只由用户显式选择启用 proroot。 */
   public boolean preferFastColdMode() {
     return preferFastColdModeFrom(prefs.getAll());
@@ -574,10 +617,12 @@ public class ConfigStore {
   }
 
   public boolean isLanMode() {
-    return flag(Constants.KEY_LAN_MODE, false);
+    return !com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE
+        && flag(Constants.KEY_LAN_MODE, false);
   }
 
   public void setLanMode(boolean v) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     prefs.edit().putBoolean(Constants.KEY_LAN_MODE, v).apply();
   }
 

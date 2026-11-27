@@ -11,6 +11,7 @@ import java.util.Map;
 
 public class ShellService
 extends IShellService.Stub {
+    private static final String TRIAL_DISABLED = "[POLICY_BLOCKED] TRIAL_DEVICE_CHANNEL_UNAVAILABLE\n[EXIT=126]";
     private final long timeoutMillis;
     private final java.util.Set<Process> processes = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private boolean closing;
@@ -27,11 +28,13 @@ extends IShellService.Stub {
 
     @Override
     public String exec(String cmd) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         var plan=com.deepseekharness.app.util.DeviceShellPolicy.inspect(cmd);
         try{return DeviceShellExecutor.execute(cmd,this::executeArgv,plan.kind==com.deepseekharness.app.util.DeviceShellPolicy.Kind.STOP?identity():null);}
         catch(java.io.IOException error){return "[POLICY_BLOCKED] "+SensitiveData.redact(error.getMessage())+"\n[EXIT=126]";}
     }
     @Override public String execVirtualScreen(String command) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         try{return DeviceShellExecutor.executeVirtualScreen(command,this::executeArgv,identity());}
         catch(java.io.IOException error){return "[POLICY_BLOCKED] "+SensitiveData.redact(error.getMessage())+"\n[EXIT=126]";}
     }
@@ -58,6 +61,7 @@ extends IShellService.Stub {
 
     /** 只供原生授权后的 root 子进程调用；Binder exec 不能选择此分支。 */
     String execAuthorizedSms(String command, int user) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         com.deepseekharness.app.util.DeviceShellPolicy.Plan plan = com.deepseekharness.app.util.DeviceShellPolicy.inspect(command);
         if (plan.kind != com.deepseekharness.app.util.DeviceShellPolicy.Kind.SENSITIVE_READ)
             return com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 不是受支持的短信查询\n[EXIT=126]");
@@ -66,6 +70,7 @@ extends IShellService.Stub {
 
     /** Native-only argv execution for the separately authorized USB target channel. */
     String execExternal(java.util.List<String> argv, java.util.Map<String, String> environment, long timeoutMillis) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         if (android.os.Process.myUid() != 0)
             return com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 外接设备执行器仅允许 uid 0\n[EXIT=126]");
         if (argv == null || argv.isEmpty() || argv.size() > 32 || timeoutMillis <= 0 || timeoutMillis > 900_000)
@@ -115,6 +120,7 @@ extends IShellService.Stub {
      */
     String execExternalAdbSession(java.util.List<String> serverArgv, java.util.List<String> clientArgv,
             java.util.Map<String, String> environment, long timeoutMillis) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         if (android.os.Process.myUid() != 0)
             return com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 外接设备执行器仅允许 uid 0\n[EXIT=126]");
         int port = com.deepseekharness.app.util.ExternalToolPolicy.adbSessionPort(serverArgv, clientArgv);
@@ -151,6 +157,7 @@ extends IShellService.Stub {
      */
     String execExternalAdbSteps(java.util.List<String> serverArgv, java.util.List<java.util.List<String>> steps,
             java.util.Map<String, String> environment, long timeoutMillis, String nonce, boolean continueOnFailure) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_DISABLED;
         if (android.os.Process.myUid() != 0)
             return com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 外接设备执行器仅允许 uid 0\n[EXIT=126]");
         if (steps == null || steps.isEmpty() || steps.size() > 64
@@ -247,6 +254,7 @@ extends IShellService.Stub {
      * 调用方无法触达。原生策略已在 App 进程判定过档位，这里只做执行身份、长度和并发生命周期检查。
      */
     String execUnrestricted(String command) {
+        if (BuildConfig.REBIRTH_CANDIDATE) return "[POLICY_BLOCKED] TRIAL_RAW_DEVICE_SHELL_UNAVAILABLE\n[EXIT=126]";
         if (android.os.Process.myUid() != 0)
             return com.deepseekharness.app.util.UiText.text("[POLICY_BLOCKED] 原始 root shell 仅允许 uid 0 执行\n[EXIT=126]");
         if (command == null || command.isEmpty()

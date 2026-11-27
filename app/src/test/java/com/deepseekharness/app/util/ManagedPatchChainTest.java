@@ -77,6 +77,78 @@ public class ManagedPatchChainTest {
     assertEquals("composer-new incompatible-queue", original);
   }
 
+  private static String sha(String value) throws Exception {
+    byte[] digest =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    var output = new StringBuilder();
+    for (byte part : digest)
+      output.append(String.format(java.util.Locale.ROOT, "%02x", part & 255));
+    return output.toString();
+  }
+
+  @Test
+  public void completeOutputIdentityRejectsOldSemanticsWithSharedAnchors() throws Exception {
+    String canonical = "current semantics anchor", expected = "current semantics patched";
+    var chain =
+        List.of(
+            new ManagedPatchChain.Recipe(
+                "strict",
+                List.of(new ManagedPatchChain.Patch("anchor", "patched")),
+                List.of(),
+                List.of(),
+                sha(expected)));
+    var reads = new AtomicInteger();
+    assertEquals(
+        expected,
+        ManagedPatchChain.apply(
+            "old semantics anchor",
+            chain,
+            () -> {
+              reads.incrementAndGet();
+              return canonical;
+            }));
+    assertEquals(1, reads.get());
+    assertEquals(
+        expected,
+        ManagedPatchChain.apply(
+            expected,
+            chain,
+            () -> {
+              throw new AssertionError("current repeat must not restore");
+            }));
+    assertThrows(
+        java.io.IOException.class,
+        () -> ManagedPatchChain.apply("old semantics anchor", chain, () -> "old semantics anchor"));
+    assertThrows(
+        java.io.IOException.class,
+        () -> ManagedPatchChain.apply("old semantics patched", chain, () -> null));
+    // 未opt-in的其它recipe保留原行为，不暗中扩大整模块约束。
+    var legacy =
+        List.of(
+            new ManagedPatchChain.Recipe(
+                "legacy", List.of(new ManagedPatchChain.Patch("anchor", "patched")), List.of()));
+    assertEquals(
+        "old semantics patched",
+        ManagedPatchChain.apply("old semantics anchor", legacy, () -> null));
+  }
+
+  @Test
+  public void markerSkipCannotBypassWholeModuleIdentity() throws Exception {
+    String expected = "current marker";
+    var chain =
+        List.of(
+            new ManagedPatchChain.Recipe(
+                "strict", List.of(), List.of("marker"), List.of(), sha(expected)));
+    assertEquals(expected, ManagedPatchChain.apply(expected, chain, () -> null));
+    assertThrows(
+        java.io.IOException.class,
+        () -> ManagedPatchChain.apply("old marker", chain, () -> "wrong marker"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new ManagedPatchChain.Recipe("bad", List.of(), List.of(), List.of(), ""));
+  }
+
   @Test
   public void failedFullChainCannotReturnAPartialRestore() {
     var chain =

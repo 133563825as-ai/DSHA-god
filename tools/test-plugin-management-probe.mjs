@@ -57,13 +57,13 @@ const installAnchor=path.join(owned,'installation.json');fs.writeFileSync(instal
 const profile={name:'web',dir:profileDir,home,patchPath:path.join(profileDir,'cordis.patch.yml'),overlays:[],startedBundles:['fixture-base-bundle'],installAnchor};
 fs.writeFileSync(path.join(profileDir,'package.json'),JSON.stringify({name:'management-probe-fixture',private:true,dsh:{profile:{bundles:['fixture-base-bundle']}}}));fs.writeFileSync(profile.patchPath,'[]\n');
 const configPath=path.join(profileDir,'cordis.yml');fs.writeFileSync(configPath,'[]\n');
-const ctx=await boot('dsh',configPath,readProfilePatches('dsh',profile),async scope=>{scope.provide('profileContext',profile);scope.provide('sessionProjections',{register(){}});scope.provide('appReady',{onReady(fn){queueMicrotask(fn);return ()=>{};}});});
+const ctx=await boot('dsh',configPath,readProfilePatches('dsh',profile),async scope=>{scope.provide('profileContext',profile);scope.provide('sessionProjections',{register(){}});scope.provide('agents',{turnBoundaryOf(){throw Error('此管理探针测试不应选择真实 Agent 预设');}});scope.provide('appReady',{onReady(fn){queueMicrotask(fn);return ()=>{};}});});
 const evidence={schema:1,node:process.version,owned,inputs,sourceHashes:{inventoryBefore:sha(inventory.text),inventoryAfter:sha(afterInventory),manager:sha(manager.text),clientBefore:sha(client.text),clientAfter:sha(afterClient)},scope:'real Cordis Loader/HMR/AgentPresetRegistry, pinned browser Controller, generated ClientRemoteService proxy and aggregate descriptors over loopback HTTP to actual Host Gateway input/result codecs; fixture-owned owner admission, not a phone/authentication benchmark',cases:[]};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let browser,managerFiber,wireServer;
 const calls={};let transportFailure=false,holdBundles;
 try{
- await ctx.plugin(Timer,{});await ctx.plugin(Hmr,{base:pathToFileURL(owned+'/').href,root:[],ignored:[]});await ctx.plugin(After,{});await ctx.plugin(AgentPresetRegistry,{default:'pending-preset'});await ctx.loader.await();
+ await ctx.plugin(Timer,{});await ctx.plugin(Hmr,{base:pathToFileURL(owned+'/').href,root:[],ignored:[]});await ctx.plugin(After,{});const registryFiber=ctx.plugin(AgentPresetRegistry,{default:'pending-preset'});await registryFiber;assert.equal(registryFiber.state,2,'registry must activate with its current dependencies');await ctx.loader.await();
  await ctx.agentPresets.register({id:'pending-preset',name:'Actual pending preset',plugins:[{id:'pending-row',name:pathToFileURL(pendingFile).href}]});
  const gateway=ctx.pluginInventory;
  assert.deepEqual(await gateway.management(),{managementAvailable:false});

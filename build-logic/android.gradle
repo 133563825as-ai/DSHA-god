@@ -1,0 +1,48 @@
+// AGP 9.1.1 built-in Kotlin；不再应用 Kotlin Android 插件或重复声明 stdlib。
+// 应用与 Android library 共享编译/单测设置；发行身份、SDK、资源与生成资产仍由模块声明。
+if (!plugins.hasPlugin('com.android.application') && !plugins.hasPlugin('com.android.library'))
+    throw new GradleException('DSHA_ANDROID_CONVENTION_REQUIRES_ANDROID_PLUGIN')
+ext.dshaBuildConvention = 'android'
+
+android {
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+}
+apply from: rootProject.file('build-logic/kotlin-target.gradle')
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+    testImplementation 'org.robolectric:robolectric:4.15.1'
+}
+apply from: rootProject.file('build-logic/test.gradle')
+
+// AGP attaches this component callback after its JavaCompile creation action.
+// Only the app Standard Debug host tests need the host JDK compiler/tree APIs.
+if (project.path == ':app') {
+    androidComponents.onVariants(androidComponents.selector().all(), { variant ->
+        if (variant.name == 'standardDebug') {
+            def unitTest = variant.unitTest
+            if (unitTest == null)
+                throw new GradleException('DSHA_HOST_UNIT_TEST_COMPONENT_MISSING')
+            unitTest.configureJavaCompileTask({ javaTask ->
+                if (javaTask.path != ':app:compileStandardDebugUnitTestJavaWithJavac')
+                    throw new GradleException('DSHA_HOST_UNIT_TEST_UNEXPECTED_JAVAC_TASK')
+                def androidImageProviders = javaTask.options.compilerArgumentProviders.findAll {
+                    it.class.name == 'com.android.build.gradle.tasks.JdkImageInput'
+                }
+                if (androidImageProviders.size() != 1)
+                    throw new GradleException('DSHA_HOST_UNIT_TEST_EXPECTS_ONE_AGP_JDK_IMAGE_PROVIDER: ' +
+                            javaTask.options.compilerArgumentProviders.collect { it.class.name })
+                if (javaTask.options.compilerArgs.any { it == '--system' || it.startsWith('--system=') })
+                    throw new GradleException('DSHA_HOST_UNIT_TEST_UNEXPECTED_EXPLICIT_SYSTEM')
+                javaTask.options.compilerArgumentProviders.removeAll(androidImageProviders)
+                return kotlin.Unit.INSTANCE
+            } as kotlin.jvm.functions.Function1)
+        }
+    } as org.gradle.api.Action)
+}

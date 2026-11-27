@@ -1,13 +1,15 @@
 package com.deepseekharness.app.backup;
 
+import com.deepseekharness.app.util.RustArchiveCodec;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.zip.GZIPOutputStream;
 
 /** Standard tar/gzip transport around the unchanged, independently verified v5 container. */
 public final class PortableBackupEnvelope {
-  public static final String PAYLOAD = "portable.dshbak", README = "README.txt";
+  public static final String PAYLOAD = "portable.dshbak",
+      README = "README.txt",
+      DIAGNOSTICS = "diagnostics.txt";
   private static final long CONTAINER_LIMIT = BackupLimits.BYTES + 256L * 1024 * 1024;
   private static final byte[] NOTE =
       ("DSHA application backup\n\n"
@@ -26,6 +28,21 @@ public final class PortableBackupEnvelope {
       OutputStream target,
       BackupControl control)
       throws IOException {
+    writeUnencrypted(fs, payload, expectedSha, target, control, null);
+  }
+
+  /**
+   * 救援导出附带的有界诊断正文；普通导出传 {@code null}。该成员不参与恢复，读取时只接受有界文件。
+   */
+  public static void writeUnencrypted(
+      BackupFileSystem fs,
+      File payload,
+      String expectedSha,
+      OutputStream target,
+      BackupControl control,
+      byte[] diagnostics)
+      throws IOException {
+    control.check();
     try (InputStream input = fs.read(payload, fs.stat(payload))) {
       byte[] header = new byte[8];
       new DataInputStream(input).readFully(header);
@@ -36,7 +53,7 @@ public final class PortableBackupEnvelope {
                 + "This backup does not require a password.\nportable.dshbak contains verified data and its actual scope.\n"
                 + "Do not modify the payload. Keep the backup in a trusted location.\n")
             .getBytes(StandardCharsets.UTF_8);
-    write(fs, payload, expectedSha, target, control, note);
+    write(fs, payload, expectedSha, target, control, note, diagnostics);
   }
 
   public static void write(
@@ -46,7 +63,7 @@ public final class PortableBackupEnvelope {
       OutputStream target,
       BackupControl control)
       throws IOException {
-    write(fs, payload, expectedSha, target, control, NOTE);
+    write(fs, payload, expectedSha, target, control, NOTE, null);
   }
 
   private static void write(
@@ -55,42 +72,72 @@ public final class PortableBackupEnvelope {
       String expectedSha,
       OutputStream target,
       BackupControl control,
-      byte[] note)
+      byte[] note,
+      byte[] diagnostics)
       throws IOException {
+    control.check();
     BackupFileSystem.Node node = fs.stat(payload);
     if (!node.type.equals("FILE") || node.size < 8 || node.size > CONTAINER_LIMIT)
       throw new IOException("ENVELOPE_PAYLOAD_SIZE");
+    if (diagnostics != null && diagnostics.length > 64 * 1024)
+      throw new IOException("ENVELOPE_DIAGNOSTICS_SIZE");
     java.security.MessageDigest digest = BackupArchive.sha();
-    try (GZIPOutputStream gzip = new GZIPOutputStream(target, 65536)) {
-      gzip.write(header(PAYLOAD, node.size));
-      long copied = 0;
-      try (InputStream input = fs.read(payload, node)) {
-        byte[] buffer = new byte[65536];
-        int n;
-        while ((n = input.read(buffer)) != -1) {
-          control.check();
-          copied = BackupLimits.add(copied, n, node.size);
-          gzip.write(buffer, 0, n);
-          digest.update(buffer, 0, n);
-          control.report("PACKAGING", 0, copied);
+    OutputGate gate = new OutputGate(target, control);
+    // 整个 tar 的长度才是 gzip 明文预算。超 ABI 的既有输入留 JVM，不截断、不重放。
+    OutputStream encoded =
+        RustArchiveCodec.packStream(
+            gate, tarBytes(node.size, note.length, diagnostics == null ? 0 : diagnostics.length));
+    // 工厂只借用目标；构造成功后接管关闭，失败时调用方仍持有目标。
+    try (target;
+        OutputStream gzip = encoded) {
+      try {
+        gzip.write(header(PAYLOAD, node.size));
+        long copied = 0;
+        try (InputStream input = fs.read(payload, node)) {
+          byte[] buffer = new byte[65536];
+          while (true) {
+            control.check();
+            int n = input.read(buffer);
+            control.check();
+            if (n == -1) break;
+            copied = BackupLimits.add(copied, n, node.size);
+            gzip.write(buffer, 0, n);
+            digest.update(buffer, 0, n);
+            control.report("PACKAGING", 0, copied);
+          }
         }
+        if (copied != node.size || !BackupArchive.hex(digest.digest()).equals(expectedSha))
+          throw new IOException("VERIFIED_COPY_CHANGED");
+        padding(gzip, node.size);
+        gzip.write(header(README, note.length));
+        gzip.write(note);
+        padding(gzip, note.length);
+        if (diagnostics != null && diagnostics.length > 0) {
+          gzip.write(header(DIAGNOSTICS, diagnostics.length));
+          gzip.write(diagnostics);
+          padding(gzip, diagnostics.length);
+        }
+        gzip.write(new byte[1024]);
+        control.check();
+      } catch (IOException | RuntimeException | Error failure) {
+        // close 可能调用 finish；先封写门，清理不得再向原目标追加 codec 字节。
+        gate.failed = true;
+        throw failure;
       }
-      if (copied != node.size || !BackupArchive.hex(digest.digest()).equals(expectedSha))
-        throw new IOException("VERIFIED_COPY_CHANGED");
-      padding(gzip, node.size);
-      gzip.write(header(README, note.length));
-      gzip.write(note);
-      padding(gzip, note.length);
-      gzip.write(new byte[1024]);
-      control.check();
     }
+    control.check();
   }
 
   /** Probe names only to route legacy input; accepted envelopes always consume and verify all bytes. */
   public static boolean unwrapIfPresent(
       BackupFileSystem fs, File input, File output, BackupControl control) throws IOException {
-    final boolean[] recognized = {false}, payload = {false}, readme = {false};
-    try (InputStream raw = fs.read(input, fs.stat(input))) {
+    final boolean[] recognized = {false},
+        payload = {false},
+        readme = {false},
+        diagnostics = {false};
+    control.check();
+    BackupFileSystem.Node inputNode = fs.stat(input);
+    try (InputStream raw = fs.read(input, inputNode)) {
       LegacyTarReader.readWithLimit(
           raw,
           (member, data) -> {
@@ -119,13 +166,19 @@ public final class PortableBackupEnvelope {
             } else if (member.path.equals(README)) {
               if (readme[0] || member.size > 16384) throw new IOException("ENVELOPE_README");
               readme[0] = true;
+            } else if (member.path.equals(DIAGNOSTICS)) {
+              if (diagnostics[0] || member.size > 64 * 1024)
+                throw new IOException("ENVELOPE_DIAGNOSTICS");
+              diagnostics[0] = true;
             } else throw new IOException("ENVELOPE_EXTRA_MEMBER");
           },
           control,
-          CONTAINER_LIMIT);
+          CONTAINER_LIMIT,
+          inputNode.size);
     } catch (NotEnvelope ordinaryLegacy) {
       return false;
     }
+    control.check();
     if (!recognized[0]) return false;
     if (!payload[0]) throw new IOException("ENVELOPE_PAYLOAD_MISSING");
     if (!readme[0]) throw new IOException("ENVELOPE_README_MISSING");
@@ -161,6 +214,66 @@ public final class PortableBackupEnvelope {
         return found.password;
       }
       return false;
+    }
+  }
+
+  /** 完整 gzip 明文预算，包含所有 tar 框架字节；不得用成员载荷预算代替。 */
+  static long tarBytes(long payloadBytes, int noteBytes, int diagnosticsBytes) throws IOException {
+    try {
+      long total =
+          Math.addExact(1024L, Math.addExact(memberBytes(payloadBytes), memberBytes(noteBytes)));
+      return diagnosticsBytes == 0 ? total : Math.addExact(total, memberBytes(diagnosticsBytes));
+    } catch (ArithmeticException error) {
+      throw new IOException("ENVELOPE_SIZE", error);
+    }
+  }
+
+  private static long memberBytes(long size) throws IOException {
+    if (size < 0) throw new IOException("ENVELOPE_SIZE");
+    return Math.addExact(Math.addExact(512L, size), (512 - size % 512) % 512);
+  }
+
+  /** 编码器只借用目标；失败后的 finish/close 不得再交付新的压缩字节。 */
+  private static final class OutputGate extends OutputStream {
+    final OutputStream target;
+    final BackupControl control;
+    boolean failed;
+
+    OutputGate(OutputStream target, BackupControl control) {
+      this.target = target;
+      this.control = control;
+    }
+
+    private void check() throws IOException {
+      if (failed) throw new IOException("ENVELOPE_OUTPUT_FAILED");
+      control.check();
+    }
+
+    @Override
+    public void write(int value) throws IOException {
+      write(new byte[] {(byte) value}, 0, 1);
+    }
+
+    @Override
+    public void write(byte[] bytes, int offset, int length) throws IOException {
+      try {
+        check();
+        target.write(bytes, offset, length);
+      } catch (IOException | RuntimeException | Error failure) {
+        failed = true;
+        throw failure;
+      }
+    }
+
+    @Override
+    public void flush() throws IOException {
+      try {
+        check();
+        target.flush();
+      } catch (IOException | RuntimeException | Error failure) {
+        failed = true;
+        throw failure;
+      }
     }
   }
 

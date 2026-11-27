@@ -18,7 +18,7 @@ NATIVE_NOTICES = {
     'libprootloader.so': ('GPL-2.0', 'Termux proot; original Standard binary exact revision remains unverified'),
     'libprootloader32.so': ('GPL-2.0', 'Termux proot; original Standard binary exact revision remains unverified'),
     'libtalloc.so': ('LGPL family; exact binary revision unverified', 'Samba talloc; original Standard binary exact revision unverified'),
-    'libandroidshmem.so': ('unknown origin/license for this original binary', 'Retained original; no current exact-source reproduction receipt'),
+    'libandroidshmem.so': ('BSD-3-Clause', 'Identical to libandroid-shmem.so in the [Termux 0.7 aarch64 package](https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb); original copyright and conditions: `assets/licenses/libandroid-shmem-0.7-LICENSE.txt`. Not a source rebuild receipt.'),
     'libproroot.so': ('upstream proprietary', 'proroot v1.2.8 original binary; source reproducibility not asserted'),
     'libproroot-runtime.so': ('upstream proprietary', 'proroot v1.2.8 original binary'),
     'libproroot-linker.so': ('upstream proprietary', 'proroot v1.2.8 original binary'),
@@ -27,9 +27,80 @@ NATIVE_NOTICES = {
 }
 
 
+RUST_LOCK = ROOT / 'ci/rust-toolchain.lock.json'
+RUST_LICENSE_ROOT = ASSETS / 'licenses/rust'
+RUST_LICENSE_NAME = re.compile(r'(?i)^(licen[cs]e|copying|notice)([.-].*)?$')
+
+
+def rust_lock(root=ROOT):
+    return json.loads((root / 'ci/rust-toolchain.lock.json').read_text(encoding='utf-8'))
+
+
+def rust_license_plan(root=ROOT):
+    """Rust vendor 许可全文 → `assets/licenses/rust/<crate>-<version>/` 的精确字节计划。"""
+    lock = rust_lock(root)
+    vendor = root / 'rust/vendor'
+    plan = {}
+    for row in lock['dependencies']:
+        directory = vendor / ('%s-%s' % (row['name'], row['version']))
+        for name in row['licenseFiles']:
+            source = directory / name
+            if not source.is_file():
+                raise ValueError('RUST_LICENSE_SOURCE_MISSING: ' + str(source))
+            target = 'app/src/main/assets/licenses/rust/%s-%s/%s' % (
+                row['name'], row['version'], name)
+            plan[target] = source.read_bytes()
+        present = sorted(p.name for p in directory.iterdir()
+                         if p.is_file() and RUST_LICENSE_NAME.match(p.name))
+        if present != list(row['licenseFiles']):
+            raise ValueError('RUST_LICENSE_SET: %s %s != lock %s'
+                             % (row['name'], present, row['licenseFiles']))
+    return plan
+
+
+def rust_license_files(root=ROOT):
+    base = root / 'app/src/main/assets/licenses/rust'
+    if not base.is_dir():
+        return {}
+    return {p.relative_to(root).as_posix(): p.read_bytes()
+            for p in base.rglob('*') if p.is_file()}
+
+
+def verify_rust_licenses(root=ROOT):
+    plan, actual = rust_license_plan(root), rust_license_files(root)
+    if set(actual) != set(plan):
+        raise ValueError('RUST_LICENSE_TREE: 缺失 %s 多余 %s；运行 generators 同步'
+                         % (sorted(set(plan) - set(actual))[:5],
+                            sorted(set(actual) - set(plan))[:5]))
+    for name, expected in plan.items():
+        if actual[name] != expected:
+            raise ValueError('RUST_LICENSE_BYTES: ' + name)
+
+
+def sync_rust_licenses(root=ROOT):
+    """写入/清理 `assets/licenses/rust/**`（只动该子树；字节与 vendor 一致）。"""
+    plan = rust_license_plan(root)
+    for name, data in plan.items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.is_file() or target.read_bytes() != data:
+            target.write_bytes(data)
+    base = root / 'app/src/main/assets/licenses/rust'
+    for path in sorted(base.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+        if path.is_file() and path.relative_to(root).as_posix() not in plan:
+            path.unlink()
+        elif path.is_dir() and path != base and not any(path.iterdir()):
+            path.rmdir()
+
+
 def gradle_coordinates(root=ROOT):
-    build = (root / 'app/build.gradle').read_text(encoding='utf-8')
-    return sorted(set(re.findall(r"^\s*(?:implementation|standardImplementation|coreLibraryDesugaring)\s+'([^']+)'", build, re.M)))
+    sources = [root / 'app/build.gradle']
+    logic = root / 'build-logic'
+    if logic.is_dir():
+        sources.extend(sorted(logic.glob('*.gradle')))
+    pattern = re.compile(r"^\s*(?:implementation|standardImplementation|coreLibraryDesugaring)\s+'([^']+)'", re.M)
+    return sorted({coordinate for path in sources
+                   for coordinate in pattern.findall(path.read_text(encoding='utf-8'))})
 
 
 def native_members(root=ROOT):
@@ -59,6 +130,14 @@ def render():
     gh_license = (ASSETS / 'licenses/gh-MIT.txt').read_bytes()
     if hashlib.sha256(gh_license).hexdigest() != gh_lock.get('licenseSha256'):
         raise ValueError('GH_CLI_LICENSE_NOTICE: assets/licenses/gh-MIT.txt 与 tools/gh-cli/packages.lock.json 不一致')
+    rust = rust_lock()
+    rust_rows = '\n'.join(
+        '| `%s` | %s | %s | `app/src/main/assets/licenses/rust/%s-%s/` |' % (
+            row['name'], row['version'],
+            row['license'] if row['upstreamLicense'] == row['license']
+            else '`%s`（上游写作 `%s`）' % (row['license'], row['upstreamLicense']),
+            row['name'], row['version'])
+        for row in sorted(rust['dependencies'], key=lambda item: item['name']))
     return f'''# 第三方组件声明
 
 此文由 `python tools/generate-third-party-notices.py` 从当前锁和实际资产生成。DSHA 自有代码采用 MIT；随包第三方组件分别遵循其许可，不因 APK 顶层许可变成 MIT。
@@ -91,7 +170,7 @@ def render():
 ## proot / proroot
 
 - proot（Termux 分支）为 GPL-2.0。包内保留 COPYING；标准 proot 二进制原件的精确修订仍未核实，不声明可逐字节重现。完整声明位于 `assets/licenses/proot-COPYING.txt`。
-- proroot v1.2.8 为上游专有许可。DSHA 分发上游原始二进制，不声称可重编、审计源码或任意修改后再分发；许可证与来源见随包声明。不能用容器 root 身份推断 Android root 权限。
+- proroot v1.2.8 — Copyright (c) 2026 coderred。仅可随完整应用包分发未修改的二进制，并须保留声明和署名；不提供修改版本的分发授权。[上游许可原文](https://github.com/coderredlab/proroot/blob/14b72a764490d0280eee3915ecfa3e8a132b392e/LICENSE)随包保存在 `assets/licenses/proroot-1.2.8-LICENSE.txt`，可在「关于与许可 → 第三方许可 → proroot 1.2.8」离线阅读。不能用容器 root 身份推断 Android root 权限。
 - Windows 重编、Linux 重编与手机执行是不同证据；不能从一种宿主成功推导全部平台通过。
 
 ## Android 与备份依赖
@@ -107,6 +186,16 @@ def render():
 当前 Gradle 直接运行依赖坐标（不包含测试依赖；完整传递依赖许可审查仍需实际解析结果）：
 
 {android}
+
+## Rust vendor 依赖（首期旁路纯函数）
+
+Rust 旁路 crate `rust/crates/dsha-core` 只做 ADR-0004 决定四的三类封闭纯函数（单成员 gzip 编解码、只读摘要、计划只读校验）。R0 不含该库是历史阶段边界；当前代码已有可选生产接线，实际 APK 是否包含 `libdsha_rs.so` 必须按装配模式及实包核验。本线 Rebirth 候选当前显式使用 off，不将未完成跨 runner 固定的产物当作正式准入。依赖集由 `rust/Cargo.lock` 与入库 `rust/vendor/` 锁定（`cargo vendor --locked --versioned-dirs`，{rust['vendor']['crates']} 个 crate / {rust['vendor']['files']} 文件 / {rust['vendor']['bytes']} B）；构建脚本与间接构建依赖的字节登记在 `ci/rust-toolchain.lock.json`，由 CI 逐字节核对，`version_check` 的 `MIT/Apache-2.0` 写法按 `MIT OR Apache-2.0` 归一化进白名单。许可全文按 crate 保存在 `app/src/main/assets/licenses/rust/<crate>-<version>/`；下表版本与声明来自 vendor 元数据。
+
+| crate | 版本 | 上游声明 | 许可全文 |
+|---|---|---|---|
+{rust_rows}
+
+`libdsha_rs.so` 的许可为 MIT（本仓库 `rust/crates/dsha-core`）；该 `.so` 经受控构建或已核验 prebuilt 注入 `app/build/rust-jniLibs/`，不入库。`tools/check-rust-native-apk.py` 核对 APK 内成员、体积预算与构建回执；正式准入还必须核对实际锁定产物与复现证据，候选证据不等同正式通过。R0 记录仅属于工具链和门禁的历史阶段。
 
 ## 实际入库 JNI 成员与来源边界
 
@@ -139,6 +228,10 @@ if __name__ == '__main__':
     if args.check:
         if path.read_text(encoding='utf-8') != content:
             raise SystemExit('THIRD_PARTY_NOTICES_STALE')
+        verify_rust_licenses()
+        print('PASS current locked third-party identities and Rust vendor license bytes')
     else:
+        sync_rust_licenses()
         path.write_text(content, encoding='utf-8', newline='\n')
-    print('PASS current locked third-party identities')
+        verify_rust_licenses()
+        print('PASS regenerated third-party notices and Rust vendor licenses')

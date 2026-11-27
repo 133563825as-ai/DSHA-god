@@ -15,11 +15,11 @@
 
 ## 移动插件
 
-- `dsh-web-mobile` **3.3.1**，MIT，来自 `https://github.com/mexiaosqwq/dsh-web-mobile`，固定提交 `4e71eb67de7dac9d8b2572757c81e47aa32a32fb`。
-- 上游 client 摘要 `7f82fac2100d70daf34c9c68cc402f6adb2302bf9913122d3402ab0926773c75`；本地差异由 `tools/apply-mobile-client-patches.mjs` 与 `tools/mobile-server/` 管理。不是未修改的上游产物。
+- `dsh-web-mobile` **3.3.5**，MIT，来自 `https://github.com/mexiaosqwq/dsh-web-mobile`，固定提交 `646fe837440f9939228bdba0024d407eaac01128`。
+- 上游 client 摘要 `8a17dd03b5de35f1aea52c93d6e3352fcd43c781de380639f60a93bf6040a26a`；本地差异由 `tools/apply-mobile-client-patches.mjs` 与 `tools/mobile-server/` 管理。不是未修改的上游产物。
 - 许可全文：`app/src/main/assets/builtin-plugins/dsh-web-mobile/LICENSE`。当前产物摘要：
 
-- `client.js`：`3483fac4cce8a376f041a2fb3c7c06ac72fb0a53c98fc3c31cb5d12af296f85d`
+- `client.js`：`754907dceb62c1245db1c26aeb40f51f21360579020f633172864e9bf9b057ca`
 - `index.js`：`dcddbce73ec1052b7c02e961bac1389d227f72f1ef49f62a2f16f692e8f930ab`
 - `compress.js`：`a7f4f7f89cc99490978ed4cbfd16ab86f71e1f7fbf2241c00c2811e7cde9aeab`
 - `delete-session.js`：`cb119ff9703716fe1111ee5a2f211d14886ab1d2310601c5787efc8d91219d51`
@@ -33,7 +33,7 @@
 ## proot / proroot
 
 - proot（Termux 分支）为 GPL-2.0。包内保留 COPYING；标准 proot 二进制原件的精确修订仍未核实，不声明可逐字节重现。完整声明位于 `assets/licenses/proot-COPYING.txt`。
-- proroot v1.2.8 为上游专有许可。DSHA 分发上游原始二进制，不声称可重编、审计源码或任意修改后再分发；许可证与来源见随包声明。不能用容器 root 身份推断 Android root 权限。
+- proroot v1.2.8 — Copyright (c) 2026 coderred。仅可随完整应用包分发未修改的二进制，并须保留声明和署名；不提供修改版本的分发授权。[上游许可原文](https://github.com/coderredlab/proroot/blob/14b72a764490d0280eee3915ecfa3e8a132b392e/LICENSE)随包保存在 `assets/licenses/proroot-1.2.8-LICENSE.txt`，可在「关于与许可 → 第三方许可 → proroot 1.2.8」离线阅读。不能用容器 root 身份推断 Android root 权限。
 - Windows 重编、Linux 重编与手机执行是不同证据；不能从一种宿主成功推导全部平台通过。
 
 ## Android 与备份依赖
@@ -58,11 +58,36 @@
 - `org.bouncycastle:bcprov-jdk15to18:1.85.2`
 - `org.yaml:snakeyaml:2.4`
 
+## Rust vendor 依赖（首期旁路纯函数）
+
+Rust 旁路 crate `rust/crates/dsha-core` 只做 ADR-0004 决定四的三类封闭纯函数（单成员 gzip 编解码、只读摘要、计划只读校验）。R0 不含该库是历史阶段边界；当前代码已有可选生产接线，实际 APK 是否包含 `libdsha_rs.so` 必须按装配模式及实包核验。本线 Rebirth 候选当前显式使用 off，不将未完成跨 runner 固定的产物当作正式准入。依赖集由 `rust/Cargo.lock` 与入库 `rust/vendor/` 锁定（`cargo vendor --locked --versioned-dirs`，16 个 crate / 782 文件 / 7384177 B）；构建脚本与间接构建依赖的字节登记在 `ci/rust-toolchain.lock.json`，由 CI 逐字节核对，`version_check` 的 `MIT/Apache-2.0` 写法按 `MIT OR Apache-2.0` 归一化进白名单。许可全文按 crate 保存在 `app/src/main/assets/licenses/rust/<crate>-<version>/`；下表版本与声明来自 vendor 元数据。
+
+| crate | 版本 | 上游声明 | 许可全文 |
+|---|---|---|---|
+| `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/adler2-2.0.1/` |
+| `block-buffer` | 0.10.4 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/block-buffer-0.10.4/` |
+| `cfg-if` | 1.0.5 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/cfg-if-1.0.5/` |
+| `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/cpufeatures-0.2.17/` |
+| `crc32fast` | 1.5.5 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/crc32fast-1.5.5/` |
+| `crypto-common` | 0.1.7 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/crypto-common-0.1.7/` |
+| `digest` | 0.10.7 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/digest-0.10.7/` |
+| `flate2` | 1.1.11 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/flate2-1.1.11/` |
+| `generic-array` | 0.14.7 | MIT | `app/src/main/assets/licenses/rust/generic-array-0.14.7/` |
+| `libc` | 0.2.191 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/libc-0.2.191/` |
+| `miniz_oxide` | 0.9.1 | MIT OR Zlib OR Apache-2.0 | `app/src/main/assets/licenses/rust/miniz_oxide-0.9.1/` |
+| `sha1` | 0.10.7 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/sha1-0.10.7/` |
+| `sha2` | 0.10.9 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/sha2-0.10.9/` |
+| `simd-adler32` | 0.3.10 | MIT | `app/src/main/assets/licenses/rust/simd-adler32-0.3.10/` |
+| `typenum` | 1.20.1 | MIT OR Apache-2.0 | `app/src/main/assets/licenses/rust/typenum-1.20.1/` |
+| `version_check` | 0.9.5 | `MIT OR Apache-2.0`（上游写作 `MIT/Apache-2.0`） | `app/src/main/assets/licenses/rust/version_check-0.9.5/` |
+
+`libdsha_rs.so` 的许可为 MIT（本仓库 `rust/crates/dsha-core`）；该 `.so` 经受控构建或已核验 prebuilt 注入 `app/build/rust-jniLibs/`，不入库。`tools/check-rust-native-apk.py` 核对 APK 内成员、体积预算与构建回执；正式准入还必须核对实际锁定产物与复现证据，候选证据不等同正式通过。R0 记录仅属于工具链和门禁的历史阶段。
+
 ## 实际入库 JNI 成员与来源边界
 
 | 资产 | 许可声明 | 来源 / 可核验范围 |
 |---|---|---|
-| `app/src/main/jniLibs/arm64-v8a/libandroidshmem.so` | unknown origin/license for this original binary | Retained original; no current exact-source reproduction receipt |
+| `app/src/main/jniLibs/arm64-v8a/libandroidshmem.so` | BSD-3-Clause | Identical to libandroid-shmem.so in the [Termux 0.7 aarch64 package](https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb); original copyright and conditions: `assets/licenses/libandroid-shmem-0.7-LICENSE.txt`. Not a source rebuild receipt. |
 | `app/src/main/jniLibs/arm64-v8a/libdsha-proroot-compat.so` | MIT | tools/proroot-compat/stack-sysconf.c; independent GNU AArch64 sysconf and fcntl-errno proxy, locked NDK build; original proroot binaries unchanged |
 | `app/src/main/jniLibs/arm64-v8a/libdsha-proroot-linker.so` | MIT | tools/proroot-compat/linker-entry.c; freestanding GNU AArch64 direct-preload adapter; original proroot binaries unchanged |
 | `app/src/main/jniLibs/arm64-v8a/libdsha-session.so` | MIT | tools/native-session/session-launcher.c; locked API 23 build |

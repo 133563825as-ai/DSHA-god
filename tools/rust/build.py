@@ -1,0 +1,500 @@
+#!/usr/bin/env python3
+"""构建并核验 Rust 旁路产物（R1：`digest` 已接真实实现，不接生产调用点）。
+
+用法（一次只跑一个目标，构建串行）：
+
+    python3 tools/rust/build.py --host  [--check] [--out DIR] [--receipt FILE] [--expect SHA256] [--expect-lock]
+    python3 tools/rust/build.py --android --ndk PATH [--check] [--out DIR] [--receipt FILE] [--expect SHA256] [--expect-lock]
+
+`--check`：把产物重建到临时目录（不同源码目录 + 固定 `--remap-path-prefix`），
+逐字节比对两次构建；不一致即失败，不替换产物。`--expect` 与给定 SHA-256 比对。
+`--expect-lock` 读取 `rust/artifact.lock.json`：只比较可由
+(源码 + Cargo.lock + vendor + rustc + target + linker + linkArgs + profile) 重现的
+size/SHA-256；commit/runId/路径/mtime 等跨 runner 不可复现字段不入锁。按方案 §2.3，
+R1 在 3 次不同 runner 实例一致前保持 `status=pending-cross-run`（告警不失败），
+pin 之后不一致即失败。`--receipt` 写出 JSON 回执：工具链、源/锁/vendor 摘要、链接参数、
+产物摘要与 ELF 静态检查结果。本脚本只构建，不安装、不签名、不修改 APK。
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+TOOLS = Path(__file__).resolve().parents[1]
+ROOT = TOOLS.parent
+RUST = ROOT / "rust"
+LOCK = ROOT / "ci/rust-toolchain.lock.json"
+BUDGET = RUST / "native-budget.json"
+ARTIFACT_LOCK = RUST / "artifact.lock.json"
+sys.path.insert(0, str(TOOLS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from git_guard import git_output  # noqa: E402
+
+import artifact as rust_artifact  # noqa: E402
+
+LINK_ARGS = rust_artifact.LINK_ARGS
+
+# RUST-2：Cargo/Rust 允许用环境变量覆盖 profile（如 CARGO_PROFILE_RELEASE_PANIC=abort）、
+# 编译器包装（RUSTC_WRAPPER / RUSTC_WORKSPACE_WRAPPER）、目标与 flags。构建门禁只接受
+# 仓库内冻结输入，因此从零构造环境，而不是在宿主环境上“删几项”。
+ENV_PASSTHROUGH = ("PATH", "HOME", "RUSTUP_HOME", "TMPDIR", "TMP", "TEMP",
+                   "LANG", "LC_ALL", "LC_CTYPE", "TZ")
+
+# build_env 自己写入的变量；除此外的继承项都会让固定输入门禁失败。
+ENV_OWNED = frozenset(("RUSTC", "RUSTFLAGS", "CARGO_HOME", "CARGO_TARGET_DIR",
+                       "CARGO_BUILD_JOBS", "CARGO_TERM_COLOR", "CARGO_NET_OFFLINE",
+                       "RUST_BACKTRACE", "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"))
+
+
+class BuildError(RuntimeError):
+    """构建/核验失败；调用方必须失败，不得降级成“跳过 Rust”。"""
+
+
+def digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    return value.hexdigest()
+
+
+def tree_digest(root: Path, names: list[str]) -> str:
+    """对相对路径 + 文件摘要做稳定摘要（不依赖 mtime / 目录遍历顺序）。"""
+    value = hashlib.sha256()
+    for name in sorted(names):
+        value.update(name.encode("utf-8") + b"\0")
+        value.update(digest(root / name).encode("ascii") + b"\n")
+    return value.hexdigest()
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def run(command: list[str], *, cwd: Path, env: dict) -> str:
+    try:
+        result = subprocess.run(command, cwd=cwd, env=env, capture_output=True,
+                                text=True, check=False)
+    except OSError as error:
+        raise BuildError("无法执行 %s: %s" % (command[0], error)) from error
+    if result.returncode != 0:
+        raise BuildError("命令失败 (%d): %s\nstdout:\n%s\nstderr:\n%s"
+                         % (result.returncode, " ".join(command),
+                            result.stdout[-4000:], result.stderr[-4000:]))
+    return result.stdout
+
+
+def cargo_binary() -> str:
+    """独立安装的后备路径；保留 cargo argv[0]，不把 rustup 代理解引用为 rustup。"""
+    path = shutil.which("cargo")
+    if not path:
+        raise BuildError("RUST_TOOLCHAIN_MISSING: 找不到 cargo")
+    return os.path.abspath(path)
+
+
+def assert_no_foreign_cargo_config(crate_root: Path) -> None:
+    """拒绝 cwd 祖先的 Cargo 配置，只接受仓库内 `.cargo/config.toml`。
+
+    Cargo 会读取当前目录及所有祖先的 `.cargo/config(.toml)`；这些文件不在冻结输入里，
+    可能注入 wrapper/target/flags。仓库内配置只做 vendor 源替换，其字节属于
+    `source_inputs` 指纹；缺该文件时 vendor 源替换同样失效，按失败处理。
+    """
+    allowed = (crate_root / ".cargo" / "config.toml").resolve()
+    if not allowed.is_file():
+        raise BuildError("RUST_CARGO_CONFIG_MISSING: " + str(allowed))
+    for directory in (crate_root, *crate_root.parents):
+        for name in ("config.toml", "config"):
+            candidate = directory / ".cargo" / name
+            if candidate.is_file() and candidate.resolve() != allowed:
+                raise BuildError("RUST_CARGO_CONFIG_UNEXPECTED: " + str(candidate))
+
+
+def checked_directory(path: Path) -> Path:
+    """先核对绝对路径及全部祖先，拒绝链接；不以 resolve 掩盖链接来源。"""
+    if ".." in path.parts:
+        raise BuildError("RUST_BUILD_DIRECTORY_UNSAFE: " + str(path))
+    path = Path(os.path.abspath(path))
+    for directory in (*reversed(path.parents), path):
+        if directory.is_symlink() or not directory.is_dir():
+            raise BuildError("RUST_BUILD_DIRECTORY_UNSAFE: " + str(directory))
+    return path
+
+
+@contextmanager
+def private_cargo_home():
+    # 配置根不复用 target 缓存或用户 home；每次实际 build 都从私有空目录开始。
+    parent = checked_directory(Path(tempfile.gettempdir()))
+    home = Path(tempfile.mkdtemp(prefix="dsha-rust-cargo-", dir=parent))
+    identity = home.stat()
+    try:
+        checked_directory(home)
+        if home.stat().st_mode & 0o077 or any(home.iterdir()):
+            raise BuildError("RUST_CARGO_HOME_NOT_PRIVATE_EMPTY: " + str(home))
+        yield home
+    finally:
+        # 只删除本次 mkdtemp 创建、身份仍相同的绝对路径，不碰旧 target/home。
+        checked_directory(home)
+        current = home.stat()
+        if home.parent != parent or (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+            raise BuildError("RUST_CARGO_HOME_CHANGED: " + str(home))
+        shutil.rmtree(home)
+
+
+def sanitized_environment(*, cargo_home: Path) -> dict:
+    """从零构造环境；cargo_home 必须由本次 private_cargo_home 生命周期持有。"""
+    env = {key: os.environ[key] for key in ENV_PASSTHROUGH if key in os.environ}
+    home = checked_directory(cargo_home)
+    if home.stat().st_mode & 0o077 or any(home.iterdir()):
+        raise BuildError("RUST_CARGO_HOME_NOT_PRIVATE_EMPTY: " + str(home))
+    env["CARGO_HOME"] = str(home)
+    return env
+
+
+def assert_fixed_environment(env: dict, *, target: str, flags: str) -> None:
+    """固定环境声明只能来自实际 env：任一覆盖项残留即失败，不写“看似固定”的回执。"""
+    allowed = set(ENV_PASSTHROUGH) | set(ENV_OWNED)
+    unexpected = sorted(set(env) - allowed)
+    if unexpected:
+        raise BuildError("RUST_BUILD_ENV_UNEXPECTED: " + ", ".join(unexpected))
+    for key in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CARGO_ENCODED_RUSTFLAGS",
+                "CARGO_BUILD_RUSTFLAGS", "RUSTDOCFLAGS", "CARGO_BUILD_TARGET"):
+        if key in env:
+            raise BuildError("RUST_BUILD_ENV_OVERRIDE: " + key)
+    if any(key.startswith(("CARGO_PROFILE_", "CARGO_UNSTABLE_")) for key in env):
+        raise BuildError("RUST_BUILD_ENV_OVERRIDE: profile/unstable")
+    if env.get("RUSTFLAGS") != flags:
+        raise BuildError("RUST_BUILD_ENV_FLAGS: RUSTFLAGS 必须由 build.py 固定")
+    if env.get("CARGO_NET_OFFLINE") != "true":
+        raise BuildError("RUST_BUILD_ENV_OFFLINE")
+    if target == "android" and not env.get("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"):
+        raise BuildError("RUST_BUILD_ENV_LINKER")
+    if target != "android" and "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER" in env:
+        raise BuildError("RUST_BUILD_ENV_LINKER")
+
+
+def toolchain(lock: dict) -> dict:
+    """只核验一次已安装工具身份；rustup 两工具显式选择同一锁定 channel。"""
+    env = {key: os.environ[key] for key in ENV_PASSTHROUGH if key in os.environ}
+    rustup = shutil.which("rustup")
+    if rustup:
+        command = [os.path.abspath(rustup), "which", "--toolchain", lock["channel"]]
+        rustc_path = run([*command, "rustc"], cwd=RUST, env=env).strip()
+        cargo_path = run([*command, "cargo"], cwd=RUST, env=env).strip()
+    else:
+        candidate = shutil.which("rustc")
+        if not candidate:
+            raise BuildError("RUST_TOOLCHAIN_MISSING: 找不到 rustc（需要 rustup 1.100.0 工具链）")
+        rustc_path = os.path.abspath(candidate)
+        cargo_path = cargo_binary()
+    for name, path in (("rustc", rustc_path), ("cargo", cargo_path)):
+        if not Path(path).is_absolute() or not Path(path).is_file():
+            raise BuildError("RUST_TOOLCHAIN_MISSING: %s 路径不存在/非绝对路径: %s" % (name, path))
+    version = run([rustc_path, "-vV"], cwd=RUST, env=env)
+    fields = {}
+    for line in version.splitlines():
+        key, _, value = line.partition(":")
+        fields[key.strip()] = value.strip()
+    release = fields.get("release", "")
+    commit = fields.get("commit-hash", "")
+    host = fields.get("host", "")
+    expected = lock["rustc"]
+    if release != expected["version"] or not commit.startswith(expected["commit"]):
+        raise BuildError("RUST_TOOLCHAIN_MISMATCH: rustc %s (%s)，要求 %s (%s)"
+                         % (release, commit, expected["version"], expected["commit"]))
+    cargo = run([cargo_path, "-V"], cwd=RUST, env=env).split()
+    if len(cargo) < 2 or cargo[0] != "cargo" or cargo[1] != lock["cargo"]["version"]:
+        raise BuildError("RUST_TOOLCHAIN_MISMATCH: cargo %s，要求 %s"
+                         % (" ".join(cargo), lock["cargo"]["version"]))
+    return dict(rustc=release, rustcCommit=commit, cargo=cargo[1], host=host,
+                rustcPath=rustc_path, cargoPath=cargo_path)
+
+
+def ndk_env(ndk: Path | None, lock: dict) -> dict:
+    """返回 android 构建的额外环境；不带 NDK 时由调用方拒绝 android 构建。"""
+    if ndk is None:
+        raise BuildError("ANDROID_NDK_REQUIRED: --android 需要 --ndk <NDK 根目录>")
+    properties = ndk / "source.properties"
+    if not properties.is_file():
+        raise BuildError("ANDROID_NDK_INVALID: 缺少 source.properties: %s" % ndk)
+    revision = ""
+    for line in properties.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("Pkg.Revision"):
+            revision = line.split("=", 1)[-1].strip()
+    if revision != lock["ndk"]:
+        raise BuildError("ANDROID_NDK_MISMATCH: %s != %s" % (revision, lock["ndk"]))
+    linker = ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin" / (
+        "aarch64-linux-android%d-clang" % lock["androidApi"])
+    if not linker.is_file():
+        raise BuildError("ANDROID_LINKER_MISSING: %s（本机 aarch64 无 x86_64 NDK 工具链时属预期）"
+                         % linker)
+    return {str(linker): "aarch64-linux-android"}
+
+
+def build_env(target: str, *, triples: dict, ndk: Path | None, found: dict,
+              target_dir: Path, remap_source: Path, cargo_home: Path, jobs: int) -> dict:
+    # RUST-2：只接受冻结输入的配置，配置根与可复用的 target 编译缓存分离。
+    assert_no_foreign_cargo_config(remap_source)
+    env = sanitized_environment(cargo_home=cargo_home)
+    rustup_home = Path(env.get("RUSTUP_HOME") or (Path.home() / ".rustup")).resolve()
+    env["RUSTC"] = found["rustcPath"]
+    remap = [
+        "--remap-path-prefix=%s=/src" % remap_source,
+        "--remap-path-prefix=%s=/cargo" % cargo_home,
+        "--remap-path-prefix=%s=/rustup" % rustup_home,
+    ]
+    if ndk is not None:
+        remap.append("--remap-path-prefix=%s=/ndk" % ndk.resolve())
+    flags = list(remap)
+    for item in LINK_ARGS:
+        flags.append("-C")
+        flags.append("link-arg=" + item)
+    # 期望值由固定参数（remap + link args）生成，再与实际 env 比对；不拿 env 自证。
+    expected_flags = " ".join(flags)
+    env["RUSTFLAGS"] = expected_flags
+    env["CARGO_TARGET_DIR"] = str(target_dir)
+    env["CARGO_BUILD_JOBS"] = str(jobs)
+    env["CARGO_TERM_COLOR"] = "never"
+    env["CARGO_NET_OFFLINE"] = "true"
+    env["RUST_BACKTRACE"] = "0"
+    if target == "android":
+        if ndk is None:
+            raise BuildError("ANDROID_NDK_REQUIRED")
+        env["CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"] = triples["linker"]
+    # 回执里的固定环境声明以这次实际 env 为准；残留任何覆盖项都在这里失败。
+    assert_fixed_environment(env, target=target, flags=expected_flags)
+    return env
+
+
+def artifact_path(target_dir: Path, target: str) -> Path:
+    base = target_dir / (("aarch64-linux-android") if target == "android" else "") / "release"
+    return base / "libdsha_rs.so"
+
+
+def build_once(*, target: str, target_dir: Path, remap_source: Path, ndk: Path | None,
+               lock: dict, found: dict, jobs: int) -> Path:
+    triples = {"linker": ""}
+    if target == "android":
+        linker_map = ndk_env(ndk, lock)
+        triples["linker"] = next(iter(linker_map))
+    with private_cargo_home() as cargo_home:
+        env = build_env(target, triples=triples, ndk=ndk, found=found,
+                        target_dir=target_dir, remap_source=remap_source,
+                        cargo_home=cargo_home, jobs=jobs)
+        command = [found["cargoPath"], "build", "--release", "--locked", "--offline"]
+        if target == "android":
+            command += ["--target", "aarch64-linux-android"]
+        run(command, cwd=remap_source, env=env)
+        path = artifact_path(target_dir, target)
+        if not path.is_file():
+            raise BuildError("RUST_ARTIFACT_MISSING: " + str(path))
+    return path
+
+
+def source_manifest() -> tuple[dict, str, str]:
+    sources = rust_artifact.source_inputs(ROOT)
+    return load_json(LOCK), sources["vendorTreeSha256"], sources["crateSha256"]
+
+
+def scan_artifact(data: bytes, forbidden: list[str]) -> None:
+    for name, needle in forbidden:
+        if needle.encode("utf-8") in data:
+            raise BuildError("RUST_ARTIFACT_LEAK: 产物包含 %s（%s）" % (name, needle))
+
+
+def describe_artifact(path: Path, *, target: str, lock: dict, budget: dict) -> dict:
+    data = rust_artifact.read_regular(path, limit=budget["rustArtifactBytes"])
+    info = rust_artifact.describe_bytes(data, target=target, lock=lock, budget=budget)
+    scan_artifact(data, [("仓库路径", str(ROOT)), ("cargo home", str(Path.home() / ".cargo")),
+                         ("rustup home", str(Path.home() / ".rustup")),
+                         ("CI 家目录", "/home/runner")])
+    if info["budget"] == "WARN":
+        print("::warning::Rust 产物 %d B 超过警戒线 %d B（硬上限 %d B）"
+              % (info["size"], budget["rustWarnBytes"], budget["rustArtifactBytes"]))
+    return info
+
+
+def expect_from_lock(target: str, found: dict, info: dict) -> dict:
+    """按 `rust/artifact.lock.json` 核对产物摘要（方案 §2.3、§6 R1）。
+
+    只比较可复现的 size/SHA-256；`pending-cross-run` 只告警（尚未满足 3 次不同
+    runner 一致），`pinned` 不一致即失败。target 键：android 固定
+    `aarch64-linux-android`；宿主按 `rustc -vV` 的 host 三元组分别登记。
+    """
+    if not ARTIFACT_LOCK.is_file():
+        raise BuildError("RUST_ARTIFACT_LOCK_MISSING: " + str(ARTIFACT_LOCK))
+    lock = load_json(ARTIFACT_LOCK)
+    if lock.get("schema") != 1 or lock.get("kind") != "dsha-rust-artifact-lock":
+        raise BuildError("RUST_ARTIFACT_LOCK_SCHEMA: schema/kind 不符")
+    triple = "aarch64-linux-android" if target == "android" else found["host"]
+    entries = lock.get("artifacts")
+    if not isinstance(entries, dict) or triple not in entries:
+        raise BuildError("RUST_ARTIFACT_LOCK_TARGET: 未登记 target %s（已登记 %s）"
+                         % (triple, sorted(entries or {})))
+    entry = entries[triple]
+    if entry.get("file") != info["artifactFile"]:
+        raise BuildError("RUST_ARTIFACT_LOCK_FILE: %s != %s"
+                         % (entry.get("file"), info["artifactFile"]))
+    status = entry.get("status")
+    if status == "pinned":
+        size, sha = entry.get("size"), entry.get("sha256")
+        if not isinstance(size, int) or size <= 0 or not isinstance(sha, str) or len(sha) != 64:
+            raise BuildError("RUST_ARTIFACT_LOCK_INVALID: " + triple)
+        if info["size"] != size or info["sha256"] != sha:
+            raise BuildError("RUST_ARTIFACT_EXPECT_LOCK: %s size/sha256 %d/%s != lock %d/%s"
+                             % (triple, info["size"], info["sha256"], size, sha))
+        return {"status": "PASS", "target": triple, "size": size, "sha256": sha}
+    if status != "pending-cross-run":
+        raise BuildError("RUST_ARTIFACT_LOCK_STATUS: %s -> %s" % (triple, status))
+    print("::warning::RUST_ARTIFACT_LOCK_PENDING: %s 尚未跨 runner 固定（方案 §2.3：连续 3 次"
+          "不同 runner 实例一致后 pin；本次 size=%d sha256=%s）"
+          % (triple, info["size"], info["sha256"]))
+    return {"status": "PENDING", "target": triple, "size": info["size"],
+            "sha256": info["sha256"]}
+
+
+def receipt(*, found: dict, lock: dict, target: str, ndk: Path | None,
+            artifact: dict, reproducible: dict, jobs: int,
+            expectation: dict, sources: dict | None = None,
+            commit: str | None = None) -> dict:
+    commit = rust_artifact.current_commit(ROOT) if commit is None else commit
+    sources = rust_artifact.source_inputs(ROOT) if sources is None else sources
+    metadata = rust_artifact.generation_metadata()
+    return {
+        "schema": rust_artifact.RECEIPT_SCHEMA,
+        "kind": "dsha-rust-native",
+        "commit": commit,
+        **metadata,
+        "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "target": target,
+        "toolchain": {"rustc": found["rustc"], "rustcCommit": found["rustcCommit"],
+                      "cargo": found["cargo"], "host": found["host"],
+                      "channel": lock["channel"], "targetTriple":
+                          "aarch64-linux-android" if target == "android" else found["host"],
+                      "androidApi": lock["androidApi"] if target == "android" else None,
+                      "ndk": lock["ndk"] if target == "android" else None,
+                      "linker": lock["linker"] if target == "android" else None},
+        "sources": sources,
+        # 这些声明由 build_env 的 assert_fixed_environment 在每次构建时以实际 env
+        # 核验：继承任何 profile/wrapper/target/flags 覆盖都会让构建先失败，不会
+        # 写出“声称固定、实际继承污染”的回执（RUST-2）。
+        "build": {"profile": "release", "linkArgs": list(LINK_ARGS),
+                  "remapPathPrefixes": True, "offline": True, "locked": True,
+                  "jobs": jobs,
+                  "environment": {"RUSTC_WRAPPER": "cleared", "RUSTFLAGS": "set by build.py",
+                                  "CARGO_NET_OFFLINE": "true"}},
+        "artifact": artifact,
+        "reproducible": reproducible,
+        "expectation": expectation,
+    }
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--host", action="store_true", help="构建主机目标（供 JVM 差分/探针）")
+    which.add_argument("--android", action="store_true", help="交叉构建 aarch64-linux-android")
+    parser.add_argument("--ndk", type=Path, help="NDK 根目录（--android 必需）")
+    parser.add_argument("--check", action="store_true",
+                        help="不同源码目录重建两次并逐字节比对（默认串行）")
+    parser.add_argument("--out", type=Path, help="把最终 .so 复制到该目录")
+    parser.add_argument("--receipt", type=Path, help="写出 schema=2 的来源/时间/CI 构建回执")
+    parser.add_argument("--commit", help="可选断言：完整当前 git HEAD（回执始终绑定 HEAD）")
+    parser.add_argument("--expect", help="与给定 SHA-256 比对（显式跨 runner 复现门禁）")
+    parser.add_argument("--expect-lock", action="store_true",
+                        help="与 rust/artifact.lock.json 的 target 条目比对（pending 只告警）")
+    parser.add_argument("--jobs", type=int, default=2, help="CARGO_BUILD_JOBS（默认 2，避免叠加构建）")
+    args = parser.parse_args(argv)
+    target = "android" if args.android else "host"
+    lock = load_json(LOCK)
+    budget = load_json(BUDGET)
+    if args.jobs < 1 or args.jobs > 8:
+        raise BuildError("--jobs 必须在 1..8")
+    ndk = args.ndk.resolve() if args.ndk else None
+    if target == "android":
+        ndk_env(ndk, lock)
+    elif ndk is not None:
+        raise BuildError("--ndk 只用于 --android")
+
+    commit = rust_artifact.current_commit(ROOT)
+    if args.commit is not None and args.commit != commit:
+        raise BuildError("RUST_COMMIT_HEAD: --commit 必须等于完整当前 HEAD")
+    sources = rust_artifact.source_inputs(ROOT)
+    rust_artifact.assert_committed_inputs(sources, commit, root=ROOT)
+    rust_artifact.generation_metadata()  # 缺 CI 身份在编译前失败，不产生无来源产物。
+    found = toolchain(lock)
+    work = RUST / "target/rust-build"
+    artifact = build_once(target=target, target_dir=work, remap_source=RUST,
+                          ndk=ndk, lock=lock, found=found, jobs=args.jobs)
+    reproducible = {"status": "NOT_RUN", "differentDirectory": False,
+                    "firstSha256": None, "secondSha256": None}
+    if args.check:
+        # 第二次构建：复制 rust/ 到仓库外临时目录（不含 target），验证不同源码目录
+        # 在固定 --remap-path-prefix 下字节一致；两次构建串行，不并行叠加内存。
+        temporary = Path(tempfile.mkdtemp(prefix="dsha-rust-repro-",
+                                          dir=checked_directory(Path(tempfile.gettempdir()))))
+        temporary_identity = temporary.stat()
+        try:
+            copy = temporary / "rust"
+            shutil.copytree(RUST, copy, ignore=shutil.ignore_patterns("target"))
+            second = build_once(target=target, target_dir=copy / "target/repro",
+                                remap_source=copy, ndk=ndk, lock=lock, found=found, jobs=args.jobs)
+            first_sha, second_sha = digest(artifact), digest(second)
+            if first_sha != second_sha:
+                raise BuildError("RUST_NOT_REPRODUCIBLE: 两次构建字节不同 %s != %s"
+                                 % (first_sha, second_sha))
+            reproducible = {"status": "PASS", "differentDirectory": True,
+                            "firstSha256": first_sha, "secondSha256": second_sha}
+        finally:
+            checked_directory(temporary)  # 仅清理本任务 mkdtemp 的已核验绝对路径。
+            current = temporary.stat()
+            if (current.st_dev, current.st_ino) != (temporary_identity.st_dev, temporary_identity.st_ino):
+                raise BuildError("RUST_REPRO_DIRECTORY_CHANGED: " + str(temporary))
+            shutil.rmtree(temporary)
+
+    final_sha = digest(artifact)
+    if args.expect and final_sha != args.expect:
+        raise BuildError("RUST_ARTIFACT_EXPECT: %s != %s" % (final_sha, args.expect))
+    info = describe_artifact(artifact, target=target, lock=lock, budget=budget)
+    info["reproducible"] = reproducible["status"]
+    expectation = {"status": "NOT_RUN"}
+    if args.expect_lock:
+        expectation = expect_from_lock(target, found, info)
+    if rust_artifact.current_commit(ROOT) != commit or rust_artifact.source_inputs(ROOT) != sources:
+        raise BuildError("RUST_BUILD_INPUT_CHANGED: 构建期间 HEAD/完整来源 inputs 发生变化")
+    data = receipt(found=found, lock=lock, target=target, ndk=ndk, artifact=info,
+                   reproducible=reproducible, jobs=args.jobs, expectation=expectation,
+                   sources=sources, commit=commit)
+    if target == "android":
+        identity = rust_artifact.expected_identity(commit, data["runId"], data["runAttempt"],
+                                                   data["repository"], root=ROOT)
+        rust_artifact.validate_receipt(data, rust_artifact.read_regular(artifact),
+                                       identity=identity, budget=budget, root=ROOT)
+    # 只有来源、产物和回执都通过后才公开输出；失败不复制一个“看似可注入”的 .so。
+    if args.out:
+        rust_artifact.write_regular(args.out / artifact.name, rust_artifact.read_regular(artifact))
+    if args.receipt:
+        rust_artifact.write_regular(args.receipt, (json.dumps(data, ensure_ascii=False, indent=2)
+                                                  + "\n").encode("utf-8"))
+    print(json.dumps({"status": "PASS", "target": target, "artifact": str(artifact),
+                      "size": info["size"], "sha256": info["sha256"],
+                      "reproducible": reproducible["status"], "budget": info["budget"],
+                      "expectation": expectation["status"]},
+                     ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except (BuildError, rust_artifact.GateError) as error:
+        print("FAIL " + str(error), file=sys.stderr)
+        raise SystemExit(1)

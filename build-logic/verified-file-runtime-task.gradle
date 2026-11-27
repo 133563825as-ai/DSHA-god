@@ -1,0 +1,52 @@
+// Applied by :app only for the explicitly selected no-build resolver trial.
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import org.gradle.api.GradleException
+import org.gradle.api.Action
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
+def state = [:]
+def need = { boolean ok, String reason -> if (!ok) throw new GradleException('VERIFIED_FILE_RUNTIME_REJECTED:'+reason) }
+def ac = extensions.getByName('androidComponents')
+ac.onVariants(ac.selector().withName('standardRelease'), { av -> state.variant = av } as Action)
+tasks.register('verifyInternalFileRuntime') {
+    doLast {
+        def trial = gradle.ext.verifiedFileTrial
+        def variant = state.variant
+        def identity = project.ext.dshaReleaseIdentity
+        need(variant != null && variant.name == 'standardRelease' && variant.buildType == 'release' &&
+             variant.productFlavors*.second == ['standard'] && variant.applicationId.get() == 'dsh.android.client.rebirth' &&
+             identity.identity == 'rebirth' && identity.versionCode == 368 &&
+             !variant.outputs.empty && variant.outputs.every { it.versionCode.get() == 368 }, 'VARIANT')
+        def cfg = variant.runtimeConfiguration
+        need(cfg != null && cfg.name == 'standardReleaseRuntimeClasspath' && cfg.canBeResolved &&
+             cfg.is(project.configurations.getByName(cfg.name)), 'CONFIGURATION')
+        def graph = cfg.incoming.resolutionResult
+        need(!graph.allDependencies.any { it instanceof UnresolvedDependencyResult }, 'DEPENDENCY_GRAPH')
+        def leaf = graph.allComponents.findAll { it.repositoryName == trial.repository }
+        need(leaf*.id*.displayName == ['com.google.guava:listenablefuture:1.0'], 'FILE_SCOPE')
+        def all = cfg.incoming.artifactView { it.lenient(false) }.artifacts.artifacts
+        def jar = all.findAll { it.id.componentIdentifier == leaf[0].id }
+        def expected = new File(trial.material, 'com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar')
+        need(jar.size() == 1 && jar[0].file.canonicalFile == expected && expected.length() == 3149 &&
+             MessageDigest.getInstance('SHA-256').digest(expected.bytes).encodeHex().toString() ==
+              'e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069', 'ACTUAL_ARTIFACT')
+        def rows = all.collect { item ->
+            def id = item.id.componentIdentifier
+            need(id instanceof ModuleComponentIdentifier, 'UNEXPECTED_NON_MODULE')
+            def digest = MessageDigest.getInstance('SHA-256')
+            item.file.withInputStream { input ->
+                byte[] buffer = new byte[65536]
+                for (int n = input.read(buffer); n != -1; n = input.read(buffer)) digest.update(buffer,0,n)
+            }
+            [gav:id.displayName,name:item.file.name,size:item.file.length(),sha256:digest.digest().encodeHex().toString()]
+        }.sort { it.gav+' '+it.name }
+        println('VERIFIED_FILE_RUNTIME_TRIAL=' + JsonOutput.toJson([scope:'EXPLICIT_VERIFIED_FILE_RESOLUTION_TRIAL_ONLY',
+            commit:trial.checkout, tree:trial.tree, variant:variant.name, applicationId:variant.applicationId.get(),
+            outputVersionCodes:variant.outputs.collect { it.versionCode.get() },
+            configuration:cfg.name, repository:trial.repository, artifact:leaf[0].id.displayName,
+            materialMountId:trial.mountId, materialFiles:trial.files, repositoryUrls:trial.repositories,
+            artifactRows:rows.size(), resolvedArtifacts:rows, apkBuilt:false, formalAdmission:false]))
+    }
+}

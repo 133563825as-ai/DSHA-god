@@ -69,6 +69,12 @@ public final class OneClickBackup extends AndroidViewModel {
   }
 
   public boolean start() {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      issue = "REBIRTH_EXPORT_DISABLED";
+      destination = "";
+      render();
+      return false;
+    }
     if (directoryNeeded || job != null && job.busy || !preparing.compareAndSet(false, true))
       return false;
     issue = "";
@@ -119,6 +125,7 @@ public final class OneClickBackup extends AndroidViewModel {
   }
 
   public void directoryResult(Uri tree) {
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) return;
     if (!directoryNeeded) return;
     directoryNeeded = false;
     directoryClaimed = false;

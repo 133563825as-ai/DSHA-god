@@ -19,7 +19,7 @@ public final class WebSessionExitEvidenceTest {
   private static final class Kernel extends WebProcessManager {
     long webBirth = 123, launcherBirth = 122;
     int inspections;
-    boolean environmentDenied = true, kernelDenied, gone, verified = true;
+    boolean environmentDenied = true, kernelDenied, bootDenied, gone, verified = true;
     Integer uid = 10001;
     Kind kind = Kind.WEB;
     String boot = BOOT;
@@ -29,7 +29,8 @@ public final class WebSessionExitEvidenceTest {
     }
 
     @Override
-    String recoveryBoot() {
+    String recoveryBoot() throws IOException {
+      if (bootDenied) throw new IOException("BOOT_DENIED");
       return boot;
     }
 
@@ -134,6 +135,46 @@ public final class WebSessionExitEvidenceTest {
     kernel.boot = "87654321-1234-1234-1234-123456789abc";
     assertEquals(WebProcessManager.SessionObservation.EXITED, kernel.observeSession(SAVED));
     assertTrue(kernel.recoveredLauncherExited(SAVED));
+  }
+
+  @Test
+  public void bootDeniedStillAcceptsIndependentLauncherExit() throws Exception {
+    Kernel kernel = new Kernel();
+    kernel.bootDenied = true;
+    kernel.gone = true;
+    assertTrue(kernel.recoveredLauncherExited(SAVED));
+    assertEquals(WebProcessManager.SessionObservation.EXITED, kernel.observeRecordedSession(SAVED));
+    kernel.gone = false;
+    kernel.launcherBirth++;
+    // 只证明原启动器退出，不读取替代 PID 的环境，也不产生强停候选。
+    assertTrue(kernel.recoveredLauncherExited(SAVED));
+    assertEquals(
+        WebProcessManager.SessionObservation.UNKNOWN, kernel.observeRecordedSession(SAVED));
+    assertThrows(WebStopException.class, () -> kernel.prepareRecordedForceStop(SAVED));
+  }
+
+  @Test
+  public void bootDeniedDoesNotReleaseSameBirthOrUnreadablePid() {
+    Kernel kernel = new Kernel();
+    kernel.bootDenied = true;
+    IOException sameBirth =
+        assertThrows(IOException.class, () -> kernel.recoveredLauncherExited(SAVED));
+    assertEquals("BOOT_DENIED", sameBirth.getMessage());
+    kernel.kernelDenied = true;
+    IOException bothDenied =
+        assertThrows(IOException.class, () -> kernel.recoveredLauncherExited(SAVED));
+    assertEquals("BOOT_DENIED", bothDenied.getMessage());
+    assertEquals(
+        WebProcessManager.SessionObservation.UNKNOWN, kernel.observeRecordedSession(SAVED));
+  }
+
+  @Test
+  public void guestAndLauncherExitEvidenceRemainIndependent() throws Exception {
+    Kernel kernel = new Kernel();
+    kernel.bootDenied = true;
+    kernel.webBirth++;
+    assertEquals(WebProcessManager.SessionObservation.EXITED, kernel.observeRecordedSession(SAVED));
+    assertThrows(IOException.class, () -> kernel.recoveredLauncherExited(SAVED));
   }
 
   @Test

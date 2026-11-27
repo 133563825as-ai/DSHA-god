@@ -133,9 +133,12 @@ export function sessionAdapter(ctx, instance = hostInstanceId, liveText = () => 
   }
 }
 export function installSessionAdapter(ctx, liveText, retireTask = () => {}) {
-  const failed = new Set()
-  ctx.on('agent/error', ({ agent }) => { if (agent?.id) failed.add(agent.id) })
+  const failed = new Set(), controller = new AbortController()
+  let disposed = false
+  ctx.effect(() => () => { disposed = true; controller.abort(); failed.clear() }, 'dsha session adapter cleanup')
+  ctx.on('agent/error', ({ agent }) => { if (!disposed && agent?.id) failed.add(agent.id) })
   ctx.on('session/event', (session, event) => {
+    if (disposed) return
     if (event.type === 'turn/start') failed.delete(session.id)
     if (event.type === 'turn/end' && Number.isSafeInteger(event.data?.turn) && event.data.turn > 0) {
       // Event identity, not the latest-turn snapshot: delivery may race the next turn.
@@ -143,14 +146,13 @@ export function installSessionAdapter(ctx, liveText, retireTask = () => {}) {
       catch { /* Lifecycle reporting cannot interrupt the real Agent. */ }
     }
   })
-  ctx.on('session/disposed', session => failed.delete(session.id))
-  ctx.on('dispose', () => failed.clear())
+  ctx.on('session/disposed', session => { if (!disposed) failed.delete(session.id) })
   ctx.inject(['shellEnv'], scope => scope.effect(() => scope.shellEnv.register({
     name: 'dsha-phone-task', variables: {
       DSH_PHONE_SESSION_ID: { description: 'Exact local phone-control conversation ID for this tool execution.' },
       DSH_PHONE_TURN_ID: { description: 'Exact local phone-control turn ID for this tool execution.' },
       DSH_PHONE_COMPLETED_TURN_ID: { description: 'Latest actually ended earlier turn in this exact conversation, if any.' },
-    }, resolve: phoneTaskEnvironment,
+    }, resolve: execution => disposed ? {} : phoneTaskEnvironment(execution),
   }), 'dsha exact per-execution phone task environment'))
   ctx.inject(['systemPrompt'], scope => scope.systemPrompt.section({ name: 'dsha:phone-task-binding', order: 155,
     text: 'For physical-phone /app/ui/* calls, use the current tool environment identity: append '
@@ -160,9 +162,20 @@ export function installSessionAdapter(ctx, liveText, retireTask = () => {}) {
       + 'Pause/stop/expanded chat invalidates phone actions immediately. After user continuation, obtain a fresh screen observation; never replay UNKNOWN actions.',
   }))
   ctx.inject(['webServer', 'connection', 'sessionController', 'agents'], web => {
-    const call = sessionAdapter(web, hostInstanceId, liveText, key => failed.has(key))
-    web.effect(() => web.webServer.register({ kind: 'exact', path: '/api/dsha-assistant',
-      handler: assistantRequestHandler(call, web.connection) }), 'dsha assistant exact local Host session API')
+    const requestController = new AbortController()
+    const adapter = sessionAdapter(web, hostInstanceId, liveText, key => failed.has(key))
+    const call = async (method, args, signal) => {
+      const active = AbortSignal.any([signal, controller.signal, requestController.signal])
+      active.throwIfAborted()
+      const result = await adapter(method, args, active)
+      active.throwIfAborted()
+      return result
+    }
+    web.effect(() => {
+      const unregister = web.webServer.register({ kind: 'exact', path: '/api/dsha-assistant',
+        handler: assistantRequestHandler(call, web.connection) })
+      return () => { requestController.abort(); return unregister() }
+    }, 'dsha assistant exact local Host session API')
   })
 }
 /** Same handler is exercised over real HTTP by the pinned-runtime integration fixture. */

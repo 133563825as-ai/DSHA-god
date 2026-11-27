@@ -96,6 +96,21 @@ public class DshaApp extends Application
           com.deepseekharness.app.data.PortableSettings>
       portableSettingsOwner = new com.deepseekharness.app.util.ApplicationOwner<>();
 
+  private final com.deepseekharness.app.util.ApplicationOwner<
+          com.deepseekharness.app.core.UpdateEngine>
+      updateOwner = new com.deepseekharness.app.util.ApplicationOwner<>();
+
+  /** APK 更新与安装前校验共享应用级实例和串行队列，页面重建不重新装配。 */
+  public com.deepseekharness.app.core.UpdateEngine updateEngine() {
+    return updateOwner.get(
+        () ->
+            new com.deepseekharness.app.core.UpdateEngine(
+                this,
+                null,
+                java.util.concurrent.Executors.newSingleThreadExecutor(
+                    task -> new Thread(task, "dsha-apk-update"))));
+  }
+
   public com.deepseekharness.app.core.BackupTask backupTask() {
     return backupOwner.get(() -> new com.deepseekharness.app.core.BackupTask(this));
   }
@@ -152,6 +167,10 @@ public class DshaApp extends Application
     com.deepseekharness.app.util.SystemLanguage.initialize(this);
     com.deepseekharness.app.data.PortableSettings.initialize(this);
     com.deepseekharness.app.ui.LanguageController.apply(this);
+    // Rust 运行时后端默认启用：.so 随正式包（prebuilt）时 digest / archive / verify_plan 走原生，
+    // 库未随包或加载失败按类型化原因留在 JVM；setEnabled(false) 即一键回 JVM。verify_plan 在已
+    // 选 Rust 后的内部错误或双实现分歧仍 fail-closed 中止，不因本开关回退到 JVM 结果。
+    com.deepseekharness.app.util.RustBackends.setEnabled(true);
     ShizukuShell.init(this);
     com.deepseekharness.app.ui.ThemeController.apply(this);
     // 调色板色经主题属性引用：应用上下文也带上应用主题，避免直接用它取色时属性无从解析。
@@ -251,14 +270,10 @@ public class DshaApp extends Application
     com.deepseekharness.app.backup.AutomaticBackups.schedule(this);
     com.deepseekharness.app.backup.PostUpgradeCleanupService.schedule(this);
     com.deepseekharness.app.core.DiagnosticLog.installCrashHandler(this);
-    // 壳级常驻性能探针（ADR-0002）：测试/调试构建启动即 1 Hz 采样；正式包/稳定版内部 no-op。
-    com.deepseekharness.app.probe.ProbeController.get().start(this);
     // 调色板叠加须早于各页 onCreate 解析主题属性。
     registerActivityLifecycleCallbacks(
         new com.deepseekharness.app.ui.ThemeController.PaletteHook());
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.ModernAndroidUi());
-    // 全应用高刷：各页面回到前台时按设备允许的最高刷新率申请（Web 工作台自管）。
-    com.deepseekharness.app.ui.WebFrameRate.register(this);
     registerActivityLifecycleCallbacks(new ForegroundActivity());
     // 「隐藏后台」截图守卫与实验性严格模式：所有界面都要重放，不能只靠设置页开关。
     registerActivityLifecycleCallbacks(new com.deepseekharness.app.ui.RecentsPrivacyGuard());

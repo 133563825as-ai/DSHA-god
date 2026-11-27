@@ -90,25 +90,9 @@ async function checkConsent(record, exec) {
     'Native consent became available after an unavailable capture; this execution is not upgraded.', record.consentRead?.cause);
   consentFailure('DSHA_NATIVE_CONSENT_FACTS_CHANGED', 'Validated native consent facts differ from the captured facts.');
 }
-const exempt = record => record.nativeConsent?.globalAllow === true || record.fullAccess;
-// A user-selected official session preset is authority; a global never policy,
-// tool argument or model claim is not. Missing/ambiguous services keep the guard.
-function fullAccessProof(record) {
-  if (!record.agent || !record.session) return;
-  try {
-    const presets = record.ctx.get('permissionPresets'), projections = record.ctx.get('sessionProjections');
-    const sandbox = record.ctx.get('sandboxPolicy'), approval = record.ctx.get('approval');
-    if (typeof presets?.current !== 'function' || typeof projections?.stateOf !== 'function'
-        || typeof sandbox?.resolve !== 'function' || typeof approval?.effectivePolicy !== 'function') return;
-    const raw = projections.stateOf(record.session, 'permissions');
-    const preset = presets.current(record.session), mode = sandbox.resolve({ session: record.session }).mode;
-    const policy = approval.effectivePolicy(record.session);
-    if (raw?.preset !== 'danger-full-access' || raw.sandbox !== 'danger-full-access' || raw.approval !== 'never'
-        || preset !== 'danger-full-access' || mode !== 'danger-full-access' || policy !== 'never') return;
-    return { providers: [presets, projections, sandbox, approval].map(serviceIdentity),
-      facts: encoded([raw.preset, raw.sandbox, raw.approval, raw.seeded, preset, mode, policy]) };
-  } catch { /* Never infer full access when a live authority cannot be read. */ }
-}
+// The permissions projection folds defaults and explicit Web choices identically.
+// Neither that state nor its seeded flag is consent to waive this host guard.
+const exempt = record => record.nativeConsent?.globalAllow === true;
 export function attachPolicy(runtime, ctx) { runtime=serviceIdentity(runtime); runtimes.set(runtime, { ctx }); ctx.effect(() => () => runtimes.delete(runtime)); }
 export function captureExecution(runtime, exec, tool) {
   const actualRuntime=serviceIdentity(runtime), owner=runtimes.get(actualRuntime); if (!owner) fail('Mandatory host policy is missing.');
@@ -128,11 +112,6 @@ function check(record, exec) {
   }
   if (record.environment && encoded(envFacts(process.env)) !== record.processEnvironment) fail('Process environment changed.');
   if (record.bashServices && ['shell','shellEnv','sandboxPolicy'].some(name => serviceIdentity(record.ctx.get(name)) !== record.bashServices[name])) fail('Bash execution services changed.');
-  if (record.fullAccess) {
-    const current = fullAccessProof(record);
-    if (!current || current.facts !== record.fullAccess.facts
-        || current.providers.some((provider, index) => provider !== record.fullAccess.providers[index])) fail('Current full-access permission identity or value changed.');
-  }
 }
 function consumeLease(record, facts) {
   const approval = record.ctx.get('approval');
@@ -160,7 +139,6 @@ export async function prepareOperation(runtime, exec) {
     else record.requiresConsent = false;
     return;
   }
-  const initialFullAccess = fullAccessProof(record);
   // DSH 0.2.1 resolves Bash from the live projection, not the immutable header
   // or the sandbox's workspaceRoot. Settle that authority before asking once.
   if (record.agent) {
@@ -186,9 +164,6 @@ export async function prepareOperation(runtime, exec) {
   // environment and directory. Opaque commands still require native proof and
   // approval; safe classification does not grant any device-control capability.
   if (!analysis.requiresApproval) { record.requiresConsent = false; return; }
-  // A revoked full-access preset cannot silently turn an in-flight call into
-  // a new approval request while its working directory is being resolved.
-  record.fullAccess = initialFullAccess;
   check(record, exec);
   await captureConsent(record, exec);
   if (analysis.requiresApproval && !exempt(record)) await approve(record, exec, 'DSHA ' + analysis.classification + ': ' + (analysis.opaqueReason || analysis.findings.map(row=>row.kind).join(', ')) + '; workdir=' + record.workdir.dir + '; targets=' + (analysis.unknownTargets ? 'unknown; count unknown' : analysis.targets.join(', ')) + '. Verify the original command; allow this call once.', facts);
@@ -200,7 +175,6 @@ async function captureConsent(record, exec) {
   record.nativeConsent = availableConsent(record.consentRead);
   record.consentFacts = encoded(record.nativeConsent);
   check(record,exec);
-  record.fullAccess = record.nativeConsent?.globalAllow ? undefined : fullAccessProof(record);
 }
 /** Awaited by signed tool recipes immediately before resolving/dispatching a body or spawning Bash. */
 export async function verifyGlobalConsent(exec) { await checkConsent(executions.get(exec), exec); }

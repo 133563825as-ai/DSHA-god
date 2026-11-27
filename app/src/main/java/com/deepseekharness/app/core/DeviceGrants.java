@@ -1,6 +1,7 @@
 package com.deepseekharness.app.core;
 
 import android.content.Context;
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.util.NativeConsentPolicy;
 import com.deepseekharness.app.util.NativeConsentPolicy.ReadState;
 import com.deepseekharness.app.util.NativeConsentPolicy.SaveState;
@@ -78,6 +79,31 @@ public final class DeviceGrants {
 
   public boolean smsReadConfigured() {
     return preferences.getBoolean("sms_read", false);
+  }
+
+  /**
+   * T130 实体屏特权执行：默认关闭、可撤销、无独立后台常驻授权。
+   *
+   * <p>只授权"允许使用"；是否能在当前任务里动作仍由任务身份、屏幕确认策略与目标窗口决定。
+   * 与短信/剪贴板一样存原生授权，不从环境、插件或备份恢复。
+   */
+  public boolean privilegedExecutionAllowed() {
+    if (BuildConfig.REBIRTH_CANDIDATE) return false;
+    try {
+      return preferences.getBoolean("privileged_execution_v1", false);
+    } catch (RuntimeException unreadable) {
+      return false;
+    }
+  }
+
+  public boolean setPrivilegedExecutionAllowed(boolean allowed) {
+    if (BuildConfig.REBIRTH_CANDIDATE && allowed) return false;
+    try {
+      boolean saved = preferences.edit().putBoolean("privileged_execution_v1", allowed).commit();
+      return saved && privilegedExecutionAllowed() == allowed;
+    } catch (RuntimeException failed) {
+      return false;
+    }
   }
 
   public NativeConsentPolicy.Snapshot consentSnapshot() {
@@ -384,8 +410,8 @@ public final class DeviceGrants {
   }
 
   public boolean setSmsReadAllowed(boolean allowed) {
-    invalidateSms.run();
-    return preferences.edit().putBoolean("sms_read", allowed).commit();
+    return com.deepseekharness.app.util.DeviceAuthorization.shared()
+        .change(invalidateSms, () -> preferences.edit().putBoolean("sms_read", allowed).commit());
   }
 
   public com.deepseekharness.app.util.ClipboardReadPolicy.Mode clipboardReadMode() {

@@ -41,6 +41,7 @@ public final class NativeRestorePlan {
   public final Map<String, String> before = new LinkedHashMap<>(),
       readBefore = new LinkedHashMap<>();
   public final List<String> warnings = new ArrayList<>();
+  final Set<String> mappedScopes = new LinkedHashSet<>();
   public long conflicts;
   private final BackupFileSystem fs;
   private final File task, index;
@@ -50,6 +51,29 @@ public final class NativeRestorePlan {
     this.task = task;
     this.index = new File(task, "restore-records");
     this.manifest = manifest;
+  }
+
+  /**
+   * A3 slice2：投影所需的只读事实快照（清单 + 本次计划实际写入根数）。
+   *
+   * <p>返回不可变浅拷贝，投影器不再直接读可变计划字段；{@code rootCount} 与
+   * {@code preview.restoreRoots} 同为 {@code groups.keySet()} 的计数（A3 基线 §3.3、P-6），
+   * 但这里只给计数，不暴露根 id 或写入目标。
+   */
+  public ProjectionFacts projectionFacts() {
+    return new ProjectionFacts(
+        Collections.unmodifiableMap(new LinkedHashMap<>(manifest)), groups.size());
+  }
+
+  /** 投影只读事实：清单快照 + 计划实际写入根数。 */
+  public static final class ProjectionFacts {
+    public final Map<String, Object> manifest;
+    public final int rootCount;
+
+    private ProjectionFacts(Map<String, Object> manifest, int rootCount) {
+      this.manifest = manifest;
+      this.rootCount = rootCount;
+    }
   }
 
   public static NativeRestorePlan inspect(
@@ -113,6 +137,7 @@ public final class NativeRestorePlan {
           group = target.group == null ? id : BackupLimits.root(target.group);
       BackupLimits.path(target.prefix);
       plan.targets.put(id, target);
+      plan.mappedScopes.add(scope);
       plan.rootGroups.put(id, group);
       Target existing = plan.groups.putIfAbsent(group, target);
       if (existing != null && !existing.write.equals(target.write))

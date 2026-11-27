@@ -42,6 +42,7 @@ public class DshaAccessibilityService extends AccessibilityService {
    * 解析失败时必须承认「不知道」，不能报「未开启」害用户反复去开。
    */
   public static String enabledState(Context ctx) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return "NO";
     if (instance != null) return "YES";
     try {
       String cls = DshaAccessibilityService.class.getName();
@@ -61,6 +62,7 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   /** 用户是否已在系统设置里开启本服务 */
   public static boolean enabled(Context ctx) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return false;
     try {
       String cls = DshaAccessibilityService.class.getName();
       String want = ctx.getPackageName() + "/" + cls;
@@ -76,6 +78,7 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   /** 打开监听窗口（120 秒，一次性）。只有这段时间内才会去读设置页的内容。 */
   public static void startWatch(PairInfoListener l) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     synchronized (WATCH_LOCK) {
       watchEpoch++;
       observedConnectHost = "";
@@ -161,6 +164,7 @@ public class DshaAccessibilityService extends AccessibilityService {
 
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return;
     // 手机任务期间的活动摘要：有界内存记录，任务结束/暂停/断开即清空；没有记录任务时零成本返回，不读节点。
     com.deepseekharness.app.screen.ScreenActivityRecorder.recordAccessibilityEvent(event);
     // 动作等待只借事件判断“界面动过没有”，不读节点、不缓存内容；没有等待者时这里零成本返回。
@@ -603,6 +607,10 @@ public class DshaAccessibilityService extends AccessibilityService {
   @Override
   protected void onServiceConnected() {
     super.onServiceConnected();
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      disableSelf();
+      return;
+    }
     com.deepseekharness.app.screen.ScreenActivityRecorder.clear();
     CONNECTION.connect(this);
     instance = this;

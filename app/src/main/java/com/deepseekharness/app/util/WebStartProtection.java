@@ -190,6 +190,26 @@ public final class WebStartProtection {
     }
   }
 
+  /** 只读核对原票据是否仍等待自己的停止；不续期、不消费、不复活票据。 */
+  public boolean observesWaitingStop(Ticket ticket) {
+    synchronized (lifecycle) {
+      if (ticket == null
+          || pending != ticket
+          || ticket.closed
+          || ticket.admitted
+          || !ticket.waitingStop
+          || ticket.service == null
+          || ticket.generation != lifecycle.generation()) return false;
+      long now = clock.getAsLong();
+      if (now < ticket.created || now >= ticket.deadline) return false;
+      try {
+        return ticket.serviceCurrent != null && ticket.serviceCurrent.getAsBoolean();
+      } catch (RuntimeException unknown) {
+        return false;
+      }
+    }
+  }
+
   public boolean resumeAfterStop(Ticket ticket) {
     synchronized (lifecycle) {
       if (!ready(ticket) || !ticket.waitingStop || lifecycle.isStopping()) return false;
@@ -229,6 +249,24 @@ public final class WebStartProtection {
         queued = null;
       } else ticket.claimed = true;
       return current;
+    }
+  }
+
+  /** 已入队票据只按原服务和 claim 核验；不重新使用 pending 的 canAdmit，也不重复 claim。 */
+  public boolean isClaimedCurrent(Ticket ticket, long generation) {
+    synchronized (lifecycle) {
+      if (ticket == null
+          || queued != ticket
+          || !ticket.admitted
+          || !ticket.claimed
+          || ticket.closed
+          || ticket.generation != generation
+          || !lifecycle.isCurrent(generation)) return false;
+      try {
+        return ticket.serviceCurrent != null && ticket.serviceCurrent.getAsBoolean();
+      } catch (RuntimeException unknown) {
+        return false;
+      }
     }
   }
 

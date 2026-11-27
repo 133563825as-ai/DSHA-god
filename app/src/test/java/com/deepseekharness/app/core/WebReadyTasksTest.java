@@ -8,8 +8,13 @@ public class WebReadyTasksTest {
     boolean current = true, bound, cancelOnCookie, cancelOnDelay;
     int exchanges, notices, ready;
     String result =
-        "DSHA_RC1_MIGRATION={\"status\":\"committed\",\"sourcePreserved\":true,\"settingsImported\":true}";
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"phase\":\"finalize\",\"status\":\"committed\","
+            + "\"startupId\":\"startup\",\"generation\":\"01234567-89ab-cdef-0123-456789abcdef\","
+            + "\"verificationScope\":\"current\",\"contentCopyStatus\":\"verified\","
+            + "\"sourceObjectIdentity\":\"unknown\",\"settingsImportStatus\":\"verified-current\","
+            + "\"executionState\":\"COMPLETED\"}";
     Runnable async;
+    String startupId = "startup";
     java.util.List<String> logs = new java.util.ArrayList<>();
     java.util.List<Long> delays = new java.util.ArrayList<>();
 
@@ -28,6 +33,10 @@ public class WebReadyTasksTest {
 
     public String finalizeMigration() {
       return result;
+    }
+
+    public String startupId() {
+      return startupId;
     }
 
     public void migrationLog(String value) {
@@ -63,11 +72,92 @@ public class WebReadyTasksTest {
     assertTrue(ok.logs.isEmpty());
     Fake bad = new Fake();
     bad.result =
-        "DSHA_RC1_MIGRATION={\"status\":\"committed\",\"sourcePreserved\":false,\"settingsImported\":true}";
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"status\":\"pending\","
+            + "\"verificationScope\":\"current\",\"contentCopyStatus\":\"verified\","
+            + "\"settingsImportStatus\":\"pending\"}";
     WebReadyTasks.run(false, false, bad);
     bad.async.run();
     assertEquals(1, bad.notices);
     assertEquals(1, bad.logs.size());
+  }
+
+  @Test
+  public void wrongStartupPhaseOrDuplicateFinalizeIsVisible() {
+    for (String mode : java.util.List.of("startup", "phase", "duplicate")) {
+      Fake fake = new Fake();
+      fake.result =
+          mode.equals("startup")
+              ? fake.result.replace("\"startup\"", "\"other\"")
+              : mode.equals("phase")
+                  ? fake.result.replace("\"finalize\"", "\"prepare\"")
+                  : fake.result + "\n" + fake.result;
+      WebReadyTasks.run(false, false, fake);
+      fake.async.run();
+      assertEquals(mode, 1, fake.notices);
+      assertEquals(mode, 1, fake.logs.size());
+    }
+  }
+
+  @Test
+  public void unknownOrHistoricalGapIsVisibleAndNotRetried() {
+    Fake unknown = new Fake();
+    unknown.result =
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"phase\":\"finalize\","
+            + "\"status\":\"unknown\",\"reason\":\"STALE_STARTUP_BINDING\","
+            + "\"verificationScope\":\"none\",\"contentCopyStatus\":\"unknown\"}";
+    WebReadyTasks.run(false, false, unknown);
+    unknown.async.run();
+    assertEquals(1, unknown.notices);
+    assertEquals(1, unknown.logs.size());
+    // historical 完成但设置账本未知：可见待处理，不能静默。
+    Fake gap = new Fake();
+    gap.result =
+        "DSHA_RC1_MIGRATION={\"resultVersion\":3,\"status\":\"historical-complete\","
+            + "\"verificationScope\":\"historical\",\"contentCopyStatus\":\"verified\","
+            + "\"settingsImportStatus\":\"unknown\"}";
+    WebReadyTasks.run(false, false, gap);
+    gap.async.run();
+    assertEquals(1, gap.notices);
+    assertEquals(1, gap.logs.size());
+  }
+
+  @Test
+  public void receiptMustBindTheCurrentStartupTicket() {
+    Fake mismatched = new Fake();
+    mismatched.startupId = "current-startup";
+    WebReadyTasks.run(false, false, mismatched);
+    mismatched.async.run();
+    assertEquals(1, mismatched.logs.size());
+    assertEquals("RC1_MIGRATION_STARTUP_BINDING", mismatched.logs.get(0));
+    assertEquals(1, mismatched.notices);
+    Fake bound = new Fake();
+    bound.startupId = "current-startup";
+    bound.result =
+        bound
+            .result
+            .replace("\"startup\"", "\"current-startup\"")
+            .replace("committed", "historical-complete")
+            .replace("\"current\"", "\"historical\"")
+            .replace("verified-current", "verified-historical")
+            .replace("COMPLETED", "NOT_SENT");
+    WebReadyTasks.run(false, false, bound);
+    bound.async.run();
+    assertTrue(bound.logs.isEmpty());
+    assertEquals(0, bound.notices);
+  }
+
+  @Test
+  public void unparseableOrDuplicateReceiptIsVisibleUnknownNotSilent() {
+    for (String broken :
+        java.util.List.of(
+            "RC1_MIGRATION_ERROR: timeout", "DSHA_RC1_MIGRATION={}\nDSHA_RC1_MIGRATION={}")) {
+      Fake fake = new Fake();
+      fake.result = broken;
+      WebReadyTasks.run(false, false, fake);
+      fake.async.run();
+      assertEquals(broken, 1, fake.logs.size());
+      assertEquals(broken, 1, fake.notices);
+    }
   }
 
   @Test

@@ -1,6 +1,6 @@
 # CI 构建与发布（公开仓库正式成品）
 
-更新：2026-11-05 / build328（节点化）。工作流：[`.github/workflows/release-production.yml`](../.github/workflows/release-production.yml)。
+更新：2026-11-11 / T141（build-unsigned / sign-verify 拆分 + 测试包两段式 + 证据包瘦身）。工作流：[`.github/workflows/release-production.yml`](../.github/workflows/release-production.yml)、[`.github/workflows/_node-test-packages.yml`](../.github/workflows/_node-test-packages.yml)；设计、实测基线与收益见 [发布流水线耗时压缩（T141）](design/t141-release-pipeline-speed-20261110.md)。
 目标仓库：`SunsetRNE/DSHA-Sunset-mod`（`main` 分支）。本文说明如何用 GitHub Actions 产出并发布
 **正式签名成品**（`io.github.sunsetrne.dsha`），以及需要哪些仓库 Secrets、产物如何核验。
 
@@ -22,17 +22,30 @@
 
 | 参数 | 要求 | 示例 |
 |---|---|---|
-| `release_tag` | 新 tag，格式 `dsha-a-su-build<版本码>-YYYYMMDD-HHMMSS` | `dsha-a-su-build328-20261106-001000` |
+| `release_tag` | 新 tag，格式 `dsha-a-su-build<版本码>-YYYYMMDD-HHMMSS` | `dsha-a-su-build353-20261110-080000` |
 | `expected_sha` | `main` 上待发布的完整 40 位 commit | `0123abcd…` |
+| `test_packages` | 同 run 附带发布的共存测试包：`debug+dev`（默认）/ `debug` / `none` | `debug+dev` |
+| `dry_run` | `true` 时照常构建与校验（含测试包），但不创建 tag/Release | `true` |
 
 `release_tag` 对应的日历时间必须合法；tag 已存在时工作流在任何构建前失败，不会覆盖已有发布。
+`dry_run=true` 同样要求一个未被占用的新 tag（只是不创建它），用于在正式发布前验证整条链。
 
 ```bash
+# 正式发布（默认附带 .debug + .dev 共存测试包）
 gh workflow run release-production.yml \
   --repo SunsetRNE/DSHA-Sunset-mod \
   --ref main \
-  -f release_tag=dsha-a-su-build328-20261106-001000 \
+  -f release_tag=dsha-a-su-build353-20261110-080000 \
   -f expected_sha=<40位commit>
+
+# dry_run 验证：构建、签名、校验、合并证据全部执行，不创建 tag/Release
+gh workflow run release-production.yml \
+  --repo SunsetRNE/DSHA-Sunset-mod \
+  --ref main \
+  -f release_tag=dsha-a-su-build353-20261110-080000 \
+  -f expected_sha=<40位commit> \
+  -f test_packages=debug+dev \
+  -f dry_run=true
 ```
 
 ## 3. 仓库 Secrets
@@ -57,57 +70,110 @@ gh secret set DSHA_KEY_ALIAS --repo SunsetRNE/DSHA-Sunset-mod --body dsha-a-su
 runner 把 keystore 解码到 `$RUNNER_TEMP`（权限 077），构建后 `if: always()` 删除；口令用 `::add-mask::` 遮蔽。
 证书的公开 SHA-256 记录在 [`ci/release-identity.json`](../ci/release-identity.json)，私钥本身不公开。
 
+共存测试包使用**独立测试证书**，只保存在下面两个 Secrets，绝不与正式证书混用：
+
+| Secret | 内容 |
+|---|---|
+| `SUNSET_TEST_KEYSTORE_B64` | 测试 keystore（PKCS12，alias `sunset-test`）的 base64 |
+| `SUNSET_TEST_STORE_PASSWORD` | 测试 keystore 的 store / key 口令 |
+
+正式发布要求这两个 Secret 存在（`require_configured_key: true`）；缺失时 `test-packages` 节点直接失败，
+不会退化为一次性证书。测试证书必须与 Mod、upstream 两个正式证书都不同，该断言在签名节点内实跑。
+`on demand` 的 [test-package-variants.yml](../.github/workflows/test-package-variants.yml) 不强制要求
+Secrets：未配置时使用一次性证书（只能全新安装，不能覆盖升级）。
+
 ## 4. 工作流节点
 
-工作流拆为节点（结构与耗时依据见 [CI 节点图](ci-nodes.md)），每个节点都 checkout `expected_sha`：
+本节描述来源 Mod 的 `release-production.yml`，不是本线 Rebirth 的运行授权。本线 [rebirth-candidate.yml](../.github/workflows/rebirth-candidate.yml) 只允许精确绑定同步分支/SHA：bind → inputs → validation，另行 identity-matrix；同 run 全部成功后才 build-unsigned，Rust显式off。没有sign/publish/私钥Secrets；后续离线签同一原件需单独授权。当前固定4639…8479 / rebirth-test，不能照抄来源仓库另证书；本次未dispatch或验证新版CI。
+
+工作流拆为节点（结构与耗时依据见 [CI 节点图](ci-nodes.md)）；构建与门禁节点都 checkout `expected_sha`，publish 与 dry-run-summary 只下载同一 run 的 artifact：
 
 1. **bind**：`expected_sha == GITHUB_SHA`、tag 格式与日历时间、固定输入锁（`ci/sunset-inputs.lock.json`）解析、
    `ci/release-identity.json` 的包名检查；tag 或 Release 已存在时在任何构建前失败。
 2. **并行门禁**（都依赖 bind）：
    - **contracts**：固定输入/描述符/第三方声明/内置插件/凭据路径/测试清单/源码整洁/UI i18n/changelog/文档链接。
    - **java-format**：`tools/format-java-tree.py --check`。
+   - **kotlin-format**：`tools/format-kotlin-tree.py --check`（固定 ktfmt 0.64，ADR-0004 决定一）。
    - **host-regression**：设备桥、shell 策略、虚拟屏 anchor、插件事务、发布与 CI 脚本、宿主测试清单等子集。
-   - **inputs**：按锁 URL + SHA-256 还原 12 项、按 npm lock 重建受管 DSH 运行时并重算描述符，打包为同 run 交接。
+   - **inputs**：按锁 URL + SHA-256 还原 12 项、按 npm lock 重建受管 DSH 运行时（复用按
+     `tools/dsh-runtime/package-lock.json` 哈希键控的 npm 缓存）并重算描述符，打包为同 run 交接。
 3. **unit** 与 **lint**（依赖 inputs，二者并行）：
    完整单测 `-Pdsha.sunsetTest=true -Pdsha.sourceOnlyTests=false`，要求 0 failure / 0 error / 0 skipped，
    且七个外部夹具用例各执行一次并通过；`:app:lintStandardRelease`。
-4. **build-signed**（依赖以上全部）：还原交接、对下载的 JUnit XML 重新核对并写出 `out/full-unit-tests.json`，
-   用 Secrets 配置 `DSHA_KEYSTORE*` 执行 `:app:assembleStandardRelease`（不带 `-Pdsha.sunsetTest`）；
-   `apksigner` 证书 SHA-256 必须等于 `ci/release-identity.json`，`aapt2 dump badging` 核对包名、
-   versionCode/versionName、minSdk 30、arm64、非 debug、标签 `DSH-A-Su`；生成证据 zip、`build-info.json`、
-   `SHA256SUMS` 与发布说明，`if: always()` 删除私钥，再以 1 天保留的 artifact 交给 publish。
-5. **publish**（唯一有 `contents: write` 的节点，不 checkout、不接触 Secrets）：核对 `SHA256SUMS` 与
-   `build-info.json` 的 commit / run / attempt，再创建 tag（指向该 commit）+ prerelease 并上传 APK、证据 zip、
-   `build-info.json`、`SHA256SUMS`。
+4. **build-unsigned**（来源 Mod，依赖 bind + inputs + rust-native，与 unit / lint 并行）：无签名 Secrets，允许 Gradle 依赖缓存；
+   `:app:assembleStandardRelease -Pdsha.identity=mod -Pdsha.unsignedPackage=true` 配合 `dsha.rust.mode` 产出未签名正式 APK。prebuilt 为来源发布默认，下载同 run Rust artifact/receipt，并以 `-Pdsha.rust.artifactDir` 装配；`check-rust-native-apk.py` 核实际成员/摘要及 commit/run/attempt/repository，off 模式不带 `.so`。历史 R1“不接Rust进APK”不再是该工作流的当前状态。
+   未签名阶段先核验清单（[`tools/sign-release-apks.py`](../tools/sign-release-apks.py) `--check-only`：
+   包名、versionCode/versionName、minSdk 30、arm64、非 debuggable、非测试身份，且 `apksigner verify` 必须失败）
+   与受管资产（[`tools/verify-apk-managed-assets.py`](../tools/verify-apk-managed-assets.py)），再用
+   `unsigned-receipt.json` 把 APK、`output-metadata.json` 与受管资产回执绑定到本 run 与 commit，
+   以 1 天保留的 artifact 交给签名节点。签名只允许新增 `META-INF/`，因此资产门禁在未签名阶段运行不会降低严格度。
+5. **test-packages-unsigned**（`test_packages != none`，依赖 bind + inputs + rust-native，按模式传入同run Rust artifact）：复用共享节点
+   [`_node-test-packages.yml`](../.github/workflows/_node-test-packages.yml) 的 `unsigned_only` 模式，按
+   `debug+dev` / `debug` matrix 构建 `:app:assembleStandardDebug -Pdsha.debugPackage=true -Pdsha.unsignedPackage=true`（debug）与
+   `:app:assembleStandardRelease -Pdsha.devPackage=true -Pdsha.unsignedPackage=true`（dev），核验身份、
+   “确实未签名”与受管资产后交接。本模式不接收任何证书 Secrets，因此允许 Gradle 共享缓存。
+6. **sign-verify**（依赖以上全部门禁 + build-unsigned；唯一持有正式签名 Secrets 的节点）：不运行 Gradle、
+   不写共享缓存；对下载的 JUnit XML 重新核对并写出 `out/full-unit-tests.json`，验证 unsigned handoff 的
+   commit / run / attempt / APK 与元数据摘要绑定，再用 [`tools/sign-release-apks.py`](../tools/sign-release-apks.py)
+   签名并复验：keystore 证书 SHA-256 必须等于 `ci/release-identity.mod.json`，v1+v2+v3 全部
+   `Verified using … : true`，除 `META-INF/` 外每个 ZIP 成员的 CRC32 与大小必须与未签名输入完全一致
+   （签名不改载荷），badging 包名 / 版本 / minSdk / arm64 / 非 debug / 标签 `DSH-A-Su` 仍逐项核对；
+   生成证据 zip、`build-info.json`、`SHA256SUMS` 与发布说明，`if: always()` 删除私钥，再以 1 天保留的
+   artifact 交给 publish。
+7. **test-packages**（`test_packages != none`，全部门禁通过后）：复用同一共享节点的
+   “下载未签名产物再签名”模式（`unsigned_artifact_prefix`），不再运行 Gradle；用测试证书 Secrets 签名，
+   逐项核对包名后缀（`.debug` / `devSuffix`）、versionName 后缀（`-SunsetDebug` / `-SunsetDev`）、debuggable、
+   证书不等于正式/上游证书，跑 `verify-dsh-upgrade-apk` / `verify-recovery-apk` / `verify-third-party-apk`，
+   并逐成员证明签名未改动载荷；持测试证书的节点 `gradle-cache: 'false'`，私钥只在 `RUNNER_TEMP` 内且
+   `if: always()` 删除。每个 variant 产出 1 天保留的证据 artifact（APK、`build-info.json`、`SHA256SUMS`、公开测试证书）。
+8. **publish**（唯一有 `contents: write` 的节点，不 checkout、不接触 Secrets）：核对 `SHA256SUMS` 与
+   `build-info.json` 的 commit / run / attempt；下载测试包证据，用随证据下发、并按 `build-info.json` 摘要核对的
+   [`tools/release-test-packages.py`](../tools/release-test-packages.py) 合并 `testPackages` 段、`SHA256SUMS`
+   与发布说明「共存测试包」小节，再次 `sha256sum -c`；最后创建 tag（指向该 commit）+ prerelease 并上传
+   正式 APK、证据 zip、`build-info.json`、`SHA256SUMS`，以及启用时的测试包 APK 与测试证书。
+   `dry_run=true` 时 publish 跳过，由 **dry-run-summary** 执行同样的下载/合并/校验，并把将创建的命令与资产摘要
+   写进 job summary。
 
 ## 5. 产物与核验
 
 | 产物 | 说明 |
 |---|---|
 | `dsha-a-su-<commit8>.apk` | 正式签名成品，包名 `io.github.sunsetrne.dsha` |
-| `dsha-a-su-build-evidence.zip` | 单测 XML、Lint、签名输出、badging、`build-info.json` |
-| `build-info.json` | commit、run ID、APK/固定输入 SHA-256、证书、版本、单测汇总 |
-| `SHA256SUMS` | APK/证据/构建信息的 SHA-256 |
+| `dsha-a-su-debug-<commit8>.apk` | `.debug` 共存测试包（debuggable，测试证书签名，`debug+dev` 或 `debug` 时） |
+| `dsha-a-su-dev-<commit8>.apk` | `.dev` 共存测试包（release 构建、非 debuggable，测试证书签名，`debug+dev` 时） |
+| `dsha-a-su-test-cert.pem` | 测试证书公钥；与正式证书不同，只用于核对测试包签名 |
+| `dsha-a-su-build-evidence.zip` | 单测 XML、Lint、签名输出、badging、`apk-signing.json`、`build-info.json`；**不重复内嵌 APK**（APK 是独立资产，由 `SHA256SUMS` 与 `build-info.json` 的 `apkSha256` 绑定） |
+| `build-info.json` | commit、run ID、APK/固定输入 SHA-256、证书、版本、单测汇总；附带测试包时为每个 variant 追加 `testPackages` 条目 |
+| `SHA256SUMS` | 正式 APK/证据/构建信息与全部附带测试包资产的 SHA-256 |
 
 安装或分发前至少核对：
 
 ```bash
 sha256sum -c SHA256SUMS
 apksigner verify --print-certs dsha-a-su-<commit8>.apk   # 证书 SHA-256 必须为 a4b0413c…5d5d
-aapt2 dump badging dsha-a-su-<commit8>.apk | head -3      # io.github.sunsetrne.dsha / 209
+aapt2 dump badging dsha-a-su-<commit8>.apk | head -3      # io.github.sunsetrne.dsha / build 版本码
+# 共存测试包（默认资产）：证书必须与正式证书不同、包名带 .debug / .dev、.dev 非 debuggable
+apksigner verify --print-certs dsha-a-su-debug-<commit8>.apk
+aapt2 dump badging dsha-a-su-dev-<commit8>.apk | head -3
 ```
 
 `build-info.json` 的 `assetBundleSha256` 必须等于 [固定构建输入](fixed-build-inputs.md) 记录的 bundle SHA-256，
 `certificateSha256` 必须等于 `ci/release-identity.json`，`commit` 必须与 tag 指向的 commit 一致。
+证据包与 APK 是两份独立资产：`sha256sum -c SHA256SUMS` 同时校验两者，`build-info.json` 的 `apkSha256`
+再把 APK 绑定到本次 run 的构建信息；`apk-signing.json` 记录签名前后的 APK 摘要、证书与 v1/v2/v3 复验结果。
 
 ## 6. 失败与重试
 
 - tag 已存在、`expected_sha` 与运行 commit 不符、固定输入 SHA-256 不符、证书不符、单测有失败/跳过、
   Lint/格式/文档链接失败：工作流在创建任何 tag 或 Release 前失败，现场日志与上传证据保留。
 - 失败后**不要**使用同一 tag 重跑：修正源码后换新 commit 与新 tag；旧 tag 若已创建需人工确认后再处理。
-- publish 只接受本 attempt 的 build-signed 产物：单独重跑 publish 会因 attempt 不符被拒绝（避免对结果未知的发布自动重放）。
+- publish 只接受本 attempt 的 sign-verify 产物：单独重跑 publish 会因 attempt 不符被拒绝（避免对结果未知的发布自动重放）。
   先核对远端 tag/Release 实际状态，再用 Re-run all jobs 或换新 tag 重新触发。
 - 上传资产失败时 Release 可能只创建了 tag：核对 `gh release view <tag> --json assets`，不要盲目 `--clobber`。
+- `dry_run=true` 不会创建 tag/Release，但其余门禁与测试包构建照跑；dry-run-summary 会打印将创建的 tag、
+  资产清单与 SHA-256。验证通过后用**同一 `release_tag` / `expected_sha`** 以 `dry_run=false` 重新触发即可发布。
+- `test-packages-unsigned` / `test-packages` 任一节点失败时整条链失败（不发布）：`publish` 只把
+  `test_packages=none` 时的 skipped 视为放行；测试证书缺失、被拒绝或与正式证书相同都视为发布门禁失败。
 - 本工作流不下载/安装到手机，不做真机验收；设备侧结论必须另附实际 APK、操作与回执。
 
 ## 7. 与本地构建的关系
@@ -118,7 +184,10 @@ aapt2 dump badging dsha-a-su-<commit8>.apk | head -3      # io.github.sunsetrne.
 
 ## 8. 测试包变体（on demand）
 
-[test-package-variants.yml](../.github/workflows/test-package-variants.yml) 只由 `workflow_dispatch` 触发，只上传 Actions artifact（14 天），不创建 tag/Release，也不读取正式签名私钥：
+正式 Release 默认附带 `.debug` / `.dev` 共存测试包（见第 4、5 节），构建逻辑抽在共享节点
+[`_node-test-packages.yml`](../.github/workflows/_node-test-packages.yml)。
+[test-package-variants.yml](../.github/workflows/test-package-variants.yml) 复用同一节点，只由
+`workflow_dispatch` 触发，只上传 Actions artifact（14 天），不创建 tag/Release，也不读取正式签名私钥：
 
 | 目标 | 包名 | 说明 |
 |---|---|---|

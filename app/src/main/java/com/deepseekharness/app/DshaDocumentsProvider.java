@@ -185,7 +185,7 @@ public class DshaDocumentsProvider extends DocumentsProvider {
           value = "root";
           break;
         case "title":
-          value = "DSHA";
+          value = getContext().getString(com.deepseekharness.app.R.string.app_name);
           break;
         case "summary":
           value = com.deepseekharness.app.util.UiText.text("容器文件与个人数据");

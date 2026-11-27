@@ -96,13 +96,22 @@ final class RuntimeExecution {
   }
 
   void prepareTools() throws IOException {
-    RuntimeTools.prepare(context, rootfs);
+    prepareTools(null);
+  }
+
+  /** 启动观测版：准备命中/失效与固定受管文件数进入调用方诊断，不改变准备本身。 */
+  void prepareTools(java.util.function.Consumer<String> output) throws IOException {
+    RuntimeTools.prepare(context, rootfs, output);
   }
 
   void ensurePatches() {
+    ensurePatches(null);
+  }
+
+  void ensurePatches(java.util.function.Consumer<String> output) {
     if (!RootfsReadiness.ready(rootfs)) return;
     try {
-      prepareTools();
+      prepareTools(output);
     } catch (IOException error) {
       String detail = UiText.format("运行工具准备失败：%s", SensitiveData.redact(String.valueOf(error)));
       Log.e("DSHA", detail, error);
@@ -170,12 +179,22 @@ final class RuntimeExecution {
   }
 
   Process exec(String command, Map<String, String> environment) throws IOException {
+    return exec(command, environment, null);
+  }
+
+  Process exec(
+      String command, Map<String, String> environment, ProotBootstrap.LaunchCheck beforeStart)
+      throws IOException {
     try (RuntimeHostPorts.Scope ignored = ports.open()) {
       requireReady();
       ContainerRuntime runtime = runtime();
       boolean links = hardlinks();
       prepareTools();
-      return start(command, launch(runtime).hardlinks(links).environment(environment).build());
+      return launcher.start(
+          command,
+          launch(runtime).hardlinks(links).environment(environment).build(),
+          null,
+          beforeStart);
     }
   }
 
@@ -251,13 +270,19 @@ final class RuntimeExecution {
 
   BoundedProcessRunner.Result collect(String command, long timeoutMs, boolean proot)
       throws IOException, InterruptedException {
-    return collect(command, timeoutMs, proot, null);
+    return collect(command, timeoutMs, proot, (ContainerRuntime) null);
   }
 
   BoundedProcessRunner.Result collect(
       String command, long timeoutMs, boolean proot, ContainerRuntime selected)
       throws IOException, InterruptedException {
     return collect(command, timeoutMs, proot, selected, null);
+  }
+
+  BoundedProcessRunner.Result collect(
+      String command, long timeoutMs, boolean proot, java.util.function.Consumer<String> onLine)
+      throws IOException, InterruptedException {
+    return collect(command, timeoutMs, proot, null, null, onLine);
   }
 
   BoundedProcessRunner.Result collectCasLinks(java.util.function.Consumer<String> timing)
@@ -271,7 +296,8 @@ final class RuntimeExecution {
         900_000,
         true,
         null,
-        new RuntimeCommandTiming(timing));
+        new RuntimeCommandTiming(timing),
+        null);
   }
 
   private BoundedProcessRunner.Result collect(
@@ -281,13 +307,24 @@ final class RuntimeExecution {
       ContainerRuntime selected,
       RuntimeCommandTiming timing)
       throws IOException, InterruptedException {
+    return collect(command, timeoutMs, proot, selected, timing, null);
+  }
+
+  private BoundedProcessRunner.Result collect(
+      String command,
+      long timeoutMs,
+      boolean proot,
+      ContainerRuntime selected,
+      RuntimeCommandTiming timing,
+      java.util.function.Consumer<String> onLine)
+      throws IOException, InterruptedException {
     RuntimeWorkPort.Work work = RuntimeWorkPort.begin("容器命令");
     Process process = null;
     Throwable original = null;
     try {
       process = proot ? install(command, false, timing) : bounded(command, selected);
       BoundedProcessRunner.Result result =
-          BoundedProcessRunner.collect(process, timeoutMs, 256 * 1024, Compat::destroy);
+          BoundedProcessRunner.collect(process, timeoutMs, 256 * 1024, Compat::destroy, onLine);
       if (timing != null) timing.mark("process-collect");
       return result;
     } catch (IOException | InterruptedException | RuntimeException | Error failure) {

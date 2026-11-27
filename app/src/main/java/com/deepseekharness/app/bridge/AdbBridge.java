@@ -2,6 +2,7 @@ package com.deepseekharness.app.bridge;
 
 import android.content.Context;
 
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.runtime.ProotBootstrap;
 import com.deepseekharness.app.util.SensitiveData;
 import com.deepseekharness.app.util.AdbResult;
@@ -28,6 +29,7 @@ import java.nio.charset.StandardCharsets;
  * 在容器内用 TLS1.3-PSK + SPAKE2 完成「无线调试配对 → 直连 adbd」，拿到 uid=2000(shell)。
  */
 public final class AdbBridge {
+  private static final String TRIAL_REFUSAL = "[POLICY_BLOCKED] TRIAL_ADB_UNAVAILABLE\n[EXIT=126]";
 
   private static final java.util.concurrent.atomic.AtomicBoolean PAIRING =
       new java.util.concurrent.atomic.AtomicBoolean();
@@ -41,6 +43,7 @@ public final class AdbBridge {
   /** 完整配对/验证/后台探活的同步范围；内部公开方法自动复用当前 owner。 */
   public static <T> T runEnvironmentTask(
       Context ctx, String kind, EnvironmentTaskGate.Operation<T> operation) throws Exception {
+    if (BuildConfig.REBIRTH_CANDIDATE) throw new IllegalStateException("TRIAL_ADB_UNAVAILABLE");
     Context app = ctx.getApplicationContext();
     return AdbEnvironmentTask.run(
         kind,
@@ -52,6 +55,7 @@ public final class AdbBridge {
 
   private static String environmentResult(
       ProotBootstrap proot, String kind, EnvironmentTaskGate.Operation<String> operation) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_REFUSAL;
     try {
       File files = proot.getRootfsDir().getParentFile().getParentFile();
       return AdbEnvironmentTask.run(
@@ -81,6 +85,8 @@ public final class AdbBridge {
 
   private static AdbVirtualScreenStart.HelperResult execOwnedResult(
       ProotBootstrap proot, String command, long timeoutMs, byte[] pipedInput) {
+    if (BuildConfig.REBIRTH_CANDIDATE)
+      return new AdbVirtualScreenStart.HelperResult(TRIAL_REFUSAL, true, true);
     if (!EnvironmentTaskGate.canExecuteCurrentThread())
       throw new IllegalStateException(com.deepseekharness.app.util.UiText.text("ADB 命令缺少环境任务凭据"));
     if (Thread.currentThread().isInterrupted())
@@ -157,6 +163,9 @@ public final class AdbBridge {
 
   public static com.deepseekharness.app.device.DeviceTransportResult executeVirtualScreenTyped(
       Context ctx, String command, String ticket) {
+    if (BuildConfig.REBIRTH_CANDIDATE)
+      return com.deepseekharness.app.device.DeviceTransportResult.notSent(
+          "adb", "TRIAL_ADB_UNAVAILABLE", TRIAL_REFUSAL);
     return AdbVirtualScreenStart.executeTyped(
         ticket,
         () -> Thread.currentThread().isInterrupted(),
@@ -227,6 +236,7 @@ public final class AdbBridge {
 
   public static String ensureReady(
       Context ctx, ProotBootstrap proot, java.util.function.Consumer<String> progress) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return TRIAL_REFUSAL;
     try (var bridge = com.deepseekharness.app.HttpShellService.acquire(ctx)) {
       return environmentResult(
           proot,
@@ -576,6 +586,7 @@ public final class AdbBridge {
 
   /** 已验证过的连接端口；缺失或无效时用 ADB 默认端口 5555。 */
   static int savedConnectPort(ProotBootstrap proot) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return -1;
     String text = "";
     try {
       File file = new File(proot.getRootfsDir(), "root/.dsh/adbkeys/connect_port");
@@ -587,6 +598,7 @@ public final class AdbBridge {
   }
 
   public static java.util.Set<String> localAddresses() {
+    if (BuildConfig.REBIRTH_CANDIDATE) return java.util.Set.of();
     java.util.Set<String> result = new java.util.HashSet<>();
     result.add("127.0.0.1");
     result.add("::1");
@@ -617,6 +629,7 @@ public final class AdbBridge {
   /** 后台调用。每轮独立、串行解析，结束后停止发现，迟到回调不能污染新一轮。 */
   public static Endpoint discover(
       Context ctx, String type, long timeoutMs, java.util.function.Consumer<String> progress) {
+    if (BuildConfig.REBIRTH_CANDIDATE) return null;
     android.net.nsd.NsdManager manager =
         (android.net.nsd.NsdManager) ctx.getSystemService(Context.NSD_SERVICE);
     if (manager == null) {

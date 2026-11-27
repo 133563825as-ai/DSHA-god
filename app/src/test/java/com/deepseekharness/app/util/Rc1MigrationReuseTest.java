@@ -1,6 +1,8 @@
 package com.deepseekharness.app.util;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.HashMap;
@@ -56,6 +58,66 @@ public class Rc1MigrationReuseTest {
 
   private static boolean matches(Map<String, String> old, Map<String, String> now) {
     return Rc1MigrationReuse.matches(current(old), prepared(old), receipt(), "179", "41001", now);
+  }
+
+  @Test
+  public void expectedSectionsCannotBeInferredFromCurrentLedgerKeys() {
+    var ledger = new HashMap<String, Object>();
+    ledger.put("version", 2L);
+    ledger.put("generation", GENERATION);
+    ledger.put("sourceSha256", SHA);
+    ledger.put("status", "verified");
+    ledger.put("sections", Map.of("first", Map.of("status", "verified")));
+    org.junit.Assert.assertEquals("unknown", Rc1MigrationReuse.ledgerState(ledger));
+    var checkpoint = checkpoint();
+    org.junit.Assert.assertEquals(
+        "verified",
+        Rc1MigrationReuse.ledgerState(
+            ledger, Rc1MigrationReuse.expectedSections(ledger, checkpoint)));
+    ledger.put("expectedSections", java.util.List.of("first", "second"));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of("first", "first"));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of(""));
+    org.junit.Assert.assertNull(Rc1MigrationReuse.expectedSections(ledger, checkpoint));
+    ledger.put("expectedSections", java.util.List.of("first"));
+    for (Object status : java.util.List.of("future", "writing", "unknown", true)) {
+      ledger.put("status", status);
+      org.junit.Assert.assertEquals("unknown", Rc1MigrationReuse.ledgerState(ledger));
+    }
+    ledger.put("status", "verified");
+    ledger.put("expectedSections", java.util.List.of());
+    ledger.put("sections", Map.of());
+    org.junit.Assert.assertEquals("verified", Rc1MigrationReuse.ledgerState(ledger));
+    assertTrue(Rc1MigrationReuse.ledgerBinding(GENERATION, SHA, ledger));
+    ledger.put("version", 3L);
+    assertFalse(Rc1MigrationReuse.ledgerBinding(GENERATION, SHA, ledger));
+    assertFalse(Rc1MigrationReuse.ledgerBinding(GENERATION, null, ledger));
+  }
+
+  @Test
+  public void checkpointCannotUseNullShaToHideSettingsOrMalformedInputs() {
+    var index = current(Map.of("settings.yaml", SHA));
+    var checkpoint = prepared(Map.of("settings.yaml", SHA));
+    checkpoint.put("inputDigest", SHA);
+    checkpoint.put("settingsSha256", SHA);
+    assertTrue(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    index.put("startupContext", Map.of("inputFingerprint", CHANGED));
+    assertFalse(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    index.remove("startupContext");
+    for (String field :
+        java.util.List.of("version", "generation", "inputDigest", "settingsSha256", "inputs")) {
+      var bad = new HashMap<>(checkpoint);
+      bad.remove(field);
+      assertFalse(field, Rc1MigrationReuse.checkpointBinding(index, bad));
+    }
+    checkpoint.put("settingsSha256", null);
+    assertFalse(Rc1MigrationReuse.checkpointBinding(index, checkpoint));
+    var empty = prepared(Map.of());
+    empty.put("inputDigest", SHA);
+    empty.put("settingsSha256", null);
+    assertTrue(Rc1MigrationReuse.checkpointBinding(current(Map.of()), empty));
+    assertFalse(Rc1MigrationReuse.sameInputs(Map.of(), null));
   }
 
   @Test
@@ -172,6 +234,146 @@ public class Rc1MigrationReuseTest {
     bad = prepared(inputs);
     bad.put("inputs", Map.of("settings.yaml", SHA));
     assertFalse(Rc1MigrationReuse.matches(current(inputs), bad, receipt(), "179", "41001", inputs));
+  }
+
+  @Test
+  public void ledgerEvidenceRequiresCompleteExpectedCollection() {
+    var ledger = ledger();
+    assertEvidence("unknown", "SETTINGS_EXPECTED_SECTIONS_MISSING", ledger, null);
+    ledger.put("expectedSections", java.util.List.of("first"));
+    assertEvidence("verified", null, ledger, null);
+    ledger.put("expectedSections", java.util.List.of("first", "second"));
+    assertEvidence("unknown", "SETTINGS_LEDGER_INCOMPLETE", ledger, null);
+    ledger.put("expectedSections", java.util.List.of());
+    assertEvidence("unknown", "SETTINGS_LEDGER_INCOMPLETE", ledger, null);
+    ledger.put("sections", Map.of());
+    assertEvidence("verified", null, ledger, null);
+  }
+
+  @Test
+  public void checkpointFallbackRequiresProvenanceAndSameIdentity() {
+    var ledger = ledger();
+    var checkpoint = checkpoint();
+    assertEvidence("verified", null, ledger, checkpoint);
+    for (var change :
+        Map.<String, Object>of(
+                "generation",
+                "d92bb647-7dad-4e67-9c48-82c1a7e16d62",
+                "settingsSha256",
+                CHANGED,
+                "settingsSectionsSource",
+                "sections",
+                "settingsSections",
+                java.util.List.of("first", "first"))
+            .entrySet()) {
+      var invalid = checkpoint();
+      invalid.put(change.getKey(), change.getValue());
+      assertEvidence("unknown", "SETTINGS_EXPECTED_SECTIONS_MISSING", ledger, invalid);
+    }
+    for (String key :
+        java.util.List.of(
+            "generation", "settingsSha256", "settingsSectionsSource", "settingsSections")) {
+      var invalid = checkpoint();
+      invalid.remove(key);
+      assertEvidence("unknown", "SETTINGS_EXPECTED_SECTIONS_MISSING", ledger, invalid);
+    }
+    // 直接账本证据优先；不从不相关 checkpoint 拼凑集合。
+    ledger.put("expectedSections", java.util.List.of("first"));
+    assertEvidence("verified", null, ledger, Map.of());
+  }
+
+  @Test
+  public void malformedExpectedFieldNeverFallsBackToValidCheckpoint() {
+    for (Object malformed :
+        new Object[] {
+          null,
+          "first",
+          java.util.List.of("first", "first"),
+          java.util.List.of("first", 1),
+          Map.of()
+        }) {
+      var ledger = ledger();
+      ledger.put("expectedSections", malformed);
+      assertEvidence("unknown", "SETTINGS_LEDGER_SECTION", ledger, checkpoint());
+    }
+  }
+
+  @Test
+  public void ledgerEvidenceRejectsWrongIdentityAndUnknownStates() {
+    var ledger = ledger();
+    ledger.put("expectedSections", java.util.List.of("first"));
+    for (var change :
+        Map.of("generation", "d92bb647-7dad-4e67-9c48-82c1a7e16d62", "sourceSha256", CHANGED)
+            .entrySet()) {
+      var invalid = new HashMap<>(ledger);
+      invalid.put(change.getKey(), change.getValue());
+      assertEvidence("unknown", "SETTINGS_LEDGER_IDENTITY", invalid, checkpoint());
+    }
+    for (String state : java.util.List.of("writing", "unknown", "unexpected")) {
+      var invalid = new HashMap<>(ledger);
+      invalid.put("sections", Map.of("first", Map.of("status", state)));
+      assertEvidence("unknown", "SETTINGS_LEDGER_UNKNOWN", invalid, checkpoint());
+    }
+    for (Object malformed :
+        new Object[] {
+          null,
+          java.util.List.of(),
+          Map.of("first", "verified"),
+          Map.of(1, Map.of("status", "verified"))
+        }) {
+      var invalid = new HashMap<>(ledger);
+      invalid.put("sections", malformed);
+      assertEvidence("unknown", "SETTINGS_LEDGER_UNKNOWN", invalid, checkpoint());
+    }
+  }
+
+  @Test
+  public void ledgerEvidencePreservesPendingAndNotRequiredWithoutMutatingRecords() {
+    for (String state : java.util.List.of("pending", "conflict")) {
+      var ledger = ledger();
+      ledger.put("sections", Map.of("first", Map.of("status", state)));
+      var checkpoint = checkpoint();
+      var beforeLedger = new HashMap<>(ledger);
+      var beforeCheckpoint = new HashMap<>(checkpoint);
+      assertEvidence("pending", "SETTINGS_LEDGER_INCOMPLETE", ledger, checkpoint);
+      assertEquals(beforeLedger, ledger);
+      assertEquals(beforeCheckpoint, checkpoint);
+    }
+    assertEvidence("unknown", "SETTINGS_LEDGER_MISSING", null, checkpoint());
+    var absent = Rc1MigrationReuse.ledgerEvidence(GENERATION, null, null, null);
+    assertEquals("not-required", absent.state);
+    assertNull(absent.reason);
+  }
+
+  private static Map<String, Object> ledger() {
+    return new HashMap<>(
+        Map.of(
+            "version",
+            2L,
+            "generation",
+            GENERATION,
+            "sourceSha256",
+            SHA,
+            "status",
+            "verified",
+            "sections",
+            Map.of("first", Map.of("status", "verified"))));
+  }
+
+  private static Map<String, Object> checkpoint() {
+    var value = prepared(Map.of("settings.yaml", SHA));
+    value.put("inputDigest", "d".repeat(64));
+    value.put("settingsSha256", SHA);
+    value.put("settingsSectionsSource", "ledger-expected");
+    value.put("settingsSections", java.util.List.of("first"));
+    return value;
+  }
+
+  private static void assertEvidence(
+      String state, String reason, Map<String, Object> ledger, Map<String, Object> checkpoint) {
+    var evidence = Rc1MigrationReuse.ledgerEvidence(GENERATION, SHA, ledger, checkpoint);
+    assertEquals(state, evidence.state);
+    assertEquals(reason, evidence.reason);
   }
 
   @Test

@@ -84,6 +84,9 @@ public class ConfigFragment extends Fragment {
     v.findViewById(R.id.config_restore_port_drafts)
         .setOnClickListener(x -> BrowserOriginRestore.show(requireContext()));
     CompoundButton checkUpdate = v.findViewById(R.id.config_check_update);
+    // APK 自动检查入口已退休；旧偏好仍按原键读写，导入/保存不迁移或抹掉历史值。
+    checkUpdate.setVisibility(View.GONE);
+    checkUpdate.setEnabled(false);
     CompoundButton desktop = v.findViewById(R.id.config_desktop_mode);
     bindEntryTarget(v);
     pictureEnabled = v.findViewById(R.id.config_picture_in_picture);
@@ -136,6 +139,11 @@ public class ConfigFragment extends Fragment {
         .setText(UiText.choose("网页内核", "Browser engine: System WebView"));
     proroot.setChecked(c.isProroot());
     lan.setChecked(c.isLanMode());
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      lan.setEnabled(false);
+      lan.setSaveEnabled(false);
+      v.findViewById(R.id.config_lan_password).setVisibility(View.GONE);
+    }
     TextView lanPasswordStatus = v.findViewById(R.id.config_lan_password_status);
     renderLanPassword(c.hasLanPassword(), false);
     v.findViewById(R.id.config_lan_password)
@@ -283,11 +291,12 @@ public class ConfigFragment extends Fragment {
                   if (!overlayEnabled) OverlayController.teardown(ctx.getApplicationContext());
                   else if (OverlayController.permitted(ctx))
                     OverlayController.applyStyleNow(ctx.getApplicationContext());
-                  boolean lanApplied = applyLanMode(ctx, lan.isChecked());
-                  int lanMessage =
-                      lanSettingsMessage(lan.isChecked(), c.hasLanPassword(), lanApplied);
+                  boolean enableLan =
+                      !com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE && lan.isChecked();
+                  boolean lanApplied = applyLanMode(ctx, enableLan);
+                  int lanMessage = lanSettingsMessage(enableLan, c.hasLanPassword(), lanApplied);
                   if (lanMessage != 0) Toast.makeText(ctx, lanMessage, Toast.LENGTH_LONG).show();
-                  if (lan.isChecked() && getActivity() instanceof MainActivity)
+                  if (enableLan && getActivity() instanceof MainActivity)
                     ((MainActivity) getActivity()).requestLocalNetwork();
                   Toast.makeText(
                           ctx,
@@ -429,6 +438,14 @@ public class ConfigFragment extends Fragment {
     if (root == null) return;
     boolean enabled = ((CompoundButton) root.findViewById(R.id.config_lan_mode)).isChecked();
     TextView status = root.findViewById(R.id.config_lan_password_status);
+    if (com.deepseekharness.app.BuildConfig.REBIRTH_CANDIDATE) {
+      status.setText(
+          UiText.choose(
+              "试用版仅提供本机 Web，不开放局域网。",
+              "This trial offers on-device Web only; LAN sharing is unavailable."));
+      redescribe(R.id.config_lan_text, R.id.config_lan_mode);
+      return;
+    }
     if (saving) {
       status.setText(R.string.lan_password_saving);
       status.setTextColor(requireContext().getColor(R.color.shell_text_secondary));
