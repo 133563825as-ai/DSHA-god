@@ -64,7 +64,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py read_compiled_release.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py read_compiled_release.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -179,7 +179,6 @@ jobs:
             python3 -IB - "$m" "$l" <<'PY'
           import re,sys
           from pathlib import Path
-          from xml.etree import ElementTree as ET
           phase,path=sys.argv[1:]; t=Path(path).read_text(errors='replace')
           result={'GOOGLE':r"Could not (?:GET|HEAD|get resource)[^\n]+https://dl\.google\.com/",
                   'CENTRAL':r"Could not (?:GET|HEAD|get resource)[^\n]+https://repo\.maven\.apache\.org/",
@@ -188,11 +187,8 @@ jobs:
                   'TIMEOUT':r'(?i)timed out|timeout'}
           for k,v in result.items():
               if re.search(v,t):print(f'B368_COMPILE_REASON={phase}:{k}')
-          lock=ET.parse('gradle/verification-metadata.xml')
-          allowed={':'.join(c.attrib[k] for k in ('group','name','version')) for c in lock.findall('./{*}components/{*}component')}
-          found=set(re.findall(r'(?m)(?:Could not (?:resolve|find)|No cached version of) ([A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.+-]+)\.?\s',t))
-          for coord in sorted(found & allowed)[:12]: print(f'B368_COMPILE_LOCKED_COORDINATE={phase}:{coord}')
           PY
+            python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
           }
           retries=0
           for m in runtime compile aapt2; do
