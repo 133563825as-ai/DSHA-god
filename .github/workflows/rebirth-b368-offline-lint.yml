@@ -173,6 +173,11 @@ jobs:
             if grep -Fq 'available for offline mode' "$l"; then printf 'B368_COMPILE_REASON=%s:OFFLINE_CACHE_MISS\n' "$m"; fi
             if grep -Eqi 'No matching variant|no compatible variant' "$l"; then printf 'B368_COMPILE_REASON=%s:VARIANT\n' "$m"; fi
             if grep -Fq 'B368_ACTUAL_ORIGIN_REFUSED:' "$l"; then printf 'B368_COMPILE_REASON=%s:GUARD\n' "$m"; fi
+            if [[ $m = offline ]]; then
+              for code in AGP_REPORT_TASKS AGP_REPORT_PATH AGP_REPORT_RESULT_BINDING AGP_REPORT_CONTRACT_EXISTS; do
+                if grep -Fq "B368_LINT_EXEC_REFUSED:$code" "$l"; then printf 'B368_LINT_DECLARATION_REFUSED=%s\n' "$code"; fi
+              done
+            fi
             if grep -Eq 'Could not resolve|Could not find|Could not get resource' "$l"; then printf 'B368_COMPILE_REASON=%s:RESOLVER\n' "$m"; fi
             if grep -Eq 'NDK not configured|No version of NDK matched|Failed to find target' "$l"; then printf 'B368_COMPILE_REASON=%s:SDK_NDK\n' "$m"; fi
             if grep -Fq 'B368_PRIVATE_EXACT_GRAPH=31' "$l"; then echo B368_COMPILE_GRAPH=31; fi
@@ -263,7 +268,7 @@ jobs:
             exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
               PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
               DSHA_PYTHON=/usr/bin/python3 GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_LAZY_FETCH=1 \
-              PYTHONDONTWRITEBYTECODE=1 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" \
+              PYTHONDONTWRITEBYTECODE=1 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_LINT_DECLARED_OUTPUTS="$p/lint.outputs.json" \
               /usr/bin/python3 -IB "$p/online_b368_compile_monitor.py" "$p" "$g" "$@" --offline --project-cache-dir "$p/compile-cache" \
               -I "$p/online_b368_lint_guard.init.gradle" :app:lintStandardRelease
           ' compile "$uid" "$gid" "$p" "$j" "$g" "${opts[@]}" >"$p/monitor.log" 2>&1 || rc=$?
@@ -275,6 +280,10 @@ jobs:
             if (( rc != 0 )); then exit "$rc"; else exit 1; fi
           fi
           echo B368_LINT_EXACT_GRAPH=37
+          if [[ ! -s "$p/lint.outputs.json" ]]; then
+            echo B368_LINT_REPORT_REFUSED=DECLARATION
+            exit 1
+          fi
           for task in lintAnalyzeStandardRelease lintReportStandardRelease; do
             if grep -Fxq "> Task :app:$task" "$p/compile.log" || grep -Fxq "> Task :app:$task FAILED" "$p/compile.log"; then
               printf 'B368_LINT_EXECUTED_TASK=%s\n' "$task"
@@ -286,8 +295,8 @@ jobs:
           stage=LINT_REPORT
           if [[ -n $(find app/build -type f \( -name '*.apk' -o -name '*.dex' \) -print -quit) ]]; then echo B368_LINT_REPORT_REFUSED=UNEXPECTED_DEX_OR_APK; exit 1; fi
           report_rc=0
-          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build/reports/lint-results-standardRelease.xml" >"$p/lint.summary" 2>>"$out" || report_rc=$?
-          grep -Ex 'B368_LINT_REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|B368_LINT_REPORT_SHA256=[a-f0-9]{64}' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
+          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" >"$p/lint.summary" 2>>"$out" || report_rc=$?
+          grep -Ex 'B368_LINT_(REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|REPORT_SHA256=[a-f0-9]{64}|TOOL_STATUS=[0-7]|TEXT_COUNTERS=[0-9]{1,6}:[0-9]{1,6}|TEXT=UNAVAILABLE|REPORT_REFUSED=(DECLARATION|TOOL_STATUS|XML_DISABLED|XML_MISSING_OR_UNSAFE|XML_SCHEMA))' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
           (( rc == 0 )) || exit "$rc"
           (( report_rc == 0 )) || exit "$report_rc"
           printf 'B368_LINT=PASS\nB368_FORMAL_ADMISSION=false\n'

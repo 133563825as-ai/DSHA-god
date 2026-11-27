@@ -34,4 +34,22 @@ gradle.taskGraph.whenReady { graph ->
     def expected = [":app:prepareBackupAssets",":app:verifyRuntimeDescriptorInputs",":app:prepareRuntimeDescriptor",":app:verifyExternalToolProof",":app:prepareStandardAssets",":app:prepareRecoveryAssets",":app:prepareRustNative",":app:prepareUiLanguages",":app:verifyBuiltinRegistry",":app:verifyBundledDshVersion",":app:verifyBundledIdentities",":app:verifyCredentialRegistry",":app:verifyCurrentChangelog",":app:verifyProrootCompat",":app:verifyUiLanguageResources",":app:verifyWebLanguages",":app:preBuild",":app:preStandardReleaseBuild",":app:compileStandardReleaseAidl",":app:generateStandardReleaseBuildConfig",":app:generateStandardReleaseResValues",":app:generateStandardReleaseResources",":app:packageStandardReleaseResources",":app:processStandardReleaseNavigationResources",":app:parseStandardReleaseLocalResources",":app:generateStandardReleaseRFile",":app:compileStandardReleaseKotlin",":app:javaPreCompileStandardRelease",":app:verifyBackupDependencies",":app:compileStandardReleaseJavaWithJavac",":app:extractProguardFiles",":app:extractDeepLinksStandardRelease",":app:processStandardReleaseMainManifest",":app:generateStandardReleaseLintReportModel",":app:lintAnalyzeStandardRelease",":app:lintReportStandardRelease",":app:lintStandardRelease"]
     need(graph.allTasks*.path==expected, 'EXACT_GRAPH')
     println 'B368_PRIVATE_LINT_EXACT_GRAPH=37'
+    def report=graph.allTasks.find { it.path==':app:lintReportStandardRelease' }
+    def aggregate=graph.allTasks.find { it.path==':app:lintStandardRelease' }
+    need(report.class.name.startsWith('com.android.build.gradle.internal.lint.AndroidLintTask') &&
+         aggregate.class.name.startsWith('com.android.build.gradle.internal.lint.AndroidLintTextOutputTask'), 'AGP_REPORT_TASKS')
+    def out=app.layout.buildDirectory.get().asFile.canonicalFile
+    def relative={ f ->
+        def path=f.toPath().toAbsolutePath().normalize()
+        need(f.canonicalFile.toPath()==path && path.startsWith(out.toPath()) && path!=out.toPath(), 'AGP_REPORT_PATH')
+        out.toPath().relativize(path).toString()
+    }
+    def statusFile=report.returnValueOutputFile.get().asFile
+    need(aggregate.returnValueInputFile.get().asFile.canonicalFile==statusFile.canonicalFile && aggregate.abortOnError.get(), 'AGP_REPORT_RESULT_BINDING')
+    def paths=[status:relative(statusFile),
+               text:aggregate.textReportInputFile.present ? relative(aggregate.textReportInputFile.get().asFile) : null,
+               xml:report.xmlReportEnabled.get() ? relative(report.xmlReportOutputFile.get().asFile) : null]
+    def target=new File(System.getenv('B368_LINT_DECLARED_OUTPUTS'))
+    need(target.createNewFile(), 'AGP_REPORT_CONTRACT_EXISTS')
+    target.setText(groovy.json.JsonOutput.toJson(paths)+'\n', 'UTF-8')
 }
