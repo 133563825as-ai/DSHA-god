@@ -358,7 +358,11 @@ class Migration(unittest.TestCase):
         self.assertTrue(any(x.startswith('SOURCE_MISSING_OR_CHANGED:') for x in payload['warnings']))
         self.assertEqual(self.result()['status'],'pending')
     def test_source_replaced_with_same_bytes_keeps_content_copy_and_unknown_object_identity(self):
-        self.prepare();self.verified();source=self.dsh/'settings.yaml';value=source.read_text();source.unlink();source.write_text(value)
+        self.prepare();self.verified();source=self.dsh/'settings.yaml'
+        # Keep the original object alive so the filesystem cannot recycle its inode.
+        original=source.rename(self.root/'original-settings.yaml')
+        source.write_bytes(original.read_bytes())
+        self.assertFalse(source.samefile(original))
         code,payload=self.capture(self.finalize);self.assertEqual(code,0)
         self.assertEqual(payload['contentCopyStatus'],'verified');self.assertEqual(payload['sourceObjectIdentity'],'unknown')
         self.assertNotIn('sourcePreserved',payload);self.assertTrue(any(x.startswith('SOURCE_IDENTITY_CHANGED:') for x in payload['warnings']))
