@@ -1,0 +1,198 @@
+name: Rebirth b368 locked offline compilation
+on:
+  push:
+    branches: [validate/rebirth-b368-offline-compile]
+permissions: {}
+jobs:
+  restore:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-compile'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Reconstruct and compile the exact b368 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          set +x
+          p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
+          c=b2ed231b165c90339a297e136e476e98ade67f11
+          t=7fb60ba40c3e60094c7ff02281a2a4058f6da545
+          hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
+          url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
+          stage=SOURCE
+          out="$p/private.log"
+          trap 'rc=$?; if (( rc != 0 )); then printf "B368_RESTORE_FAILED_STAGE=%s\nB368_RESTORE_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          [[ $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
+          env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
+            bash -euc '
+              git init -q --template= "$1/src"
+              git -C "$1/src" -c core.hooksPath=/dev/null fetch --quiet --no-tags --depth 1 https://github.com/133563825as-ai/DSHA-god.git "$2"
+              git -C "$1/src" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD
+              test "$(git -C "$1/src" rev-parse HEAD)" = "$2"
+              test "$(git -C "$1/src" rev-parse HEAD^{tree})" = "$3"
+              test -z "$(git -C "$1/src" status --porcelain=v1 --untracked-files=all)"
+              test -z "$(git -C "$1/src" remote)"
+            ' verify "$p" "$c" "$t" >"$out" 2>&1
+          stage=DOWNLOAD
+          env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --location \
+            --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize 716787167 --max-time 360 \
+            --output "$p/fixed.zip" "$url" >>"$out" 2>&1
+          stage=PIN
+          [[ $(stat -c %s "$p/fixed.zip") = 716787167 ]]
+          [[ $(sha256sum "$p/fixed.zip" | cut -d' ' -f1) = "$hash" ]]
+          stage=SET
+          env -i PATH=/usr/bin:/bin HOME="$p" python3 -IB - "$p/fixed.zip" "$p/src" "$hash" "$url" >>"$out" 2>&1 <<'PY'
+          import json, pathlib, sys, zipfile
+          archive, source, pin, url = sys.argv[1:]
+          lock = json.loads((pathlib.Path(source) / 'ci/sunset-inputs.lock.json').read_bytes())
+          assert (lock['url'], lock['sha256'], lock['bytes'], lock['format']) == (url, pin, 716787167, 'bundle')
+          with zipfile.ZipFile(archive) as z:
+              names = z.namelist()
+              assert len(names) == len(set(names)) == 12
+              assert not any(name.lower().endswith(('.apk', '.aab', '.apks')) for name in names)
+          PY
+          stage=ORIGINAL_RESTORE
+          cd "$p/src"
+          env -i PATH=/usr/bin:/bin HOME="$p" LC_ALL=C.UTF-8 /usr/bin/python3 -sB tools/ci-assets.py \
+            --archive "$p/fixed.zip" --sha256 "$hash" >>"$out" 2>&1
+          grep -Fxq 'PASS locked CI asset inputs; source builders must verify their own recipe metadata' "$out"
+          stage=WORKER
+          env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 bash -euc '
+            git init -q --template= "$1/worker"
+            git -C "$1/worker" fetch --quiet --no-tags --depth 1 https://github.com/133563825as-ai/DSHA-god.git "$2"
+            test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
+            git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
+            git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py read_compiled_release.py; do
+              git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
+            done
+          ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
+          [[ $(sha256sum "$p/seed.cjs" | cut -d' ' -f1) = c1de8dcc8c727c71539793c9ce94bf735aa7c68bd6560af42f6f8c5fffed0c95 ]]
+          stage=NODE
+          env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --proto '=https' --max-filesize 50000000 \
+            --max-time 140 --output "$p/node.tar.xz" https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz >>"$out" 2>&1
+          [[ $(sha256sum "$p/node.tar.xz" | cut -d' ' -f1) = 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647 ]]
+          tar -xJf "$p/node.tar.xz" -C "$p" >>"$out" 2>&1
+          stage=NPM_SUPPLY
+          npm_rc=0
+          env -i PATH=/usr/bin:/bin HOME="$p" /usr/bin/python3 -IB "$p/online_b368_inputs.py" acquire "$p" >>"$out" 2>&1 || npm_rc=$?
+          if [[ -f "$p/npm-status" ]]; then
+            grep -Ex 'B368_NPM_(OK|HTTP_(302|403|404|429|500|502|503|504|OTHER)|TRANSPORT|TIMEOUT|RESPONSE_OR_SRI|LOCAL_OR_FORMAT)=[0-9]{1,3}' "$p/npm-status"
+          fi
+          (( npm_rc == 0 )) || exit "$npm_rc"
+          stage=ISOLATION
+          mkdir "$p/home" "$p/tmp"
+          : > "$p/home/user.npmrc"; : > "$p/home/global.npmrc"
+          uid=$(id -u); gid=$(id -g)
+          test "$uid" -ne 0
+          sudo -n /usr/bin/unshare -n /bin/sh -ec '
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            exec /usr/bin/setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/true
+          ' check "$uid" "$gid" >>"$out" 2>&1
+          stage=OFFLINE_REBUILD_HANDOFF
+          sudo -n /usr/bin/unshare -n /bin/sh -ec '
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            p=$3
+            exec /usr/bin/setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$p/node-v24.19.0-linux-x64/bin:/usr/bin:/bin" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_NO_LAZY_FETCH=1 GIT_OPTIONAL_LOCKS=0 GIT_ALLOW_PROTOCOL=file \
+              PYTHONDONTWRITEBYTECODE=1 npm_config_userconfig="$p/home/user.npmrc" npm_config_globalconfig="$p/home/global.npmrc" \
+              npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
+              /usr/bin/python3 -IB "$p/online_b368_inputs.py" offline "$p"
+          ' offline "$uid" "$gid" "$p" >>"$out" 2>&1
+          printf 'B368_CURRENT_HANDOFF=14\n'
+          mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
+          stage=TOOLCHAIN
+          dl() {
+            local u=$1 f=$2 bytes=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p" curl --disable -fsSL --proto '=https' --proto-redir '=https' --max-redirs 4 --max-time 220 --max-filesize "$bytes" --output "$f" "$u" >>"$out" 2>&1
+            [[ $(stat -c %s "$f") = "$bytes" && $(sha256sum "$f" | cut -d' ' -f1) = "$pin" ]]
+          }
+          dl https://services.gradle.org/distributions/gradle-9.3.1-bin.zip "$p/g.zip" 137037885 b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/j.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          unzip -q "$p/g.zip" -d "$p" >>"$out" 2>&1
+          tar -xzf "$p/j.tgz" -C "$p" >>"$out" 2>&1
+          j="$p/jdk-17.0.21+9"; g="$p/gradle-9.3.1/bin/gradle"
+          [[ -x "$j/bin/java" && -x "$g" ]]
+          stage=SDK
+          dl https://dl.google.com/android/repository/platform-37.0_r02.zip "$p/platform.zip" 67281901 840b23e827f96e64aea4c89a1194aac3dc5f6bad37edb231c5c795d890330e8d
+          dl https://dl.google.com/android/repository/build-tools_r36_linux.zip "$p/build-tools.zip" 63737259 5d9ac77fb6ff43d9da518a337b4fcf8f9097113df531d99ccefe80ef7ce8250b
+          unzip -q "$p/platform.zip" -d "$p/sdk/platforms" >>"$out" 2>&1
+          unzip -q "$p/build-tools.zip" -d "$p/sdk-stage" >>"$out" 2>&1
+          [[ -d "$p/sdk-stage/android-16" && ! -L "$p/sdk-stage/android-16" && ! -e "$p/sdk/build-tools/36.0.0" ]]
+          [[ $(realpath -e "$p/sdk-stage/android-16") = "$p/sdk-stage/android-16" && $(realpath -e "$p/sdk/build-tools") = "$p/sdk/build-tools" ]]
+          mv -T "$p/sdk-stage/android-16" "$p/sdk/build-tools/36.0.0"
+          [[ -f "$p/sdk/platforms/android-37.0/android.jar" && -x "$p/sdk/build-tools/36.0.0/aapt2" ]]
+          stage=COMPILER_SUPPLY
+          cd "$p/receiver"
+          opts=(--no-daemon --no-parallel --no-configuration-cache --no-build-cache --max-workers=1 --dependency-verification=strict --console=plain
+            '-Dorg.gradle.jvmargs=-Xmx2048m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' -Pdsha.identity=rebirth -Pdsha.rebirthCandidate=true -Pdsha.unsignedPackage=true -Pdsha.rust.mode=off -Pandroid.builder.sdkDownload=false -Porg.gradle.java.installations.auto-download=false)
+          reason() {
+            local m=$1 l=$2
+            if grep -Fq 'Dependency verification failed' "$l"; then printf 'B368_COMPILE_REASON=%s:DEPENDENCY_VERIFICATION\n' "$m"; fi
+            if grep -Fq 'available for offline mode' "$l"; then printf 'B368_COMPILE_REASON=%s:OFFLINE_CACHE_MISS\n' "$m"; fi
+            if grep -Eqi 'No matching variant|no compatible variant' "$l"; then printf 'B368_COMPILE_REASON=%s:VARIANT\n' "$m"; fi
+            if grep -Fq 'B368_ACTUAL_ORIGIN_REFUSED:' "$l"; then printf 'B368_COMPILE_REASON=%s:GUARD\n' "$m"; fi
+            if grep -Eq 'Could not resolve|Could not find|Could not get resource' "$l"; then printf 'B368_COMPILE_REASON=%s:RESOLVER\n' "$m"; fi
+            if grep -Eq 'NDK not configured|No version of NDK matched|Failed to find target' "$l"; then printf 'B368_COMPILE_REASON=%s:SDK_NDK\n' "$m"; fi
+            if grep -Fq 'B368_PRIVATE_EXACT_GRAPH=31' "$l"; then echo B368_COMPILE_GRAPH=31; fi
+          }
+          for m in runtime compile aapt2; do
+            rc=0
+            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.supply.json" \
+              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/online_b368_compile_supply.init.gradle" :app:probeB368ActualOrigin >"$p/$m.supply.log" 2>&1 || rc=$?
+            printf 'B368_COMPILE_SUPPLY=%s:%s\n' "$m" "$rc"
+            if (( rc != 0 )); then reason "$m" "$p/$m.supply.log"; exit "$rc"; fi
+            [[ -s "$p/$m.supply.json" ]]
+          done
+          [[ ! -d "$p/receiver/app/build" ]]
+          stage=OFFLINE_COMPILE
+          rc=0
+          sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
+            uid=$1; gid=$2; p=$3; j=$4; g=$5; shift 5
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            mount --bind "$p/producer-home/caches" "$p/ro"
+            mount -o remount,bind,ro,nosuid,nodev,noexec "$p/ro"
+            test -d "$p/ro/modules-2"
+            for d in app/src tools build-logic gradle ci .git .github rust; do
+              x="$p/receiver/$d"
+              test "$(realpath -e "$x")" = "$x"
+              mount --bind "$x" "$x"
+              mount -o remount,bind,ro,nosuid,nodev "$x"
+            done
+            test -z "$(ls -A "$p/consumer-home")"
+            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_LAZY_FETCH=1 \
+              PYTHONDONTWRITEBYTECODE=1 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" \
+              /usr/bin/python3 -IB "$p/online_b368_compile_monitor.py" "$p" "$g" "$@" --offline --project-cache-dir "$p/compile-cache" \
+              -I "$p/online_b368_compile_guard.init.gradle" :app:checkStandardReleaseDuplicateClasses :app:compileStandardReleaseJavaWithJavac
+          ' compile "$uid" "$gid" "$p" "$j" "$g" "${opts[@]}" >"$p/monitor.log" 2>&1 || rc=$?
+          grep -Ex 'B368_COMPILE_(ENTRY_MIB|MIN_MIB)=[0-9]{1,8}|B368_COMPILE_RESOURCE_OR_TIME_STOP=true' "$p/monitor.log" || :
+          if [[ -f "$p/compile.log" ]]; then reason offline "$p/compile.log"; fi
+          printf 'B368_COMPILE_EXIT=%s\n' "$rc"
+          (( rc == 0 )) || exit "$rc"
+          stage=CLASS_READBACK
+          grep -Fxq B368_PRIVATE_EXACT_GRAPH=31 "$p/compile.log"
+          for task in checkStandardReleaseDuplicateClasses compileStandardReleaseKotlin compileStandardReleaseJavaWithJavac; do grep -Fxq "> Task :app:$task" "$p/compile.log"; done
+          env -i PATH=/usr/bin:/bin HOME="$p/home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 /usr/bin/python3 -IB "$p/read_compiled_release.py" \
+            "$p/receiver" "$c" "$t" >"$p/classes.json" 2>>"$out"
+          python3 -IB - "$p/classes.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          q=json.loads(Path(sys.argv[1]).read_bytes()); assert q['classMajor']==61 and not (q['dexBuilt'] or q['apkBuilt'] or q['formalAdmission'])
+          for k in ('kotlin','javac'):
+              n=q['compilers'][k]['classes']; assert type(n) is int and n>0; print('B368_CLASS_READBACK='+k+':'+str(n))
+          PY
+          printf 'B368_COMPILE=PASS\nB368_FORMAL_ADMISSION=false\n'
