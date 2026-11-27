@@ -52,6 +52,24 @@ jobs:
             if grep -Fq 'Dependency verification failed' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=DEPENDENCY_VERIFICATION; fi
             if grep -Eq 'Could not (get resource|GET|HEAD|resolve|find)' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=RESOLVER; fi
             if grep -Fq 'B368_ORIGIN_PROBE_REFUSED' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=GUARD; fi
+            python3 -IB - "$log" <<'PY'
+          import re, sys
+          from pathlib import Path
+          data = Path(sys.argv[1]).read_text(errors='replace')
+          tests = {
+              'GOOGLE_REQUEST_FAILURE': r"Could not (?:get resource|GET|HEAD)[^\n]+https://dl\.google\.com/",
+              'CENTRAL_REQUEST_FAILURE': r"Could not (?:get resource|GET|HEAD)[^\n]+https://repo\.maven\.apache\.org/",
+              'GOOGLE_LISTENABLEFUTURE': r"(?:Could not (?:get resource|GET|HEAD)[^\n]+https://dl\.google\.com/[^\n]+listenablefuture|Could not find com\.google\.guava:listenablefuture:1\.0)",
+              'TLS_OR_CERTIFICATE': r'(?i)PKIX|handshake|peer not authenticated|certificate_unknown|unable to find valid certification path',
+              'HTTP_403': r'(?:status code|HTTP)[ :]+403\b',
+              'HTTP_429': r'(?:status code|HTTP)[ :]+429\b',
+              'HTTP_5XX': r'(?:status code|HTTP)[ :]+5\d\d\b',
+              'TIMEOUT': r'(?i)timed out|timeout',
+              'NO_COMPATIBLE_VARIANT': r'(?i)no matching variant|no compatible variant',
+          }
+          for key, pattern in tests.items():
+              if re.search(pattern, data): print('B368_ORIGIN_REASON=' + key)
+          PY
             exit 1
           fi
           stage=ORIGINAL_OFFLINE
