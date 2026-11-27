@@ -10,6 +10,7 @@ import socket
 import subprocess as sp
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 
 C='b2ed231b165c90339a297e136e476e98ade67f11'
@@ -59,11 +60,21 @@ def acquire(p):
             assert r.status==200 and r.url==url and r.headers.get('Content-Encoding','identity')=='identity'
             h=hashlib.sha512(); total=0
             while chunk:=r.read(1024*1024):
-                total+=len(chunk);assert total<=32*2**20;h.update(chunk);f.write(chunk)
+                total+=len(chunk);assert total<=48080284;h.update(chunk);f.write(chunk)
             assert h.digest()==raw and total>0
         return total
-    with ThreadPoolExecutor(max_workers=12) as e:sizes=list(e.map(get,registry.items()))
-    assert len(sizes)==668 and sum(sizes)==156673237
+    def classify(item):
+        try:return ('OK',get(item))
+        except urllib.error.HTTPError as x:return ('HTTP_'+str(x.code) if x.code in (302,403,404,429,500,502,503,504) else 'HTTP_OTHER',0)
+        except urllib.error.URLError:return ('TRANSPORT',0)
+        except TimeoutError:return ('TIMEOUT',0)
+        except AssertionError:return ('RESPONSE_OR_SRI',0)
+        except (OSError, ValueError):return ('LOCAL_OR_FORMAT',0)
+    with ThreadPoolExecutor(max_workers=6) as e:out=list(e.map(classify,registry.items()))
+    from collections import Counter
+    codes=Counter(k for k,n in out); total=sum(n for k,n in out)
+    (p/'npm-status').write_text(''.join('B368_NPM_'+k+'='+str(v)+'\n' for k,v in sorted(codes.items())),encoding='ascii')
+    assert codes=={'OK':668} and total==156673237
 
 
 def offline(p):
