@@ -1,0 +1,39 @@
+import java.security.MessageDigest
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+
+def need = { boolean ok, String why -> if (!ok) throw new GradleException('B368_LINT_PLAN_REFUSED:' + why) }
+def sha = { File f ->
+    def dig = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { stream ->
+        byte[] b = new byte[65536]
+        for (int n = stream.read(b); n != -1; n = stream.read(b)) dig.update(b,0,n)
+    }
+    dig.digest().encodeHex().toString()
+}
+def s = gradle.startParameter
+def targets = [':app:lintStandardRelease']
+need(gradle.gradleVersion=='9.3.1' && s.offline && s.dryRun && !s.refreshDependencies && !s.configurationCacheRequested &&
+     !s.buildCacheEnabled && !s.parallelProjectExecutionEnabled && s.maxWorkerCount==1 &&
+     s.dependencyVerificationMode==DependencyVerificationMode.STRICT && s.taskNames==targets && s.excludedTaskNames.empty &&
+     s.allInitScripts.size()==1 && s.initScripts.size()==1 && s.includedBuilds.empty && s.writeDependencyVerifications.empty &&
+     !s.writeDependencyLocks && s.lockedDependenciesToUpdate.empty &&
+     s.projectProperties==['dsha.rebirthCandidate':'true','dsha.identity':'rebirth','dsha.unsignedPackage':'true','dsha.rust.mode':'off',
+                           'android.builder.sdkDownload':'false','org.gradle.java.installations.auto-download':'false'], 'INVOCATION')
+gradle.settingsEvaluated { st ->
+    need(sha(new File(st.settingsDir,'settings.gradle'))=='374e47e50d784456d86537a95716970de0e0c838e614ddf49c6e80064db1e56d' &&
+         sha(new File(st.settingsDir,'gradle/verification-metadata.xml'))=='ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26', 'SOURCE_PINS')
+    def r = st.dependencyResolutionManagement
+    need(r.repositoriesMode.get().name()=='FAIL_ON_PROJECT_REPOS', 'PROJECT_REPOSITORY')
+    need(r.repositories.collect { it.url.toString() }==['https://dl.google.com/dl/android/maven2/','https://repo.maven.apache.org/maven2/',
+        'https://jitpack.io','https://maven.mozilla.org/maven2/'], 'ORIGINAL_REPOSITORIES')
+}
+gradle.taskGraph.whenReady { graph ->
+    def app=gradle.rootProject.project(':app')
+    need(app.ext.dshaReleaseIdentity.identity=='rebirth' && app.ext.dshaReleaseIdentity.versionCode==368 &&
+         app.android.defaultConfig.applicationId=='dsh.android.client.rebirth', 'IDENTITY')
+    def actual=graph.allTasks*.path
+    need(actual.size()>=3 && actual.size()<=80 && actual.unique(false).size()==actual.size() &&
+         actual.every { it ==~ /:app:[A-Za-z0-9_]+/ && !(it ==~ /(?i):app:(?:assemble|bundle|dex|merge.*Dex|package(?!StandardReleaseResources$)|sign|validateSigning|install|uninstall|connected|test).*/) } &&
+         actual.last()==':app:lintStandardRelease' && actual.containsAll([':app:lintAnalyzeStandardRelease',':app:lintReportStandardRelease']), 'GRAPH')
+    println 'B368_PRIVATE_LINT_PLAN=1'
+}
