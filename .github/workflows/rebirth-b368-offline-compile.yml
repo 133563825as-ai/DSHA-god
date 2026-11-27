@@ -143,6 +143,23 @@ jobs:
             if grep -Eq 'Could not resolve|Could not find|Could not get resource' "$l"; then printf 'B368_COMPILE_REASON=%s:RESOLVER\n' "$m"; fi
             if grep -Eq 'NDK not configured|No version of NDK matched|Failed to find target' "$l"; then printf 'B368_COMPILE_REASON=%s:SDK_NDK\n' "$m"; fi
             if grep -Fq 'B368_PRIVATE_EXACT_GRAPH=31' "$l"; then echo B368_COMPILE_GRAPH=31; fi
+            python3 -IB - "$m" "$l" <<'PY'
+          import re,sys
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          phase,path=sys.argv[1:]; t=Path(path).read_text(errors='replace')
+          result={'GOOGLE':r"Could not (?:GET|HEAD|get resource)[^\n]+https://dl\.google\.com/",
+                  'CENTRAL':r"Could not (?:GET|HEAD|get resource)[^\n]+https://repo\.maven\.apache\.org/",
+                  'HTTP_403':r'(?:status code|HTTP)[ :]+403\b','HTTP_429':r'(?:status code|HTTP)[ :]+429\b',
+                  'HTTP_5XX':r'(?:status code|HTTP)[ :]+5\d\d\b','TLS':r'(?i)PKIX|handshake|peer not authenticated',
+                  'TIMEOUT':r'(?i)timed out|timeout'}
+          for k,v in result.items():
+              if re.search(v,t):print(f'B368_COMPILE_REASON={phase}:{k}')
+          lock=ET.parse('gradle/verification-metadata.xml')
+          allowed={':'.join(c.attrib[k] for k in ('group','name','version')) for c in lock.findall('./{*}components/{*}component')}
+          found=set(re.findall(r'(?m)(?:Could not (?:resolve|find)|No cached version of) ([A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.+-]+)\.?\s',t))
+          for coord in sorted(found & allowed)[:12]: print(f'B368_COMPILE_LOCKED_COORDINATE={phase}:{coord}')
+          PY
           }
           for m in runtime compile aapt2; do
             rc=0
