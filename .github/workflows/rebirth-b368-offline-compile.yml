@@ -64,7 +64,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py read_compiled_release.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py read_compiled_release.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -168,13 +168,26 @@ jobs:
           for coord in sorted(found & allowed)[:12]: print(f'B368_COMPILE_LOCKED_COORDINATE={phase}:{coord}')
           PY
           }
+          retries=0
           for m in runtime compile aapt2; do
-            rc=0
-            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
-              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.supply.json" \
-              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/online_b368_compile_supply.init.gradle" :app:probeB368ActualOrigin >"$p/$m.supply.log" 2>&1 || rc=$?
+            for attempt in 1 2; do
+              rc=0
+              supply_log="$p/$m.supply.$attempt.log"
+              env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+                DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.supply.json" \
+                "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/online_b368_compile_supply.init.gradle" :app:probeB368ActualOrigin >"$supply_log" 2>&1 || rc=$?
+              if (( rc == 0 )); then break; fi
+              if (( attempt == 1 && retries == 0 )) && [[ ! -e "$p/$m.supply.json" ]] && \
+                python3 -IB "$p/online_b368_retry_429.py" "$supply_log" >>"$out" 2>&1; then
+                printf 'B368_CENTRAL_BACKOFF=%s:65\n' "$m"
+                retries=1
+                sleep 65
+              else
+                break
+              fi
+            done
             printf 'B368_COMPILE_SUPPLY=%s:%s\n' "$m" "$rc"
-            if (( rc != 0 )); then reason "$m" "$p/$m.supply.log"; exit "$rc"; fi
+            if (( rc != 0 )); then reason "$m" "$supply_log"; exit "$rc"; fi
             [[ -s "$p/$m.supply.json" ]]
           done
           [[ ! -d "$p/receiver/app/build" ]]
