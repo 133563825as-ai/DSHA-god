@@ -1,3 +1,4 @@
+import com.deepseekharness.app.BuildConfig;
 import com.deepseekharness.app.util.DeviceShellPolicy;
 import com.deepseekharness.app.util.SmsQuery;
 import java.util.List;
@@ -38,7 +39,25 @@ public final class DevicePolicyProbe {
       throw new AssertionError("invalid mode did not fall back to STRICT: " + label);
   }
 
+  private static void expectTrialDenial(DeviceShellPolicy.Plan plan, String reason) {
+    if (plan.allowed() || plan.kind != DeviceShellPolicy.Kind.DENY || !plan.argv.isEmpty()
+        || !plan.reason.contains(reason)) throw new AssertionError("Missing trial denial: " + reason);
+    checked++;
+  }
+
+  private static void expectTrialBoundaries() {
+    for (var mode : List.of(DeviceShellPolicy.Mode.RELAXED, DeviceShellPolicy.Mode.FULL))
+      expectTrialDenial(DeviceShellPolicy.inspect("id", mode), "TRIAL_RAW_DEVICE_SHELL_UNAVAILABLE");
+    for (String command : List.of("find /fixture", "du /fixture", "ls /fixture", "grep TOKEN /fixture"))
+      expectTrialDenial(DeviceShellPolicy.inspect(command), "TRIAL_DEVICE_TRAVERSAL_UNAVAILABLE");
+    expectTrialDenial(DeviceShellPolicy.inspectFileArguments(List.of("cp", "-r", "/fixture", "/data/local/tmp/fake")),
+        "TRIAL_DEVICE_TRAVERSAL_UNAVAILABLE");
+    expect(DeviceShellPolicy.Kind.READ, "cat /fixture/one");
+  }
+
   public static void main(String[] args) {
+    if (args.length != 1 || !Boolean.toString(BuildConfig.REBIRTH_CANDIDATE).equals(args[0]))
+      throw new AssertionError("Requested fixture identity differs from compiled policy identity");
     for (String command :
         List.of(
             "touch /sdcard/DCIM/photo",
@@ -76,9 +95,13 @@ public final class DevicePolicyProbe {
     }
     expect(DeviceShellPolicy.Kind.DENY, "content query --uri content://contacts --user 0");
 
-    // 放宽档：放行普通 root 命令，仍拒绝格式化、重启与删除整块存储等不可逆操作。
-    expectShell("settings put global airplane_mode_on 1", DeviceShellPolicy.Mode.RELAXED);
-    expectShell("pm list packages -3", DeviceShellPolicy.Mode.RELAXED);
+    // 非试用版保留原权限矩阵；试用版单独断言策略拒绝。
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      expectTrialBoundaries();
+    } else {
+      expectShell("settings put global airplane_mode_on 1", DeviceShellPolicy.Mode.RELAXED);
+      expectShell("pm list packages -3", DeviceShellPolicy.Mode.RELAXED);
+    }
     for (String command :
         List.of(
             "mkfs.ext4 /dev/block/by-name/userdata",
@@ -94,7 +117,12 @@ public final class DevicePolicyProbe {
             "mkfs.ext4 /dev/block/by-name/userdata",
             "reboot",
             "rm -rf /sdcard"))
-      expectShell(command, DeviceShellPolicy.Mode.FULL);
+      if (BuildConfig.REBIRTH_CANDIDATE) {
+        expectTrialDenial(DeviceShellPolicy.inspect(command, DeviceShellPolicy.Mode.FULL),
+            "TRIAL_RAW_DEVICE_SHELL_UNAVAILABLE");
+      } else {
+        expectShell(command, DeviceShellPolicy.Mode.FULL);
+      }
 
     // 非法/缺失档位一律回落严格档，不能把写坏的配置当成放宽。
     expectStrictFallback("");
@@ -114,7 +142,9 @@ public final class DevicePolicyProbe {
         List.of("/dcim", "/pictures", "/android/data", "/android/obb")))
       throw new AssertionError("The native path rules used by the executor changed");
     System.out.println(
-        "PASS native device dry plans: "
+        "PASS native device dry plans (rebirth="
+            + BuildConfig.REBIRTH_CANDIDATE
+            + "): "
             + checked
             + "; production Java, no Android process or permission evidence");
   }
