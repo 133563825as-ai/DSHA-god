@@ -18,7 +18,7 @@ def sha = { File f ->
 def s = gradle.startParameter
 def mode = System.getenv('B368_ORIGIN_MODE')
 def report = System.getenv('B368_ORIGIN_REPORT')
-need(mode in ['runtime','compile','aapt2'] && report != null && !new File(report).exists(), 'BOUND_MODE')
+need(mode in ['runtime','compile','aapt2','kotlin'] && report != null && !new File(report).exists(), 'BOUND_MODE')
 need(gradle.gradleVersion=='9.3.1' && !s.offline && !s.dryRun && !s.refreshDependencies && !s.configurationCacheRequested &&
      !s.buildCacheEnabled && !s.parallelProjectExecutionEnabled && s.maxWorkerCount==1 &&
      s.dependencyVerificationMode==DependencyVerificationMode.STRICT && s.taskNames==[task] && s.excludedTaskNames.empty &&
@@ -55,6 +55,21 @@ gradle.projectsEvaluated {
             } else if (mode=='compile') {
                 cfg=variant.compileConfiguration
                 need(cfg.name=='standardReleaseCompileClasspath', 'REAL_COMPILE_CONFIGURATION')
+            } else if (mode=='kotlin') {
+                def kt=app.tasks.named('compileStandardReleaseKotlin').get()
+                need(kt.class.name.startsWith('org.jetbrains.kotlin.gradle.tasks.KotlinCompile'), 'KOTLIN_ACTUAL_TASK')
+                def names=['kotlinBuildToolsApiClasspath','kotlinCompilerClasspath']
+                def tools=[:]
+                names.each { cname ->
+                    def tc=app.configurations.findByName(cname)
+                    need(tc != null && tc.canBeResolved, 'KOTLIN_CONFIGURATION')
+                    def files=tc.incoming.artifacts.artifacts
+                    need(!files.empty && files.every { a -> a.id.componentIdentifier instanceof ModuleComponentIdentifier && a.file.isFile() }, 'KOTLIN_ARTIFACTS')
+                    tools[cname]=files.collect { a -> [gav:a.id.componentIdentifier.displayName,file:a.file.name,bytes:a.file.length(),sha256:sha(a.file)] }
+                    need(tools[cname].any { it.gav==(cname=='kotlinBuildToolsApiClasspath' ? 'org.jetbrains.kotlin:kotlin-build-tools-impl:2.2.10' : 'org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.10') }, 'KOTLIN_TOOL_IDENTITY')
+                }
+                new File(report).text=JsonOutput.toJson([mode:mode,configurations:tools,offline:s.offline])+'\n'
+                return
             } else {
                 cfg=app.configurations.detachedConfiguration(app.dependencies.create('com.android.tools.build:aapt2:9.1.1-14792394:linux'))
                 need(cfg.dependencies.size()==1, 'AAPT2_CONFIGURATION')

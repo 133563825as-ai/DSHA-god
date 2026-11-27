@@ -38,7 +38,7 @@ def summarize(text, tasks, allowed):
 def main():
     assert __debug__ and len(sys.argv) == 5
     phase, log, lock, guard = sys.argv[1:]
-    assert phase in ('runtime', 'compile', 'aapt2', 'offline')
+    assert phase in ('runtime', 'compile', 'aapt2', 'kotlin', 'offline')
     tasks = json.loads(re.search(r'(?m)^def expected = (.*)$', Path(guard).read_text(encoding='utf8'))[1])
     assert len(tasks) == len(set(tasks)) == 31 and all(re.fullmatch(r':app:[A-Za-z0-9_]+', x) for x in tasks)
     assert Path(log).stat().st_size <= 16 * 2**20

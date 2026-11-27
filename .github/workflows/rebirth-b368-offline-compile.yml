@@ -191,7 +191,7 @@ jobs:
             python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
           }
           retries=0
-          for m in runtime compile aapt2; do
+          for m in runtime compile aapt2 kotlin; do
             for attempt in 1 2; do
               rc=0
               supply_log="$p/$m.supply.$attempt.log"
@@ -211,6 +211,17 @@ jobs:
             printf 'B368_COMPILE_SUPPLY=%s:%s\n' "$m" "$rc"
             if (( rc != 0 )); then reason "$m" "$supply_log"; exit "$rc"; fi
             [[ -s "$p/$m.supply.json" ]]
+            if [[ $m = kotlin ]]; then
+              python3 -IB - "$p/kotlin.supply.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          q=json.loads(Path(sys.argv[1]).read_bytes()); assert q['mode']=='kotlin' and q['offline'] is False
+          k=q['configurations']; assert set(k)=={'kotlinBuildToolsApiClasspath','kotlinCompilerClasspath'}
+          for name,rows in k.items():
+              assert 0<len(rows)<128
+              print(f'B368_KOTLIN_TOOL_COUNT={name}:{len(rows)}')
+          PY
+            fi
           done
           [[ ! -d "$p/receiver/app/build" ]]
           stage=OFFLINE_COMPILE
