@@ -2072,5 +2072,7 @@
   "xA64019": "Alguns caminhos monitorados não podem ser lidos",
   "xA64020": "Eventos de monitoramento perdidos; verificação pendente",
   "xA64021": "Evidência de execução truncada",
-  "xA64022": "Atribuição das entradas do Loader incompleta"
+  "xA64022": "Atribuição das entradas do Loader incompleta",
+  "rebirthLocalWebOnly": "A versão de teste oferece acesso Web apenas neste dispositivo, sem compartilhamento na rede local.",
+  "rebirthRecheckStop": "Verificar novamente a parada"
 }

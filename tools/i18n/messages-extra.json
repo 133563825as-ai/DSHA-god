@@ -16875,5 +16875,22 @@
     "files": [
       "app/src/main/java/com/deepseekharness/app/ui/PluginFragment.java"
     ]
+  },
+  {
+    "id": "rebirthLocalWebOnly",
+    "zh": "试用版仅提供本机 Web，不开放局域网。",
+    "en": "This trial offers on-device Web only; LAN sharing is unavailable.",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/ConfigFragment.java",
+      "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ]
+  },
+  {
+    "id": "rebirthRecheckStop",
+    "zh": "重新核验停止",
+    "en": "Re-check Stop",
+    "files": [
+      "app/src/main/java/com/deepseekharness/app/ui/LaunchFragment.java"
+    ]
   }
 ]

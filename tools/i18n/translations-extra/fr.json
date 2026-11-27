@@ -2072,5 +2072,7 @@
   "xA64019": "Certains chemins surveillés sont illisibles",
   "xA64020": "Événements de surveillance perdus ; vérification en attente",
   "xA64021": "Preuves d’exécution tronquées",
-  "xA64022": "Attribution des entrées Loader incomplète"
+  "xA64022": "Attribution des entrées Loader incomplète",
+  "rebirthLocalWebOnly": "La version d’essai ne propose qu’un accès Web sur cet appareil, sans partage sur le réseau local.",
+  "rebirthRecheckStop": "Vérifier à nouveau l’arrêt"
 }

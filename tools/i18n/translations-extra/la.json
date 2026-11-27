@@ -2072,5 +2072,7 @@
   "xA64019": "Quaedam viae observatae legi nequeunt",
   "xA64020": "Eventus observationis amissi; verificatio exspectatur",
   "xA64021": "Indicia executionis truncata",
-  "xA64022": "Attributio elementorum Loader incompleta"
+  "xA64022": "Attributio elementorum Loader incompleta",
+  "rebirthLocalWebOnly": "Editio experimentalis accessum ad interfaciem interretialem in hoc tantum apparatu praebet; communicatio per rete locale non praesto est.",
+  "rebirthRecheckStop": "Iterum comproba an substiterit"
 }
