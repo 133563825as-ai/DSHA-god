@@ -1,0 +1,52 @@
+name: Rebirth b368 public runner capacity probe
+on:
+  push:
+    branches: [validate/rebirth-b368-runner-probe]
+permissions: {}
+jobs:
+  sample:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-runner-probe'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Measure runner capacity only; no checkout or artifacts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil, time
+          root = Path('/sys/fs/cgroup')
+          try:
+              names = [x[3:] for x in Path('/proc/self/cgroup').read_text().splitlines() if x.startswith('0::')]
+              assert len(names) == 1 and names[0].startswith('/') and '..' not in Path(names[0]).parts
+              leaf = (root / names[0].lstrip('/')).resolve(strict=True)
+              assert leaf == root or root in leaf.parents
+              mounts = [x.split() for x in Path('/proc/self/mountinfo').read_text().splitlines() if ' - cgroup2 ' in x and x.split()[4]=='/sys/fs/cgroup']
+              assert len(mounts)==1 and mounts[0][3]=='/'
+              vals = []
+              for i in range(2):
+                  mem, = re.findall(r'(?m)^MemAvailable:\s+(\d+) kB$', Path('/proc/meminfo').read_text())
+                  cap = int(mem) * 1024
+                  for node in (leaf, *[x for x in leaf.parents if x == root or root in x.parents]):
+                      lim = node / 'memory.max'
+                      if not lim.exists():
+                          assert node != leaf or leaf == root
+                          continue
+                      v = lim.read_text().strip()
+                      if v != 'max':
+                          cap = min(cap, max(0, int(v)-int((node/'memory.current').read_text())))
+                  vals.append((cap, shutil.disk_usage('.').free))
+                  if i == 0:
+                      time.sleep(3)
+              mem = min(x for x,y in vals)
+              disk = min(y for x,y in vals)
+          except (AssertionError, OSError, ValueError):
+              print('B368_PROBE=UNAVAILABLE')
+              raise SystemExit(2)
+          print(f'B368_VISIBLE_MIN_MIB={mem//2**20}')
+          print(f'B368_WORK_DISK_FREE_MIB={disk//2**20}')
+          ok = mem >= 7168*2**20 and disk > 30*2**30
+          print('B368_PROBE=' + ('RESOURCE_THRESHOLDS_MET' if ok else 'RESOURCE_THRESHOLDS_NOT_MET'))
+          print('B368_FORMAL_ADMISSION=false')
+          raise SystemExit(0 if ok else 75)
+          PY
