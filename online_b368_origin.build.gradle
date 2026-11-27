@@ -14,8 +14,10 @@ configurations {
     physicalLint
     physicalHostAnnotation
 }
-configurations.configureEach {
-    canBeConsumed = false
+configurations.configureEach { canBeConsumed = false }
+// AGP lint uses a detached resolver; a generic Java 17 attribute set
+// would over-constrain this separate preliminary probe.
+configurations.physicalRuntime {
     attributes {
         attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
         attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))

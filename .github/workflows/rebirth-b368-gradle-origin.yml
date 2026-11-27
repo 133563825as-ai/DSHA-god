@@ -69,6 +69,8 @@ jobs:
           }
           for key, pattern in tests.items():
               if re.search(pattern, data): print('B368_ORIGIN_REASON=' + key)
+          for name in ('physicalRuntime','physicalLint','physicalHostAnnotation'):
+              if re.search(r"configuration ':" + name + r"'", data): print('B368_ORIGIN_FAILED_CONFIGURATION=' + name)
           PY
             exit 1
           fi
