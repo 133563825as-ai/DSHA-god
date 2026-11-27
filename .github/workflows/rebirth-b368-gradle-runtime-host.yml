@@ -1,0 +1,121 @@
+name: Rebirth b368 same-origin Gradle Runtime and host annotation probe
+on:
+  push:
+    branches: [validate/rebirth-b368-gradle-runtime-host]
+permissions: {}
+jobs:
+  origin:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-gradle-runtime-host'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Resolve locked originals, then repeat from a read-only cache without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          p=$(mktemp -d "$RUNNER_TEMP/b368-origin-XXXXXXXX")
+          log="$p/raw.log"
+          stage=SETUP
+          trap 'rc=$?; if (( rc != 0 )); then printf "B368_ORIGIN_FAILED_STAGE=%s\nB368_ORIGIN_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          git_env=(env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          url=https://github.com/133563825as-ai/DSHA-god.git
+          sha=b2ed231b165c90339a297e136e476e98ade67f11
+          for n in source worker; do
+            r=$sha; [[ $n != worker ]] || r=$GITHUB_SHA
+            "${git_env[@]}" git init -q --template= "$p/$n" >>"$log" 2>&1
+            "${git_env[@]}" git -C "$p/$n" fetch -q --no-tags --depth 1 "$url" "$r" >>"$log" 2>&1
+            [[ $("${git_env[@]}" git -C "$p/$n" rev-parse FETCH_HEAD) = "$r" ]]
+          done
+          [[ $("${git_env[@]}" git -C "$p/source" rev-parse FETCH_HEAD^{tree}) = 7fb60ba40c3e60094c7ff02281a2a4058f6da545 ]]
+          mkdir -p "$p/probe/gradle" "$p/producer-home" "$p/consumer-home" "$p/home" "$p/ro" "$p/tmp"
+          "${git_env[@]}" git -C "$p/source" show FETCH_HEAD:gradle/verification-metadata.xml > "$p/probe/gradle/verification-metadata.xml"
+          [[ $(sha256sum "$p/probe/gradle/verification-metadata.xml" | cut -d' ' -f1) = ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26 ]]
+          for n in settings build; do "${git_env[@]}" git -C "$p/worker" show "FETCH_HEAD:online_b368_origin.$n.gradle" > "$p/probe/$n.gradle"; done
+          stage=TOOLCHAIN
+          dl() {
+            local u=$1 f=$2 bytes=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p" curl --disable -fsSL --proto '=https' --proto-redir '=https' --max-redirs 4 --max-time 220 --max-filesize "$bytes" --output "$f" "$u" >>"$log" 2>&1
+            [[ $(stat -c %s "$f") = "$bytes" && $(sha256sum "$f" | cut -d' ' -f1) = "$pin" ]]
+          }
+          dl https://services.gradle.org/distributions/gradle-9.3.1-bin.zip "$p/g.zip" 137037885 b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/j.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          unzip -q "$p/g.zip" -d "$p" >>"$log" 2>&1
+          tar -xzf "$p/j.tgz" -C "$p" >>"$log" 2>&1
+          j="$p/jdk-17.0.21+9"; g="$p/gradle-9.3.1/bin/gradle"
+          [[ -x "$j/bin/java" && -x "$g" ]]
+          stage=ORIGINAL_PRODUCER
+          cd "$p/probe"
+          opts=(--no-daemon --no-parallel --no-configuration-cache --no-build-cache --max-workers=1 --dependency-verification=strict --console=plain)
+          if ! env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+            GRADLE_USER_HOME="$p/producer-home" B368_RESOLVE_REPORT="$p/online.json" "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" :probeOriginalClosure >>"$log" 2>&1; then
+            if grep -Fq 'Dependency verification failed' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=DEPENDENCY_VERIFICATION; fi
+            if grep -Eq 'Could not (get resource|GET|HEAD|resolve|find)' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=RESOLVER; fi
+            if grep -Fq 'B368_ORIGIN_PROBE_REFUSED' "$log"; then echo B368_ORIGIN_PRODUCER_FAILURE=GUARD; fi
+            python3 -IB - "$log" <<'PY'
+          import re, sys
+          from pathlib import Path
+          data = Path(sys.argv[1]).read_text(errors='replace')
+          tests = {
+              'GOOGLE_REQUEST_FAILURE': r"Could not (?:get resource|GET|HEAD)[^\n]+https://dl\.google\.com/",
+              'CENTRAL_REQUEST_FAILURE': r"Could not (?:get resource|GET|HEAD)[^\n]+https://repo\.maven\.apache\.org/",
+              'GOOGLE_LISTENABLEFUTURE': r"(?:Could not (?:get resource|GET|HEAD)[^\n]+https://dl\.google\.com/[^\n]+listenablefuture|Could not find com\.google\.guava:listenablefuture:1\.0)",
+              'TLS_OR_CERTIFICATE': r'(?i)PKIX|handshake|peer not authenticated|certificate_unknown|unable to find valid certification path',
+              'HTTP_403': r'(?:status code|HTTP)[ :]+403\b',
+              'HTTP_429': r'(?:status code|HTTP)[ :]+429\b',
+              'HTTP_5XX': r'(?:status code|HTTP)[ :]+5\d\d\b',
+              'TIMEOUT': r'(?i)timed out|timeout',
+              'NO_COMPATIBLE_VARIANT': r'(?i)no matching variant|no compatible variant',
+          }
+          for key, pattern in tests.items():
+              if re.search(pattern, data): print('B368_ORIGIN_REASON=' + key)
+          for name in ('physicalRuntime','physicalHostAnnotation'):
+              if re.search(r"configuration ':" + name + r"'", data): print('B368_ORIGIN_FAILED_CONFIGURATION=' + name)
+          PY
+            exit 1
+          fi
+          stage=ORIGINAL_OFFLINE
+          uid=$(id -u); gid=$(id -g); test "$uid" -ne 0
+          sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
+            uid=$1; gid=$2; p=$3; j=$4; g=$5; shift 5
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            mount --bind "$p/producer-home/caches" "$p/ro"
+            mount -o remount,bind,ro,nosuid,nodev,noexec "$p/ro"
+            test -d "$p/ro/modules-2"
+            awk -v p="$p/ro" "\$5==p && \$6 ~ /(^|,)ro(,|$)/ && \$6 ~ /(^|,)noexec(,|$)/ { n++ } END { exit(n==1?0:1) }" /proc/self/mountinfo
+            test -z "$(ls -A "$p/consumer-home")"
+            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_RESOLVE_REPORT="$p/offline.json" \
+              "$g" "$@" --offline --project-cache-dir "$p/o-cache" :probeOriginalClosure
+          ' offline "$uid" "$gid" "$p" "$j" "$g" "${opts[@]}" >>"$log" 2>&1
+          stage=COMPARE
+          python3 -IB - "$p" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); a=json.loads((p/'online.json').read_bytes()); b=json.loads((p/'offline.json').read_bytes())
+          modes={'physicalRuntime','physicalHostAnnotation'}
+          assert set(a)==set(b)==modes
+          for k in modes:
+              assert a[k] and len(a[k])==len(b[k])
+              for x,y in zip(a[k],b[k]):
+                  assert Path(x['path']).is_relative_to(p/'producer-home/caches/modules-2/files-2.1')
+                  assert Path(y['path']).is_relative_to(p/'ro/modules-2/files-2.1')
+                  assert {z:v for z,v in x.items() if z!='path'}=={z:v for z,v in y.items() if z!='path'}
+          required={('physicalRuntime','com.google.guava:listenablefuture:1.0','MavenRepo','e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069'),
+                    ('physicalHostAnnotation','androidx.annotation:annotation-jvm:1.9.1','Google','1e343917ebf27ba96fe4dc52b1cad7fd32b738fbc6355bb6cd5b3b305d7212d0')}
+          assert required == {(k,x['gav'],x['origin'],x['sha256']) for k in modes for x in b[k]}
+          cache=p/'producer-home/caches/modules-2'
+          metadata=cache/'metadata-2.107'; assert metadata.is_dir()
+          for fname in ('module-artifact.bin','module-metadata.bin','resource-at-url.bin'):
+              assert (metadata/fname).stat().st_size>0
+          for g,n,v,k in [('com.google.guava','listenablefuture','1.0','26c913274550a0b2221f47a0fe2d2358'),('androidx.annotation','annotation-jvm','1.9.1','d4e342018b23d58be902a60e67105aa1')]:
+              assert (metadata/'descriptors'/g/n/v/k/'descriptor.bin').stat().st_size>0
+          print('B368_ORIGIN_INDEXES=3')
+          print('B368_ORIGIN_DESCRIPTORS=2')
+          for k in sorted(modes):print('B368_ORIGIN_COUNT='+k+':'+str(len(b[k])))
+          PY
+          printf 'B368_ORIGIN_OFFLINE_PROBE=PASS\nB368_ANDROID_PROJECT=false\nB368_FORMAL_ADMISSION=false\n'

@@ -1,0 +1,58 @@
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+import org.gradle.api.attributes.Bundling
+import org.gradle.api.attributes.Category
+import org.gradle.api.attributes.LibraryElements
+import org.gradle.api.attributes.Usage
+import org.gradle.api.attributes.java.TargetJvmVersion
+
+// Separate configurations: do not let Guava's empty replacement evict the real runtime leaf.
+configurations {
+    physicalRuntime
+    physicalHostAnnotation
+}
+configurations.configureEach { canBeConsumed = false }
+// This is not the Android RuntimeClasspath or AGP lint detached resolver.
+configurations.physicalRuntime {
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
+        attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
+        attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+    }
+}
+dependencies {
+    physicalRuntime 'com.google.guava:listenablefuture:1.0'
+    physicalHostAnnotation('androidx.annotation:annotation-jvm:1.9.1') { transitive = false }
+}
+
+def need = { boolean ok, String tag -> if (!ok) throw new GradleException('B368_ORIGIN_PROBE_REFUSED:' + tag) }
+def args = gradle.startParameter
+need(gradle.gradleVersion == '9.3.1' && args.dependencyVerificationMode == DependencyVerificationMode.STRICT &&
+    args.taskNames == [':probeOriginalClosure'] && args.excludedTaskNames.empty && args.allInitScripts.empty &&
+    args.writeDependencyVerifications.empty && !args.writeDependencyLocks && !args.dryRun && !args.refreshDependencies &&
+    !args.buildCacheEnabled && !args.configurationCacheRequested && args.maxWorkerCount == 1, 'ENTRY')
+
+tasks.register('probeOriginalClosure') {
+    doLast {
+        def rows = [:]
+        [physicalRuntime: configurations.physicalRuntime,
+         physicalHostAnnotation: configurations.physicalHostAnnotation].each { name, conf ->
+            def selected = conf.incoming.resolutionResult.allComponents.findAll { it.id instanceof ModuleComponentIdentifier }
+            def repositories = selected.collectEntries { [(it.id.displayName): it.repositoryName] }
+            rows[name] = conf.incoming.artifacts.artifacts.collect { a ->
+                def id = a.id.componentIdentifier
+                need(id instanceof ModuleComponentIdentifier && repositories[id.displayName] in ['Google','MavenRepo','maven','maven2'], 'RESOLVER_ORIGIN')
+                def f = a.file.canonicalFile
+                [gav:id.displayName, file:f.name, bytes:f.length(), sha256:MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString(),
+                 origin:repositories[id.displayName], path:f.path]
+            }.sort { [it.gav,it.file] }
+        }
+        def lock = System.getenv('B368_RESOLVE_REPORT')
+        need(lock != null && !new File(lock).exists(), 'REPORT_PATH')
+        new File(lock).text = JsonOutput.toJson(rows) + '\n'
+    }
+}
