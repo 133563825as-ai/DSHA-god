@@ -295,8 +295,8 @@ jobs:
           stage=LINT_REPORT
           if [[ -n $(find app/build -type f \( -name '*.apk' -o -name '*.dex' \) -print -quit) ]]; then echo B368_LINT_REPORT_REFUSED=UNEXPECTED_DEX_OR_APK; exit 1; fi
           report_rc=0
-          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" >"$p/lint.summary" 2>>"$out" || report_rc=$?
-          grep -Ex 'B368_LINT_(REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|REPORT_SHA256=[a-f0-9]{64}|TOOL_STATUS=[0-7]|TEXT_COUNTERS=[0-9]{1,6}:[0-9]{1,6}|TEXT=UNAVAILABLE|REPORT_REFUSED=(DECLARATION|TOOL_STATUS|XML_DISABLED|XML_MISSING_OR_UNSAFE|XML_SCHEMA))' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
+          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" "$p/receiver" >"$p/lint.summary" 2>>"$out" || report_rc=$?
+          grep -Ex 'B368_LINT_(REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|REPORT_SHA256=[a-f0-9]{64}|TOOL_STATUS=[0-7]|TEXT_COUNTERS=[0-9]{1,6}:[0-9]{1,6}|TEXT=UNAVAILABLE|REPORT_REFUSED=(DECLARATION|TOOL_STATUS|XML_DISABLED|XML_MISSING_OR_UNSAFE|XML_SCHEMA)|XML_REASON=(SIZE|UNSAFE|ROOT|ISSUE|SEVERITY|COUNT|ENCODING|PARSE|OTHER)|FIRST_LOCATION_STATE=(NONE|PUBLIC|WITHHELD)|FIRST_PUBLIC_LOCATION=app/src/(main|standard|rebirthTrial)/[A-Za-z0-9_./-]{1,220}\.(kt|java|xml):[1-9][0-9]{0,5})' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
           (( rc == 0 )) || exit "$rc"
           (( report_rc == 0 )) || exit "$report_rc"
           printf 'B368_LINT=PASS\nB368_FORMAL_ADMISSION=false\n'
