@@ -1,0 +1,92 @@
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import org.gradle.api.Action
+import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+
+final String task = ':app:probeB368ActualOrigin'
+def need = { boolean ok, String why -> if (!ok) throw new GradleException('B368_ACTUAL_ORIGIN_REFUSED:' + why) }
+def sha = { File f ->
+    def dig = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { stream ->
+        byte[] b = new byte[65536]
+        for (int n = stream.read(b); n != -1; n = stream.read(b)) dig.update(b,0,n)
+    }
+    dig.digest().encodeHex().toString()
+}
+def s = gradle.startParameter
+def mode = System.getenv('B368_ORIGIN_MODE')
+def report = System.getenv('B368_ORIGIN_REPORT')
+need(mode in ['runtime','compile','aapt2','kotlin'] && report != null && !new File(report).exists(), 'BOUND_MODE')
+need(gradle.gradleVersion=='9.3.1' && !s.offline && !s.dryRun && !s.refreshDependencies && !s.configurationCacheRequested &&
+     !s.buildCacheEnabled && !s.parallelProjectExecutionEnabled && s.maxWorkerCount==1 &&
+     s.dependencyVerificationMode==DependencyVerificationMode.STRICT && s.taskNames==[task] && s.excludedTaskNames.empty &&
+     s.allInitScripts.size()==1 && s.initScripts.size()==1 && s.includedBuilds.empty && s.writeDependencyVerifications.empty &&
+     !s.writeDependencyLocks && s.lockedDependenciesToUpdate.empty &&
+     s.projectProperties==['dsha.rebirthCandidate':'true','dsha.identity':'rebirth','dsha.unsignedPackage':'true','dsha.rust.mode':'off',
+                           'android.builder.sdkDownload':'false','org.gradle.java.installations.auto-download':'false'], 'INVOCATION')
+def state = [:]
+gradle.settingsEvaluated { st ->
+    need(sha(new File(st.settingsDir,'settings.gradle'))=='374e47e50d784456d86537a95716970de0e0c838e614ddf49c6e80064db1e56d' &&
+         sha(new File(st.settingsDir,'gradle/verification-metadata.xml'))=='ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26', 'SOURCE_PINS')
+    def r = st.dependencyResolutionManagement
+    need(r.repositoriesMode.get().name()=='FAIL_ON_PROJECT_REPOS', 'PROJECT_REPOSITORY')
+    need(r.repositories.collect { it.url.toString() }==['https://dl.google.com/dl/android/maven2/','https://repo.maven.apache.org/maven2/',
+        'https://jitpack.io','https://maven.mozilla.org/maven2/'], 'ORIGINAL_REPOSITORIES')
+}
+gradle.beforeProject { app ->
+    if (app.path==':app') app.pluginManager.withPlugin('com.android.application') {
+        def ac=app.extensions.getByName('androidComponents')
+        ac.onVariants(ac.selector().withName('standardRelease'), { variant -> state.variant=variant } as Action)
+    }
+}
+gradle.projectsEvaluated {
+    def app=gradle.rootProject.project(':app')
+    app.tasks.register('probeB368ActualOrigin') {
+        doLast {
+            def variant=state.variant
+            need(variant != null && variant.name=='standardRelease' && variant.applicationId.get()=='dsh.android.client.rebirth' &&
+                app.ext.dshaReleaseIdentity.identity=='rebirth' && app.ext.dshaReleaseIdentity.versionCode==368, 'IDENTITY')
+            Configuration cfg
+            if (mode=='runtime') {
+                cfg=variant.runtimeConfiguration
+                need(cfg.name=='standardReleaseRuntimeClasspath', 'REAL_RUNTIME_CONFIGURATION')
+            } else if (mode=='compile') {
+                cfg=variant.compileConfiguration
+                need(cfg.name=='standardReleaseCompileClasspath', 'REAL_COMPILE_CONFIGURATION')
+            } else if (mode=='kotlin') {
+                def kt=app.tasks.named('compileStandardReleaseKotlin').get()
+                need(kt.class.name.startsWith('org.jetbrains.kotlin.gradle.tasks.KotlinCompile'), 'KOTLIN_ACTUAL_TASK')
+                def names=['kotlinBuildToolsApiClasspath','kotlinCompilerClasspath']
+                def tools=[:]
+                names.each { cname ->
+                    def tc=app.configurations.findByName(cname)
+                    need(tc != null && tc.canBeResolved, 'KOTLIN_CONFIGURATION')
+                    def files=tc.incoming.artifacts.artifacts
+                    need(!files.empty && files.every { a -> a.id.componentIdentifier instanceof ModuleComponentIdentifier && a.file.isFile() }, 'KOTLIN_ARTIFACTS')
+                    tools[cname]=files.collect { a -> [gav:a.id.componentIdentifier.displayName,file:a.file.name,bytes:a.file.length(),sha256:sha(a.file)] }
+                    need(tools[cname].any { it.gav==(cname=='kotlinBuildToolsApiClasspath' ? 'org.jetbrains.kotlin:kotlin-build-tools-impl:2.2.10' : 'org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.10') }, 'KOTLIN_TOOL_IDENTITY')
+                }
+                new File(report).text=JsonOutput.toJson([mode:mode,configurations:tools,offline:s.offline])+'\n'
+                return
+            } else {
+                cfg=app.configurations.detachedConfiguration(app.dependencies.create('com.android.tools.build:aapt2:9.1.1-14792394:linux'))
+                need(cfg.dependencies.size()==1, 'AAPT2_CONFIGURATION')
+            }
+            def repositories=cfg.incoming.resolutionResult.allComponents.findAll { it.id instanceof ModuleComponentIdentifier }
+                .collectEntries { [(it.id.displayName):it.repositoryName] }
+            def rows=cfg.incoming.artifacts.artifacts.collect { a ->
+                def id=a.id.componentIdentifier
+                need(id instanceof ModuleComponentIdentifier && repositories[id.displayName] in ['Google','MavenRepo','maven','maven2'], 'RESOLVED_REPOSITORY')
+                def f=a.file.canonicalFile
+                [gav:id.displayName,file:f.name,bytes:f.length(),sha256:sha(f),origin:repositories[id.displayName],path:f.path]
+            }.sort { [it.gav,it.file] }
+            need(!rows.empty, 'EMPTY_CONFIGURATION')
+            def names=rows.collect { it.gav }.toSet()
+            need(mode=='runtime' ? names.contains('com.google.guava:listenablefuture:1.0') : (mode=='compile' || names.contains('com.android.tools.build:aapt2:9.1.1-14792394')), 'REQUIRED_LEAF')
+            new File(report).text=JsonOutput.toJson([mode:mode,configuration:cfg.name,offline:s.offline,rows:rows])+'\n'
+        }
+    }
+}
+gradle.taskGraph.whenReady { graph -> need(graph.allTasks*.path==[task], 'TASK_GRAPH') }
