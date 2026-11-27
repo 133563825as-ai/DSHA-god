@@ -1,0 +1,156 @@
+name: Rebirth b368 SDK layout graph comparison
+on:
+  push:
+    branches: [validate/rebirth-b368-sdk-probe]
+permissions: {}
+jobs:
+  origin:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-sdk-probe'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - name: Compare two SDK layouts on the exact b368 dry-run graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          p=$(mktemp -d "$RUNNER_TEMP/b368-origin-XXXXXXXX")
+          log="$p/raw.log"
+          stage=SETUP
+          trap 'rc=$?; if (( rc != 0 )); then printf "B368_ORIGIN_FAILED_STAGE=%s\nB368_ORIGIN_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          git_env=(env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          url=https://github.com/133563825as-ai/DSHA-god.git
+          sha=b2ed231b165c90339a297e136e476e98ade67f11
+          for n in source worker; do
+            r=$sha; [[ $n != worker ]] || r=$GITHUB_SHA
+            "${git_env[@]}" git init -q --template= "$p/$n" >>"$log" 2>&1
+            "${git_env[@]}" git -C "$p/$n" fetch -q --no-tags --depth 1 "$url" "$r" >>"$log" 2>&1
+            [[ $("${git_env[@]}" git -C "$p/$n" rev-parse FETCH_HEAD) = "$r" ]]
+          done
+          [[ $("${git_env[@]}" git -C "$p/source" rev-parse FETCH_HEAD^{tree}) = 7fb60ba40c3e60094c7ff02281a2a4058f6da545 ]]
+          mkdir -p "$p/producer-home" "$p/home" "$p/ro" "$p/tmp" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage"
+          "${git_env[@]}" git -C "$p/source" -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD >>"$log" 2>&1
+          [[ -z $("${git_env[@]}" git -C "$p/source" status --porcelain=v1 --untracked-files=all) ]]
+          "${git_env[@]}" git -C "$p/worker" show FETCH_HEAD:online_b368_android_origin.init.gradle > "$p/probe.init.gradle"
+          stage=TOOLCHAIN
+          dl() {
+            local u=$1 f=$2 bytes=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p" curl --disable -fsSL --proto '=https' --proto-redir '=https' --max-redirs 4 --max-time 220 --max-filesize "$bytes" --output "$f" "$u" >>"$log" 2>&1
+            [[ $(stat -c %s "$f") = "$bytes" && $(sha256sum "$f" | cut -d' ' -f1) = "$pin" ]]
+          }
+          dl https://services.gradle.org/distributions/gradle-9.3.1-bin.zip "$p/g.zip" 137037885 b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/j.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          unzip -q "$p/g.zip" -d "$p" >>"$log" 2>&1
+          tar -xzf "$p/j.tgz" -C "$p" >>"$log" 2>&1
+          j="$p/jdk-17.0.21+9"; g="$p/gradle-9.3.1/bin/gradle"
+          [[ -x "$j/bin/java" && -x "$g" ]]
+          stage=SDK
+          dl https://dl.google.com/android/repository/platform-37.0_r02.zip "$p/platform.zip" 67281901 840b23e827f96e64aea4c89a1194aac3dc5f6bad37edb231c5c795d890330e8d
+          dl https://dl.google.com/android/repository/build-tools_r36_linux.zip "$p/build-tools.zip" 63737259 5d9ac77fb6ff43d9da518a337b4fcf8f9097113df531d99ccefe80ef7ce8250b
+          unzip -q "$p/platform.zip" -d "$p/sdk/platforms" >>"$log" 2>&1
+          unzip -q "$p/build-tools.zip" -d "$p/sdk-stage" >>"$log" 2>&1
+          [[ -d "$p/sdk-stage/android-16" && ! -L "$p/sdk-stage/android-16" && ! -e "$p/sdk/build-tools/36.0.0" ]]
+          [[ $(realpath -e "$p/sdk-stage/android-16") = "$p/sdk-stage/android-16" && $(realpath -e "$p/sdk/build-tools") = "$p/sdk/build-tools" ]]
+          mv -T "$p/sdk-stage/android-16" "$p/sdk/build-tools/36.0.0"
+          [[ -f "$p/sdk/platforms/android-37.0/android.jar" && -x "$p/sdk/build-tools/36.0.0/aapt2" ]]
+          stage=NDK
+          dl https://dl.google.com/android/repository/android-ndk-r26d-linux.zip "$p/ndk.zip" 668556491 eefeafe7ccf177de7cc57158da585e7af119bb7504a63604ad719e4b2a328b54
+          mkdir "$p/ndk-stage" "$p/sdk/ndk"
+          unzip -q "$p/ndk.zip" -d "$p/ndk-stage" >>"$log" 2>&1
+          [[ $(realpath -e "$p/ndk-stage/android-ndk-r26d") = "$p/ndk-stage/android-ndk-r26d" && $(realpath -e "$p/sdk/ndk") = "$p/sdk/ndk" && ! -e "$p/sdk/ndk/26.3.11579264" ]]
+          [[ $(sha256sum "$p/ndk-stage/android-ndk-r26d/source.properties" | cut -d' ' -f1) = c16df8635bca2590bb8c2bcc67aaef99f853c71f2d86ff4603189780c45a6e4e ]]
+          mv -T "$p/ndk-stage/android-ndk-r26d" "$p/sdk/ndk/26.3.11579264"
+          stage=PRODUCER
+          "${git_env[@]}" git -C "$p/worker" show FETCH_HEAD:online_b368_sdk_dry_run.init.gradle > "$p/dry.init.gradle"
+          cd "$p/source"
+          opts=(--no-daemon --no-parallel --no-configuration-cache --no-build-cache --max-workers=1 --dependency-verification=strict --console=plain
+            '-Dorg.gradle.jvmargs=-Xmx1536m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' -Pdsha.identity=rebirth -Pdsha.rebirthCandidate=true -Pdsha.unsignedPackage=true -Pdsha.rust.mode=off -Pandroid.builder.sdkDownload=false -Porg.gradle.java.installations.auto-download=false)
+          "${git_env[@]}" git -C "$p/worker" show FETCH_HEAD:online_b368_retry_429.py > "$p/retry.py"
+          for attempt in 1 2; do
+            rc=0
+            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE=runtime B368_ORIGIN_REPORT="$p/warm.json" \
+              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/probe.init.gradle" :app:probeB368ActualOrigin >"$p/warm.$attempt.log" 2>&1 || rc=$?
+            if (( rc == 0 )); then break; fi
+            if (( attempt == 1 )) && [[ ! -e "$p/warm.json" ]] && python3 -IB "$p/retry.py" "$p/warm.$attempt.log" >>"$log" 2>&1; then
+              echo B368_SDK_CENTRAL_BACKOFF=65; sleep 65
+            else break; fi
+          done
+          printf 'B368_SDK_ORIGINAL_WARM=%s\n' "$rc"
+          (( rc == 0 )) || exit "$rc"
+          [[ ! -e "$p/sdk/platforms/android-37.0/package.xml" && ! -e "$p/sdk/build-tools/36.0.0/package.xml" ]]
+          stage=DRY_RUN
+          uid=$(id -u); gid=$(id -g); test "$uid" -ne 0
+          passed=0
+          for m in raw registered; do
+            if [[ $m = registered ]]; then
+              stage=SDK_REGISTRATION
+              sdk_image="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+              if ! env -i PATH=/usr/bin:/bin /usr/bin/python3 -IB - "$p/sdk" "$sdk_image" >>"$log" 2>&1 <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as E
+          import hashlib,sys
+          raw,ima=map(Path,sys.argv[1:]); assert ima.resolve()==ima and raw.resolve()==raw
+          def digest(p):
+              assert p.is_file() and p.resolve()==p
+              with p.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
+          matched=[]
+          for d,name,revision,checks in [('platforms/android-37.0','platforms;android-37.0',[2],('android.jar','core-for-system-modules.jar','source.properties')),('build-tools/36.0.0','build-tools;36.0.0',[36,0,0],('aapt2','aidl','source.properties'))]:
+              a,b=raw/d,ima/d
+              for f in checks:assert digest(a/f)==digest(b/f),f
+              f=b/'package.xml'; assert f.resolve()==f and 0<f.stat().st_size<65536
+              body=f.read_bytes(); node=E.fromstring(body).find('localPackage');assert node.attrib['path']==name
+              assert [int(x.text) for x in node.find('revision')]==revision
+              if d.startswith('platforms/'):
+                  attrs={x.tag:x.text for x in node.find('type-details')}
+                  assert attrs['api-level']=='37.0' and attrs['extension-level']=='22' and attrs['base-extension']=='true'
+              assert not (a/'package.xml').exists()
+              matched.append((a/'package.xml',body))
+          for n,b in matched:
+              with n.open('xb') as f:f.write(b)
+          PY
+              then echo B368_SDK_REGISTERED_METADATA=UNAVAILABLE_OR_DIFFERENT; break; fi
+              echo B368_SDK_REGISTERED_METADATA=HOSTED_PACKAGE_XML_WITH_MATCHING_TOOL_BYTES
+            fi
+            stage=DRY_RUN
+            mkdir "$p/home-$m"
+            rc=0
+            sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
+              uid=$1; gid=$2; p=$3; j=$4; g=$5; m=$6; shift 6
+              /usr/sbin/ip link set lo up
+              test "$(/usr/sbin/ip -o link | wc -l)" = 1
+              test -z "$(/usr/sbin/ip route show)"
+              test -z "$(/usr/sbin/ip -6 route show default)"
+              mount --bind "$p/producer-home/caches" "$p/ro"
+              mount -o remount,bind,ro,nosuid,nodev,noexec "$p/ro"
+              mount --bind "$p/sdk" "$p/sdk"
+              mount -o remount,bind,ro,nosuid,nodev "$p/sdk"
+              exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+                PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+                DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/home-$m" GRADLE_RO_DEP_CACHE="$p/ro" \
+                "$g" "$@" --offline --dry-run --project-cache-dir "$p/plan-$m" -I "$p/dry.init.gradle" \
+                :app:checkStandardReleaseDuplicateClasses :app:compileStandardReleaseJavaWithJavac
+            ' consumer "$uid" "$gid" "$p" "$j" "$g" "$m" "${opts[@]}" >"$p/$m.log" 2>&1 || rc=$?
+            printf 'B368_SDK_PLAN=%s:%s\n' "$m" "$rc"
+            python3 -IB - "$m" "$p/$m.log" "$p/dry.init.gradle" "$rc" <<'PY'
+          import json,re,sys
+          from pathlib import Path
+          m,log,init,rc=sys.argv[1:]; data=Path(log).read_text(errors='replace'); assert '> Task ' not in data
+          if rc=='0':
+              expect=json.loads(re.search(r'(?m)^def expected = (.*)$',Path(init).read_text())[1]); assert len(expect)==31
+              assert data.splitlines().count('B368_SDK_PRIVATE_EXACT_GRAPH=31')==1
+              assert re.findall(r'(?m)^(:\S+) SKIPPED$',data)==expect
+              print('B368_SDK_EXACT_SKIPPED='+m+':31')
+          else:
+              tags={'TARGET_37_NOT_FOUND':r'(?i)(?:failed to find target|failed to find platform)[^\r\n]*android-37',
+                    'NDK_NOT_CONFIGURED':r'(?i)NDK not configured','NDK_VERSION_UNAVAILABLE':r'(?i)No version of NDK matched',
+                    'SDK_LOCATION_NOT_FOUND':r'(?i)SDK location not found','BUILD_TOOLS_MISSING':r'(?i)(?:Failed to find Build Tools revision|Build Tools revision .*corrupted)',
+                    'CACHE_MISS':r'available for offline mode','GUARD':r'B368_ACTUAL_ORIGIN_REFUSED:'}
+              for k,v in tags.items():
+                  if re.search(v,data):print('B368_SDK_REFUSAL='+m+':'+k)
+          PY
+            if (( rc == 0 )); then passed=$((passed+1)); fi
+          done
+          [[ ! -d app/build ]]
+          printf 'B368_SDK_PLANS_PASSED=%s\nB368_SDK_ACTIONS_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n' "$passed"
+          (( passed > 0 ))
