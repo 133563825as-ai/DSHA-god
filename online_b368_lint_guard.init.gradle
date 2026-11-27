@@ -49,6 +49,11 @@ gradle.taskGraph.whenReady { graph ->
     def paths=[status:relative(statusFile),
                text:aggregate.textReportInputFile.present ? relative(aggregate.textReportInputFile.get().asFile) : null,
                xml:report.xmlReportEnabled.get() ? relative(report.xmlReportOutputFile.get().asFile) : null]
+    def manifest=graph.allTasks.find { it.path==':app:processStandardReleaseMainManifest' }
+    need(manifest.class.name.startsWith('com.android.build.gradle.tasks.ProcessApplicationManifest'), 'AGP_MANIFEST_TASK')
+    def manifestTarget=new File(System.getenv('B368_LINT_DECLARED_OUTPUTS') + '.manifest')
+    need(manifestTarget.createNewFile(), 'AGP_MANIFEST_CONTRACT_EXISTS')
+    manifestTarget.setText(relative(manifest.mergedManifest.get().asFile)+'\n', 'UTF-8')
     def target=new File(System.getenv('B368_LINT_DECLARED_OUTPUTS'))
     need(target.createNewFile(), 'AGP_REPORT_CONTRACT_EXISTS')
     target.setText(groovy.json.JsonOutput.toJson(paths)+'\n', 'UTF-8')

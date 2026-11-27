@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint' && github.run_attempt == '1' && github.event.before == '224e70901305660ec501bc72b545a7d9ee398de1'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=b2ed231b165c90339a297e136e476e98ade67f11
-          t=7fb60ba40c3e60094c7ff02281a2a4058f6da545
+          c=ba20e804c0d0588d1cb6cad6f58b83744d38afec
+          t=715bd9b60de91077138d4402555b3f77d5449d29
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -34,6 +34,7 @@ jobs:
               test -z "$(git -C "$1/src" status --porcelain=v1 --untracked-files=all)"
               test -z "$(git -C "$1/src" remote)"
             ' verify "$p" "$c" "$t" >"$out" 2>&1
+          printf 'B368_LINT_SOURCE_COMMIT=%s\n' "$c"
           stage=DOWNLOAD
           env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --location \
             --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize 716787167 --max-time 360 \
@@ -64,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py verify_b368_merged_permission.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -174,7 +175,7 @@ jobs:
             if grep -Eqi 'No matching variant|no compatible variant' "$l"; then printf 'B368_COMPILE_REASON=%s:VARIANT\n' "$m"; fi
             if grep -Fq 'B368_ACTUAL_ORIGIN_REFUSED:' "$l"; then printf 'B368_COMPILE_REASON=%s:GUARD\n' "$m"; fi
             if [[ $m = offline ]]; then
-              for code in AGP_REPORT_TASKS AGP_REPORT_PATH AGP_REPORT_RESULT_BINDING AGP_REPORT_CONTRACT_EXISTS; do
+              for code in AGP_REPORT_TASKS AGP_REPORT_PATH AGP_REPORT_RESULT_BINDING AGP_REPORT_CONTRACT_EXISTS AGP_MANIFEST_TASK AGP_MANIFEST_CONTRACT_EXISTS; do
                 if grep -Fq "B368_LINT_EXEC_REFUSED:$code" "$l"; then printf 'B368_LINT_DECLARATION_REFUSED=%s\n' "$code"; fi
               done
             fi
@@ -295,8 +296,17 @@ jobs:
           stage=LINT_REPORT
           if [[ -n $(find app/build -type f \( -name '*.apk' -o -name '*.dex' \) -print -quit) ]]; then echo B368_LINT_REPORT_REFUSED=UNEXPECTED_DEX_OR_APK; exit 1; fi
           report_rc=0
-          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" "$p/receiver" >"$p/lint.summary" 2>>"$out" || report_rc=$?
+          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" >"$p/lint.summary" 2>>"$out" || report_rc=$?
           grep -Ex 'B368_LINT_(REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|REPORT_SHA256=[a-f0-9]{64}|TOOL_STATUS=[0-7]|TEXT_COUNTERS=[0-9]{1,6}:[0-9]{1,6}|TEXT=UNAVAILABLE|REPORT_REFUSED=(DECLARATION|TOOL_STATUS|XML_DISABLED|XML_MISSING_OR_UNSAFE|XML_SCHEMA)|XML_REASON=(SIZE|UNSAFE|ROOT|ISSUE|SEVERITY|COUNT|ENCODING|PARSE|OTHER)|FIRST_LOCATION_STATE=(NONE|PUBLIC|WITHHELD)|FIRST_PUBLIC_LOCATION=app/src/(main|standard|rebirthTrial)/[A-Za-z0-9_./-]{1,220}\.(kt|java|xml):[1-9][0-9]{0,5})' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
+          stage=MERGED_PERMISSION
+          manifest_rc=0
+          if grep -Fxq '> Task :app:processStandardReleaseMainManifest' "$p/compile.log"; then
+            python3 -IB "$p/verify_b368_merged_permission.py" "$p/receiver/app/build" "$p/lint.outputs.json.manifest" 2>>"$out" || manifest_rc=$?
+          else
+            echo B368_LINT_MERGED_PERMISSION=REFUSED
+            manifest_rc=1
+          fi
           (( rc == 0 )) || exit "$rc"
           (( report_rc == 0 )) || exit "$report_rc"
+          (( manifest_rc == 0 )) || exit "$manifest_rc"
           printf 'B368_LINT=PASS\nB368_FORMAL_ADMISSION=false\n'
