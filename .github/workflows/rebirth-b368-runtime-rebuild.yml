@@ -1,0 +1,102 @@
+name: Rebirth b368 public locked runtime rebuild
+on:
+  push:
+    branches: [validate/rebirth-b368-runtime-rebuild]
+permissions: {}
+jobs:
+  restore:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-runtime-rebuild'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Rebuild locked inputs and verify same-commit local handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          set +x
+          p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
+          c=b2ed231b165c90339a297e136e476e98ade67f11
+          t=7fb60ba40c3e60094c7ff02281a2a4058f6da545
+          hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
+          url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
+          stage=SOURCE
+          out="$p/private.log"
+          trap 'rc=$?; if (( rc != 0 )); then printf "B368_RESTORE_FAILED_STAGE=%s\nB368_RESTORE_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          [[ $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
+          env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
+            bash -euc '
+              git init -q --template= "$1/src"
+              git -C "$1/src" -c core.hooksPath=/dev/null fetch --quiet --no-tags --depth 1 https://github.com/133563825as-ai/DSHA-god.git "$2"
+              git -C "$1/src" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD
+              test "$(git -C "$1/src" rev-parse HEAD)" = "$2"
+              test "$(git -C "$1/src" rev-parse HEAD^{tree})" = "$3"
+              test -z "$(git -C "$1/src" status --porcelain=v1 --untracked-files=all)"
+              test -z "$(git -C "$1/src" remote)"
+            ' verify "$p" "$c" "$t" >"$out" 2>&1
+          stage=DOWNLOAD
+          env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --location \
+            --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize 716787167 --max-time 360 \
+            --output "$p/fixed.zip" "$url" >>"$out" 2>&1
+          stage=PIN
+          [[ $(stat -c %s "$p/fixed.zip") = 716787167 ]]
+          [[ $(sha256sum "$p/fixed.zip" | cut -d' ' -f1) = "$hash" ]]
+          stage=SET
+          env -i PATH=/usr/bin:/bin HOME="$p" python3 -IB - "$p/fixed.zip" "$p/src" "$hash" "$url" >>"$out" 2>&1 <<'PY'
+          import json, pathlib, sys, zipfile
+          archive, source, pin, url = sys.argv[1:]
+          lock = json.loads((pathlib.Path(source) / 'ci/sunset-inputs.lock.json').read_bytes())
+          assert (lock['url'], lock['sha256'], lock['bytes'], lock['format']) == (url, pin, 716787167, 'bundle')
+          with zipfile.ZipFile(archive) as z:
+              names = z.namelist()
+              assert len(names) == len(set(names)) == 12
+              assert not any(name.lower().endswith(('.apk', '.aab', '.apks')) for name in names)
+          PY
+          stage=ORIGINAL_RESTORE
+          cd "$p/src"
+          env -i PATH=/usr/bin:/bin HOME="$p" LC_ALL=C.UTF-8 /usr/bin/python3 -sB tools/ci-assets.py \
+            --archive "$p/fixed.zip" --sha256 "$hash" >>"$out" 2>&1
+          grep -Fxq 'PASS locked CI asset inputs; source builders must verify their own recipe metadata' "$out"
+          stage=WORKER
+          env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 bash -euc '
+            git init -q --template= "$1/worker"
+            git -C "$1/worker" fetch --quiet --no-tags --depth 1 https://github.com/133563825as-ai/DSHA-god.git "$2"
+            test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
+            git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
+            git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
+          ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
+          [[ $(sha256sum "$p/seed.cjs" | cut -d' ' -f1) = c1de8dcc8c727c71539793c9ce94bf735aa7c68bd6560af42f6f8c5fffed0c95 ]]
+          stage=NODE
+          env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --proto '=https' --max-filesize 50000000 \
+            --max-time 140 --output "$p/node.tar.xz" https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz >>"$out" 2>&1
+          [[ $(sha256sum "$p/node.tar.xz" | cut -d' ' -f1) = 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647 ]]
+          tar -xJf "$p/node.tar.xz" -C "$p" >>"$out" 2>&1
+          stage=NPM_SUPPLY
+          env -i PATH=/usr/bin:/bin HOME="$p" /usr/bin/python3 -IB "$p/online_b368_inputs.py" acquire "$p" >>"$out" 2>&1
+          stage=ISOLATION
+          mkdir "$p/home" "$p/tmp"
+          : > "$p/home/user.npmrc"; : > "$p/home/global.npmrc"
+          uid=$(id -u); gid=$(id -g)
+          test "$uid" -ne 0
+          sudo -n /usr/bin/unshare -n /bin/sh -ec '
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            exec /usr/bin/setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/true
+          ' check "$uid" "$gid" >>"$out" 2>&1
+          stage=OFFLINE_REBUILD_HANDOFF
+          sudo -n /usr/bin/unshare -n /bin/sh -ec '
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)"
+            test -z "$(/usr/sbin/ip -6 route show default)"
+            p=$3
+            exec /usr/bin/setpriv --reuid="$1" --regid="$2" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$p/node-v24.19.0-linux-x64/bin:/usr/bin:/bin" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_NO_LAZY_FETCH=1 GIT_OPTIONAL_LOCKS=0 GIT_ALLOW_PROTOCOL=file \
+              PYTHONDONTWRITEBYTECODE=1 npm_config_userconfig="$p/home/user.npmrc" npm_config_globalconfig="$p/home/global.npmrc" \
+              npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
+              /usr/bin/python3 -IB "$p/online_b368_inputs.py" offline "$p"
+          ' offline "$uid" "$gid" "$p" >>"$out" 2>&1
+          printf 'B368_SOURCE_SHA=%s\nB368_NPM_VERIFIED=668\nB368_INSTALLED_PATHS=682\nB368_HANDOFF_MEMBERS=14\nB368_OFFLINE_REBUILD_HANDOFF=PASS\nB368_COMPILE_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n' "$c"
