@@ -1,0 +1,131 @@
+name: Rebirth b368 actual Android Runtime and lint resolution
+on:
+  push:
+    branches: [validate/rebirth-b368-actual-origin]
+permissions: {}
+jobs:
+  origin:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-actual-origin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - name: Probe real AGP configurations with original repositories and offline readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          p=$(mktemp -d "$RUNNER_TEMP/b368-origin-XXXXXXXX")
+          log="$p/raw.log"
+          stage=SETUP
+          trap 'rc=$?; if (( rc != 0 )); then printf "B368_ORIGIN_FAILED_STAGE=%s\nB368_ORIGIN_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          git_env=(env -i PATH=/usr/bin:/bin HOME="$p" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0)
+          url=https://github.com/133563825as-ai/DSHA-god.git
+          sha=b2ed231b165c90339a297e136e476e98ade67f11
+          for n in source worker; do
+            r=$sha; [[ $n != worker ]] || r=$GITHUB_SHA
+            "${git_env[@]}" git init -q --template= "$p/$n" >>"$log" 2>&1
+            "${git_env[@]}" git -C "$p/$n" fetch -q --no-tags --depth 1 "$url" "$r" >>"$log" 2>&1
+            [[ $("${git_env[@]}" git -C "$p/$n" rev-parse FETCH_HEAD) = "$r" ]]
+          done
+          [[ $("${git_env[@]}" git -C "$p/source" rev-parse FETCH_HEAD^{tree}) = 7fb60ba40c3e60094c7ff02281a2a4058f6da545 ]]
+          mkdir -p "$p/producer-home" "$p/home" "$p/ro" "$p/tmp" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage"
+          "${git_env[@]}" git -C "$p/source" -c core.hooksPath=/dev/null checkout -q --detach FETCH_HEAD >>"$log" 2>&1
+          [[ -z $("${git_env[@]}" git -C "$p/source" status --porcelain=v1 --untracked-files=all) ]]
+          "${git_env[@]}" git -C "$p/worker" show FETCH_HEAD:online_b368_android_origin.init.gradle > "$p/probe.init.gradle"
+          stage=TOOLCHAIN
+          dl() {
+            local u=$1 f=$2 bytes=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p" curl --disable -fsSL --proto '=https' --proto-redir '=https' --max-redirs 4 --max-time 220 --max-filesize "$bytes" --output "$f" "$u" >>"$log" 2>&1
+            [[ $(stat -c %s "$f") = "$bytes" && $(sha256sum "$f" | cut -d' ' -f1) = "$pin" ]]
+          }
+          dl https://services.gradle.org/distributions/gradle-9.3.1-bin.zip "$p/g.zip" 137037885 b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/j.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          unzip -q "$p/g.zip" -d "$p" >>"$log" 2>&1
+          tar -xzf "$p/j.tgz" -C "$p" >>"$log" 2>&1
+          j="$p/jdk-17.0.21+9"; g="$p/gradle-9.3.1/bin/gradle"
+          [[ -x "$j/bin/java" && -x "$g" ]]
+          stage=SDK
+          dl https://dl.google.com/android/repository/platform-37.0_r02.zip "$p/platform.zip" 67281901 840b23e827f96e64aea4c89a1194aac3dc5f6bad37edb231c5c795d890330e8d
+          dl https://dl.google.com/android/repository/build-tools_r36_linux.zip "$p/build-tools.zip" 63737259 5d9ac77fb6ff43d9da518a337b4fcf8f9097113df531d99ccefe80ef7ce8250b
+          unzip -q "$p/platform.zip" -d "$p/sdk/platforms" >>"$log" 2>&1
+          unzip -q "$p/build-tools.zip" -d "$p/sdk-stage" >>"$log" 2>&1
+          [[ -d "$p/sdk-stage/android-16" && ! -L "$p/sdk-stage/android-16" && ! -e "$p/sdk/build-tools/36.0.0" ]]
+          [[ $(realpath -e "$p/sdk-stage/android-16") = "$p/sdk-stage/android-16" && $(realpath -e "$p/sdk/build-tools") = "$p/sdk/build-tools" ]]
+          mv -T "$p/sdk-stage/android-16" "$p/sdk/build-tools/36.0.0"
+          [[ -f "$p/sdk/platforms/android-37.0/android.jar" && -x "$p/sdk/build-tools/36.0.0/aapt2" ]]
+          stage=RUN
+          cd "$p/source"
+          opts=(--no-daemon --no-parallel --no-configuration-cache --no-build-cache --max-workers=1 --dependency-verification=strict --console=plain
+            '-Dorg.gradle.jvmargs=-Xmx1536m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' -Pdsha.identity=rebirth -Pdsha.rebirthCandidate=true -Pdsha.unsignedPackage=true -Pdsha.rust.mode=off -Pandroid.builder.sdkDownload=false -Porg.gradle.java.installations.auto-download=false -I "$p/probe.init.gradle")
+          uid=$(id -u); gid=$(id -g); test "$uid" -ne 0
+          classify() {
+            python3 -IB - "$1" "$2" "$3" <<'PY'
+          import re,sys
+          from pathlib import Path
+          mode,stage,log=sys.argv[1:]
+          b=Path(log).read_text(errors='replace')
+          rs={'DEPENDENCY_VERIFICATION':r'Dependency verification failed', 'NO_COMPATIBLE_VARIANT':r'(?i)no matching variant|no compatible variant',
+              'SDK_OR_NDK':r'(?i)SDK location not found|failed to find target|NDK not configured|No version of NDK matched',
+              'PROBE_GUARD':r'B368_ACTUAL_ORIGIN_REFUSED:', 'ORIGINAL_RESOLVER':r'Could not (?:resolve|find|get resource|GET|HEAD)',
+              'OFFLINE_NOT_CACHED':r'available for offline mode', 'READ_ONLY_MOUNT':r'mount:.*(?:permission|failed|denied)',
+              'TLS':r'(?i)PKIX|handshake|peer not authenticated', 'TIMEOUT':r'(?i)timed out|timeout', 'HTTP_403':r'(?:HTTP|status code)[ :]+403\b'}
+          for key,p in rs.items():
+              if re.search(p,b):print('B368_ACTUAL_FAILURE='+mode+':'+stage+':'+key)
+          tags=re.findall(r'B368_ACTUAL_ORIGIN_REFUSED:([A-Z_]+)',b)
+          for tag in sorted(set(tags)):
+              if tag in ('BOUND_MODE','INVOCATION','SOURCE_PINS','PROJECT_REPOSITORY','ORIGINAL_REPOSITORIES','IDENTITY','REAL_RUNTIME_CONFIGURATION','ACTUAL_LINT_TASK','FILE_COLLECTION_SOURCE','ACTUAL_LINT_CONFIGURATION','RESOLVED_REPOSITORY','EMPTY_CONFIGURATION','REQUIRED_LEAF','TASK_GRAPH'):
+                  print('B368_ACTUAL_GUARD='+mode+':'+tag)
+          PY
+          }
+          # Produce both in one real Gradle cache. A failed mode is never taken to the offline pass.
+          for m in runtime lint; do
+            rc=0
+            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.online.json" \
+              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" :app:probeB368ActualOrigin >"$p/$m.online.log" 2>&1 || rc=$?
+            printf 'B368_ACTUAL_PRODUCER=%s:%s\n' "$m" "$rc"
+            if (( rc != 0 )); then classify "$m" producer "$p/$m.online.log"; fi
+          done
+          total=0
+          for m in runtime lint; do
+            [[ -f "$p/$m.online.json" ]] || continue
+            mkdir "$p/consumer-$m"
+            rc=0
+            sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
+              uid=$1; gid=$2; p=$3; j=$4; g=$5; m=$6; shift 6
+              /usr/sbin/ip link set lo up
+              test "$(/usr/sbin/ip -o link | wc -l)" = 1
+              test -z "$(/usr/sbin/ip route show)"
+              test -z "$(/usr/sbin/ip -6 route show default)"
+              mount --bind "$p/producer-home/caches" "$p/ro"
+              mount -o remount,bind,ro,nosuid,nodev,noexec "$p/ro"
+              test -d "$p/ro/modules-2"
+              test -z "$(ls -A "$p/consumer-$m")"
+              exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+                PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+                DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/consumer-$m" GRADLE_RO_DEP_CACHE="$p/ro" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.offline.json" \
+                "$g" "$@" --offline --project-cache-dir "$p/o-cache-$m" :app:probeB368ActualOrigin
+            ' consumer "$uid" "$gid" "$p" "$j" "$g" "$m" "${opts[@]}" >"$p/$m.offline.log" 2>&1 || rc=$?
+            printf 'B368_ACTUAL_CONSUMER=%s:%s\n' "$m" "$rc"
+            if (( rc != 0 )); then classify "$m" consumer "$p/$m.offline.log"; continue; fi
+            python3 -IB - "$p" "$m" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); m=sys.argv[2]; a,b=[json.loads((p/f'{m}.{how}.json').read_bytes()) for how in ('online','offline')]
+          assert a['mode']==b['mode']==m and not a['offline'] and b['offline'] and a['configuration']==b['configuration']
+          x,y=a['rows'],b['rows']; assert len(x)==len(y) and x
+          for producer,consumer in zip(x,y):
+              assert Path(producer['path']).is_relative_to(p/'producer-home/caches/modules-2/files-2.1'), 'UNBOUND_PRODUCER'
+              assert Path(consumer['path']).is_relative_to(p/'ro/modules-2/files-2.1'), 'UNBOUND_CONSUMER'
+              assert {k:v for k,v in producer.items() if k!='path'}=={k:v for k,v in consumer.items() if k!='path'}, 'ROW_DRIFT'
+          pins={'runtime':('com.google.guava:listenablefuture:1.0','MavenRepo','e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069'),
+                'lint':('com.android.tools.lint:lint-gradle:32.1.1','Google',None)}
+          gav,origin,pin=pins[m]; match,=[i for i in y if i['gav']==gav]; assert match['origin']==origin and (pin is None or match['sha256']==pin)
+          print('B368_ACTUAL_VERIFIED='+m+':'+str(len(y)))
+          PY
+            total=$((total+1))
+          done
+          [[ -z $("${git_env[@]}" git status --porcelain=v1 --untracked-files=all) ]]
+          [[ ! -d app/build || -z $(find app/build -type f \( -name '*.apk' -o -name '*.dex' \) -print -quit) ]]
+          printf 'B368_ACTUAL_COMPLETED_CONFIGURATIONS=%s\nB368_LINT_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n' "$total"
+          (( total == 2 ))
