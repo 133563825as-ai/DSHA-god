@@ -16,7 +16,8 @@ CONFIGS = {
     'standardReleaseUnitTestCompileClasspath', 'standardReleaseUnitTestRuntimeClasspath',
     'standardReleaseAndroidTestCompileClasspath', 'standardReleaseAndroidTestRuntimeClasspath',
     'kotlinBuildToolsApiClasspath', 'kotlinCompilerClasspath', 'lintChecks', 'lintClassPath',
-    'standardReleaseLintChecks', 'lintPublish',
+    'standardReleaseLintChecks', 'standardReleaseLintChecksClasspath', 'lintPublish',
+    'coreLibraryDesugaring',
 }
 
 

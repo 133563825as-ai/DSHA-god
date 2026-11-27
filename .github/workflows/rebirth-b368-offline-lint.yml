@@ -236,6 +236,8 @@ jobs:
           assert len(q['rows'])==67 and type(q['localRules']) is int and 0<=q['localRules']<=100
           print('B368_LINT_SUPPLY_TOOL_ROWS='+str(len(q['rows'])))
           print('B368_LINT_SUPPLY_RULE_ROWS='+str(q['localRules']))
+          assert 1<=len(q['desugarRows'])<=8
+          print('B368_LINT_SUPPLY_DESUGAR_ROWS='+str(len(q['desugarRows'])))
           PY
           [[ ! -d "$p/receiver/app/build" ]]
           stage=OFFLINE_LINT

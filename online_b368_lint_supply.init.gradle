@@ -69,7 +69,17 @@ gradle.projectsEvaluated {
             need(!rows.empty, 'EMPTY_CONFIGURATION')
             def names=rows.collect { it.gav }.toSet()
             need(names.contains('com.android.tools.lint:lint-gradle:32.1.1'), 'REQUIRED_LEAF')
-            new File(report).text=JsonOutput.toJson([mode:mode,configuration:cfg.name,offline:s.offline,rows:rows,localRules:localRules])+'\n'
+            def desugar=app.configurations.getByName('coreLibraryDesugaring')
+            need(desugar.canBeResolved && desugar.dependencies.collect { [it.group,it.name,it.version].join(':') }==['com.android.tools:desugar_jdk_libs:2.0.4'], 'DESUGAR_CONFIGURATION')
+            def coreRepos=desugar.incoming.resolutionResult.allComponents.findAll { it.id instanceof ModuleComponentIdentifier }
+                .collectEntries { [(it.id.displayName):it.repositoryName] }
+            def core=desugar.incoming.artifacts.artifacts.collect { a ->
+                def id=a.id.componentIdentifier
+                need(id instanceof ModuleComponentIdentifier && coreRepos[id.displayName]=='Google' && a.file.isFile(), 'DESUGAR_ORIGIN')
+                [gav:id.displayName,file:a.file.name,bytes:a.file.length(),sha256:sha(a.file)]
+            }
+            need(core.any { it.gav=='com.android.tools:desugar_jdk_libs:2.0.4' && it.file=='desugar_jdk_libs-2.0.4.jar' }, 'DESUGAR_REQUIRED_LEAF')
+            new File(report).text=JsonOutput.toJson([mode:mode,configuration:cfg.name,offline:s.offline,rows:rows,localRules:localRules,desugarRows:core])+'\n'
         }
     }
 }
