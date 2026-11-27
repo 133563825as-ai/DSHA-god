@@ -64,7 +64,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_report.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -188,7 +188,9 @@ jobs:
           for k,v in result.items():
               if re.search(v,t):print(f'B368_COMPILE_REASON={phase}:{k}')
           PY
-            if [[ $m != lint && $m != offline ]]; then
+            if [[ $m = lint || $m = offline ]]; then
+              python3 -IB "$p/online_b368_lint_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_lint_guard.init.gradle" 2>>"$out" || echo B368_LINT_DIAGNOSTICS=REFUSED
+            else
               python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
             fi
           }
