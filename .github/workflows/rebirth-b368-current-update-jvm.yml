@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-current-update-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '1046aee37ec71a2c0e59a7f2388dd629feb1804b'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-current-update-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'c11bafac679aa41b401c3e7bfcb881d18282b200'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=2d5ba2838bdfb2a7019cad8b9f7e23a2f934c30d
-          t=ad81c95a6251eaadd62222ea2eeeb073cb9875ff
+          c=68e1425caf0aac6459df873cb65a7f885b5d2f8e
+          t=2316c0865bf45c2c7a5eff8dd3076acb68bb4128
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
