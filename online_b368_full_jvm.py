@@ -58,7 +58,7 @@ plan=p/'unit-plan.json'; state=p/'unit-state'; aggregate=p/'jvm-aggregate.json'
 contract=py+['tools/unit_test_contract.py']
 origin=['--root',repo,'--state',state,'--run-id',os.environ['GITHUB_RUN_ID'],'--run-attempt',os.environ['GITHUB_RUN_ATTEMPT']]
 phase('plan',contract+['plan','--root',repo,'--output',plan])
-assert digest(plan)=='b8e143f4eff1df62387b5c5720d7c119386572f14a9fa83366b326a18fc65157'
+assert digest(plan)=='c5d70f82fac78779c65749c98289d7b816dc1e3429182eb6a0d97bbb4bc43926'
 phase('begin',contract+['begin',*origin,'--plan',plan,'--rust-library',lib,'--rust-receipt',receipt])
 os.environ['DSHA_UNIT_TEST_STATE']=str(state)
 os.environ['DSHA_ROBOLECTRIC_DEPENDENCY_DIR']=str(p/'robo')

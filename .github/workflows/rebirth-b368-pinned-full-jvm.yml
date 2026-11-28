@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'a22710a44add28e7f621583ecf27ff70ddd5d864'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '9d95429ce13a63968a84d2b1ae338766d8c4eb98'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=c46848ff4aac0bda01a6115642d430e5b43c3929
-          t=f8b1a221792a5ffbe9da98a164b659a391e1bace
+          c=9df83d2e5d1497d25e9b0bbfb50d3528da7bc359
+          t=8574318a8a84e255a310d213ffdebf5ef269ba16
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py online_b368_full_jvm_diagnostics.py online_b368_jvm_failure_readback.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py online_b368_full_jvm_diagnostics.py online_b368_jvm_failure_readback.py online_b368_robo_retry_after.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -112,7 +112,7 @@ jobs:
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           grep -Fxq "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
-          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=ef6e457330fc8123db5cfc624aa73e0e1932165f6fe0ba11863125e9b059d2b5" "$p/new-handoff.summary"
+          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d" "$p/new-handoff.summary"
           grep -Fxq "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
           grep -Fx B368_PINNED_MANIFEST_PROJECTION=PASS "$p/new-handoff.summary"
           stage=TOOLCHAIN
@@ -245,13 +245,15 @@ jobs:
           stage=ROBO_SUPPLY
           robo_rc=0
           env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
-            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/receiver/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >"$p/robo-supply.log" 2>&1 || robo_rc=$?
+            /usr/bin/timeout 900 /usr/bin/python3 -sB "$p/online_b368_robo_retry_after.py" "$p" >"$p/robo-supply.log" 2>&1 || robo_rc=$?
           printf 'B368_ROBO_SUPPLY_EXIT=%s\n' "$robo_rc"
           /usr/bin/python3 -sB - "$p" "$robo_rc" 2>>"$out" <<'PY'
           import hashlib,re,runpy,sys
           from pathlib import Path
           p=Path(sys.argv[1]); rc=int(sys.argv[2]); log=(p/'robo-supply.log').read_bytes()
           print('B368_ROBO_SUPPLY_LOG_SHA256='+hashlib.sha256(log).hexdigest())
+          for line in log.splitlines():
+              if re.fullmatch(rb'B368_ROBO_BACKOFF=(?:6[5-9]|[7-9][0-9]|1[01][0-9]|120)',line): print(line.decode('ascii'))
           original=runpy.run_path(str(p/'receiver/tools/prepare-robolectric-sdks.py'))
           lock=original['load_lock'](); assert len(lock['jars'])==5
           verified=sum(original['matches'](p/'robo'/original['file_name'](lock,j),j) for j in lock['jars'])
@@ -260,7 +262,7 @@ jobs:
               categories={'HTTP_429':rb'HTTP Error 429\b','HTTP_403':rb'HTTP Error 403\b','HTTP_404':rb'HTTP Error 404\b',
                           'HTTP_5XX':rb'HTTP Error 5[0-9]{2}\b','TIMEOUT':rb'(?i)timed out|TimeoutError',
                           'TLS':rb'(?i)CERTIFICATE_VERIFY_FAILED|SSL:|handshake','NETWORK':rb'(?i)connection reset|connection refused|temporary failure in name resolution',
-                          'DIGEST':rb'ROBOLECTRIC_JAR_DIGEST','SIZE':rb'ROBOLECTRIC_JAR_TOO_LARGE','LOCAL':rb'PermissionError|FileNotFoundError|No space left on device'}
+                          'RETRY_AFTER_REFUSED':rb'ROBOLECTRIC_RETRY_AFTER_REFUSED','DIGEST':rb'ROBOLECTRIC_JAR_DIGEST','SIZE':rb'ROBOLECTRIC_JAR_TOO_LARGE','LOCAL':rb'PermissionError|FileNotFoundError|No space left on device'}
               found=[k for k,v in categories.items() if re.search(v,log)]
               for item in (['WALL_TIMEOUT'] if rc==124 else [])+ (found or (['UNCLASSIFIED'] if rc!=124 else [])):
                   print('B368_ROBO_SUPPLY_REASON='+item)
