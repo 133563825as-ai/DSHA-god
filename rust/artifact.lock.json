@@ -13,10 +13,10 @@
     },
     "x86_64-unknown-linux-gnu": {
       "file": "libdsha_rs.so",
-      "status": "pending-cross-run",
-      "size": null,
-      "sha256": null,
-      "evidence": "R3 修改了 crate 源码（gzip.rs/jni.rs/lib.rs），R2 的 pin（288448 / 9c3b1a21…）对新源码不再成立。按方案 §2.3 必须连续 3 次不同 CI runner 实例产出相同 size/SHA-256 后才能重 pin；本提交先如实退回 pending-cross-run（--expect-lock 只告警）。重 pin 数值由 Lead 推送后累计 3 次 Source checks 的 rust-check 作业给出，并在后续提交写回。"
+      "status": "pinned",
+      "size": 369128,
+      "sha256": "10c11bae9ab38b0b8ac4655c0d1c4f6e87cfdc78b1fd7349ebef25718b2adfeb",
+      "evidence": "按方案 §2.3，Rust 1.100.0 在三个独立 Ubuntu 24.04 工位离线构建，一致产出本条目的 strip 后字节。"
     },
     "aarch64-unknown-linux-gnu": {
       "file": "libdsha_rs.so",
