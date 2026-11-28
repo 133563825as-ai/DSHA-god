@@ -48,12 +48,15 @@ def main(p):
     assert {x[0].parent for x in snapshots.values()}=={Path(ptr['raw']).parent}
     for kind, (_,_,_,content) in snapshots.items():
         print(f'B368_X64_FIXTURE={kind}:682:{content}',flush=True)
-    paths=('tools/test-dsh-builtins.mjs', 'tools/test-profile-settings-cli.mjs', 'tools/test-recovery-agent.mjs', 'tools/test-recovery-apk-assets.py', 'tools/test-runtime-publish.mjs', 'tools/test-workflow-compat-alias.mjs', 'tools/test-destructive-guard-pipeline.mjs', 'tools/test-tool-call-identity.mjs', 'tools/test-destructive-global-consent.mjs', 'tools/test-vscreen-bundle.mjs', 'tools/test-retired-guarded-preset.mjs', 'tools/test-recovery-native-consent.mjs', 'tools/test-auto-review-alias.mjs', 'tools/test-signed-builtin-web-intent.mjs', 'tools/test-startup-invalid-bundles.mjs', 'tools/test-builtin-runtime-deployment.mjs', 'tools/test-plugin-runtime-evidence.mjs', 'tools/test-first-connect-indicator.mjs', 'tools/test-plugin-compatibility.py')
+    paths=('tools/test-adb-flow-audit.py', 'tools/test-adb-flow.py', 'tools/test-adb-vscreen-bridge.py', 'tools/test-android-computer-use.mjs', 'tools/test-backup-engine.py', 'tools/test-device-script-selection.py', 'tools/test-mobile-delete.mjs', 'tools/test-runtime-trial.mjs', 'tools/test-vscreen.mjs', 'tools/test-web-search-headers.mjs', 'tools/test-plugin-pnpm-argv.mjs', 'tools/test-consent-tool-pipeline.mjs')
     cases=json.loads((repo/'tools/host-tests.manifest.json').read_bytes())['tests']
     assert [x['path'] for x in cases if x['stage']=='runtime' and x['path'] in paths]==list(paths)
     results={}
     for name in paths:
-        label=Path(name).name; output=p/('runtime-'+label)
+        label=Path(name).name
+        # The original trial probe requires its runner-owned scratch below app/build.
+        outroot=repo/'app/build' if label=='test-runtime-trial.mjs' else p
+        output=outroot/('runtime-'+label)
         mem=int(next(row for row in Path('/proc/meminfo').read_text().splitlines() if row.startswith('MemAvailable:')).split()[1])//1024
         assert mem>=2048
         env=dict(os.environ); env.pop('GIT_ALLOW_PROTOCOL',None); env.pop('GIT_CONFIG_NOSYSTEM',None); env.pop('GIT_CONFIG_GLOBAL',None)
@@ -76,7 +79,7 @@ def main(p):
     assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (repo/'app/build').rglob('*'))
     for name,(rc,status,log,manifest) in results.items():
         print(f'B368_RUNTIME_CASE={name}:{status}:{rc}:{log}:{manifest}',flush=True)
-    print('B368_RUNTIME_RESEALED=19',flush=True)
+    print('B368_RUNTIME_RESEALED=12',flush=True)
     return int(any(x[0] for x in results.values()))
 
 
