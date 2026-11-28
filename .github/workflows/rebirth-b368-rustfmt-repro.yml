@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-rustfmt-repro' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-rustfmt-repro' && github.event_name == 'push' && github.event.before == '6022751f1eb77edda73b73ad30ea35ef7fa7c9f3' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
