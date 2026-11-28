@@ -1,11 +1,11 @@
-name: Rebirth b368 integrated virtual-screen protocol fast check
+name: Rebirth b368 dual identity virtual-screen host fixture
 on:
   push:
-    branches: [validate/rebirth-b368-integrated-vscreen]
+    branches: [validate/rebirth-b368-vscreen-dual]
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-integrated-vscreen' && github.event_name == 'push' && github.event.before == 'd5906fa06f190042ec64cb3928ec6fafda858adb' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-vscreen-dual' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -15,8 +15,8 @@ jobs:
           set -euo pipefail
           umask 077
           set +x
-          c=38fb7b125cc0a5ae6e324db99066d3d139ce86ad
-          t=c876482bdf7b332ed295a49b8e5f22ee6b1c646c
+          c=b95ca9aa6da5aa4640b41cd187a97ad170600576
+          t=606c4de2447cd8f4eb5e4c7b4484681b14c8dd2c
           p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
           private="$p/private.log"
           stage=SOURCE
@@ -93,8 +93,10 @@ jobs:
           assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (p/'src/app/build').rglob('*'))
           print(f'B368_VSCREEN_CASE={row["status"]}:{rc}:{digest}:{hashlib.sha256(original).hexdigest()}')
           if rc==0:
-              hits=re.findall(rb'(?m)^OK \(\d+ tests?\)$',b); assert len(hits)==1 and b'NOT_RUN_ANDROID' in b
-              print('B368_VSCREEN_JUNIT='+re.search(rb'\d+',hits[0])[0].decode())
+              ids=re.findall(rb'(?m)^VSCREEN_HOST_IDENTITY=(mod|rebirth)$',b)
+              hits=re.findall(rb'(?m)^OK \(([1-9][0-9]*) tests?\)$',b)
+              assert ids==[b'mod',b'rebirth'] and len(hits)==2 and b'NOT_RUN_ANDROID' in b
+              for name,n in zip(ids,hits): print('B368_VSCREEN_JUNIT='+name.decode()+':'+n.decode())
           elif b'cannot find symbol' in b and b'REBIRTH_CANDIDATE' in b and b'org.junit.runner.JUnitCore' not in b:
               print('B368_VSCREEN_REASON=JAVAC_MISSING_REBIRTH_BUILD_CONFIG')
           elif b'cannot find symbol' in b:
