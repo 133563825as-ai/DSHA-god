@@ -1,11 +1,11 @@
-name: Rebirth b368 integrated offline class verification
+name: Rebirth b368 stop-facade offline class verification
 on:
   push:
-    branches: [validate/rebirth-b368-integrated-compile]
+    branches: [validate/rebirth-b368-facade-compile]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-integrated-compile' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-compile' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=38fb7b125cc0a5ae6e324db99066d3d139ce86ad
-          t=c876482bdf7b332ed295a49b8e5f22ee6b1c646c
+          c=265d370d72c2ecce2e210e836ca9f1da895026e4
+          t=5679b579f3f8d908d44fa7203ad0313d579318ba
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -107,7 +107,8 @@ jobs:
               PYTHONDONTWRITEBYTECODE=1 npm_config_userconfig="$p/home/user.npmrc" npm_config_globalconfig="$p/home/global.npmrc" \
               npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
               /usr/bin/python3 -IB "$p/online_b368_inputs.py" offline "$p"
-          ' offline "$uid" "$gid" "$p" >>"$out" 2>&1
+          ' offline "$uid" "$gid" "$p" >"$p/new-handoff.summary" 2>>"$out"
+          grep -Ex 'B368_FACADE_(HANDOFF_TAR|HANDOFF_MANIFEST|HANDOFF_DESCRIPTOR)=[a-f0-9]{64}|B368_FACADE_BASELINE_PROJECTION=PASS' "$p/new-handoff.summary"
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           stage=TOOLCHAIN
