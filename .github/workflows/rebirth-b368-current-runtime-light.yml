@@ -1,23 +1,23 @@
-name: Rebirth b368 stop-facade first runtime checks
+name: Rebirth b368 current candidate lightweight host checks
 on:
   push:
-    branches: [validate/rebirth-b368-facade-runtime-first]
+    branches: [validate/rebirth-b368-current-runtime-light]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-first' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-current-runtime-light' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Run thirteen registered runtime checks using fresh x64 fixtures
+      - name: Run twelve registered lightweight runtime checks offline
         shell: bash
         run: |
           set -euo pipefail
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=265d370d72c2ecce2e210e836ca9f1da895026e4
-          t=5679b579f3f8d908d44fa7203ad0313d579318ba
+          c=9df83d2e5d1497d25e9b0bbfb50d3528da7bc359
+          t=8574318a8a84e255a310d213ffdebf5ef269ba16
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -108,7 +108,7 @@ jobs:
               /usr/bin/python3 -IB "$p/online_b368_inputs.py" offline "$p"
           ' offline "$uid" "$gid" "$p" >"$p/handoff.summary" 2>>"$out"
           grep -Fx "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/handoff.summary"
-          grep -Fx "B368_FACADE_HANDOFF_MANIFEST=816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1" "$p/handoff.summary"
+          grep -Fx "B368_FACADE_HANDOFF_MANIFEST=a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d" "$p/handoff.summary"
           grep -Fx "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/handoff.summary"
           printf 'B368_CURRENT_HANDOFF=14\n'
           stage=X64_PUBLIC_SUPPLY

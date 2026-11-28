@@ -10,11 +10,12 @@ import socket
 import subprocess as sp
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.request
 
-C='265d370d72c2ecce2e210e836ca9f1da895026e4'
-T='5679b579f3f8d908d44fa7203ad0313d579318ba'
+C='9df83d2e5d1497d25e9b0bbfb50d3528da7bc359'
+T='8574318a8a84e255a310d213ffdebf5ef269ba16'
 RUNTIME='c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe'
 BASELINE_TAR='f6d3a99c15eb75b5e1f6335aea0a4611203ee3409884fc32d77b9933f5d2262f'
 DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
@@ -59,13 +60,30 @@ def acquire(p,cpu='arm64',src=None):
         url,pin=item; raw=base64.b64decode(pin[7:],validate=True); key=raw.hex(); dest=p/'sri/_cacache/content-v2/sha512'/key[:2]/key[2:4]/key[4:]
         dest.parent.mkdir(parents=True,exist_ok=True)
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
-        with opener.open(urllib.request.Request(url,headers={'Accept-Encoding':'identity'}),timeout=25) as r, dest.open('xb') as f:
-            assert r.status==200 and r.url==url and r.headers.get('Content-Encoding','identity')=='identity'
-            h=hashlib.sha512(); total=0
-            while chunk:=r.read(1024*1024):
-                total+=len(chunk);assert total<=48080284;h.update(chunk);f.write(chunk)
-            assert h.digest()==raw and total>0
-        return total
+        request=urllib.request.Request(url,headers={'Accept-Encoding':'identity'})
+        partial=dest.with_name(dest.name+'.part')
+        assert not dest.exists()
+        for attempt in range(2):
+            with partial.open('xb') as f:
+                try:
+                    with opener.open(request,timeout=25) as r:
+                        assert r.status==200 and r.url==url and r.headers.get('Content-Encoding','identity')=='identity'
+                        h=hashlib.sha512(); total=0
+                        while chunk:=r.read(1024*1024):
+                            total+=len(chunk);assert total<=48080284;h.update(chunk);f.write(chunk)
+                        assert h.digest()==raw and total>0
+                except (TimeoutError, urllib.error.URLError) as error:
+                    timed_out=isinstance(error,TimeoutError) or (type(error) is urllib.error.URLError and isinstance(error.reason,TimeoutError))
+                    if not timed_out or attempt:
+                        raise
+                else:
+                    f.close()
+                    os.link(partial,dest)
+                    partial.unlink()
+                    return total
+            partial.unlink()
+            time.sleep(3)
+        raise AssertionError('unreachable')
     def classify(item):
         try:return ('OK',get(item))
         except urllib.error.HTTPError as x:return ('HTTP_'+str(x.code) if x.code in (302,403,404,429,500,502,503,504) else 'HTTP_OTHER',0)
@@ -133,6 +151,12 @@ def offline(p):
     assert projected.hexdigest()==BASELINE_TAR
     print('B368_FACADE_BASELINE_PROJECTION=PASS')
     print('B368_FACADE_HANDOFF_TAR='+result['tarSha256'])
+    body=(hd/'handoff.json').read_bytes()
+    assert json.loads(body)['commit']==C and body.count(C.encode())==1
+    projected=body.replace(C.encode(),b'15692e209714ccb2d6474f6206d6d0f4f0c16d15',1)
+    assert hashlib.sha256(projected).hexdigest()=='d903436de54a0211c5808c3f0279f84dd3513effa9d97145a17bd50d79cc9a81'
+    assert hashlib.sha256(body).hexdigest()!='d903436de54a0211c5808c3f0279f84dd3513effa9d97145a17bd50d79cc9a81'
+    print('B368_PINNED_MANIFEST_PROJECTION=PASS')
     print('B368_FACADE_HANDOFF_MANIFEST='+digest(hd/'handoff.json'))
     print('B368_FACADE_HANDOFF_DESCRIPTOR='+NEW_DESCRIPTOR)
     for r in (src,recv):assert git(r,'rev-parse','HEAD','HEAD^{tree}').decode().split()==[C,T] and not git(r,'status','--porcelain=v1','--untracked-files=all')
