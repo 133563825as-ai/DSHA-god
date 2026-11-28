@@ -44,6 +44,8 @@ public final class UpdateOwnershipTest {
   private File apk;
   private UpdatePolicy.Release release;
 
+  // These fixtures exercise ordinary update ownership even when the test binary is Rebirth.
+  // The build-selected engine is exercised separately below, without injecting a mode.
   @Before
   public void prepare() throws Exception {
     app = RuntimeEnvironment.getApplication();
@@ -60,7 +62,8 @@ public final class UpdateOwnershipTest {
             (url, offset) -> {
               throw new IOException("测试不访问网络");
             },
-            queue);
+            queue,
+            false);
     release = release();
     apk = new File(app.getFilesDir(), "owned-test.apk");
     set("candidate", release);
@@ -115,6 +118,49 @@ public final class UpdateOwnershipTest {
     assertSame(first, ((DshaApp) app).updateEngine());
     assertSame(first.verificationExecutor(), second.verificationExecutor());
     assertFalse(first.state().getValue().busy);
+  }
+
+  @Test
+  public void buildSelectedUpdaterHonorsOfficialChannelBoundary() throws Exception {
+    // prepare() left a synthetic ready receipt. Use the actual build-selected constructor here.
+    var selectedQueue = new Queue();
+    var selected = new UpdateEngine(app, (url, offset) -> {
+      throw new AssertionError("identity fixture must not open the official transport");
+    }, selectedQueue);
+    var page = new UpdateRepository(app, selected, selectedQueue, () -> {
+      throw new AssertionError("blocked installation must not reach the verifier");
+    });
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      assertFalse(selected.hasTask());
+      assertNull(page.state().getValue().release);
+      assertNull(page.state().getValue().apk);
+      assertEquals(-1, page.prepareDownloadPermission());
+      assertEquals(-1, page.prepareInstallPermission());
+      assertFalse(page.hasDownloadPermissionRequest());
+      assertFalse(page.hasInstallPermissionRequest());
+      assertFalse(page.downloadAfterPermission(0x4000));
+      assertFalse(page.finishInstallPermission(0x4000, true));
+      page.requestInstall();
+      assertFalse(page.installationPending());
+      assertNotNull(page.installation().getValue().error);
+      assertNull(page.takeInstallReady());
+      selected.check();
+      selected.download();
+      selected.runDownload();
+      assertFalse(selected.shouldResume());
+      assertEquals("REBIRTH_OFFICIAL_UPDATES_DISABLED",
+          assertThrows(IOException.class, selected::installableApk).getMessage());
+    } else {
+      assertTrue(selected.hasTask());
+      assertNotNull(page.state().getValue().release);
+      // The synthetic metadata is restored, but the fixture has no final file to install.
+      assertNull(page.state().getValue().apk);
+      int request = page.prepareDownloadPermission();
+      assertTrue(request >= 0x4000);
+      assertTrue(page.discardDownloadPermission(request));
+      assertFalse(page.downloadAfterPermission(request));
+    }
+    assertEquals(0, selectedQueue.size());
   }
 
   @Test
@@ -381,7 +427,8 @@ public final class UpdateOwnershipTest {
               (url, offset) -> {
                 throw new AssertionError("已命名的包不能重下");
               },
-              queue);
+              queue,
+              false);
       assertFalse(restored.shouldResume());
       restored.runDownload();
       assertEquals(0, queue.size());
