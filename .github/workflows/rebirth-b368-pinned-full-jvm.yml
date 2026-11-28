@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '922bc7d4795b3e75ee0f1c88932464c0164b1ba1'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -233,8 +233,31 @@ jobs:
           PY
           echo B368_FULL_JVM_CLASSPATH_LOCK=PASS
           stage=ROBO_SUPPLY
+          robo_rc=0
           env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
-            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/receiver/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >>"$out" 2>&1
+            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/receiver/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >"$p/robo-supply.log" 2>&1 || robo_rc=$?
+          printf 'B368_ROBO_SUPPLY_EXIT=%s\n' "$robo_rc"
+          /usr/bin/python3 -sB - "$p" "$robo_rc" 2>>"$out" <<'PY'
+          import hashlib,re,runpy,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); rc=int(sys.argv[2]); log=(p/'robo-supply.log').read_bytes()
+          print('B368_ROBO_SUPPLY_LOG_SHA256='+hashlib.sha256(log).hexdigest())
+          original=runpy.run_path(str(p/'receiver/tools/prepare-robolectric-sdks.py'))
+          lock=original['load_lock'](); assert len(lock['jars'])==5
+          verified=sum(original['matches'](p/'robo'/original['file_name'](lock,j),j) for j in lock['jars'])
+          print(f'B368_ROBO_SUPPLY_VERIFIED={verified}')
+          if rc:
+              categories={'HTTP_429':rb'HTTP Error 429\b','HTTP_403':rb'HTTP Error 403\b','HTTP_404':rb'HTTP Error 404\b',
+                          'HTTP_5XX':rb'HTTP Error 5[0-9]{2}\b','TIMEOUT':rb'(?i)timed out|TimeoutError',
+                          'TLS':rb'(?i)CERTIFICATE_VERIFY_FAILED|SSL:|handshake','NETWORK':rb'(?i)connection reset|connection refused|temporary failure in name resolution',
+                          'DIGEST':rb'ROBOLECTRIC_JAR_DIGEST','SIZE':rb'ROBOLECTRIC_JAR_TOO_LARGE','LOCAL':rb'PermissionError|FileNotFoundError|No space left on device'}
+              found=[k for k,v in categories.items() if re.search(v,log)]
+              for item in (['WALL_TIMEOUT'] if rc==124 else [])+ (found or (['UNCLASSIFIED'] if rc!=124 else [])):
+                  print('B368_ROBO_SUPPLY_REASON='+item)
+          else:
+              assert verified==5
+          PY
+          (( robo_rc == 0 )) || exit "$robo_rc"
           stage=RUST_SUPPLY
           mkdir "$p/components" "$p/rust-prefix" "$p/cargo" "$p/native"
           rust_dl() {
