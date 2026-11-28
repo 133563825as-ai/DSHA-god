@@ -1,11 +1,11 @@
-name: Rebirth b368 reproduce offline host Rust on a fresh runner
+name: Rebirth b368 verify pinned Linux x64 Rust host library
 on:
   push:
-    branches: [validate/rebirth-b368-rustfmt-repro]
+    branches: [validate/rebirth-b368-pinned-host-x64]
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-rustfmt-repro' && github.event_name == 'push' && github.event.before == '6022751f1eb77edda73b73ad30ea35ef7fa7c9f3' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-host-x64' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -15,8 +15,8 @@ jobs:
           set -euo pipefail
           umask 077
           set +x
-          c=0ae10c8825001789e86871a81ec9218d3f0d2f1a
-          t=c0d323696178b91e0df21825bff03e548ed25b3a
+          c=c46848ff4aac0bda01a6115642d430e5b43c3929
+          t=f8b1a221792a5ffbe9da98a164b659a391e1bace
           p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
           private="$p/private.log"
           stage=SOURCE

@@ -78,7 +78,11 @@ def main(p, commit, tree):
     pin=hashlib.sha256(lib.read_bytes()).hexdigest()
     assert r['commit']==commit and r['target']=='host' and r['toolchain']['targetTriple']=='x86_64-unknown-linux-gnu'
     assert r['build']['locked'] is True and r['build']['offline'] is True and r['artifact']['sha256']==pin
-    assert r['expectation']['status']=='PENDING'
+    assert hashlib.sha256((repo/'rust/artifact.lock.json').read_bytes()).hexdigest()=='f2ff816440dccafd4c75c4053819201876126d5344007f20086e6a6cc18c1b60'
+    expected_lock=json.loads((repo/'rust/artifact.lock.json').read_bytes())['artifacts']['x86_64-unknown-linux-gnu']
+    assert expected_lock['status']=='pinned'
+    assert r['expectation']==dict(status='PASS',target='x86_64-unknown-linux-gnu',size=expected_lock['size'],sha256=expected_lock['sha256'])
+    print('B368_RUST_PINNED_LOCK=f2ff816440dccafd4c75c4053819201876126d5344007f20086e6a6cc18c1b60',flush=True)
     assert r['reproducible']==dict(status='PASS',differentDirectory=True,firstSha256=pin,secondSha256=pin)
     print(f'B368_RUST_REPRO_BYTES={lib.stat().st_size}:{pin}',flush=True)
     assert (lib.stat().st_size,pin)==(369128,'10c11bae9ab38b0b8ac4655c0d1c4f6e87cfdc78b1fd7349ebef25718b2adfeb')
