@@ -21,11 +21,6 @@ def main(p, commit, tree):
     identity()
     tool=p/'rust-prefix/bin'
     jdk=p/'jdk-17.0.21+9'
-    assert b'17.0.21+9' in sp.check_output([jdk/'bin/java','-version'],stderr=sp.STDOUT,timeout=15)
-    assert b'commit-hash: 0ef1bc386' in sp.check_output([tool/'rustc','-vV'],timeout=15)
-    assert sp.check_output([tool/'cargo','-V'],timeout=15).startswith(b'cargo 1.100.0 (3acc79c0c ')
-    assert sp.check_output([tool/'rustc','-vV'],timeout=15).splitlines().count(b'host: x86_64-unknown-linux-gnu') == 1
-    print('B368_RUST_TOOLCHAIN=1.100.0:X64',flush=True)
     def phase(label, command, cwd=repo, timeout=320):
         free=int(next(x for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')).split()[1])//1024
         assert free>=2048
@@ -36,6 +31,21 @@ def main(p, commit, tree):
         print(f'B368_RUST_PHASE={label}:{result.returncode}:{hashlib.sha256(b).hexdigest()}',flush=True)
         result.check_returncode()
         return b
+    phase('unpack-jdk',['/usr/bin/tar','-xzf',p/'jdk.tgz','-C',p])
+    components=sorted((p/'components').glob('*.tar.xz'))
+    assert len(components)==5
+    for archive in components:
+        name=archive.name.removesuffix('.tar.xz')
+        kind=name.split('-1.100.0-',1)[0]
+        assert kind in {'clippy','cargo','rustc','rustfmt','rust-std'}
+        phase('unpack-'+kind,['/usr/bin/tar','-xJf',archive,'-C',archive.parent])
+        phase('install-'+kind,['/bin/bash',archive.parent/name/'install.sh','--prefix='+str(tool.parent),'--disable-ldconfig'])
+    print('B368_RUST_COMPONENTS=5',flush=True)
+    assert b'17.0.21+9' in sp.check_output([jdk/'bin/java','-version'],stderr=sp.STDOUT,timeout=15)
+    version=sp.check_output([tool/'rustc','-vV'],timeout=15)
+    assert b'commit-hash: 0ef1bc386' in version and b'host: x86_64-unknown-linux-gnu' in version
+    assert sp.check_output([tool/'cargo','-V'],timeout=15).startswith(b'cargo 1.100.0 (3acc79c0c ')
+    print('B368_RUST_TOOLCHAIN=1.100.0:X64',flush=True)
     for name in ('check-rust-toolchain','check-rust-vendor','check-rust-boundaries','check-rust-native-apk'):
         phase(name,[sys.executable,'-sB','tools/'+name+'.py'])
     phase('format',[tool/'cargo','fmt','--check'],rust)

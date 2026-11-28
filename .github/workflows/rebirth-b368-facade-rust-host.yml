@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.before == '8190d143ab78d71ba966189d2f71e65ed59be7b2' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -66,16 +66,6 @@ jobs:
               CARGO_HOME="$p/cargo" CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$p/cargo-target" \
               GITHUB_RUN_ID="$run" GITHUB_RUN_ATTEMPT="$attempt" GITHUB_REPOSITORY=133563825as-ai/DSHA-god \
               GITHUB_WORKFLOW="$1" GITHUB_WORKFLOW_REF="$2" GITHUB_WORKFLOW_SHA="$3" RUNNER_NAME="$4" RUNNER_OS="$5" RUNNER_ARCH="$6" RUNNER_ENVIRONMENT="$7" \
-              /bin/bash -ec '''
-                p=$1; c=$2; t=$3
-                tar -xzf "$p/jdk.tgz" -C "$p" >>"$p/private.log" 2>&1
-                for arc in "$p"/components/*.tar.xz; do
-                  name=${arc##*/}; name=${name%.tar.xz}
-                  tar -xJf "$arc" -C "$p/components" >>"$p/private.log" 2>&1
-                  /bin/bash "$p/components/$name/install.sh" --prefix="$p/rust-prefix" --disable-ldconfig >>"$p/private.log" 2>&1
-                done
-                printf "B368_RUST_COMPONENTS=5\n"
-                exec /usr/bin/python3 -sB "$p/online_b368_host_rust.py" "$p" "$c" "$t"
-              ''' rust "$p" "$c" "$t"
+              /usr/bin/python3 -sB "$p/online_b368_host_rust.py" "$p" "$c" "$t"
           ' isolated "$u" "$g" "$p" "$c" "$t" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW" "$GITHUB_WORKFLOW_REF" "$GITHUB_WORKFLOW_SHA" "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_ENVIRONMENT" 2>>"$private"
           printf 'B368_RUST_HOST=PASS\nB368_FORMAL_ADMISSION=false\n'
