@@ -1,15 +1,15 @@
-name: Rebirth b368 Debug JVM dependency closure
+name: Rebirth b368 unfiltered offline Debug JVM
 on:
   push:
-    branches: [validate/rebirth-b368-pinned-jvm-supply]
+    branches: [validate/rebirth-b368-pinned-full-jvm]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-supply' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '927e8251316ffb6a943d6a18c4c4acc8905b15a1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Compare locked JVM classpaths online and offline
+      - name: Execute the original unfiltered JVM contract offline
         shell: bash
         run: |
           set -euo pipefail
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -214,42 +214,64 @@ jobs:
           done
           printf 'B368_JVM_CLASSPATH_ONLINE=%s\n' "$rc"
           if (( rc )); then reason jvm "$dep_log"; exit "$rc"; fi
-          stage=READONLY_DEPS
-          [[ ! -e "$p/ro/modules-2" && -d "$p/producer-home/caches/modules-2" ]]
+          stage=GRADLE_TOOL_DEPENDENCIES
+          for m in aapt2 kotlin; do
+            rc=0
+            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.supply.json" \
+              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/online_b368_compile_supply.init.gradle" :app:probeB368ActualOrigin >"$p/$m.supply.log" 2>&1 || rc=$?
+            printf 'B368_COMPILE_SUPPLY=%s:%s\n' "$m" "$rc"
+            if (( rc )); then reason "$m" "$p/$m.supply.log"; exit "$rc"; fi
+          done
+          python3 -IB - "$p/jvm-online.json" <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+          r=json.loads(Path(sys.argv[1]).read_bytes())
+          assert r['offline'] is False
+          actual={k:(len(v),hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()) for k,v in r['configurations'].items()}
+          assert actual=={'standardDebugUnitTestCompileClasspath': (89, '177aede8442f2c7ea92fc017bfc271cd9c7da545dfb38ea89cd7b544bd7ae275'), 'standardDebugUnitTestRuntimeClasspath': (101, 'e6a8425d947ea1777cdac8feff45fec811bed843060453567d812bc52e0a2a17')}
+          PY
+          echo B368_FULL_JVM_CLASSPATH_LOCK=PASS
+          stage=ROBO_SUPPLY
+          env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
+            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/receiver/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >>"$out" 2>&1
+          stage=RUST_SUPPLY
+          mkdir "$p/components" "$p/rust-prefix" "$p/cargo" "$p/native"
+          rust_dl() {
+            local url=$1 dest=$2 cap=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p/home" curl --disable -fsS --proto '=https' --max-time 240 --max-filesize "$cap" --output "$dest" "$url" >>"$out" 2>&1
+            [[ $(sha256sum "$dest" | cut -d' ' -f1) == "$pin" ]]
+          }
+          rust_dl https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 f1d0b1dec81dab6f523cd098507763487b0d4bd7fd2c87582f154128719be03b
+          rust_dl https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 7e29ce07d7c6e92d1826870575ba27d57fff6cb3e754aa57d99099cb88fab35d
+          rust_dl https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 4591b6486594ded52ecd6135db95bf9355bbd3ca7a380888b141528bbcf9a5d4
+          stage=OFFLINE_FULL_JVM
+          [[ -d "$p/producer-home/caches/modules-2" && ! -d "$p/receiver/app/build" ]]
           cp -a "$p/producer-home/caches/modules-2" "$p/ro/"
-          stage=JVM_CLASSPATH_OFFLINE
-          sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
-            p=$1; j=$2; g=$3; uid=$4; gid=$5; shift 5
+          rc=0
+          sudo -n /usr/bin/unshare -nm --propagation private /usr/bin/env -i PATH=/usr/bin:/bin /bin/bash -ec '
+            p=$1; j=$2; g=$3; uid=$4; gid=$5; c=$6; t=$7; shift 7
             /usr/sbin/ip link set lo up
             test "$(/usr/sbin/ip -o link | wc -l)" = 1
             test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
-            mount --bind "$p/ro" "$p/ro"
-            mount -o remount,bind,ro,nosuid,nodev "$p/ro"
-            findmnt -no OPTIONS --target "$p/ro" | tr , "\n" | grep -Fxq ro
-            cd "$p/receiver"
-            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
-              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
-              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_JVM_SUPPLY_REPORT="$p/jvm-offline.json" \
-              "$g" "$@" --offline --project-cache-dir "$p/c-cache" -I "$p/online_b368_jvm_supply.init.gradle" :app:probeB368JvmDependencyFiles
-          ' offline "$p" "$j" "$g" "$uid" "$gid" "${opts[@]}" >"$p/jvm-offline.log" 2>&1 || { rc=$?; reason jvm-offline "$p/jvm-offline.log"; exit "$rc"; }
-          stage=READBACK
-          python3 -IB - "$p" "$c" "$t" <<'PY'
-          from pathlib import Path
-          import hashlib,json,subprocess,sys
-          p=Path(sys.argv[1]); repo=p/'receiver'
-          a,b=[json.loads((p/f'jvm-{tag}.json').read_bytes()) for tag in ('online','offline')]
-          assert a['offline'] is False and b['offline'] is True and a['configurations']==b['configurations']
-          assert set(a['configurations'])=={'standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'}
-          for name,rows in a['configurations'].items():
-              assert rows
-              unique={}
-              for row in rows:
-                  assert unique.setdefault((row['gav'],row['file'],row['sha256']),row)==row
-              print(f'B368_JVM_MULTIPLICITY={name}:{len(rows)}:{len(unique)}')
-              digest=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-              print(f'B368_JVM_CLASSPATH={name}:{len(rows)}:{digest}')
-          assert not (repo/'app/build').exists()
-          assert subprocess.check_output(['git','-C',repo,'rev-parse','HEAD','HEAD^{tree}']).decode().split()==sys.argv[2:]
-          assert not subprocess.check_output(['git','-C',repo,'diff','--name-only','HEAD','--'])
-          PY
-          printf 'B368_JVM_CLASSPATH_OFFLINE=PASS\nB368_JVM_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n'
+            for dir in ro sdk robo; do
+              x="$p/$dir"
+              test "$(realpath -e "$x")" = "$x"
+              mount --bind "$x" "$x"
+              mount -o remount,bind,ro,nosuid,nodev "$x"
+            done
+            export PATH="$p/rust-prefix/bin:$p/node-v24.19.0-linux-x64/bin:$j/bin:/usr/bin:/bin"
+            export JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8
+            export DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro"
+            export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
+            export CARGO_HOME="$p/cargo" CARGO_NET_OFFLINE=true
+            export GITHUB_RUN_ID="$1" GITHUB_RUN_ATTEMPT="$2" GITHUB_REPOSITORY=133563825as-ai/DSHA-god
+            export GITHUB_WORKFLOW="$3" GITHUB_WORKFLOW_REF="$4" GITHUB_WORKFLOW_SHA="$5" RUNNER_NAME="$6" RUNNER_OS="$7" RUNNER_ARCH="$8" RUNNER_ENVIRONMENT="$9"
+            shift 9
+            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs -- /usr/bin/python3 -sB "$p/online_b368_full_jvm.py" "$p" "$g" "$c" "$t" "$@"
+          ' full "$p" "$j" "$g" "$uid" "$gid" "$c" "$t" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW" "$GITHUB_WORKFLOW_REF" "$GITHUB_WORKFLOW_SHA" "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_ENVIRONMENT" "${opts[@]}" 2>>"$out" || rc=$?
+          if (( rc )); then
+            if [[ -s "$p/compile.log" ]]; then reason full-jvm "$p/compile.log"; fi
+            exit "$rc"
+          fi
+          printf 'B368_FORMAL_ADMISSION=false\n'
