@@ -1,15 +1,15 @@
-name: Rebirth b368 isolated host Rust and JNI checks
+name: Rebirth b368 derive two rustfmt source changes
 on:
   push:
-    branches: [validate/rebirth-b368-facade-rust-host]
+    branches: [validate/rebirth-b368-facade-rustfmt]
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.before == 'aa3cb2960bf4de95317f80d715e718703fd718e5' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rustfmt' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Build locked host Rust and execute original JVM differential checks
+      - name: Derive only the bounded Rust source formatting patch
         shell: bash
         run: |
           set -euo pipefail
@@ -35,7 +35,7 @@ jobs:
           git init -q --template= "$p/worker" >>"$private" 2>&1
           git -C "$p/worker" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$GITHUB_SHA" >>"$private" 2>&1
           [[ $(git -C "$p/worker" rev-parse FETCH_HEAD) == "$GITHUB_SHA" ]]
-          git -C "$p/worker" show FETCH_HEAD:online_b368_host_rust.py > "$p/online_b368_host_rust.py"
+          git -C "$p/worker" show FETCH_HEAD:online_b368_rustfmt_patch.py > "$p/online_b368_rustfmt_patch.py"
           dl() {
             local url=$1 path=$2 max=$3 pin=$4 code rc=0
             code=$(env -i PATH=/usr/bin:/bin HOME="$p/home" curl --disable -fsSL --retry 2 --retry-delay 3 --retry-max-time 60 --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize "$max" --max-time 240 --output "$path" --write-out '%{http_code}' "$url" 2>>"$private") || rc=$?
@@ -44,8 +44,6 @@ jobs:
             (( rc == 0 )) || return "$rc"
             [[ $(sha256sum "$path" | cut -d' ' -f1) == "$pin" ]]
           }
-          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/jdk.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
-          [[ $(stat -c %s "$p/jdk.tgz") == 193594705 ]]
           mkdir "$p/components" "$p/rust-prefix" "$p/cargo"
           dl https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 f1d0b1dec81dab6f523cd098507763487b0d4bd7fd2c87582f154128719be03b
           dl https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 7e29ce07d7c6e92d1826870575ba27d57fff6cb3e754aa57d99099cb88fab35d
@@ -66,6 +64,5 @@ jobs:
               CARGO_HOME="$p/cargo" CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$p/cargo-target" \
               GITHUB_RUN_ID="$run" GITHUB_RUN_ATTEMPT="$attempt" GITHUB_REPOSITORY=133563825as-ai/DSHA-god \
               GITHUB_WORKFLOW="$1" GITHUB_WORKFLOW_REF="$2" GITHUB_WORKFLOW_SHA="$3" RUNNER_NAME="$4" RUNNER_OS="$5" RUNNER_ARCH="$6" RUNNER_ENVIRONMENT="$7" \
-              /usr/bin/python3 -sB "$p/online_b368_host_rust.py" "$p" "$c" "$t"
+              /usr/bin/python3 -sB "$p/online_b368_rustfmt_patch.py" "$p" "$c" "$t"
           ' isolated "$u" "$g" "$p" "$c" "$t" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW" "$GITHUB_WORKFLOW_REF" "$GITHUB_WORKFLOW_SHA" "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_ENVIRONMENT" 2>>"$private"
-          printf 'B368_RUST_HOST=PASS\nB368_FORMAL_ADMISSION=false\n'
