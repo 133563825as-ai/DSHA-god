@@ -9,9 +9,9 @@ import subprocess as sp
 import sys
 from xml.etree import ElementTree as ET
 
-CASES = {'ExternalTargetConfirmationTest': 7, 'ExternalDeviceImportRootTest': 2,
-         'LanListenerFailureTest': 2, 'TrialNativeDeviceOffTest': 3}
-PACKAGE = 'com.deepseekharness.app.'
+CASES = {'UpdateEngineCheckTest': 8, 'UpdateOwnershipTest': 19}
+METHODS = {'UpdateEngineCheckTest': ['rebirthCandidateNeverChecksRestoresDownloadsOrInstallsOfficialUpdates', 'legacyStartupHooksNeverCheckOrPromptButManualCheckStillWorks', 'absentFeedAndNoPublishedReleaseHaveNormalEmptyStates', 'legacyApplicationAndMissingAssetNeverBecomeInstallCandidates', 'certificateFailureIsUnknownThenARetryCanConfirmNoUpdate', 'serverFailureKeepsTheLastVerifiedChannelCandidate', 'switchingChannelWhileCheckingSupersedesTheStaleCheck', 'cancelAfterSwitchingDoesNotStartAnotherCheck'], 'UpdateOwnershipTest': ['applicationFacadesShareExactlyOneEngineAndQueue', 'legacyJavaNullInputsKeepTheirOriginalShapeAndBehavior', 'dispatchedInstallerWithUnknownOutcomeIsNotClaimedAgain', 'retainedStoreAndLanguageChangeDoNotRequeueOrReclaimInstallation', 'clearedPageCannotPublishOrClaimAnOldCallback', 'replacementCandidateWithSameDigestDoesNotInheritOldClaim', 'channelChangeAfterVerificationInvalidatesClaim', 'pendingInstallationBlocksAllNewPageWork', 'processRebuildReportsInterruptedVerificationWithoutReplayingIt', 'serviceRedeliveryQueuesOneDownloadAndCancelPreventsFurtherResume', 'permissionCallbacksConsumeOnlyTheirOwnGenerationAndKind', 'unknownPermissionReceiptRetiresItsTicketWithoutStartingAnything', 'serviceCancelInvalidatesPermissionEvenWhenCandidateAndApkAreUnchanged', 'oldInstallPermissionResultCannotConsumeOrCancelANewerSameCandidateRequest', 'rebuiltPageKeepsTheOriginalPermissionButAProcessMarkerCannotRecreateIt', 'processRebuildReportsInterruptedDownloadPermissionWithoutReplayingIt', 'oldVerificationCannotOverwriteFailureOrANewerExplicitRequest', 'exhaustedOrCorruptPermissionCounterNeverReusesAnOldSystemRequestCode', 'lostReadyReceiptObservesExistingApkWithoutRepeatingDownloadOrSkippingVerification']}
+PACKAGE = 'com.deepseekharness.app.core.'
 
 
 def readback(repo, mode, code):
@@ -42,6 +42,20 @@ def readback(repo, mode, code):
         tests = list(suite.iter('testcase'))
         assert all(t.get('classname') == cls for t in tests)
         failed = sum(t.find('failure') is not None or t.find('error') is not None for t in tests)
+        for test in tests:
+            failure = test.find('failure')
+            if failure is None:
+                failure = test.find('error')
+            if failure is None:
+                continue
+            method = test.attrib.get('name','')
+            if method not in METHODS[short]:
+                continue
+            exception = failure.attrib.get('type','')
+            category=('ASSERTION' if 'Assertion' in exception else 'TIMEOUT' if 'Timeout' in exception else 'OTHER')
+            frame = re.search(r'(?m)^\s*at '+re.escape(cls)+r'\.([A-Za-z0-9_$]+)\('+re.escape(short)+r'\.java:([1-9][0-9]{0,4})\)',failure.text or '')
+            line=int(frame[2]) if frame else 0
+            print(f'B368_UPDATE_FAILURE={mode}:{short}:{method}:{category}:{line}',flush=True)
         skipped = sum(t.find('skipped') is not None for t in tests)
         counts[short] = (len(tests), failed, skipped)
         print(f'B368_IDENTITY_CLASS={mode}:{short}:{len(tests)}:{failed}:{skipped}:{hashlib.sha256(raw).hexdigest()}', flush=True)
