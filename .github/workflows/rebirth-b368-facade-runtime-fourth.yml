@@ -1,15 +1,15 @@
-name: Rebirth b368 stop-facade third runtime checks
+name: Rebirth b368 stop-facade fourth runtime checks
 on:
   push:
-    branches: [validate/rebirth-b368-facade-runtime-third]
+    branches: [validate/rebirth-b368-facade-runtime-fourth]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-third' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-fourth' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Run sixteen registered runtime checks using fresh x64 fixtures
+      - name: Run nineteen registered runtime checks using fresh x64 fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -134,4 +134,4 @@ jobs:
               npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
               /usr/bin/python3 -sB "$p/online_b368_x64_verify.py" "$p"
           ' verify "$uid" "$gid" "$p" 2>>"$out"
-          printf 'B368_RUNTIME_THIRD=PASS\nB368_FORMAL_ADMISSION=false\n'
+          printf 'B368_RUNTIME_FOURTH=PASS\nB368_FORMAL_ADMISSION=false\n'

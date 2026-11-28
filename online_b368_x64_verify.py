@@ -48,7 +48,7 @@ def main(p):
     assert {x[0].parent for x in snapshots.values()}=={Path(ptr['raw']).parent}
     for kind, (_,_,_,content) in snapshots.items():
         print(f'B368_X64_FIXTURE={kind}:682:{content}',flush=True)
-    paths=('tools/test-android-image-wire.mjs', 'tools/test-web-fetch-unicode.py', 'tools/test-app-integration-lifecycle.mjs', 'tools/phone-control/local-session-adapter/test-local-session-adapter.mjs', 'tools/test-browser-compat.mjs', 'tools/test-conversation-materialized.mjs', 'tools/test-deepseek-messages-compat.mjs', 'tools/test-lexical-claim-compat.mjs', 'tools/test-office-fonts.mjs', 'tools/test-plugin-entry-reader.py', 'tools/test-recovery-assets.py', 'tools/test-workspace-directory-policy.mjs', 'tools/test-fs-read-hint.mjs', 'tools/file-transfer/test-file-transfer.mjs', 'tools/test-file-upload-capacity.mjs', 'tools/file-transfer/test-client-recipes.py')
+    paths=('tools/test-dsh-builtins.mjs', 'tools/test-profile-settings-cli.mjs', 'tools/test-recovery-agent.mjs', 'tools/test-recovery-apk-assets.py', 'tools/test-runtime-publish.mjs', 'tools/test-workflow-compat-alias.mjs', 'tools/test-destructive-guard-pipeline.mjs', 'tools/test-tool-call-identity.mjs', 'tools/test-destructive-global-consent.mjs', 'tools/test-vscreen-bundle.mjs', 'tools/test-retired-guarded-preset.mjs', 'tools/test-recovery-native-consent.mjs', 'tools/test-auto-review-alias.mjs', 'tools/test-signed-builtin-web-intent.mjs', 'tools/test-startup-invalid-bundles.mjs', 'tools/test-builtin-runtime-deployment.mjs', 'tools/test-plugin-runtime-evidence.mjs', 'tools/test-first-connect-indicator.mjs', 'tools/test-plugin-compatibility.py')
     cases=json.loads((repo/'tools/host-tests.manifest.json').read_bytes())['tests']
     assert [x['path'] for x in cases if x['stage']=='runtime' and x['path'] in paths]==list(paths)
     results={}
@@ -76,7 +76,7 @@ def main(p):
     assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (repo/'app/build').rglob('*'))
     for name,(rc,status,log,manifest) in results.items():
         print(f'B368_RUNTIME_CASE={name}:{status}:{rc}:{log}:{manifest}',flush=True)
-    print('B368_RUNTIME_RESEALED=16',flush=True)
+    print('B368_RUNTIME_RESEALED=19',flush=True)
     return int(any(x[0] for x in results.values()))
 
 
