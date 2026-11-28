@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-jvm-identity-compare' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'f4a252afb8d9360110d875bc67122be11294ed0b'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-jvm-identity-compare' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '44d62a3eb17b95582f4b1dd6ec16e2b008c821ea'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_jvm_identity_compare.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_jvm_identity_compare.py online_b368_robo_retry_after.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -245,13 +245,15 @@ jobs:
           stage=ROBO_SUPPLY
           robo_rc=0
           env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
-            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/receiver/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >"$p/robo-supply.log" 2>&1 || robo_rc=$?
+            /usr/bin/timeout 900 /usr/bin/python3 -sB "$p/online_b368_robo_retry_after.py" "$p" >"$p/robo-supply.log" 2>&1 || robo_rc=$?
           printf 'B368_ROBO_SUPPLY_EXIT=%s\n' "$robo_rc"
           /usr/bin/python3 -sB - "$p" "$robo_rc" 2>>"$out" <<'PY'
           import hashlib,re,runpy,sys
           from pathlib import Path
           p=Path(sys.argv[1]); rc=int(sys.argv[2]); log=(p/'robo-supply.log').read_bytes()
           print('B368_ROBO_SUPPLY_LOG_SHA256='+hashlib.sha256(log).hexdigest())
+          for line in log.splitlines():
+              if re.fullmatch(rb'B368_ROBO_BACKOFF=(?:6[5-9]|[7-9][0-9]|1[01][0-9]|120)',line): print(line.decode('ascii'))
           original=runpy.run_path(str(p/'receiver/tools/prepare-robolectric-sdks.py'))
           lock=original['load_lock'](); assert len(lock['jars'])==5
           verified=sum(original['matches'](p/'robo'/original['file_name'](lock,j),j) for j in lock['jars'])
@@ -260,7 +262,7 @@ jobs:
               categories={'HTTP_429':rb'HTTP Error 429\b','HTTP_403':rb'HTTP Error 403\b','HTTP_404':rb'HTTP Error 404\b',
                           'HTTP_5XX':rb'HTTP Error 5[0-9]{2}\b','TIMEOUT':rb'(?i)timed out|TimeoutError',
                           'TLS':rb'(?i)CERTIFICATE_VERIFY_FAILED|SSL:|handshake','NETWORK':rb'(?i)connection reset|connection refused|temporary failure in name resolution',
-                          'DIGEST':rb'ROBOLECTRIC_JAR_DIGEST','SIZE':rb'ROBOLECTRIC_JAR_TOO_LARGE','LOCAL':rb'PermissionError|FileNotFoundError|No space left on device'}
+                          'RETRY_AFTER_REFUSED':rb'ROBOLECTRIC_RETRY_AFTER_REFUSED','DIGEST':rb'ROBOLECTRIC_JAR_DIGEST','SIZE':rb'ROBOLECTRIC_JAR_TOO_LARGE','LOCAL':rb'PermissionError|FileNotFoundError|No space left on device'}
               found=[k for k,v in categories.items() if re.search(v,log)]
               for item in (['WALL_TIMEOUT'] if rc==124 else [])+ (found or (['UNCLASSIFIED'] if rc!=124 else [])):
                   print('B368_ROBO_SUPPLY_REASON='+item)
