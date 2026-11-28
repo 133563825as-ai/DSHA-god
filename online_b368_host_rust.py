@@ -29,6 +29,23 @@ def main(p, commit, tree):
             result=sp.run(command,cwd=cwd,stdout=f,stderr=sp.STDOUT,timeout=timeout)
         b=log.read_bytes()
         print(f'B368_RUST_PHASE={label}:{result.returncode}:{hashlib.sha256(b).hexdigest()}',flush=True)
+        if result.returncode:
+            categories = {
+                'FORMAT_DIFF': rb'(?m)^Diff in ',
+                'TOOL_MISSING': rb'(?i)no such command|could not find.*rustfmt|could not execute process|no such file or directory',
+                'METADATA': rb'(?i)cargo metadata|failed to load manifest|failed to parse manifest',
+                'OFFLINE_INPUT': rb'(?i)offline mode|failed to download|no matching package',
+                'PARSE': rb'(?i)error: expected|error: mismatched closing delimiter|error: unexpected closing delimiter',
+                'PERMISSION': rb'(?i)permission denied|operation not permitted',
+                'UNSTABLE_OPTION': rb'(?i)only accepted on the nightly|unknown option|unexpected argument',
+            }
+            found = [code for code, pattern in categories.items() if re.search(pattern, b)]
+            for code in found or ['UNCLASSIFIED']:
+                print(f'B368_RUST_DIAGNOSTIC={label}:{code}',flush=True)
+            if label=='format' and 'FORMAT_DIFF' in found:
+                count=len(set(re.findall(rb'(?m)^Diff in (.+):[0-9]+:\r?$',b)))
+                if count:
+                    print(f'B368_RUST_FORMAT_DIFF_FILES={count}',flush=True)
         result.check_returncode()
         return b
     phase('unpack-jdk',['/usr/bin/tar','-xzf',p/'jdk.tgz','-C',p])
