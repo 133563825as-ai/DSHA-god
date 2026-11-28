@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.before == 'aa3cb2960bf4de95317f80d715e718703fd718e5' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.before == '23fcfe84a8aeda75fb755984d4ead1b529265aaa' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -15,8 +15,8 @@ jobs:
           set -euo pipefail
           umask 077
           set +x
-          c=265d370d72c2ecce2e210e836ca9f1da895026e4
-          t=5679b579f3f8d908d44fa7203ad0313d579318ba
+          c=0ae10c8825001789e86871a81ec9218d3f0d2f1a
+          t=c0d323696178b91e0df21825bff03e548ed25b3a
           p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
           private="$p/private.log"
           stage=SOURCE
