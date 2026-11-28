@@ -30,25 +30,33 @@ def requested_wait(header, now):
         return None
 
 
-def policies(allowed, underlying, sleeper=time.sleep, now=lambda: datetime.now(timezone.utc)):
+def policies(allowed, underlying, sleeper=time.sleep,
+             now=lambda: datetime.now(timezone.utc), monotonic=time.monotonic):
+    deadline=monotonic()+875  # outer watchdog: 900 seconds
     delay=None
+    transfer_timeout=None
     def opener(url, timeout):
-        nonlocal delay
+        nonlocal delay, transfer_timeout
         assert url in allowed
         delay=None
+        transfer_timeout=timeout
         try:
             return underlying(url, timeout=timeout)
         except urllib.error.HTTPError as error:
             if error.code==429:
                 value=requested_wait(error.headers.get('Retry-After'),now())
-                if value is None or value>120:
+                if value is None:
                     # RuntimeError is deliberately not caught by the original retry loop.
-                    raise RuntimeError('ROBOLECTRIC_RETRY_AFTER_REFUSED') from None
+                    raise RuntimeError('ROBOLECTRIC_RETRY_AFTER_INVALID') from None
                 delay=max(65,value)
-                print(f'B368_ROBO_BACKOFF={delay}',flush=True)
             raise
     def wait(default):
-        sleeper(max(default, delay or 0))
+        seconds=max(default, delay or 0)
+        if seconds + transfer_timeout > deadline-monotonic():
+            raise RuntimeError('ROBOLECTRIC_RETRY_WAIT_BUDGET')
+        if delay is not None:
+            print(f'B368_ROBO_BACKOFF={seconds}',flush=True)
+        sleeper(seconds)
     return opener, wait
 
 
