@@ -1,15 +1,15 @@
-name: Rebirth b368 locked offline lint execution
+name: Rebirth b368 integrated offline class verification
 on:
   push:
-    branches: [validate/rebirth-b368-offline-lint]
+    branches: [validate/rebirth-b368-integrated-compile]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '570da81ba8564f62fa09d515f4d719fe3a4d68b0'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-integrated-compile' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Reconstruct and lint the exact b368 source
+      - name: Reconstruct and compile the exact b368 source
         shell: bash
         run: |
           set -euo pipefail
@@ -34,7 +34,7 @@ jobs:
               test -z "$(git -C "$1/src" status --porcelain=v1 --untracked-files=all)"
               test -z "$(git -C "$1/src" remote)"
             ' verify "$p" "$c" "$t" >"$out" 2>&1
-          printf 'B368_LINT_SOURCE_COMMIT=%s\nB368_LINT_SOURCE_TREE=%s\n' "$c" "$t"
+          printf 'B368_CLASS_SOURCE_COMMIT=%s\nB368_CLASS_SOURCE_TREE=%s\n' "$c" "$t"
           stage=DOWNLOAD
           env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --location \
             --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize 716787167 --max-time 360 \
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py verify_b368_merged_permission.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -174,11 +174,6 @@ jobs:
             if grep -Fq 'available for offline mode' "$l"; then printf 'B368_COMPILE_REASON=%s:OFFLINE_CACHE_MISS\n' "$m"; fi
             if grep -Eqi 'No matching variant|no compatible variant' "$l"; then printf 'B368_COMPILE_REASON=%s:VARIANT\n' "$m"; fi
             if grep -Fq 'B368_ACTUAL_ORIGIN_REFUSED:' "$l"; then printf 'B368_COMPILE_REASON=%s:GUARD\n' "$m"; fi
-            if [[ $m = offline ]]; then
-              for code in AGP_REPORT_TASKS AGP_REPORT_PATH AGP_REPORT_RESULT_BINDING AGP_REPORT_CONTRACT_EXISTS AGP_MANIFEST_TASK AGP_MANIFEST_CONTRACT_EXISTS; do
-                if grep -Fq "B368_LINT_EXEC_REFUSED:$code" "$l"; then printf 'B368_LINT_DECLARATION_REFUSED=%s\n' "$code"; fi
-              done
-            fi
             if grep -Eq 'Could not resolve|Could not find|Could not get resource' "$l"; then printf 'B368_COMPILE_REASON=%s:RESOLVER\n' "$m"; fi
             if grep -Eq 'NDK not configured|No version of NDK matched|Failed to find target' "$l"; then printf 'B368_COMPILE_REASON=%s:SDK_NDK\n' "$m"; fi
             if grep -Fq 'B368_PRIVATE_EXACT_GRAPH=31' "$l"; then echo B368_COMPILE_GRAPH=31; fi
@@ -194,16 +189,11 @@ jobs:
           for k,v in result.items():
               if re.search(v,t):print(f'B368_COMPILE_REASON={phase}:{k}')
           PY
-            if [[ $m = lint || $m = offline ]]; then
-              python3 -IB "$p/online_b368_lint_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_lint_guard.init.gradle" 2>>"$out" || echo B368_LINT_DIAGNOSTICS=REFUSED
-            else
-              python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
-            fi
+            python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
           }
           retries=0
-          for m in runtime compile aapt2 kotlin lint; do
+          for m in runtime compile aapt2 kotlin; do
             supply_init="$p/online_b368_compile_supply.init.gradle"
-            if [[ $m = lint ]]; then supply_init="$p/online_b368_lint_supply.init.gradle"; fi
             for attempt in 1 2; do
               rc=0
               supply_log="$p/$m.supply.$attempt.log"
@@ -235,78 +225,7 @@ jobs:
           PY
             fi
           done
-          python3 -IB - "$p/lint.supply.json" <<'PY'
-          import json,sys
-          from pathlib import Path
-          q=json.loads(Path(sys.argv[1]).read_bytes()); assert q['mode']=='lint' and q['offline'] is False
-          assert len(q['rows'])==67 and type(q['localRules']) is int and 0<=q['localRules']<=100
-          print('B368_LINT_SUPPLY_TOOL_ROWS='+str(len(q['rows'])))
-          print('B368_LINT_SUPPLY_RULE_ROWS='+str(q['localRules']))
-          assert 1<=len(q['desugarRows'])<=8
-          print('B368_LINT_SUPPLY_DESUGAR_ROWS='+str(len(q['desugarRows'])))
-          PY
           [[ ! -d "$p/receiver/app/build" ]]
-          stage=OFFLINE_LINT
-          rc=0
-          sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
-            uid=$1; gid=$2; p=$3; j=$4; g=$5; shift 5
-            /usr/sbin/ip link set lo up
-            test "$(/usr/sbin/ip -o link | wc -l)" = 1
-            test -z "$(/usr/sbin/ip route show)"
-            test -z "$(/usr/sbin/ip -6 route show default)"
-            mount --bind "$p/producer-home/caches" "$p/ro"
-            mount -o remount,bind,ro,nosuid,nodev,noexec "$p/ro"
-            test -d "$p/ro/modules-2"
-            mount --bind "$p/sdk" "$p/sdk"
-            mount -o remount,bind,ro,nosuid,nodev "$p/sdk"
-            for d in app/src tools build-logic gradle ci .git .github rust; do
-              x="$p/receiver/$d"
-              test "$(realpath -e "$x")" = "$x"
-              mount --bind "$x" "$x"
-              mount -o remount,bind,ro,nosuid,nodev "$x"
-            done
-            test -z "$(ls -A "$p/consumer-home")"
-            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
-              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
-              DSHA_PYTHON=/usr/bin/python3 GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_LAZY_FETCH=1 \
-              PYTHONDONTWRITEBYTECODE=1 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_LINT_DECLARED_OUTPUTS="$p/lint.outputs.json" \
-              /usr/bin/python3 -IB "$p/online_b368_compile_monitor.py" "$p" "$g" "$@" --offline --project-cache-dir "$p/compile-cache" \
-              -I "$p/online_b368_lint_guard.init.gradle" :app:lintStandardRelease
-          ' compile "$uid" "$gid" "$p" "$j" "$g" "${opts[@]}" >"$p/monitor.log" 2>&1 || rc=$?
-          grep -Ex 'B368_COMPILE_(ENTRY_MIB|MIN_MIB)=[0-9]{1,8}|B368_COMPILE_RESOURCE_OR_TIME_STOP=true' "$p/monitor.log" || :
-          if [[ -f "$p/compile.log" ]]; then reason offline "$p/compile.log"; fi
-          printf 'B368_LINT_GRADLE_EXIT=%s\n' "$rc"
-          if ! grep -Fxq 'B368_PRIVATE_LINT_EXACT_GRAPH=37' "$p/compile.log"; then
-            echo B368_LINT_EXACT_GRAPH=REFUSED
-            if (( rc != 0 )); then exit "$rc"; else exit 1; fi
-          fi
-          echo B368_LINT_EXACT_GRAPH=37
-          if [[ ! -s "$p/lint.outputs.json" ]]; then
-            echo B368_LINT_REPORT_REFUSED=DECLARATION
-            exit 1
-          fi
-          for task in lintAnalyzeStandardRelease lintReportStandardRelease; do
-            if grep -Fxq "> Task :app:$task" "$p/compile.log" || grep -Fxq "> Task :app:$task FAILED" "$p/compile.log"; then
-              printf 'B368_LINT_EXECUTED_TASK=%s\n' "$task"
-            else
-              printf 'B368_LINT_MISSING_TASK=%s\n' "$task"
-              if (( rc != 0 )); then exit "$rc"; else exit 1; fi
-            fi
-          done
-          stage=LINT_REPORT
-          if [[ -n $(find app/build -type f \( -name '*.apk' -o -name '*.dex' \) -print -quit) ]]; then echo B368_LINT_REPORT_REFUSED=UNEXPECTED_DEX_OR_APK; exit 1; fi
-          report_rc=0
-          python3 -IB "$p/online_b368_lint_report.py" "$p/receiver/app/build" "$p/lint.outputs.json" >"$p/lint.summary" 2>>"$out" || report_rc=$?
-          grep -Ex 'B368_LINT_(REPORT_COUNT=(errors|warnings|other):[0-9]{1,6}|REPORT_SHA256=[a-f0-9]{64}|TOOL_STATUS=[0-7]|TEXT_COUNTERS=[0-9]{1,6}:[0-9]{1,6}|TEXT=UNAVAILABLE|REPORT_REFUSED=(DECLARATION|TOOL_STATUS|XML_DISABLED|XML_MISSING_OR_UNSAFE|XML_SCHEMA)|XML_REASON=(SIZE|UNSAFE|ROOT|ISSUE|SEVERITY|COUNT|ENCODING|PARSE|OTHER)|FIRST_LOCATION_STATE=(NONE|PUBLIC|WITHHELD)|FIRST_PUBLIC_LOCATION=app/src/(main|standard|rebirthTrial)/[A-Za-z0-9_./-]{1,220}\.(kt|java|xml):[1-9][0-9]{0,5})' "$p/lint.summary" || echo B368_LINT_REPORT_REFUSED=NO_VERIFIED_REPORT
-          stage=MERGED_PERMISSION
-          manifest_rc=0
-          if grep -Fxq '> Task :app:processStandardReleaseMainManifest' "$p/compile.log"; then
-            python3 -IB "$p/verify_b368_merged_permission.py" "$p/receiver/app/build" "$p/lint.outputs.json.manifest" 2>>"$out" || manifest_rc=$?
-          else
-            echo B368_LINT_MERGED_PERMISSION=REFUSED
-            manifest_rc=1
-          fi
-          (( rc == 0 )) || exit "$rc"
-          (( report_rc == 0 )) || exit "$report_rc"
-          (( manifest_rc == 0 )) || exit "$manifest_rc"
-          printf 'B368_LINT=PASS\nB368_FORMAL_ADMISSION=false\n'
+          stage=OFFLINE_CLASS
+          /bin/bash "$p/online_b368_joint_class.sh" "$p" "$p" "$j" "$g" "$uid" "$gid" "$c" "$t" "${opts[@]}"
+          printf 'B368_FORMAL_ADMISSION=false\n'
