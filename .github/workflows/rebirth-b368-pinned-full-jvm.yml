@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '430a5797f9c5901ba5925985078bfda06f566be9'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '1c4172aab25fb7528b2bcfe288e5cf703f8d5587'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -228,9 +228,19 @@ jobs:
           import hashlib,json,sys
           r=json.loads(Path(sys.argv[1]).read_bytes())
           assert r['offline'] is False
-          actual={k:(len(v),hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()) for k,v in r['configurations'].items()}
+          actual={k:(len(v),hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest()) for k,v in r['configurations'].items() if 'UnitTest' in k}
           assert actual=={'standardDebugUnitTestCompileClasspath': (89, '177aede8442f2c7ea92fc017bfc271cd9c7da545dfb38ea89cd7b544bd7ae275'), 'standardDebugUnitTestRuntimeClasspath': (101, 'e6a8425d947ea1777cdac8feff45fec811bed843060453567d812bc52e0a2a17')}
           PY
+          python3 -IB - "$p" <<'PY'
+          import hashlib,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])/'producer-home/caches/modules-2/files-2.1/com.google.guava/listenablefuture/1.0'
+          for ext,pin in {'jar':'e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069','pom':'53873caf26bc1ed8a567ea6c939ab2aaa3f47a5e32d5cade95ddf5080d23238a'}.items():
+              files=list(root.glob('*/listenablefuture-1.0.'+ext)); assert len(files)==1
+              path=files[0]; assert path.is_file() and path.resolve()==path
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==pin
+          PY
+          echo B368_FULL_JVM_DEBUG_LEAF=PASS
           echo B368_FULL_JVM_CLASSPATH_LOCK=PASS
           stage=ROBO_SUPPLY
           robo_rc=0
@@ -268,9 +278,38 @@ jobs:
           rust_dl https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 f1d0b1dec81dab6f523cd098507763487b0d4bd7fd2c87582f154128719be03b
           rust_dl https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 7e29ce07d7c6e92d1826870575ba27d57fff6cb3e754aa57d99099cb88fab35d
           rust_dl https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 4591b6486594ded52ecd6135db95bf9355bbd3ca7a380888b141528bbcf9a5d4
-          stage=OFFLINE_FULL_JVM
+          stage=DEBUG_CLASSPATH_OFFLINE
+          mkdir "$p/probe-home"
           [[ -d "$p/producer-home/caches/modules-2" && ! -d "$p/receiver/app/build" ]]
           cp -a "$p/producer-home/caches/modules-2" "$p/ro/"
+          sudo -n /usr/bin/unshare -nm --propagation private /usr/bin/env -i PATH=/usr/bin:/bin /bin/bash -ec '
+            p=$1; j=$2; g=$3; uid=$4; gid=$5; shift 5
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
+            for dir in ro sdk; do
+              mount --bind "$p/$dir" "$p/$dir"
+              mount -o remount,bind,ro,nosuid,nodev "$p/$dir"
+            done
+            cd "$p/receiver"
+            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/probe-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_JVM_SUPPLY_REPORT="$p/jvm-offline.json" \
+              "$g" "$@" --offline --project-cache-dir "$p/probe-cache" -I "$p/online_b368_jvm_supply.init.gradle" :app:probeB368JvmDependencyFiles
+          ' offline "$p" "$j" "$g" "$uid" "$gid" "${opts[@]}" >"$p/jvm-offline.log" 2>&1 || { rc=$?; reason debug-offline "$p/jvm-offline.log"; exit "$rc"; }
+          python3 -IB - "$p" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); a,b=[json.loads((p/f'jvm-{tag}.json').read_bytes()) for tag in ('online','offline')]
+          assert a['offline'] is False and b['offline'] is True and a['configurations']==b['configurations']
+          assert set(a['configurations'])=={'standardDebugCompileClasspath','standardDebugRuntimeClasspath','standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'}
+          for name,rows in a['configurations'].items():
+              if 'UnitTest' not in name:
+                  pin=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+                  print(f'B368_FULL_JVM_DEBUG_CLASSPATH={name}:{len(rows)}:{pin}')
+          PY
+          echo B368_FULL_JVM_DEBUG_OFFLINE=PASS
+          stage=OFFLINE_FULL_JVM
           rc=0
           sudo -n /usr/bin/unshare -nm --propagation private /usr/bin/env -i PATH=/usr/bin:/bin /bin/bash -ec '
             p=$1; j=$2; g=$3; uid=$4; gid=$5; c=$6; t=$7; shift 7

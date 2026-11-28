@@ -36,7 +36,8 @@ gradle.projectsEvaluated {
         doLast {
             require(app.ext.dshaReleaseIdentity.identity == 'rebirth' && app.ext.dshaReleaseIdentity.versionCode == 368, 'IDENTITY')
             def output = ['offline':s.offline, 'configurations':[:]]
-            ['standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'].each { name ->
+            ['standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath',
+             'standardDebugCompileClasspath','standardDebugRuntimeClasspath'].each { name ->
                 def cfg = app.configurations.getByName(name)
                 require(cfg.canBeResolved, 'ACTUAL_TEST_CLASSPATH')
                 def repos = cfg.incoming.resolutionResult.allComponents.findAll { it.id instanceof ModuleComponentIdentifier }
@@ -49,7 +50,15 @@ gradle.projectsEvaluated {
                     [gav:id,file:f.name,origin:repos[id],bytes:f.length(),sha256:sha(f)]
                 }.sort { [it.gav,it.file,it.sha256] }
                 def ids = rows*.gav.toSet()
-                require(ids.contains('junit:junit:4.13.2') && ids.contains('org.robolectric:robolectric:4.15.1'), 'ORIGINAL_TEST_DEPENDENCIES')
+                if (name.contains('UnitTest')) {
+                    require(ids.contains('junit:junit:4.13.2') && ids.contains('org.robolectric:robolectric:4.15.1'), 'ORIGINAL_TEST_DEPENDENCIES')
+                } else {
+                    require(!rows.empty, 'ACTUAL_DEBUG_DEPENDENCIES')
+                    if (name == 'standardDebugRuntimeClasspath') {
+                        require(rows.any { it.gav == 'com.google.guava:listenablefuture:1.0' && it.file == 'listenablefuture-1.0.jar' &&
+                            it.sha256 == 'e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069' }, 'DEBUG_LISTENABLEFUTURE')
+                    }
+                }
                 output.configurations[name] = rows
             }
             new File(report).text = JsonOutput.toJson(output) + '\n'
