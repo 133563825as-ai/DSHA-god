@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-jvm-identity-compare' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '5866f21ed1683345455382d6b112beae69840b26'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-jvm-identity-compare' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'f4a252afb8d9360110d875bc67122be11294ed0b'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -112,7 +112,7 @@ jobs:
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           grep -Fxq "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
-          grep -Ex 'B368_FACADE_HANDOFF_MANIFEST=[a-f0-9]{64}' "$p/new-handoff.summary" >/dev/null
+          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d" "$p/new-handoff.summary"
           grep -Fxq "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
           grep -Fx B368_PINNED_MANIFEST_PROJECTION=PASS "$p/new-handoff.summary"
           stage=TOOLCHAIN
