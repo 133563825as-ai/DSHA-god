@@ -1,0 +1,98 @@
+name: Rebirth b368 integrated toolchain fast checks
+on:
+  push:
+    branches: [validate/rebirth-b368-integrated-fast-tools]
+permissions: {}
+jobs:
+  verify:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-integrated-fast-tools' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Execute exactly two registered toolchain fast checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          set +x
+          c=38fb7b125cc0a5ae6e324db99066d3d139ce86ad
+          t=c876482bdf7b332ed295a49b8e5f22ee6b1c646c
+          p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
+          private="$p/private.log"
+          stage=SOURCE
+          trap 'rc=$?; if ((rc)); then printf "B368_FAST_FAILED_STAGE=%s\nB368_FAST_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          [[ $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
+          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
+          mkdir "$p/home" "$p/tmp"
+          export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
+          git init -q --template= "$p/src" >"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$c" >>"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD >>"$private" 2>&1
+          [[ $(git -C "$p/src" rev-parse HEAD) == "$c" && $(git -C "$p/src" rev-parse HEAD^{tree}) == "$t" ]]
+          [[ -z $(git -C "$p/src" status --porcelain=v1 --untracked-files=all) && -z $(git -C "$p/src" remote) ]]
+          printf 'B368_FAST_SOURCE_COMMIT=%s\nB368_FAST_SOURCE_TREE=%s\n' "$c" "$t"
+          stage=TOOLCHAIN
+          dl() {
+            local url=$1 path=$2 max=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p/home" curl --disable -fsSL --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize "$max" --max-time 220 --output "$path" "$url" >>"$private" 2>&1
+            [[ $(sha256sum "$path" | cut -d' ' -f1) == "$pin" ]]
+          }
+          dl https://services.gradle.org/distributions/gradle-9.3.1-bin.zip "$p/gradle.zip" 137037885 b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/jdk.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          dl https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz "$p/node.xz" 50000000 14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647
+          dl https://dl.google.com/android/repository/platform-37.0_r02.zip "$p/platform.zip" 67281901 840b23e827f96e64aea4c89a1194aac3dc5f6bad37edb231c5c795d890330e8d
+          dl https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.13.1/gson-2.13.1.jar "$p/gson.jar" 400000 94855942d4992f112946d3de1c334e709237b8126d8130bf07807c018a4a2120
+          tools="$p/tools"; home="$tools/gradle-user-home"; sdk="$tools/android-sdk"
+          gdir="$home/wrapper/dists/gradle-9.3.1-bin/verified"; gj="$home/caches/modules-2/files-2.1/com.google.code.gson/gson/2.13.1/verified"
+          mkdir -p "$gdir" "$gj" "$sdk/platforms"
+          mv -T "$p/gson.jar" "$gj/gson-2.13.1.jar"
+          unzip -q "$p/gradle.zip" -d "$gdir" >>"$private" 2>&1
+          unzip -q "$p/platform.zip" -d "$sdk/platforms" >>"$private" 2>&1
+          tar -xzf "$p/jdk.tgz" -C "$p" >>"$private" 2>&1
+          tar -xJf "$p/node.xz" -C "$p" >>"$private" 2>&1
+          [[ -f "$sdk/platforms/android-37.0/android.jar" ]]
+          j="$p/jdk-17.0.21+9"; node="$p/node-v24.19.0-linux-x64/bin/node"
+          [[ $("$node" --version) == v24.19.0 ]]
+          "$j/bin/java" -version >"$p/java.version" 2>&1
+          grep -Fq 17.0.21+9 "$p/java.version"
+          stage=OFFLINE_FAST
+          u=$(id -u); g=$(id -g); [[ $u != 0 ]]
+          rc=0
+          sudo -n /usr/bin/unshare -n /bin/bash -ec '
+            u=$1; g=$2; p=$3; j=$4; node=$5; tools=$6
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
+            cd "$p/src"
+            exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH=/usr/bin:/bin HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+              /usr/bin/python3 -sB tools/run-host-tests.py --stage fast --only test-vscreen-help.py --only test-bundled-dsh-version.py \
+              --node "$node" --jdk "$j" --toolchain-root "$tools" --output "$p/report"
+          ' fast "$u" "$g" "$p" "$j" "$node" "$tools" >"$p/runner.log" 2>&1 || rc=$?
+          printf 'B368_FAST_RUNNER_EXIT=%s\n' "$rc"
+          stage=READBACK
+          [[ $(git -C "$p/src" rev-parse HEAD) == "$c" && $(git -C "$p/src" rev-parse HEAD^{tree}) == "$t" ]]
+          [[ -z $(git -C "$p/src" status --porcelain=v1 --untracked-files=all) ]]
+          /usr/bin/python3 -IB - "$p" "$rc" 2>>"$private" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); rc=int(sys.argv[2]); report=p/'report'
+          data=(report/'manifest.json').read_bytes(); m=json.loads(data)
+          names=['test-vscreen-help.py','test-bundled-dsh-version.py']
+          assert m['requestedStage']=='fast' and [r['path'] for r in m['tests']]==['tools/'+n for n in names]
+          assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (p/'src/app/build').rglob('*'))
+          for n,r in zip(names,m['tests']):
+              b=(report/(n+'.log')).read_bytes(); digest=hashlib.sha256(b).hexdigest()
+              assert digest==r['logSha256'] and r['status'] in {'PASS','FAILED'} and type(r['exitCode']) is int
+              if r['status']=='PASS':
+                  assert r['exitCode']==0
+                  if n=='test-vscreen-help.py':
+                      assert b'PASS actual Java help rendering and request examples' in b and b'Ran 3 tests' in b
+                  else:
+                      assert sum(x.endswith(b': PASS') for x in b.splitlines())==8
+              print(f'B368_FAST_CASE={n}:{r["status"]}:{r["exitCode"]}:{digest}')
+          assert (m['status']=='PASS_FOR_SELECTED_STAGES' and not m['failures'])==(rc==0)
+          print('B368_FAST_MANIFEST_SHA256='+hashlib.sha256(data).hexdigest())
+          PY
+          (( rc == 0 )) || exit "$rc"
+          printf 'B368_FAST=PASS\nB368_FORMAL_ADMISSION=false\n'
