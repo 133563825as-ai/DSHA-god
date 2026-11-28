@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-vscreen-dual' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-vscreen-dual' && github.event_name == 'push' && github.event.before == '76885b3eab28a8c6387260fe6f16928dd88a38ec' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -15,8 +15,8 @@ jobs:
           set -euo pipefail
           umask 077
           set +x
-          c=b95ca9aa6da5aa4640b41cd187a97ad170600576
-          t=606c4de2447cd8f4eb5e4c7b4484681b14c8dd2c
+          c=e403f2f44a08777fa633ce2c601b4b663a330ec8
+          t=446e373ec03a2d8bb5d74eda02451bcb53dda8b1
           p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
           private="$p/private.log"
           stage=SOURCE
@@ -101,6 +101,9 @@ jobs:
               print('B368_VSCREEN_REASON=JAVAC_MISSING_REBIRTH_BUILD_CONFIG')
           elif b'cannot find symbol' in b:
               print('B368_VSCREEN_REASON=JAVAC_SYMBOL')
+              for symbol in ('BackupControl','AppIdentity','BuildConfig'):
+                  if re.search(rb'symbol:\s+(?:class|variable) '+symbol.encode()+rb'\b',b):
+                      print('B368_VSCREEN_JAVAC_SYMBOL='+symbol)
           PY
           printf 'B368_FORMAL_ADMISSION=false\n'
           (( rc == 0 )) || exit "$rc"
