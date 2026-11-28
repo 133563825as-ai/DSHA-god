@@ -1,0 +1,81 @@
+name: Rebirth b368 isolated host Rust and JNI checks
+on:
+  push:
+    branches: [validate/rebirth-b368-facade-rust-host]
+permissions: {}
+jobs:
+  verify:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-rust-host' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Build locked host Rust and execute original JVM differential checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          set +x
+          c=265d370d72c2ecce2e210e836ca9f1da895026e4
+          t=5679b579f3f8d908d44fa7203ad0313d579318ba
+          p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
+          private="$p/private.log"
+          stage=SOURCE
+          trap 'rc=$?; if ((rc)); then printf "B368_RUST_FAILED_STAGE=%s\nB368_RUST_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          [[ $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
+          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
+          mkdir "$p/home" "$p/tmp"
+          export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
+          git init -q --template= "$p/src" >"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$c" >>"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD >>"$private" 2>&1
+          [[ $(git -C "$p/src" rev-parse HEAD) == "$c" && $(git -C "$p/src" rev-parse HEAD^{tree}) == "$t" ]]
+          [[ -z $(git -C "$p/src" status --porcelain=v1 --untracked-files=all) && -z $(git -C "$p/src" remote) ]]
+          printf 'B368_RUST_SOURCE_COMMIT=%s\nB368_RUST_SOURCE_TREE=%s\n' "$c" "$t"
+          stage=TOOLCHAIN_SUPPLY
+          git init -q --template= "$p/worker" >>"$private" 2>&1
+          git -C "$p/worker" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$GITHUB_SHA" >>"$private" 2>&1
+          [[ $(git -C "$p/worker" rev-parse FETCH_HEAD) == "$GITHUB_SHA" ]]
+          git -C "$p/worker" show FETCH_HEAD:online_b368_host_rust.py > "$p/online_b368_host_rust.py"
+          dl() {
+            local url=$1 path=$2 max=$3 pin=$4 code rc=0
+            code=$(env -i PATH=/usr/bin:/bin HOME="$p/home" curl --disable -fsSL --retry 2 --retry-delay 3 --retry-max-time 60 --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize "$max" --max-time 240 --output "$path" --write-out '%{http_code}' "$url" 2>>"$private") || rc=$?
+            [[ "$code" =~ ^[0-9]{3}$ ]]
+            printf 'B368_RUST_FETCH=%s:%s:%s\n' "${path##*/}" "$code" "$rc"
+            (( rc == 0 )) || return "$rc"
+            [[ $(sha256sum "$path" | cut -d' ' -f1) == "$pin" ]]
+          }
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/jdk.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          [[ $(stat -c %s "$p/jdk.tgz") == 193594705 ]]
+          mkdir "$p/components" "$p/rust-prefix" "$p/cargo"
+          dl https://static.rust-lang.org/dist/2026-11-12/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rustc-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 f1d0b1dec81dab6f523cd098507763487b0d4bd7fd2c87582f154128719be03b
+          dl https://static.rust-lang.org/dist/2026-11-12/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/cargo-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 7e29ce07d7c6e92d1826870575ba27d57fff6cb3e754aa57d99099cb88fab35d
+          dl https://static.rust-lang.org/dist/2026-11-12/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rust-std-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 4591b6486594ded52ecd6135db95bf9355bbd3ca7a380888b141528bbcf9a5d4
+          dl https://static.rust-lang.org/dist/2026-11-12/rustfmt-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/rustfmt-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 4c9389e4722b16499e5d47d89837ec84a4ef755f105ed2a84c038156064e01ab
+          dl https://static.rust-lang.org/dist/2026-11-12/clippy-1.100.0-x86_64-unknown-linux-gnu.tar.xz "$p/components/clippy-1.100.0-x86_64-unknown-linux-gnu.tar.xz" 300000000 0d18df3bff6c852ef8243727fed075ecb33dbf93b8ab8c138c2f45e3f270102a
+          stage=OFFLINE_HOST_RUST
+          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
+          u=$(id -u); g=$(id -g); [[ $u != 0 ]]
+          sudo -n /usr/bin/unshare -n /bin/bash -ec '
+            u=$1; g=$2; p=$3; c=$4; t=$5; run=$6; attempt=$7; shift 7
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
+            exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$p/rust-prefix/bin:$p/jdk-17.0.21+9/bin:/usr/bin:/bin" JAVA_HOME="$p/jdk-17.0.21+9" \
+              HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_NO_LAZY_FETCH=1 \
+              CARGO_HOME="$p/cargo" CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$p/cargo-target" \
+              GITHUB_RUN_ID="$run" GITHUB_RUN_ATTEMPT="$attempt" GITHUB_REPOSITORY=133563825as-ai/DSHA-god \
+              GITHUB_WORKFLOW="$1" GITHUB_WORKFLOW_REF="$2" GITHUB_WORKFLOW_SHA="$3" RUNNER_NAME="$4" RUNNER_OS="$5" RUNNER_ARCH="$6" RUNNER_ENVIRONMENT="$7" \
+              /bin/bash -ec '''
+                p=$1; c=$2; t=$3
+                tar -xzf "$p/jdk.tgz" -C "$p" >>"$p/private.log" 2>&1
+                for arc in "$p"/components/*.tar.xz; do
+                  name=${arc##*/}; name=${name%.tar.xz}
+                  tar -xJf "$arc" -C "$p/components" >>"$p/private.log" 2>&1
+                  /bin/bash "$p/components/$name/install.sh" --prefix="$p/rust-prefix" --disable-ldconfig >>"$p/private.log" 2>&1
+                done
+                printf "B368_RUST_COMPONENTS=5\n"
+                exec /usr/bin/python3 -sB "$p/online_b368_host_rust.py" "$p" "$c" "$t"
+              ''' rust "$p" "$c" "$t"
+          ' isolated "$u" "$g" "$p" "$c" "$t" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW" "$GITHUB_WORKFLOW_REF" "$GITHUB_WORKFLOW_SHA" "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_ENVIRONMENT" 2>>"$private"
+          printf 'B368_RUST_HOST=PASS\nB368_FORMAL_ADMISSION=false\n'
