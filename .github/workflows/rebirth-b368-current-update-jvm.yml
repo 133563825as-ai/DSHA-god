@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-current-update-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-current-update-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '1046aee37ec71a2c0e59a7f2388dd629feb1804b'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=9df83d2e5d1497d25e9b0bbfb50d3528da7bc359
-          t=8574318a8a84e255a310d213ffdebf5ef269ba16
+          c=2d5ba2838bdfb2a7019cad8b9f7e23a2f934c30d
+          t=ad81c95a6251eaadd62222ea2eeeb073cb9875ff
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -112,7 +112,7 @@ jobs:
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           grep -Fxq "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
-          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d" "$p/new-handoff.summary"
+          grep -Ex 'B368_FACADE_HANDOFF_MANIFEST=[a-f0-9]{64}' "$p/new-handoff.summary" >/dev/null
           grep -Fxq "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
           grep -Fx B368_PINNED_MANIFEST_PROJECTION=PASS "$p/new-handoff.summary"
           stage=TOOLCHAIN

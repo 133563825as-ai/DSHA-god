@@ -14,8 +14,8 @@ import time
 import urllib.error
 import urllib.request
 
-C='9df83d2e5d1497d25e9b0bbfb50d3528da7bc359'
-T='8574318a8a84e255a310d213ffdebf5ef269ba16'
+C='2d5ba2838bdfb2a7019cad8b9f7e23a2f934c30d'
+T='ad81c95a6251eaadd62222ea2eeeb073cb9875ff'
 RUNTIME='c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe'
 BASELINE_TAR='f6d3a99c15eb75b5e1f6335aea0a4611203ee3409884fc32d77b9933f5d2262f'
 DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
@@ -153,9 +153,9 @@ def offline(p):
     print('B368_FACADE_HANDOFF_TAR='+result['tarSha256'])
     body=(hd/'handoff.json').read_bytes()
     assert json.loads(body)['commit']==C and body.count(C.encode())==1
-    projected=body.replace(C.encode(),b'15692e209714ccb2d6474f6206d6d0f4f0c16d15',1)
-    assert hashlib.sha256(projected).hexdigest()=='d903436de54a0211c5808c3f0279f84dd3513effa9d97145a17bd50d79cc9a81'
-    assert hashlib.sha256(body).hexdigest()!='d903436de54a0211c5808c3f0279f84dd3513effa9d97145a17bd50d79cc9a81'
+    projected=body.replace(C.encode(),b'9df83d2e5d1497d25e9b0bbfb50d3528da7bc359',1)
+    assert hashlib.sha256(projected).hexdigest()=='a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d'
+    assert hashlib.sha256(body).hexdigest()!='a025252139126f1c8317dc504f82e501767ddde3d3322fbcc1c126322bbe418d'
     print('B368_PINNED_MANIFEST_PROJECTION=PASS')
     print('B368_FACADE_HANDOFF_MANIFEST='+digest(hd/'handoff.json'))
     print('B368_FACADE_HANDOFF_DESCRIPTOR='+NEW_DESCRIPTOR)
