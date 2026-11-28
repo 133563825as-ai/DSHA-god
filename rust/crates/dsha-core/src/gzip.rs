@@ -293,7 +293,10 @@ impl PackStream {
         if input.len() > MAX_INPUT_CHUNK {
             return Err(ERR_INPUT_BOUND);
         }
-        let total = self.total_in.checked_add(input.len() as u64).ok_or(ERR_INPUT_BOUND)?;
+        let total = self
+            .total_in
+            .checked_add(input.len() as u64)
+            .ok_or(ERR_INPUT_BOUND)?;
         if total > self.max_total_in {
             return Err(ERR_INPUT_BOUND);
         }
@@ -1128,8 +1131,7 @@ mod tests {
     fn pack_total_input_counter_is_chunk_invariant() {
         let payload = patterned(9_000);
         for chunk in [1usize, 131, 4_096, MAX_INPUT_CHUNK] {
-            let mut stream =
-                unwrap_ok(PackStream::with_input_limit(6, MAX_TOTAL_BYTES), "level 6");
+            let mut stream = unwrap_ok(PackStream::with_input_limit(6, MAX_TOTAL_BYTES), "level 6");
             let mut out = vec![0u8; FINISH_BOUND.max(pack_bound(chunk))];
             for part in payload.chunks(chunk) {
                 let mut offset = 0usize;

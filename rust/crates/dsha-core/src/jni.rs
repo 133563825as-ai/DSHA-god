@@ -574,12 +574,24 @@ mod tests {
         let whole = range(0x1000, 300 * 1024);
         assert!(ranges_overlap(whole, whole));
         // duplicate：同一地址、相同区间。
-        assert!(ranges_overlap(range(0x1000, 300 * 1024), range(0x1000, 300 * 1024)));
+        assert!(ranges_overlap(
+            range(0x1000, 300 * 1024),
+            range(0x1000, 300 * 1024)
+        ));
         // 同一块内存的两个部分重叠 slice。
-        assert!(ranges_overlap(range(0x1000, 2 * 1024), range(0x1000 + 512, 4 * 1024)));
+        assert!(ranges_overlap(
+            range(0x1000, 2 * 1024),
+            range(0x1000 + 512, 4 * 1024)
+        ));
         // 输入完全包含输出、输出完全包含输入。
-        assert!(ranges_overlap(range(0x1000, 4 * 1024), range(0x1000 + 64, 128)));
-        assert!(ranges_overlap(range(0x1000 + 64, 128), range(0x1000, 4 * 1024)));
+        assert!(ranges_overlap(
+            range(0x1000, 4 * 1024),
+            range(0x1000 + 64, 128)
+        ));
+        assert!(ranges_overlap(
+            range(0x1000 + 64, 128),
+            range(0x1000, 4 * 1024)
+        ));
     }
 
     #[test]
@@ -717,4 +729,3 @@ mod tests {
         );
     }
 }
-
