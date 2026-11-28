@@ -60,6 +60,13 @@ public final class ExternalDeviceImportRootTest {
     assertTrue(realFiles.mkdirs());
     Context aliased = aliasedContext(realData);
 
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      IOException denied =
+          assertThrows(IOException.class, () -> new ExternalDeviceHost(aliased).importRoot());
+      assertEquals("TRIAL_DEVICE_CHANNEL_UNAVAILABLE", denied.getMessage());
+      assertFalse(new File(realFiles, "external-device-import").exists());
+      return;
+    }
     File root = new ExternalDeviceHost(aliased).importRoot();
 
     assertTrue(root.isDirectory());
@@ -80,6 +87,12 @@ public final class ExternalDeviceImportRootTest {
         assertThrows(
             IOException.class, () -> new ExternalDeviceHost(aliasedContext(realData)).importRoot());
 
-    assertEquals("IMPORT_PATH_ALIAS", error.getMessage());
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      assertEquals("TRIAL_DEVICE_CHANNEL_UNAVAILABLE", error.getMessage());
+      assertTrue(Files.isSymbolicLink(leaf.toPath()));
+      assertEquals(outside.toPath(), Files.readSymbolicLink(leaf.toPath()));
+    } else {
+      assertEquals("IMPORT_PATH_ALIAS", error.getMessage());
+    }
   }
 }

@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
@@ -37,6 +38,7 @@ public final class LanListenerFailureTest {
 
   private static final AtomicReference<Thread> worker = new AtomicReference<>();
   private static final AtomicReference<Throwable> uncaught = new AtomicReference<>();
+  private static final AtomicInteger bindAttempts = new AtomicInteger();
   private static CountDownLatch entered;
   private static boolean failBind;
   private static ServerSocket bound;
@@ -52,6 +54,7 @@ public final class LanListenerFailureTest {
   public static final class Port {
     @Implementation
     protected static ServerSocket bind(int port) throws IOException {
+      bindAttempts.incrementAndGet();
       if (failBind) {
         markWorker();
         throw new SecurityException("private address must not appear in diagnostics");
@@ -74,6 +77,7 @@ public final class LanListenerFailureTest {
   public void setUp() {
     worker.set(null);
     uncaught.set(null);
+    bindAttempts.set(0);
     entered = new CountDownLatch(1);
     bound = null;
     Context ctx = RuntimeEnvironment.getApplication();
@@ -92,15 +96,38 @@ public final class LanListenerFailureTest {
   @Test
   public void deniedBindRetiresListenerWithoutUncaughtException() throws Exception {
     failBind = true;
-    runFailure();
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      LanProxyService.start(null, RuntimeEnvironment.getApplication(), 49123, 123);
+      assertNoTrialListener();
+    } else {
+      runFailure();
+    }
   }
 
   @Test
   public void failedNetworkPollClosesBoundListenerWithoutUncaughtException() throws Exception {
     failBind = false;
-    runFailure();
-    assertNotNull(bound);
-    assertTrue(bound.isClosed());
+    if (BuildConfig.REBIRTH_CANDIDATE) {
+      LanProxyService.start(null, RuntimeEnvironment.getApplication(), 49123, 123);
+      assertNoTrialListener();
+    } else {
+      runFailure();
+      assertNotNull(bound);
+      assertTrue(bound.isClosed());
+    }
+  }
+
+  private void assertNoTrialListener() throws Exception {
+    var active = LanProxyService.class.getDeclaredField("activeRun");
+    active.setAccessible(true);
+    assertNull(active.get(null));
+    assertEquals(0, bindAttempts.get());
+    assertEquals(1L, entered.getCount());
+    assertNull(worker.get());
+    assertNull(bound);
+    assertNull(uncaught.get());
+    assertEquals(0, LanProxyService.port(123));
+    assertTrue(LanProxyService.hasDshAuth(123));
   }
 
   private void runFailure() throws Exception {
