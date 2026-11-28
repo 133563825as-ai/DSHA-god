@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '922bc7d4795b3e75ee0f1c88932464c0164b1ba1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '430a5797f9c5901ba5925985078bfda06f566be9'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py online_b368_full_jvm_diagnostics.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -294,7 +294,10 @@ jobs:
             exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs -- /usr/bin/python3 -sB "$p/online_b368_full_jvm.py" "$p" "$g" "$c" "$t" "$@"
           ' full "$p" "$j" "$g" "$uid" "$gid" "$c" "$t" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW" "$GITHUB_WORKFLOW_REF" "$GITHUB_WORKFLOW_SHA" "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH" "$RUNNER_ENVIRONMENT" "${opts[@]}" 2>>"$out" || rc=$?
           if (( rc )); then
-            if [[ -s "$p/compile.log" ]]; then reason full-jvm "$p/compile.log"; fi
+            if [[ -s "$p/compile.log" ]]; then
+              reason full-jvm "$p/compile.log"
+              env -i PATH=/usr/bin:/bin /usr/bin/python3 -sB "$p/online_b368_full_jvm_diagnostics.py" "$p/compile.log" "$p/receiver/gradle/verification-metadata.xml" 2>>"$out" || echo B368_JVM_FAILURE_DETAIL=REFUSED
+            fi
             exit "$rc"
           fi
           printf 'B368_FORMAL_ADMISSION=false\n'
