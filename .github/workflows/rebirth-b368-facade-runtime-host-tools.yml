@@ -1,15 +1,15 @@
-name: Rebirth b368 stop-facade JDK runtime checks
+name: Rebirth b368 stop-facade host tools runtime checks
 on:
   push:
-    branches: [validate/rebirth-b368-facade-runtime-jdk]
+    branches: [validate/rebirth-b368-facade-runtime-host-tools]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-jdk' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-host-tools' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Run nine registered JDK runtime checks using fresh x64 fixtures
+      - name: Run three registered host tool runtime checks
         shell: bash
         run: |
           set -euo pipefail
@@ -129,6 +129,7 @@ jobs:
           [[ $(stat -c %s "$p/jdk.tgz") == 193594705 ]]
           tar -xzf "$p/jdk.tgz" -C "$p" >>"$out" 2>&1
           dl https://repo.maven.apache.org/maven2/org/yaml/snakeyaml/2.4/snakeyaml-2.4.jar "$p/snakeyaml-2.4.jar" 400000 ef779af5d29a9dde8cc70ce0341f5c6f7735e23edff9685ceaa9d35359b7bb7f
+          dl https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.13.1/gson-2.13.1.jar "$p/gson-2.13.1.jar" 400000 94855942d4992f112946d3de1c334e709237b8126d8130bf07807c018a4a2120
           stage=X64_OFFLINE_VERIFY
           available=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
           [[ "$available" -ge 7168 && $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
@@ -144,4 +145,4 @@ jobs:
               npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
               /usr/bin/python3 -sB "$p/online_b368_x64_verify.py" "$p"
           ' verify "$uid" "$gid" "$p" 2>>"$out"
-          printf 'B368_RUNTIME_JDK=PASS\nB368_FORMAL_ADMISSION=false\n'
+          printf 'B368_RUNTIME_HOST_TOOLS=PASS\nB368_FORMAL_ADMISSION=false\n'

@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import tarfile
 
 from online_b368_inputs import C, T, RUNTIME, LOCK, digest, expected, git
 
@@ -48,7 +49,7 @@ def main(p):
     assert {x[0].parent for x in snapshots.values()}=={Path(ptr['raw']).parent}
     for kind, (_,_,_,content) in snapshots.items():
         print(f'B368_X64_FIXTURE={kind}:682:{content}',flush=True)
-    paths=('tools/test-language-patch-chain.py', 'tools/test-bridge-routes.py', 'tools/test-web-ui-host-fixtures.mjs', 'tools/test-credential-yaml-projection.mjs', 'tools/test-welcome-notice-patch-upgrade.py', 'tools/test-session-interaction-patch-upgrade.py', 'tools/test-preset-pending-patch-upgrade.py', 'tools/test-plugin-management-patch-chain.py', 'tools/test-web-search-patch-chain.py')
+    paths=('tools/phone-control/control-task-binding/test-control-task-binding.mjs', 'tools/test-plugin-dependencies.py', 'tools/test-skill-import.mjs')
     cases=json.loads((repo/'tools/host-tests.manifest.json').read_bytes())['tests']
     assert [x['path'] for x in cases if x['stage']=='runtime' and x['path'] in paths]==list(paths)
     jdk=p/'jdk-17.0.21+9'
@@ -56,6 +57,30 @@ def main(p):
     backed=p/'snakeyaml-2.4.jar'; lockrow,=[x for x in json.loads((repo/'tools/backup-dependencies.lock.json').read_bytes())['dependencies'] if x['name']=='snakeyaml']; assert digest(backed)==lockrow['sha256']
     dep=repo/'app/build/backup-dependencies/snakeyaml-2.4.jar'; dep.parent.mkdir(); dep.write_bytes(backed.read_bytes()); assert digest(dep)==digest(backed)
     print('B368_RUNTIME_JDK_SUPPLY=17.0.21+9',flush=True)
+    gson=p/'gson-2.13.1.jar'
+    gson_lock,=[row for row in json.loads((repo/'tools/backup-dependencies.lock.json').read_bytes())['dependencies'] if row['name']=='gson']
+    gson_copy=dep.parent/gson.name
+    assert digest(gson)==gson_lock['sha256']; gson_copy.write_bytes(gson.read_bytes())
+    archive=repo/'app/src/main/assets/pnpm-runtime.bin'
+    descriptor=json.loads((repo/'app/src/main/assets/runtime-descriptor.json').read_bytes())
+    assert digest(archive)==descriptor['inputs'][archive.name]=='08873508c20e5a4af5ffb93a02509aac62a24b91826d8abce9f0d71e9453ce9d'
+    target=p/'pnpm'; target.mkdir()
+    prefix='usr/local/lib/dsha-pnpm/'
+    seen=set()
+    with tarfile.open(archive,'r:gz') as t:
+        for row in t:
+            assert row.name.startswith(prefix) and row.name not in seen
+            seen.add(row.name)
+            rel=Path(row.name[len(prefix):]); assert '..' not in rel.parts and not rel.is_absolute()
+            out=target/rel; assert out.resolve().is_relative_to(target) and (row.isfile() or row.isdir())
+            if row.isdir():out.mkdir(parents=True,exist_ok=True)
+            else:
+                assert row.size<32*2**20
+                out.parent.mkdir(parents=True,exist_ok=True)
+                with out.open('xb') as f:f.write(t.extractfile(row).read())
+    pnpm=target/'dist/pnpm.cjs'
+    assert subprocess.check_output([node,pnpm,'--version'],timeout=20).strip()==b'10.34.5'
+    print('B368_RUNTIME_PNPM=10.34.5',flush=True)
     results={}
     for name in paths:
         label=Path(name).name
@@ -65,14 +90,14 @@ def main(p):
         env=dict(os.environ,JAVA_HOME=str(jdk)); env.pop('GIT_ALLOW_PROTOCOL',None); env.pop('GIT_CONFIG_NOSYSTEM',None); env.pop('GIT_CONFIG_GLOBAL',None)
         with (p/(label+'.runner.log')).open('xb') as log:
             rc=subprocess.run([sys.executable,'-sB','tools/run-host-tests.py','--stage','runtime','--only',label,'--node',node,
-                               '--jdk',jdk,'--raw',ptr['raw'],'--managed',ptr['managed'],'--output',output],cwd=repo,env=env,
+                               '--jdk',jdk,'--pnpm-cli',pnpm,'--raw',ptr['raw'],'--managed',ptr['managed'],'--output',output],cwd=repo,env=env,
                               stdout=log,stderr=subprocess.STDOUT,timeout=240).returncode
         manifest=output/'manifest.json'; m=json.loads(manifest.read_bytes()); row,=m['tests']; log=output/(label+'.log')
         assert m['requestedStage']=='runtime' and row['path']==name and row['logSha256']==digest(log)
         assert (rc==0)==(m['status']=='PASS_FOR_SELECTED_STAGES' and row['status']=='PASS' and row.get('exitCode')==0)
         assert row['status'] in {'PASS','FAILED','TIMEOUT'}
         results[name]=(rc,row['status'],digest(log),digest(manifest))
-    assert digest(dep)==digest(backed)==lockrow['sha256']
+    assert digest(dep)==digest(backed)==lockrow['sha256'] and digest(gson_copy)==digest(gson)==gson_lock['sha256']
     assert digest(pointer)==pin and not git(repo,'status','--porcelain=v1','--untracked-files=all') and not git(repo,'remote')
     assert git(repo,'rev-parse','HEAD','HEAD^{tree}').decode().split()==[C,T]
     for r,mark,mark_hash,content in snapshots.values():
@@ -83,7 +108,7 @@ def main(p):
     assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (repo/'app/build').rglob('*'))
     for name,(rc,status,log,manifest) in results.items():
         print(f'B368_RUNTIME_CASE={name}:{status}:{rc}:{log}:{manifest}',flush=True)
-    print('B368_RUNTIME_RESEALED=9',flush=True)
+    print('B368_RUNTIME_RESEALED=3',flush=True)
     return int(any(x[0] for x in results.values()))
 
 
