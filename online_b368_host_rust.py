@@ -72,13 +72,17 @@ def main(p, commit, tree):
     counts=re.findall(rb'(?m)^test result: ok\. ([0-9]+) passed; 0 failed; 0 ignored;',tested)
     assert counts and sum(map(int,counts))>0
     print(f'B368_RUST_UNIT={sum(map(int,counts))}',flush=True)
-    phase('host-build',[sys.executable,'-sB','tools/rust/build.py','--host','--expect-lock',
+    phase('host-build',[sys.executable,'-sB','tools/rust/build.py','--host','--check','--expect-lock',
                         '--commit',commit,'--jobs','1','--out',p/'native','--receipt',p/'build.json'])
     lib=p/'native/libdsha_rs.so'; r=json.loads((p/'build.json').read_bytes())
     pin=hashlib.sha256(lib.read_bytes()).hexdigest()
     assert r['commit']==commit and r['target']=='host' and r['toolchain']['targetTriple']=='x86_64-unknown-linux-gnu'
     assert r['build']['locked'] is True and r['build']['offline'] is True and r['artifact']['sha256']==pin
-    assert r['expectation']['status'] in {'PASS','PENDING'}
+    assert r['expectation']['status']=='PENDING'
+    assert r['reproducible']==dict(status='PASS',differentDirectory=True,firstSha256=pin,secondSha256=pin)
+    print(f'B368_RUST_REPRO_BYTES={lib.stat().st_size}:{pin}',flush=True)
+    assert (lib.stat().st_size,pin)==(369128,'10c11bae9ab38b0b8ac4655c0d1c4f6e87cfdc78b1fd7349ebef25718b2adfeb')
+    print('B368_RUST_REPRO=PASS',flush=True)
     phase('host-abi',[sys.executable,'-sB','tools/check-rust-boundaries.py','--artifact',lib])
     phase('host-jvm',[sys.executable,'-sB','tools/rust/host-jvm-differential.py','--lib',lib,'--report',p/'diff.json'])
     d=json.loads((p/'diff.json').read_bytes()); assert d['status']=='PASS' and d['library']['sha256']==pin
