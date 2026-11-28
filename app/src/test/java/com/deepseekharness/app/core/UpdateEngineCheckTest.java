@@ -138,6 +138,11 @@ public final class UpdateEngineCheckTest {
     UpdateEngine ordinary = new UpdateEngine(app, null, false);
     assertTrue("negative control must restore the valid old candidate", ordinary.hasTask());
     assertNotNull(ordinary.state().getValue().release);
+    assertEquals(restored, ordinary.state().getValue().apk);
+    // A download in progress has a partial file, not an already published final file.
+    var partial = new java.io.File(restored.getParentFile(), hash + ".part").toPath();
+    java.nio.file.Files.move(restored.toPath(), partial);
+    assertFalse(restored.exists());
     app.getSharedPreferences("dsha-updates", 0).edit().putString("phase", "downloading").commit();
     UpdateEngine downloading = new UpdateEngine(app, null, false);
     assertTrue("negative control must resume a valid download", downloading.shouldResume());
@@ -153,6 +158,7 @@ public final class UpdateEngineCheckTest {
     assertFalse("candidate must not restore downloading state", engine.hasTask());
     assertNull(engine.state().getValue().release);
     assertNull(engine.state().getValue().apk);
+    java.nio.file.Files.move(partial, restored.toPath());
     app.getSharedPreferences("dsha-updates", 0).edit().putString("phase", "ready").commit();
     UpdateEngine candidateReady = new UpdateEngine(app, null, true);
     assertFalse("candidate must not restore ready state", candidateReady.hasTask());
