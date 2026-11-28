@@ -59,7 +59,7 @@ contract=py+['tools/unit_test_contract.py']
 origin=['--root',repo,'--state',state,'--run-id',os.environ['GITHUB_RUN_ID'],'--run-attempt',os.environ['GITHUB_RUN_ATTEMPT']]
 phase('plan',contract+['plan','--root',repo,'--output',plan])
 print('B368_FULL_JVM_PLAN_SHA256='+digest(plan),flush=True)
-assert digest(plan)=='1363141442b480ffd03e25c548408bc9151e647e794a4d2263378f84cb081b09'
+assert digest(plan)=='c6402e7425bc3004f01e28460f5e2197f4f71484329ea85f9f1623e641d75c20'
 phase('begin',contract+['begin',*origin,'--plan',plan,'--rust-library',lib,'--rust-receipt',receipt])
 os.environ['DSHA_UNIT_TEST_STATE']=str(state)
 os.environ['DSHA_ROBOLECTRIC_DEPENDENCY_DIR']=str(p/'robo')
