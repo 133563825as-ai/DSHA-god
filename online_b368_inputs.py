@@ -36,10 +36,10 @@ def platform_ok(r,key,want):
     return ('!'+want) not in a and (not any(not x.startswith('!') for x in a) or want in a)
 
 
-def expected(root):
+def expected(root,cpu='arm64'):
     packages=json.loads((root/LOCK).read_bytes())['packages']
     for n in SKIP:assert packages[n]['optional'] is True
-    installed={n:r for n,r in packages.items() if n and n not in SKIP and all(platform_ok(r,k,v) for k,v in [('os','linux'),('cpu','arm64'),('libc','glibc')])}
+    installed={n:r for n,r in packages.items() if n and n not in SKIP and all(platform_ok(r,k,v) for k,v in [('os','linux'),('cpu',cpu),('libc','glibc')])}
     assert len(installed)==682 and len({r['integrity'] for r in installed.values()})==668
     return installed
 
@@ -48,8 +48,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 
 
-def acquire(p):
-    want=expected(p/'src'); qualified=re.compile(r'https://registry\.npmjs\.org/(?:@[\w.+-]+/)?[\w.+-]+/-/[\w.+-]+\.tgz',re.ASCII)
+def acquire(p,cpu='arm64',src=None):
+    want=expected(src or p/'src',cpu); qualified=re.compile(r'https://registry\.npmjs\.org/(?:@[\w.+-]+/)?[\w.+-]+/-/[\w.+-]+\.tgz',re.ASCII)
     registry={}
     for r in want.values():
         url=r['resolved']; pin=r['integrity']; assert qualified.fullmatch(url) and re.fullmatch(r'sha512-[A-Za-z0-9+/]{86}==',pin)
@@ -77,7 +77,7 @@ def acquire(p):
     from collections import Counter
     codes=Counter(k for k,n in out); total=sum(n for k,n in out)
     (p/'npm-status').write_text(''.join('B368_NPM_'+k+'='+str(v)+'\n' for k,v in sorted(codes.items())),encoding='ascii')
-    assert codes=={'OK':668} and total==156673237
+    assert codes=={'OK':668} and total=={'arm64':156673237,'x64':153584072}[cpu]
 
 
 def offline(p):
@@ -139,5 +139,8 @@ def offline(p):
 
 
 if __name__=='__main__':
-    assert __debug__ and len(sys.argv)==3 and sys.argv[1] in ('acquire','offline')
-    (acquire if sys.argv[1]=='acquire' else offline)(Path(sys.argv[2]))
+    assert __debug__ and len(sys.argv)==3 and sys.argv[1] in ('acquire','acquire-x64','offline')
+    p=Path(sys.argv[2]); mode=sys.argv[1]
+    if mode=='acquire-x64': acquire(p/'x64','x64',p/'src')
+    elif mode=='acquire': acquire(p)
+    else: offline(p)
