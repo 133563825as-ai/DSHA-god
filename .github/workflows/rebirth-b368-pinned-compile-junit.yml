@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-compile-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'eda2e8ba56d4ccad0db4f6e37e065c4d49305fe0'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-compile-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '59abf05579fe3d1f9195c07afaa04c822ac146e8'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

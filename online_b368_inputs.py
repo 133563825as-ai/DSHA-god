@@ -10,6 +10,7 @@ import socket
 import subprocess as sp
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.request
 
@@ -59,13 +60,30 @@ def acquire(p):
         url,pin=item; raw=base64.b64decode(pin[7:],validate=True); key=raw.hex(); dest=p/'sri/_cacache/content-v2/sha512'/key[:2]/key[2:4]/key[4:]
         dest.parent.mkdir(parents=True,exist_ok=True)
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
-        with opener.open(urllib.request.Request(url,headers={'Accept-Encoding':'identity'}),timeout=25) as r, dest.open('xb') as f:
-            assert r.status==200 and r.url==url and r.headers.get('Content-Encoding','identity')=='identity'
-            h=hashlib.sha512(); total=0
-            while chunk:=r.read(1024*1024):
-                total+=len(chunk);assert total<=48080284;h.update(chunk);f.write(chunk)
-            assert h.digest()==raw and total>0
-        return total
+        request=urllib.request.Request(url,headers={'Accept-Encoding':'identity'})
+        partial=dest.with_name(dest.name+'.part')
+        assert not dest.exists()
+        for attempt in range(2):
+            with partial.open('xb') as f:
+                try:
+                    with opener.open(request,timeout=25) as r:
+                        assert r.status==200 and r.url==url and r.headers.get('Content-Encoding','identity')=='identity'
+                        h=hashlib.sha512(); total=0
+                        while chunk:=r.read(1024*1024):
+                            total+=len(chunk);assert total<=48080284;h.update(chunk);f.write(chunk)
+                        assert h.digest()==raw and total>0
+                except (TimeoutError, urllib.error.URLError) as error:
+                    timed_out=isinstance(error,TimeoutError) or (type(error) is urllib.error.URLError and isinstance(error.reason,TimeoutError))
+                    if not timed_out or attempt:
+                        raise
+                else:
+                    f.close()
+                    os.link(partial,dest)
+                    partial.unlink()
+                    return total
+            partial.unlink()
+            time.sleep(3)
+        raise AssertionError('unreachable')
     def classify(item):
         try:return ('OK',get(item))
         except urllib.error.HTTPError as x:return ('HTTP_'+str(x.code) if x.code in (302,403,404,429,500,502,503,504) else 'HTTP_OTHER',0)
