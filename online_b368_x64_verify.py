@@ -48,7 +48,7 @@ def main(p):
     assert {x[0].parent for x in snapshots.values()}=={Path(ptr['raw']).parent}
     for kind, (_,_,_,content) in snapshots.items():
         print(f'B368_X64_FIXTURE={kind}:682:{content}',flush=True)
-    paths=('tools/test-app-activity.mjs', 'tools/test-client-combo-cache.mjs', 'tools/test-composer-enter.mjs', 'tools/test-dsh-sessions.mjs', 'tools/test-mobile-auth.mjs', 'tools/test-mobile-gesture-guard.mjs', 'tools/test-plugin-discovery.py', 'tools/test-plugin-review.py', 'tools/test-rc1-migration.py', 'tools/test-startup-diagnostics.mjs', 'tools/test-ui-language.mjs', 'tools/test-web-compat.mjs', 'tools/test-fs-search-scope.mjs')
+    paths=('tools/test-prompt-language.mjs', 'tools/test-mobile-server-compression-carrier.mjs', 'tools/test-browser-stream-resume.mjs', 'tools/test-conversation-stop.mjs', 'tools/test-issue67-startup.mjs', 'tools/test-legacy-preset-convert.mjs', 'tools/test-mobile-update.mjs', 'tools/test-native-plugin-manager.mjs', 'tools/test-pdf-compat.mjs', 'tools/test-plugin-states.mjs', 'tools/test-profile-settings-review.mjs', 'tools/test-queue-steer.mjs', 'tools/test-rc1-settings-migration.mjs', 'tools/test-session-interaction.mjs', 'tools/test-storage-json-proroot-dirent.mjs', 'tools/test-frontend-static-cache.mjs', 'tools/test-task-progress.mjs')
     cases=json.loads((repo/'tools/host-tests.manifest.json').read_bytes())['tests']
     assert [x['path'] for x in cases if x['stage']=='runtime' and x['path'] in paths]==list(paths)
     results={}
@@ -76,7 +76,7 @@ def main(p):
     assert not any(f.suffix in {'.apk','.dex','.aab','.apks'} for f in (repo/'app/build').rglob('*'))
     for name,(rc,status,log,manifest) in results.items():
         print(f'B368_RUNTIME_CASE={name}:{status}:{rc}:{log}:{manifest}',flush=True)
-    print('B368_RUNTIME_RESEALED=13',flush=True)
+    print('B368_RUNTIME_RESEALED=17',flush=True)
     return int(any(x[0] for x in results.values()))
 
 
