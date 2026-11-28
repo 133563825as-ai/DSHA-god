@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint' && github.run_attempt == '1' && github.event.before == '224e70901305660ec501bc72b545a7d9ee398de1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '570da81ba8564f62fa09d515f4d719fe3a4d68b0'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=ba20e804c0d0588d1cb6cad6f58b83744d38afec
-          t=715bd9b60de91077138d4402555b3f77d5449d29
+          c=38fb7b125cc0a5ae6e324db99066d3d139ce86ad
+          t=c876482bdf7b332ed295a49b8e5f22ee6b1c646c
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -34,7 +34,7 @@ jobs:
               test -z "$(git -C "$1/src" status --porcelain=v1 --untracked-files=all)"
               test -z "$(git -C "$1/src" remote)"
             ' verify "$p" "$c" "$t" >"$out" 2>&1
-          printf 'B368_LINT_SOURCE_COMMIT=%s\n' "$c"
+          printf 'B368_LINT_SOURCE_COMMIT=%s\nB368_LINT_SOURCE_TREE=%s\n' "$c" "$t"
           stage=DOWNLOAD
           env -i PATH=/usr/bin:/bin HOME="$p" curl --disable --silent --show-error --fail --location \
             --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize 716787167 --max-time 360 \
