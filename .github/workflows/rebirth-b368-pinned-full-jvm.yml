@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '1c4172aab25fb7528b2bcfe288e5cf703f8d5587'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-full-jvm' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == 'a22710a44add28e7f621583ecf27ff70ddd5d864'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py online_b368_full_jvm_diagnostics.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle online_b368_full_jvm.py online_b368_full_jvm_diagnostics.py online_b368_jvm_failure_readback.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -336,6 +336,7 @@ jobs:
             if [[ -s "$p/compile.log" ]]; then
               reason full-jvm "$p/compile.log"
               env -i PATH=/usr/bin:/bin /usr/bin/python3 -sB "$p/online_b368_full_jvm_diagnostics.py" "$p/compile.log" "$p/receiver/gradle/verification-metadata.xml" 2>>"$out" || echo B368_JVM_FAILURE_DETAIL=REFUSED
+              env -i PATH=/usr/bin:/bin /usr/bin/python3 -sB "$p/online_b368_jvm_failure_readback.py" "$p" 2>>"$out" || echo B368_JVM_XML_INSPECTION=REFUSED
             fi
             exit "$rc"
           fi
