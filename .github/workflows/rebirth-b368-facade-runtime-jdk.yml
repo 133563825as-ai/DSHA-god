@@ -1,15 +1,15 @@
-name: Rebirth b368 stop-facade fifth runtime checks
+name: Rebirth b368 stop-facade JDK runtime checks
 on:
   push:
-    branches: [validate/rebirth-b368-facade-runtime-fifth]
+    branches: [validate/rebirth-b368-facade-runtime-jdk]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-fifth' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-runtime-jdk' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Run twelve registered runtime checks using fresh x64 fixtures
+      - name: Run nine registered JDK runtime checks using fresh x64 fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -119,6 +119,16 @@ jobs:
             grep -Ex 'B368_NPM_(OK|HTTP_(302|403|404|429|500|502|503|504|OTHER)|TRANSPORT|TIMEOUT|RESPONSE_OR_SRI|LOCAL_OR_FORMAT)=[0-9]{1,3}' "$p/x64/npm-status" | sed 's/^B368_NPM_/B368_X64_NPM_/'
           fi
           ((rc == 0)) || exit "$rc"
+          stage=JDK_PUBLIC_SUPPLY
+          dl() {
+            local url=$1 target=$2 cap=$3 pin=$4
+            env -i PATH=/usr/bin:/bin HOME="$p/home" curl --disable -fsSL --retry 2 --retry-delay 2 --retry-max-time 45 --proto '=https' --proto-redir '=https' --max-redirs 4 --max-filesize "$cap" --max-time 220 --output "$target" "$url" >>"$out" 2>&1
+            [[ $(sha256sum "$target" | cut -d' ' -f1) == "$pin" ]]
+          }
+          dl 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz' "$p/jdk.tgz" 193594705 8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711
+          [[ $(stat -c %s "$p/jdk.tgz") == 193594705 ]]
+          tar -xzf "$p/jdk.tgz" -C "$p" >>"$out" 2>&1
+          dl https://repo.maven.apache.org/maven2/org/yaml/snakeyaml/2.4/snakeyaml-2.4.jar "$p/snakeyaml-2.4.jar" 400000 ef779af5d29a9dde8cc70ce0341f5c6f7735e23edff9685ceaa9d35359b7bb7f
           stage=X64_OFFLINE_VERIFY
           available=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
           [[ "$available" -ge 7168 && $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
@@ -134,4 +144,4 @@ jobs:
               npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
               /usr/bin/python3 -sB "$p/online_b368_x64_verify.py" "$p"
           ' verify "$uid" "$gid" "$p" 2>>"$out"
-          printf 'B368_RUNTIME_FIFTH=PASS\nB368_FORMAL_ADMISSION=false\n'
+          printf 'B368_RUNTIME_JDK=PASS\nB368_FORMAL_ADMISSION=false\n'
