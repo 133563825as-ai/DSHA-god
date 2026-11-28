@@ -70,7 +70,7 @@ def main():
              'util/VirtualScreenInputResultTest', 'util/VirtualScreenErrorsTest', 'util/VirtualScreenFailuresTest',
              'util/VirtualScreenRequestFenceTest', 'util/VirtualScreenRequestFrameTest',
              'util/VirtualScreenRoutesTest', 'util/VirtualScreenWindowPolicyTest',
-             'util/VscreenBridgeRequestTest', 'util/VscreenAnchoredGrammarTest', 'util/DeviceShellPolicyTest']
+             'util/VscreenBridgeRequestTest', 'util/VscreenAnchoredGrammarTest']
     with tempfile.TemporaryDirectory(prefix='dsha-vscreen-protocol-') as directory:
         work = Path(directory)
         host_json = work / lock['artifact']
@@ -102,18 +102,32 @@ def main():
         generated = work / 'generated'
         subprocess.run([os.sys.executable, str(ROOT / 'tools/prepare-ui-languages.py'), '--output', str(generated)], check=True, timeout=30)
         cp = os.pathsep.join(map(str, [junit, hamcrest, host_json, gson, annotations]))
-        # AppIdentity reads the AGP-generated BuildConfig; host compilation needs the same
-        # production application id, not a hard-coded package name. build.gradle now reads it
-        # from the selected release identity (default mod), so take it from that same file.
-        application_id = json.loads((ROOT / 'ci/release-identity.mod.json').read_text(encoding='utf-8'))['packageName']
-        build_config = work / 'BuildConfig.java'
-        build_config.write_text('package com.deepseekharness.app;\n\npublic final class BuildConfig {\n  public static final String APPLICATION_ID = "' + application_id + '";\n}\n', encoding='utf-8')
         sources = [str(JAVA / (name + '.java')) for name in names] + [str(TEST / (name + '.java')) for name in tests]
-        sources += [str(path) for path in generated.rglob('*.java')] + [str(build_config)]
-        subprocess.run([str(jdk / ('javac' + extension)), '-J-Dfile.encoding=UTF-8', '-J-Duser.language=en', '-J-Duser.country=US', '-encoding', 'UTF-8', '-cp', cp, '-d', str(work)] + sources,
-                       check=True, timeout=40)
-        subprocess.run([str(jdk / ('java' + extension)), '-cp', str(work) + os.pathsep + cp, 'org.junit.runner.JUnitCore']
-                       + ['com.deepseekharness.app.' + name.replace('/', '.') for name in tests], check=True, timeout=40)
+        sources += [str(path) for path in generated.rglob('*.java')]
+        cases = ['com.deepseekharness.app.' + name.replace('/', '.') for name in tests]
+        identities = (
+            ('mod', 'false', TEST / 'util/DeviceShellPolicyTest.java', 'DeviceShellPolicyTest'),
+            ('rebirth', 'true', ROOT / 'tools/fixtures/VscreenTrialHostTest.java', 'VscreenTrialHostTest'),
+        )
+        for identity, trial, policy_source, policy_test in identities:
+            # javac inlines these constants, so each identity needs fresh class output.
+            application_id = json.loads((ROOT / f'ci/release-identity.{identity}.json').read_text(encoding='utf-8'))['packageName']
+            classes = work / identity
+            classes.mkdir()
+            build_config = classes / 'BuildConfig.java'
+            build_config.write_text(
+                'package com.deepseekharness.app;\n\npublic final class BuildConfig {\n'
+                f'  public static final String APPLICATION_ID = {json.dumps(application_id)};\n'
+                f'  public static final boolean REBIRTH_CANDIDATE = {trial};\n'
+                '}\n', encoding='utf-8')
+            print('VSCREEN_HOST_IDENTITY=' + identity, flush=True)
+            subprocess.run([str(jdk / ('javac' + extension)), '-J-Dfile.encoding=UTF-8',
+                            '-J-Duser.language=en', '-J-Duser.country=US', '-encoding', 'UTF-8',
+                            '-cp', cp, '-d', str(classes)] + sources + [str(policy_source), str(build_config)],
+                           check=True, timeout=40)
+            subprocess.run([str(jdk / ('java' + extension)), '-cp', str(classes) + os.pathsep + cp,
+                            'org.junit.runner.JUnitCore'] + cases + ['com.deepseekharness.app.util.' + policy_test],
+                           check=True, timeout=40)
     print('PASS developer protocol JUnit; Journal requires the actual Robolectric SDK34 test runtime; Android transport/permissions/exit remain NOT_RUN_ANDROID')
 
 
