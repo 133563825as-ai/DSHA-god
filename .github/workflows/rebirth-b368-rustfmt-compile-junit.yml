@@ -1,11 +1,11 @@
-name: Rebirth b368 stop-facade targeted offline JUnit
+name: Rebirth b368 rustfmt-fixed offline compile and targeted JUnit
 on:
   push:
-    branches: [validate/rebirth-b368-facade-force-junit]
+    branches: [validate/rebirth-b368-rustfmt-compile-junit]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-force-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-rustfmt-compile-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=265d370d72c2ecce2e210e836ca9f1da895026e4
-          t=5679b579f3f8d908d44fa7203ad0313d579318ba
+          c=0ae10c8825001789e86871a81ec9218d3f0d2f1a
+          t=c0d323696178b91e0df21825bff03e548ed25b3a
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -112,8 +112,9 @@ jobs:
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           grep -Fxq "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
-          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1" "$p/new-handoff.summary"
+          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=2021dcc745c188633c4a409e4265c4de86abbd258b71147300169ee80ef99e76" "$p/new-handoff.summary"
           grep -Fxq "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
+          grep -Fx B368_RUSTFMT_MANIFEST_PROJECTION=PASS "$p/new-handoff.summary"
           stage=TOOLCHAIN
           dl() {
             local u=$1 f=$2 bytes=$3 pin=$4

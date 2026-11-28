@@ -13,8 +13,8 @@ import tarfile
 import urllib.error
 import urllib.request
 
-C='265d370d72c2ecce2e210e836ca9f1da895026e4'
-T='5679b579f3f8d908d44fa7203ad0313d579318ba'
+C='0ae10c8825001789e86871a81ec9218d3f0d2f1a'
+T='c0d323696178b91e0df21825bff03e548ed25b3a'
 RUNTIME='c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe'
 BASELINE_TAR='f6d3a99c15eb75b5e1f6335aea0a4611203ee3409884fc32d77b9933f5d2262f'
 DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
@@ -133,6 +133,12 @@ def offline(p):
     assert projected.hexdigest()==BASELINE_TAR
     print('B368_FACADE_BASELINE_PROJECTION=PASS')
     print('B368_FACADE_HANDOFF_TAR='+result['tarSha256'])
+    body=(hd/'handoff.json').read_bytes()
+    assert json.loads(body)['commit']==C and body.count(C.encode())==1
+    projected=body.replace(C.encode(),b'265d370d72c2ecce2e210e836ca9f1da895026e4',1)
+    assert hashlib.sha256(projected).hexdigest()=='816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1'
+    assert hashlib.sha256(body).hexdigest()!='816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1'
+    print('B368_RUSTFMT_MANIFEST_PROJECTION=PASS')
     print('B368_FACADE_HANDOFF_MANIFEST='+digest(hd/'handoff.json'))
     print('B368_FACADE_HANDOFF_DESCRIPTOR='+NEW_DESCRIPTOR)
     for r in (src,recv):assert git(r,'rev-parse','HEAD','HEAD^{tree}').decode().split()==[C,T] and not git(r,'status','--porcelain=v1','--untracked-files=all')
