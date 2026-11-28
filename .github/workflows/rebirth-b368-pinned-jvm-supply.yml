@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-supply' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-supply' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '927e8251316ffb6a943d6a18c4c4acc8905b15a1'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -241,7 +241,11 @@ jobs:
           assert a['offline'] is False and b['offline'] is True and a['configurations']==b['configurations']
           assert set(a['configurations'])=={'standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'}
           for name,rows in a['configurations'].items():
-              assert rows and len({(r['gav'],r['file'],r['sha256']) for r in rows})==len(rows)
+              assert rows
+              unique={}
+              for row in rows:
+                  assert unique.setdefault((row['gav'],row['file'],row['sha256']),row)==row
+              print(f'B368_JVM_MULTIPLICITY={name}:{len(rows)}:{len(unique)}')
               digest=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
               print(f'B368_JVM_CLASSPATH={name}:{len(rows)}:{digest}')
           assert not (repo/'app/build').exists()
