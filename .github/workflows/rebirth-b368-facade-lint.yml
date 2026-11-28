@@ -1,11 +1,11 @@
-name: Rebirth b368 locked offline lint execution
+name: Rebirth b368 stop-facade offline lint verification
 on:
   push:
-    branches: [validate/rebirth-b368-offline-lint]
+    branches: [validate/rebirth-b368-facade-lint]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-offline-lint' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '570da81ba8564f62fa09d515f4d719fe3a4d68b0'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-lint' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -16,8 +16,8 @@ jobs:
           umask 077
           set +x
           p=$(mktemp -d "$RUNNER_TEMP/b368-restore-XXXXXXXX")
-          c=38fb7b125cc0a5ae6e324db99066d3d139ce86ad
-          t=c876482bdf7b332ed295a49b8e5f22ee6b1c646c
+          c=265d370d72c2ecce2e210e836ca9f1da895026e4
+          t=5679b579f3f8d908d44fa7203ad0313d579318ba
           hash=2c8dc3fa494a5faf6f65cafa966b47d234a3331c30396198005cedfccca82cad
           url=https://github.com/SunsetRNE/DSHA-Sunset-mod/releases/download/fixed-inputs-20261113/dsha-a-su-fixed-inputs-20261113-build364.zip
           stage=SOURCE
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py verify_b368_merged_permission.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_lint_guard.init.gradle online_b368_lint_supply.init.gradle online_b368_lint_diagnostics.py online_b368_lint_report.py verify_b368_merged_permission.py baseline-runtime-descriptor.json; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -107,7 +107,12 @@ jobs:
               PYTHONDONTWRITEBYTECODE=1 npm_config_userconfig="$p/home/user.npmrc" npm_config_globalconfig="$p/home/global.npmrc" \
               npm_config_offline=true npm_config_update_notifier=false npm_config_ignore_scripts=true \
               /usr/bin/python3 -IB "$p/online_b368_inputs.py" offline "$p"
-          ' offline "$uid" "$gid" "$p" >>"$out" 2>&1
+          ' offline "$uid" "$gid" "$p" >"$p/new-handoff.summary" 2>>"$out"
+          stage=EXACT_HANDOFF_READBACK
+          grep -Fx "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
+          grep -Fx "B368_FACADE_HANDOFF_MANIFEST=816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1" "$p/new-handoff.summary"
+          grep -Fx "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
+          grep -Fx B368_FACADE_BASELINE_PROJECTION=PASS "$p/new-handoff.summary"
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
           stage=TOOLCHAIN

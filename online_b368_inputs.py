@@ -13,10 +13,13 @@ import tarfile
 import urllib.error
 import urllib.request
 
-C='38fb7b125cc0a5ae6e324db99066d3d139ce86ad'
-T='c876482bdf7b332ed295a49b8e5f22ee6b1c646c'
+C='265d370d72c2ecce2e210e836ca9f1da895026e4'
+T='5679b579f3f8d908d44fa7203ad0313d579318ba'
 RUNTIME='c1bd68330a10776f304a92a19d8f82c184c1abf523275a9e28dbb2c2e764e4fe'
-TAR='f6d3a99c15eb75b5e1f6335aea0a4611203ee3409884fc32d77b9933f5d2262f'
+BASELINE_TAR='f6d3a99c15eb75b5e1f6335aea0a4611203ee3409884fc32d77b9933f5d2262f'
+DESCRIPTOR='app/src/main/assets/runtime-descriptor.json'
+BASELINE_DESCRIPTOR='4a9e5b69bc5c3a0bc895d7b3f9b48f144498d1ad36bea2d19540dae88c1fb3a3'
+NEW_DESCRIPTOR='d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea'
 LOCK='tools/dsh-runtime/package-lock.json'
 SKIP={'node_modules/@img/sharp-wasm32','node_modules/@emnapi/runtime'}
 
@@ -99,19 +102,39 @@ def offline(p):
         py(src,path,'--write');py(src,path,'--check')
     py(src,'tools/verify-runtime-descriptor-source.py')
     assert not git(src,'status','--porcelain=v1','--untracked-files=all')
-    result=json.loads(py(src,'tools/ci-handoff.py','pack','--commit',C,'--dir',str(hd)));assert result['status']=='PASS_HANDOFF_PACK' and result['files']==14 and result['tarSha256']==TAR
+    result=json.loads(py(src,'tools/ci-handoff.py','pack','--commit',C,'--dir',str(hd)));assert result['status']=='PASS_HANDOFF_PACK' and result['files']==14 and result['tarSha256']==digest(hd/'handoff.tar')!=BASELINE_TAR
     git(p,'clone','--no-hardlinks','--no-checkout',src,recv);git(recv,'remote','remove','origin');git(recv,'checkout','--detach',C)
-    unpack=json.loads(py(recv,'tools/ci-handoff.py','unpack','--commit',C,'--dir',str(hd)));assert unpack['status']=='PASS_HANDOFF_UNPACK' and unpack['tarSha256']==TAR and unpack['files']==14
+    unpack=json.loads(py(recv,'tools/ci-handoff.py','unpack','--commit',C,'--dir',str(hd)));assert unpack['status']=='PASS_HANDOFF_UNPACK' and unpack['tarSha256']==result['tarSha256'] and unpack['files']==14
     py(recv,'tools/verify-runtime-descriptor-source.py')
-    m=json.loads((hd/'handoff.json').read_bytes()); rows={x['path']:x for x in m['files']};assert len(rows)==14 and m['commit']==C and digest(hd/'handoff.tar')==TAR
+    m=json.loads((hd/'handoff.json').read_bytes()); rows={x['path']:x for x in m['files']};assert len(rows)==14 and m['commit']==C and digest(hd/'handoff.tar')==result['tarSha256']
+    assert rows[DESCRIPTOR]['sha256']==NEW_DESCRIPTOR
+    offset=None
     with tarfile.open(hd/'handoff.tar','r|') as tar:
         seen=set()
         for f in tar:
             x=rows[f.name];assert f.name not in seen and f.isreg() and f.mtime==0 and f.size==x['bytes'] and f.mode==(0o755 if x['executable'] else 0o644);seen.add(f.name)
+            if f.name==DESCRIPTOR: offset=f.offset_data
             with tar.extractfile(f) as stream:assert hashlib.file_digest(stream,'sha256').hexdigest()==x['sha256']
             for r in (src,recv):
                 local=r/f.name;assert local.resolve()==local and local.stat().st_size==x['bytes'] and digest(local)==x['sha256'] and bool(local.stat().st_mode&0o111)==x['executable']
         assert seen==rows.keys()
+    # Project only the already validated descriptor member to its previous public bytes.
+    # A streaming match to the frozen TAR pin anchors every other byte, header and padding.
+    prev=(p/'baseline-runtime-descriptor.json').read_bytes()
+    assert offset is not None and len(prev)==rows[DESCRIPTOR]['bytes'] and hashlib.sha256(prev).hexdigest()==BASELINE_DESCRIPTOR
+    projected=hashlib.sha256()
+    with (hd/'handoff.tar').open('rb') as f:
+        remaining=offset
+        while remaining:
+            block=f.read(min(remaining,1024*1024)); assert block; projected.update(block); remaining-=len(block)
+        assert hashlib.sha256(f.read(len(prev))).hexdigest()==NEW_DESCRIPTOR
+        projected.update(prev)
+        while block:=f.read(1024*1024): projected.update(block)
+    assert projected.hexdigest()==BASELINE_TAR
+    print('B368_FACADE_BASELINE_PROJECTION=PASS')
+    print('B368_FACADE_HANDOFF_TAR='+result['tarSha256'])
+    print('B368_FACADE_HANDOFF_MANIFEST='+digest(hd/'handoff.json'))
+    print('B368_FACADE_HANDOFF_DESCRIPTOR='+NEW_DESCRIPTOR)
     for r in (src,recv):assert git(r,'rev-parse','HEAD','HEAD^{tree}').decode().split()==[C,T] and not git(r,'status','--porcelain=v1','--untracked-files=all')
 
 
