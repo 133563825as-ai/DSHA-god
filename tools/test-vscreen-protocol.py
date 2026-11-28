@@ -62,7 +62,8 @@ def main():
              'vscreen/VirtualScreenJournal', 'vscreen/VirtualScreenSessionJournal',
              'util/VirtualScreenErrors', 'util/VirtualScreenWindowPolicy', 'util/VirtualScreenRequestFence',
              'util/VirtualScreenRoutes', 'util/VscreenBridgeRequest', 'util/VscreenActionEvidence', 'util/HttpProtocol',
-             'backup/BackupJson', 'backup/BackupLimits', 'backup/BackupFileSystem', 'util/FileKind', 'util/GrepReadPaths', 'util/DeviceShellPolicy', 'util/SelfPackageIdentity',
+             'backup/BackupJson', 'backup/BackupLimits', 'backup/BackupFileSystem', 'backup/BackupControl',
+             'util/FileKind', 'util/GrepReadPaths', 'util/DeviceShellPolicy', 'util/SelfPackageIdentity',
              'util/WebProcSel', 'util/SmsQuery', 'util/DshEntrypoint']
     tests = ['util/VirtualScreenHandshakeTest', 'util/VirtualScreenBootstrapTest', 'util/VirtualScreenPolicyTest',
              'util/VirtualScreenExitProofPolicyTest',
