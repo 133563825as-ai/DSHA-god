@@ -1,22 +1,22 @@
-name: Rebirth b368 verify offline JVM prerequisites
+name: Rebirth b368 verify the owner fixture contract on Linux
 on:
   push:
-    branches: [validate/rebirth-b368-pinned-jvm-preflight]
+    branches: [validate/rebirth-b368-owner-contract]
 permissions: {}
 jobs:
   verify:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-preflight' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-owner-contract' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Prepare the pinned JVM inputs and verify the original test contract
+      - name: Run the original JVM contract selftests without external dependencies
         shell: bash
         run: |
           set -euo pipefail
           umask 077
           set +x
-          c=c46848ff4aac0bda01a6115642d430e5b43c3929
-          t=f8b1a221792a5ffbe9da98a164b659a391e1bace
+          c=68e1425caf0aac6459df873cb65a7f885b5d2f8e
+          t=2316c0865bf45c2c7a5eff8dd3076acb68bb4128
           p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
           private="$p/private.log"
           stage=SOURCE
@@ -35,10 +35,7 @@ jobs:
           git init -q --template= "$p/worker" >>"$private" 2>&1
           git -C "$p/worker" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$GITHUB_SHA" >>"$private" 2>&1
           [[ $(git -C "$p/worker" rev-parse FETCH_HEAD) == "$GITHUB_SHA" ]]
-          git -C "$p/worker" show FETCH_HEAD:online_b368_jvm_preflight.py >"$p/online_b368_jvm_preflight.py"
-          stage=ROBO_SUPPLY
-          env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
-            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/src/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >>"$private" 2>&1
+          git -C "$p/worker" show FETCH_HEAD:online_b368_owner_contract.py >"$p/online_b368_owner_contract.py"
           stage=OFFLINE_PREFLIGHT
           u=$(id -u); g=$(id -g); [[ $u != 0 ]]
           sudo -n /usr/bin/unshare -n /bin/bash -ec '
@@ -49,6 +46,6 @@ jobs:
             exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
               PATH=/usr/bin:/bin HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
               GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_NO_LAZY_FETCH=1 \
-              /usr/bin/python3 -sB "$p/online_b368_jvm_preflight.py" "$p" "$c" "$t"
+              /usr/bin/python3 -sB "$p/online_b368_owner_contract.py" "$p" "$c" "$t"
           ' jvm "$u" "$g" "$p" "$c" "$t" 2>>"$private"
           printf 'B368_JVM_FULL_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n'
