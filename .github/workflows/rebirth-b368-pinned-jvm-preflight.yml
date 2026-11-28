@@ -1,0 +1,54 @@
+name: Rebirth b368 verify offline JVM prerequisites
+on:
+  push:
+    branches: [validate/rebirth-b368-pinned-jvm-preflight]
+permissions: {}
+jobs:
+  verify:
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-preflight' && github.event_name == 'push' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000' && github.event.after == github.sha && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Prepare the pinned JVM inputs and verify the original test contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          set +x
+          c=c46848ff4aac0bda01a6115642d430e5b43c3929
+          t=f8b1a221792a5ffbe9da98a164b659a391e1bace
+          p=$(mktemp -d "$RUNNER_TEMP/b368-fast-tools-XXXXXXXX")
+          private="$p/private.log"
+          stage=SOURCE
+          trap 'rc=$?; if ((rc)); then printf "B368_JVM_FAILED_STAGE=%s\nB368_JVM_EXIT=%s\n" "$stage" "$rc"; fi' EXIT
+          [[ $(df -PB1 "$p" | awk 'NR==2 {print $4}') -gt $((30*1024*1024*1024)) ]]
+          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
+          mkdir "$p/home" "$p/tmp"
+          export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 GIT_NO_LAZY_FETCH=1
+          git init -q --template= "$p/src" >"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$c" >>"$private" 2>&1
+          git -C "$p/src" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD >>"$private" 2>&1
+          [[ $(git -C "$p/src" rev-parse HEAD) == "$c" && $(git -C "$p/src" rev-parse HEAD^{tree}) == "$t" ]]
+          [[ -z $(git -C "$p/src" status --porcelain=v1 --untracked-files=all) && -z $(git -C "$p/src" remote) ]]
+          printf 'B368_JVM_SOURCE_COMMIT=%s\nB368_JVM_SOURCE_TREE=%s\n' "$c" "$t"
+          stage=HELPER
+          git init -q --template= "$p/worker" >>"$private" 2>&1
+          git -C "$p/worker" -c core.hooksPath=/dev/null fetch --quiet --depth 1 --no-tags https://github.com/133563825as-ai/DSHA-god.git "$GITHUB_SHA" >>"$private" 2>&1
+          [[ $(git -C "$p/worker" rev-parse FETCH_HEAD) == "$GITHUB_SHA" ]]
+          git -C "$p/worker" show FETCH_HEAD:online_b368_jvm_preflight.py >"$p/online_b368_jvm_preflight.py"
+          stage=ROBO_SUPPLY
+          env -i HOME="$p/home" TMPDIR="$p/tmp" PATH=/usr/bin:/bin LC_ALL=C.UTF-8 \
+            /usr/bin/timeout 600 /usr/bin/python3 -sB "$p/src/tools/prepare-robolectric-sdks.py" --dir "$p/robo" >>"$private" 2>&1
+          stage=OFFLINE_PREFLIGHT
+          u=$(id -u); g=$(id -g); [[ $u != 0 ]]
+          sudo -n /usr/bin/unshare -n /bin/bash -ec '
+            u=$1; g=$2; p=$3; c=$4; t=$5
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
+            exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH=/usr/bin:/bin HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_NO_LAZY_FETCH=1 \
+              /usr/bin/python3 -sB "$p/online_b368_jvm_preflight.py" "$p" "$c" "$t"
+          ' jvm "$u" "$g" "$p" "$c" "$t" 2>>"$private"
+          printf 'B368_JVM_FULL_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n'
