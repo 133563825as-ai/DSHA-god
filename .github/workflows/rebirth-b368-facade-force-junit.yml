@@ -1,15 +1,15 @@
-name: Rebirth b368 stop-facade offline class verification
+name: Rebirth b368 stop-facade targeted offline JUnit
 on:
   push:
-    branches: [validate/rebirth-b368-facade-compile]
+    branches: [validate/rebirth-b368-facade-force-junit]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-compile' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-facade-force-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Reconstruct and compile the exact b368 source
+      - name: Execute the original four force-stop JUnit classes
         shell: bash
         run: |
           set -euo pipefail
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_force_junit.py; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -111,6 +111,9 @@ jobs:
           grep -Ex 'B368_FACADE_(HANDOFF_TAR|HANDOFF_MANIFEST|HANDOFF_DESCRIPTOR)=[a-f0-9]{64}|B368_FACADE_BASELINE_PROJECTION=PASS' "$p/new-handoff.summary"
           printf 'B368_CURRENT_HANDOFF=14\n'
           mkdir -p "$p/producer-home" "$p/consumer-home" "$p/sdk/platforms" "$p/sdk/build-tools" "$p/sdk-stage" "$p/ro"
+          grep -Fxq "B368_FACADE_HANDOFF_TAR=3a34fcc0d6532cb338cd85a1c4b683aec865d15be17ef57aaee2e28938fa47d1" "$p/new-handoff.summary"
+          grep -Fxq "B368_FACADE_HANDOFF_MANIFEST=816de0a91c6edc972e7793222f77b6c87b92b8411b7b141d2021ed408ac2e0b1" "$p/new-handoff.summary"
+          grep -Fxq "B368_FACADE_HANDOFF_DESCRIPTOR=d81d53a901eb819691ac729411b2f7f7bd8763a352b4d6caee0225defeacf6ea" "$p/new-handoff.summary"
           stage=TOOLCHAIN
           dl() {
             local u=$1 f=$2 bytes=$3 pin=$4
@@ -229,4 +232,18 @@ jobs:
           [[ ! -d "$p/receiver/app/build" ]]
           stage=OFFLINE_CLASS
           /bin/bash "$p/online_b368_joint_class.sh" "$p" "$p" "$j" "$g" "$uid" "$gid" "$c" "$t" "${opts[@]}"
-          printf 'B368_FORMAL_ADMISSION=false\n'
+          stage=JUNIT_SUPPLY
+          dl https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar "$p/junit-4.13.2.jar" 384581 8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3
+          dl https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar "$p/hamcrest-core-1.3.jar" 45024 66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9
+          stage=OFFLINE_FORCE_JUNIT
+          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
+          sudo -n /usr/bin/unshare -n /bin/bash -ec '
+            u=$1; g=$2; p=$3; j=$4; c=$5; t=$6
+            /usr/sbin/ip link set lo up
+            test "$(/usr/sbin/ip -o link | wc -l)" = 1
+            test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
+            exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$j/bin:/usr/bin:/bin" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_LAZY_FETCH=1 \
+              /usr/bin/python3 -IB "$p/online_b368_force_junit.py" "$p" "$j" "$c" "$t"
+          ' force "$uid" "$gid" "$p" "$j" "$c" "$t" 2>>"$out"
+          printf 'B368_FORCE_JUNIT=PASS\nB368_FORMAL_ADMISSION=false\n'
