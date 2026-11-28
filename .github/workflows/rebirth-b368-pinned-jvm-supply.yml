@@ -1,15 +1,15 @@
-name: Rebirth b368 pinned-host baseline offline compile and targeted JUnit
+name: Rebirth b368 Debug JVM dependency closure
 on:
   push:
-    branches: [validate/rebirth-b368-pinned-compile-junit]
+    branches: [validate/rebirth-b368-pinned-jvm-supply]
 permissions: {}
 jobs:
   restore:
-    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-compile-junit' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.before == '59abf05579fe3d1f9195c07afaa04c822ac146e8'
+    if: github.repository == '133563825as-ai/DSHA-god' && github.ref == 'refs/heads/validate/rebirth-b368-pinned-jvm-supply' && github.event_name == 'push' && github.event.after == github.sha && github.run_attempt == '1' && github.event.created == true && github.event.before == '0000000000000000000000000000000000000000'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Execute the original four force-stop JUnit classes
+      - name: Compare locked JVM classpaths online and offline
         shell: bash
         run: |
           set -euo pipefail
@@ -65,7 +65,7 @@ jobs:
             test "$(git -C "$1/worker" rev-parse FETCH_HEAD)" = "$2"
             git -C "$1/worker" show FETCH_HEAD:online_b368_inputs.py > "$1/online_b368_inputs.py"
             git -C "$1/worker" show FETCH_HEAD:seed.cjs > "$1/seed.cjs"
-            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_force_junit.py; do
+            for f in online_b368_compile_supply.init.gradle online_b368_compile_guard.init.gradle online_b368_compile_monitor.py online_b368_retry_429.py online_b368_compile_diagnostics.py online_b368_joint_class.sh read_compiled_release.py baseline-runtime-descriptor.json online_b368_jvm_supply.init.gradle; do
               git -C "$1/worker" show "FETCH_HEAD:$f" > "$1/$f"
             done
           ' worker "$p" "$GITHUB_SHA" >>"$out" 2>&1
@@ -197,54 +197,55 @@ jobs:
             python3 -IB "$p/online_b368_compile_diagnostics.py" "$m" "$l" "$p/receiver/gradle/verification-metadata.xml" "$p/online_b368_compile_guard.init.gradle" 2>>"$out" || echo B368_COMPILE_DIAGNOSTICS=REFUSED
           }
           retries=0
-          for m in runtime compile aapt2 kotlin; do
-            supply_init="$p/online_b368_compile_supply.init.gradle"
-            for attempt in 1 2; do
-              rc=0
-              supply_log="$p/$m.supply.$attempt.log"
-              env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
-                DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_ORIGIN_MODE="$m" B368_ORIGIN_REPORT="$p/$m.supply.json" \
-                "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$supply_init" :app:probeB368ActualOrigin >"$supply_log" 2>&1 || rc=$?
-              if (( rc == 0 )); then break; fi
-              if (( attempt == 1 && retries == 0 )) && [[ ! -e "$p/$m.supply.json" ]] && \
-                python3 -IB "$p/online_b368_retry_429.py" "$supply_log" >>"$out" 2>&1; then
-                printf 'B368_CENTRAL_BACKOFF=%s:65\n' "$m"
-                retries=1
-                sleep 65
-              else
-                break
-              fi
-            done
-            printf 'B368_COMPILE_SUPPLY=%s:%s\n' "$m" "$rc"
-            if (( rc != 0 )); then reason "$m" "$supply_log"; exit "$rc"; fi
-            [[ -s "$p/$m.supply.json" ]]
-            if [[ $m = kotlin ]]; then
-              python3 -IB - "$p/kotlin.supply.json" <<'PY'
-          import json, sys
-          from pathlib import Path
-          q=json.loads(Path(sys.argv[1]).read_bytes()); assert q['mode']=='kotlin' and q['offline'] is False
-          k=q['configurations']; assert set(k)=={'kotlinBuildToolsApiClasspath','kotlinCompilerClasspath'}
-          for name,rows in k.items():
-              assert 0<len(rows)<128
-              print(f'B368_KOTLIN_TOOL_COUNT={name}:{len(rows)}')
-          PY
+          stage=JVM_CLASSPATH_ONLINE
+          for try in 1 2; do
+            rc=0
+            dep_log="$p/jvm.supply.$try.log"
+            env -i PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/producer-home" B368_JVM_SUPPLY_REPORT="$p/jvm-online.json" \
+              "$g" "${opts[@]}" --project-cache-dir "$p/p-cache" -I "$p/online_b368_jvm_supply.init.gradle" :app:probeB368JvmDependencyFiles >"$dep_log" 2>&1 || rc=$?
+            if (( rc == 0 )); then break; fi
+            if [[ $try == 1 && ! -e "$p/jvm-online.json" ]] && python3 -IB "$p/online_b368_retry_429.py" "$dep_log" >>"$out" 2>&1; then
+              echo B368_JVM_CENTRAL_BACKOFF=65
+              sleep 65
+            else
+              break
             fi
           done
-          [[ ! -d "$p/receiver/app/build" ]]
-          stage=OFFLINE_CLASS
-          /bin/bash "$p/online_b368_joint_class.sh" "$p" "$p" "$j" "$g" "$uid" "$gid" "$c" "$t" "${opts[@]}"
-          stage=JUNIT_SUPPLY
-          dl https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar "$p/junit-4.13.2.jar" 384581 8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3
-          dl https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar "$p/hamcrest-core-1.3.jar" 45024 66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9
-          stage=OFFLINE_FORCE_JUNIT
-          [[ $(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo) -ge 7168 ]]
-          sudo -n /usr/bin/unshare -n /bin/bash -ec '
-            u=$1; g=$2; p=$3; j=$4; c=$5; t=$6
+          printf 'B368_JVM_CLASSPATH_ONLINE=%s\n' "$rc"
+          if (( rc )); then reason jvm "$dep_log"; exit "$rc"; fi
+          stage=READONLY_DEPS
+          [[ ! -e "$p/ro/modules-2" && -d "$p/producer-home/caches/modules-2" ]]
+          cp -a "$p/producer-home/caches/modules-2" "$p/ro/"
+          stage=JVM_CLASSPATH_OFFLINE
+          sudo -n /usr/bin/unshare -nm --propagation private /bin/bash -ec '
+            p=$1; j=$2; g=$3; uid=$4; gid=$5; shift 5
             /usr/sbin/ip link set lo up
             test "$(/usr/sbin/ip -o link | wc -l)" = 1
             test -z "$(/usr/sbin/ip route show)" && test -z "$(/usr/sbin/ip -6 route show default)"
-            exec /usr/bin/setpriv --reuid="$u" --regid="$g" --clear-groups --no-new-privs /usr/bin/env -i \
-              PATH="$j/bin:/usr/bin:/bin" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_LAZY_FETCH=1 \
-              /usr/bin/python3 -IB "$p/online_b368_force_junit.py" "$p" "$j" "$c" "$t"
-          ' force "$uid" "$gid" "$p" "$j" "$c" "$t" 2>>"$out"
-          printf 'B368_FORCE_JUNIT=PASS\nB368_FORMAL_ADMISSION=false\n'
+            mount --bind "$p/ro" "$p/ro"
+            mount -o remount,bind,ro,nosuid,nodev "$p/ro"
+            findmnt -no OPTIONS --target "$p/ro" | tr , "\n" | grep -Fxq ro
+            cd "$p/receiver"
+            exec /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups --no-new-privs /usr/bin/env -i \
+              PATH="$j/bin:/usr/bin:/bin" JAVA_HOME="$j" ANDROID_HOME="$p/sdk" HOME="$p/home" TMPDIR="$p/tmp" LC_ALL=C.UTF-8 \
+              DSHA_PYTHON=/usr/bin/python3 GRADLE_USER_HOME="$p/consumer-home" GRADLE_RO_DEP_CACHE="$p/ro" B368_JVM_SUPPLY_REPORT="$p/jvm-offline.json" \
+              "$g" "$@" --offline --project-cache-dir "$p/c-cache" -I "$p/online_b368_jvm_supply.init.gradle" :app:probeB368JvmDependencyFiles
+          ' offline "$p" "$j" "$g" "$uid" "$gid" "${opts[@]}" >"$p/jvm-offline.log" 2>&1 || { rc=$?; reason jvm-offline "$p/jvm-offline.log"; exit "$rc"; }
+          stage=READBACK
+          python3 -IB - "$p" "$c" "$t" <<'PY'
+          from pathlib import Path
+          import hashlib,json,subprocess,sys
+          p=Path(sys.argv[1]); repo=p/'receiver'
+          a,b=[json.loads((p/f'jvm-{tag}.json').read_bytes()) for tag in ('online','offline')]
+          assert a['offline'] is False and b['offline'] is True and a['configurations']==b['configurations']
+          assert set(a['configurations'])=={'standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'}
+          for name,rows in a['configurations'].items():
+              assert rows and len({(r['gav'],r['file'],r['sha256']) for r in rows})==len(rows)
+              digest=hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+              print(f'B368_JVM_CLASSPATH={name}:{len(rows)}:{digest}')
+          assert not (repo/'app/build').exists()
+          assert subprocess.check_output(['git','-C',repo,'rev-parse','HEAD','HEAD^{tree}']).decode().split()==sys.argv[2:]
+          assert not subprocess.check_output(['git','-C',repo,'diff','--name-only','HEAD','--'])
+          PY
+          printf 'B368_JVM_CLASSPATH_OFFLINE=PASS\nB368_JVM_EXECUTED=false\nB368_FORMAL_ADMISSION=false\n'

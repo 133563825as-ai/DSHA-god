@@ -1,0 +1,59 @@
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.verification.DependencyVerificationMode
+
+final String task = ':app:probeB368JvmDependencyFiles'
+final String report = System.getenv('B368_JVM_SUPPLY_REPORT')
+def require = { boolean ok, String why -> if (!ok) throw new GradleException('B368_JVM_SUPPLY_REFUSED:' + why) }
+def sha = { File f ->
+    def hash = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { input ->
+        byte[] buf = new byte[65536]
+        for (int n = input.read(buf); n != -1; n = input.read(buf)) hash.update(buf, 0, n)
+    }
+    hash.digest().encodeHex().toString()
+}
+def s = gradle.startParameter
+require(report != null && !new File(report).exists() && gradle.gradleVersion == '9.3.1' &&
+        !s.dryRun && !s.refreshDependencies && !s.configurationCacheRequested && !s.buildCacheEnabled &&
+        !s.parallelProjectExecutionEnabled && s.maxWorkerCount == 1 && s.dependencyVerificationMode == DependencyVerificationMode.STRICT &&
+        s.taskNames == [task] && s.excludedTaskNames.empty && s.allInitScripts.size() == 1 && s.initScripts.size() == 1 &&
+        s.includedBuilds.empty && s.writeDependencyVerifications.empty && !s.writeDependencyLocks && s.lockedDependenciesToUpdate.empty &&
+        s.projectProperties == ['dsha.identity':'rebirth','dsha.rebirthCandidate':'true','dsha.unsignedPackage':'true','dsha.rust.mode':'off',
+                                'android.builder.sdkDownload':'false','org.gradle.java.installations.auto-download':'false'], 'INVOCATION')
+gradle.settingsEvaluated { st ->
+    require(sha(new File(st.settingsDir,'settings.gradle')) == '374e47e50d784456d86537a95716970de0e0c838e614ddf49c6e80064db1e56d' &&
+            sha(new File(st.settingsDir,'gradle/verification-metadata.xml')) == 'ecd1db829722c4c414e180e4839670e6fe905fb89d171bc53a1a4018d1a49d26', 'SOURCE_PINS')
+    def r = st.dependencyResolutionManagement
+    require(r.repositoriesMode.get().name() == 'FAIL_ON_PROJECT_REPOS' &&
+            r.repositories.collect { it.url.toString() } == ['https://dl.google.com/dl/android/maven2/','https://repo.maven.apache.org/maven2/',
+                'https://jitpack.io','https://maven.mozilla.org/maven2/'], 'ORIGINAL_REPOSITORIES')
+}
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.project(':app')
+    app.tasks.register('probeB368JvmDependencyFiles') {
+        doLast {
+            require(app.ext.dshaReleaseIdentity.identity == 'rebirth' && app.ext.dshaReleaseIdentity.versionCode == 368, 'IDENTITY')
+            def output = ['offline':s.offline, 'configurations':[:]]
+            ['standardDebugUnitTestCompileClasspath','standardDebugUnitTestRuntimeClasspath'].each { name ->
+                def cfg = app.configurations.getByName(name)
+                require(cfg.canBeResolved, 'ACTUAL_TEST_CLASSPATH')
+                def repos = cfg.incoming.resolutionResult.allComponents.findAll { it.id instanceof ModuleComponentIdentifier }
+                    .collectEntries { [(it.id.displayName): it.repositoryName] }
+                def view = cfg.incoming.artifactView { componentFilter { it instanceof ModuleComponentIdentifier } }
+                def rows = view.artifacts.artifacts.collect { a ->
+                    def id = a.id.componentIdentifier.displayName
+                    def f = a.file.canonicalFile
+                    require(repos[id] in ['Google','MavenRepo','maven','maven2'] && f.isFile() && f.length() > 0, 'ARTIFACT_ORIGIN')
+                    [gav:id,file:f.name,origin:repos[id],bytes:f.length(),sha256:sha(f)]
+                }.sort { [it.gav,it.file,it.sha256] }
+                def ids = rows*.gav.toSet()
+                require(ids.contains('junit:junit:4.13.2') && ids.contains('org.robolectric:robolectric:4.15.1'), 'ORIGINAL_TEST_DEPENDENCIES')
+                output.configurations[name] = rows
+            }
+            new File(report).text = JsonOutput.toJson(output) + '\n'
+        }
+    }
+}
+gradle.taskGraph.whenReady { graph -> require(graph.allTasks*.path == [task], 'TASK_GRAPH') }
