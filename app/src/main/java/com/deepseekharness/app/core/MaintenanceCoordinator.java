@@ -98,7 +98,7 @@ public final class MaintenanceCoordinator {
       throw new IOException(UiText.text("请在独立数据任务线程等待 Web 停止，不能阻塞界面线程"));
     if (allowForceStop) {
       MaintenancePreStop.stop(
-          new MaintenancePreStop.Io<HarnessController.ForceStopRequest>() {
+          new MaintenancePreStop.Io<WebStopCoordinator.ForceStopRequest>() {
             public void requestStop() {
               controller.stopWeb(message -> {});
             }
@@ -115,11 +115,11 @@ public final class MaintenanceCoordinator {
               return controller.lastStopError();
             }
 
-            public HarnessController.ForceStopRequest prepareForce() throws IOException {
+            public WebStopCoordinator.ForceStopRequest prepareForce() throws IOException {
               return controller.prepareForceStop();
             }
 
-            public boolean requestForce(HarnessController.ForceStopRequest candidate) {
+            public boolean requestForce(WebStopCoordinator.ForceStopRequest candidate) {
               return controller.forceStop(candidate, message -> {});
             }
 

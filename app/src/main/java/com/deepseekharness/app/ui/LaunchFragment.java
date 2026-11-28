@@ -20,6 +20,7 @@ import androidx.fragment.app.Fragment;
 import com.deepseekharness.app.LanProxyService;
 import com.deepseekharness.app.R;
 import com.deepseekharness.app.core.HarnessController;
+import com.deepseekharness.app.core.WebStopCoordinator;
 import com.deepseekharness.app.util.LanAccessPresentation;
 import com.deepseekharness.app.util.LanAddressPolicy;
 import com.deepseekharness.app.util.SummaryText;
@@ -949,7 +950,7 @@ public class LaunchFragment extends Fragment {
     // 进程与文件身份核验放在工作线程；本次候选只捕获一次，由对话框局部持有至确认。
     new Thread(
             () -> {
-              HarnessController.ForceStopPreparation preparation = null;
+              WebStopCoordinator.ForceStopPreparation preparation = null;
               com.deepseekharness.app.util.WebStopDiagnostic diagnostic = null;
               try {
                 preparation = controller.prepareForceStopResult();
@@ -966,7 +967,7 @@ public class LaunchFragment extends Fragment {
                     "WEB_FORCE_STOP_CANDIDATE",
                     diagnostic.code().name());
               }
-              final HarnessController.ForceStopPreparation prepared = preparation;
+              final WebStopCoordinator.ForceStopPreparation prepared = preparation;
               final com.deepseekharness.app.util.WebStopDiagnostic deniedEvidence = diagnostic;
               ui.post(
                   () -> {
@@ -1114,7 +1115,7 @@ public class LaunchFragment extends Fragment {
       View root,
       TextView status,
       long generation,
-      HarnessController.ForceStopRequest candidate,
+      WebStopCoordinator.ForceStopRequest candidate,
       long consentRevision) {
     boolean previous =
         candidate.candidate() != null && candidate.candidate().retiresPreviousLauncher();

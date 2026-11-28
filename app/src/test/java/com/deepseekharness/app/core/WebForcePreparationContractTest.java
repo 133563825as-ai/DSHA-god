@@ -26,39 +26,39 @@ public final class WebForcePreparationContractTest {
       if (status == WebProcessManager.ForcePreparationStatus.LIVE_CANDIDATE) {
         assertThrows(
             IllegalArgumentException.class,
-            () -> new HarnessController.ForceStopPreparation(status, null, List.of(EXITED)));
+            () -> new WebStopCoordinator.ForceStopPreparation(status, null, List.of(EXITED)));
       } else {
         assertNull(
-            new HarnessController.ForceStopPreparation(status, null, List.of(EXITED)).request());
+            new WebStopCoordinator.ForceStopPreparation(status, null, List.of(EXITED)).request());
         assertThrows(
             IllegalArgumentException.class,
             () ->
-                new HarnessController.ForceStopPreparation(
-                    status, new HarnessController.ForceStopRequest(7, null), List.of(EXITED)));
+                new WebStopCoordinator.ForceStopPreparation(
+                    status, new WebStopCoordinator.ForceStopRequest(7, null), List.of(EXITED)));
       }
     }
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new HarnessController.ForceStopPreparation(
+            new WebStopCoordinator.ForceStopPreparation(
                 WebProcessManager.ForcePreparationStatus.LIVE_CANDIDATE,
-                new HarnessController.ForceStopRequest(7, null),
+                new WebStopCoordinator.ForceStopRequest(7, null),
                 List.of()));
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new HarnessController.ForceStopPreparation(
+            new WebStopCoordinator.ForceStopPreparation(
                 WebProcessManager.ForcePreparationStatus.UNKNOWN, null, List.of()));
     assertThrows(
         NullPointerException.class,
-        () -> new HarnessController.ForceStopPreparation(null, null, List.of(EXITED)));
+        () -> new WebStopCoordinator.ForceStopPreparation(null, null, List.of(EXITED)));
   }
 
   @Test
   public void diagnosticsAreImmutableAndGuestExitIsNotStopSuccess() {
     List<WebStopDiagnostic> facts = new ArrayList<>(List.of(EXITED));
     var prepared =
-        new HarnessController.ForceStopPreparation(
+        new WebStopCoordinator.ForceStopPreparation(
             WebProcessManager.ForcePreparationStatus.ALREADY_EXITED, null, facts);
     facts.clear();
     assertEquals(List.of(EXITED), prepared.diagnostics());

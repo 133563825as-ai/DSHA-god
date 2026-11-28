@@ -1746,8 +1746,8 @@ final class WebLifecycleController {
   }
 
   /** 旧维护入口不能将 guest 已退当作完整停止或 null 成功。 */
-  HarnessController.ForceStopRequest prepareForceStop() throws IOException {
-    HarnessController.ForceStopPreparation prepared = prepareForceStopResult();
+  WebStopCoordinator.ForceStopRequest prepareForceStop() throws IOException {
+    WebStopCoordinator.ForceStopPreparation prepared = prepareForceStopResult();
     if (prepared.status() == WebProcessManager.ForcePreparationStatus.LIVE_CANDIDATE)
       return prepared.request();
     if (prepared.status() == WebProcessManager.ForcePreparationStatus.ALREADY_EXITED)
@@ -1756,7 +1756,7 @@ final class WebLifecycleController {
     throw new com.deepseekharness.app.util.WebStopException(prepared.diagnostics().get(0), null);
   }
 
-  HarnessController.ForceStopPreparation prepareForceStopResult() throws IOException {
+  WebStopCoordinator.ForceStopPreparation prepareForceStopResult() throws IOException {
     long generation;
     synchronized (lifecycle) {
       generation = lifecycle.generation();
@@ -1802,11 +1802,11 @@ final class WebLifecycleController {
       if (recorded.diagnostic() != null) diagnostics.add(recorded.diagnostic());
       if (recorded.status() == WebProcessManager.ForcePreparationStatus.ALREADY_EXITED)
         diagnostics.addAll(state.lastStopResult.diagnostics());
-      return new HarnessController.ForceStopPreparation(
+      return new WebStopCoordinator.ForceStopPreparation(
           recorded.status(),
           recorded.candidate() == null
               ? null
-              : new HarnessController.ForceStopRequest(generation, recorded.candidate()),
+              : new WebStopCoordinator.ForceStopRequest(generation, recorded.candidate()),
           diagnostics);
     }
   }
@@ -1876,7 +1876,7 @@ final class WebLifecycleController {
         null);
   }
 
-  boolean forceStop(HarnessController.ForceStopRequest request, Consumer<String> status) {
+  boolean forceStop(WebStopCoordinator.ForceStopRequest request, Consumer<String> status) {
     if (request == null || request.candidate() == null) return false;
     synchronized (lifecycle) {
       if (!forceStopAllowed(lifecycle, state.lastStopResult, request.generation())) return false;

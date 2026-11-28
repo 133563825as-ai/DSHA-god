@@ -212,39 +212,15 @@ public class HarnessController {
     web.stopWebIfUnchanged(generation);
   }
 
-  /** Candidate held by one native confirmation; it cannot be reused after any new Web intent. */
-  public record ForceStopRequest(
-      long generation,
-      com.deepseekharness.app.runtime.WebProcessManager.ForceCandidate candidate) {}
-
-  /** 非 LIVE 不携带请求；已退仅是 guest 事实，不是完整停止证明。 */
-  public record ForceStopPreparation(
-      com.deepseekharness.app.runtime.WebProcessManager.ForcePreparationStatus status,
-      ForceStopRequest request,
-      java.util.List<com.deepseekharness.app.util.WebStopDiagnostic> diagnostics) {
-    public ForceStopPreparation {
-      java.util.Objects.requireNonNull(status);
-      diagnostics = java.util.List.copyOf(diagnostics);
-      if ((status
-              == com.deepseekharness.app.runtime.WebProcessManager.ForcePreparationStatus
-                  .LIVE_CANDIDATE)
-          != (request != null)) throw new IllegalArgumentException("WEB_FORCE_PREPARATION_REQUEST");
-      if (request != null && request.candidate() == null)
-        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_CANDIDATE");
-      if (request == null && diagnostics.isEmpty())
-        throw new IllegalArgumentException("WEB_FORCE_PREPARATION_DIAGNOSTIC");
-    }
-  }
-
-  public ForceStopPreparation prepareForceStopResult() throws IOException {
+  public WebStopCoordinator.ForceStopPreparation prepareForceStopResult() throws IOException {
     return web.prepareForceStopResult();
   }
 
-  public ForceStopRequest prepareForceStop() throws IOException {
+  public WebStopCoordinator.ForceStopRequest prepareForceStop() throws IOException {
     return web.prepareForceStop();
   }
 
-  public boolean forceStop(ForceStopRequest request, Consumer<String> status) {
+  public boolean forceStop(WebStopCoordinator.ForceStopRequest request, Consumer<String> status) {
     return web.forceStop(request, status);
   }
 
